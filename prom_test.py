@@ -1,11 +1,86 @@
-import unittest
+from unittest import TestCase
 import os
 import sys
 
-from prom import query
+from prom import query, connection
+from prom.config import Schema
+
+from prom.interface.postgres import Interface as PGInterface
+
+class SchemaTest(TestCase):
+    def test_define(self):
+        s = Schema()
+        s.foo = int, True
+        s.bar = str, False, 32
+        s.baz = str
+
+        pout.v(s.fields)
+
+        s.index_che = s.foo, s.bar
+        s.index_created = s._created
+        s.unique = s.foo
+
+        pout.v(s.indexes)
+
+        s.index_this_will_fail = 'testfieldname'
 
 
-class PromQueryTest(unittest.TestCase):
+
+
+
+class ConnectionConfigTest(TestCase):
+    def test_host(self):
+        tests = [
+            ("localhost:8000", ["localhost", 8000]),
+            ("localhost", ["localhost", 0]),
+            ("http://localhost:10", ["localhost", 10]),
+            ("http://some.crazydomain.com", ["some.crazydomain.com", 0]),
+            ("http://some.crazydomain.com:1000", ["some.crazydomain.com", 1000]),
+        ]
+
+        for t in tests:
+            p = connection.Config()
+            p.host = t[0]
+            self.assertEqual(t[1][0], p.host)
+            self.assertEqual(t[1][1], p.port)
+
+        p = connection.Config()
+        p.port = 555
+        p.host = "blah.example.com"
+        self.assertEqual("blah.example.com", p.host)
+        self.assertEqual(555, p.port)
+
+        p.host = "blah.example.com:43"
+        self.assertEqual("blah.example.com", p.host)
+        self.assertEqual(43, p.port)
+
+class InterfacePostgresTest(TestCase):
+
+    def get_interface(self):
+        config = connection.Config()
+        config.database = "vagrant"
+        config.username = "vagrant"
+        config.password = "vagrant"
+        config.host = "localhost"
+
+        i = PGInterface()
+        i.connect(config)
+        self.assertTrue(i.connection is not None)
+        return i
+
+    def test_connect(self):
+        i = self.get_interface()
+
+    def test_query(self):
+        i = self.get_interface()
+        rows = i.query('SELECT version()')
+        self.assertGreater(len(rows), 0)
+
+
+
+
+
+class QueryTest(TestCase):
 
     def test_split_method(self):
 
