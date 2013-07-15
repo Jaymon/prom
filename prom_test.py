@@ -11,7 +11,7 @@ class SchemaTest(TestCase):
     def test_define(self):
         s = Schema()
         s.foo = int, True
-        s.bar = str, False, 32
+        s.bar = str, False, dict(range_min=32)
         s.baz = str
 
         pout.v(s.fields)

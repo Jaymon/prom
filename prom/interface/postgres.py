@@ -19,6 +19,7 @@ class Interface(BaseInterface):
         port = connection_config.port
         if not port: port = 5432
 
+        # http://pythonhosted.org/psycopg2/module.html
         self.connection = psycopg2.connect(
             database=database,
             user=username,

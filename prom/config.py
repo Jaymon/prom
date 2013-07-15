@@ -2,11 +2,18 @@ import types
 
 class Schema(object):
 
+    table = u""
+    """set the table name for this schema instance"""
+
     fields = {}
+    """all the fields this schema instance will use"""
 
     indexes = {}
+    """all the indexes this schema will have"""
 
-    def __init__(self):
+    def __init__(self, table, **fields):
+
+        self.table = table
 
         self._id = long, True
         self._created = long, True
@@ -14,45 +21,89 @@ class Schema(object):
 
         self.index_updated = self._updated
 
-    def __setattr__(self, name, val):
+        for field_name, field_val in fields.iteritems():
+            setattr(self, field_name, field_val)
 
+    def __setattr__(self, name, val):
+        """
+        allow schema to magically set fields and indexes by using the method name
+
+        you can either set a field name:
+
+            self.fieldname = <type>, <required>, <option_hash>
+
+        or you can set a normal index:
+
+            self.index_indexname = field1, field2, ...
+
+        or a unique index:
+
+            self.unique_indexname = field1, field2, ...
+
+        example --
+            # add foo and bar fields
+            self.foo = int, True, dict(min_size=0, max_size=100)
+            self.bar = str, False, dict(max_size=32)
+
+            # add a normal index and a unique index
+            self.index_foobar = self.foo, self.bar
+            self.unique_bar = self.bar
+        """
+
+        # compensate for the special _name fields
         if name[0] != '_':
             name_bits = name.split(u'_', 1)
         else:
             name_bits = [name]
 
-        index_name = u""
-        if len(name_bits) > 1: index_name = name_bits[1]
+        is_field = True
 
-        if name_bits[0] == 'index':
-            self.set_index(index_name, val)
-            
-        elif name_bits[0] == 'unique':
-            self.set_index(index_name, val, unique=True)
-        else:
+        index_name = u""
+        if len(name_bits) > 1: # we might have an index
+            index_name = name_bits[1]
+            index_types = {
+                # index_type : **kwargs options
+                'index': {},
+                'unique': {unique=True}
+            }
+
+            if name_bits[0] in index_types:
+                is_field = False
+                # compensate for passing in one value instead of a tuple
+                if isinstance(val, (types.DictType, types.StringType)):
+                    val = (val,)
+
+                self.set_index(index_name, val, **index_types[name_bits[0]])
+
+        if is_field:
+            # compensate for passing in one value, not a tuple
             if isinstance(val, types.TypeType):
                 val = (val,)
 
             self.set_field(name, *val)
 
     def __getattr__(self, name):
-        return self.fields[name]
+        """
+        this is mainly here to enable fluid defining of indexes
+
+        example -- 
+            self.foo = int, True
+            self.index_foo = s.foo
+
+        return -- string -- the string value of the attribute name, eg, self.foo returns "foo"
+        """
+        if not name in self.fields:
+            raise AttributeError("{} is not a valid field name".format(name))
+
+        return self.fields[name]['name']
 
     def set_index(self, index_name, index_fields, unique=False):
         if not index_fields:
-            raise ValueError("no index_fields")
-
-        if isinstance(index_fields, (types.DictType, types.StringType)):
-            index_fields = (index_fields,)
+            raise ValueError("index_fields list was empty")
 
         field_names = []
-        for f in index_fields:
-            field_name = ""
-            if isinstance(f, dict):
-                field_name = f['name']
-            else:
-                field_name = f
-
+        for field_name in index_fields:
+            field_name = str(field_name)
             if not field_name in self.fields:
                 raise NameError("no field named {} so cannot set index on it".format(field_name))
 
@@ -69,32 +120,34 @@ class Schema(object):
 
         return self
 
-    def set_field(self, field_name, field_type, required=False, range_a=None, range_b=None, default_val=None):
+    def set_field(self, field_name, field_type, required=False, options=None):
+        if field_name in self.fields:
+            raise ValueError("{} already exists and cannot be changed".format(field_name))
 
-        self.fields[field_name] = {
+        d = {
             'name': field_name,
             'type': field_type,
-            'default': default_val,
             'required': required
         }
 
-        range_min = range_max = None
+        size_a = options.get("min_size", None)
+        size_b = options.get("max_size", None)
+        size = options.get("size", None)
+        size_min = size_max = size = None
 
-        if range_a > 0 and range_b == None:
-            range_min = range_a
-            range_max = range_a
+        if size > 0:
+            d['size'] = size
+        else:
+            if size_a > 0 and size_b == None:
+                d['size'] = size_a
 
-        elif range_a == None and range_b > 0:
-            range_min = None
-            range_max = range_b
+            elif size_a == None and size_b > 0:
+                d['size'] = size_b
 
-        elif range_a >= 0 and range_b >= 0:
-            range_min = range_a
-            range_max = range_b
+            elif size_a >= 0 and size_b >= 0:
+                d['min_size'] = size_a
+                d['max_size'] = size_b
 
-        if range_min > 0:
-            self.fields[field_name]['range_min'] = range_min
+        self.fields[field_name] = d
 
-        if range_max > 0:
-            self.fields[field_name]['range_max'] = range_max
-
+        return self
