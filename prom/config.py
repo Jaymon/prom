@@ -1,21 +1,117 @@
 import types
+from urlparse import urlparse
+import re
+
+
+class Connection(object):
+    """
+    set the paramaters you want to use to connect to an interface
+
+    https://github.com/Jaymon/Mingo/blob/master/Mingo/MingoConfig.php
+    """
+
+    database = ""
+    """the db name to use, in postgres, this is the database name"""
+
+    port = 0
+    """the host port"""
+
+    username = ""
+    """the username to use to to connect to the db"""
+
+    password = ""
+    """the password for the username"""
+
+    options = None
+    """any other db options, these can be interface implementation specific"""
+
+    debug = False
+    """true to turn on debugging for this connection"""
+
+    @property
+    def host(self):
+        """the db host"""
+        return self._host
+
+    @host.setter
+    def host(self, h):
+        """
+        check host for a :port, and split that off into the .port attribute if there
+        """
+
+        # normalize the host so urlparse can parse it correctly
+        # http://stackoverflow.com/questions/9530950/parsing-hostname-and-port-from-string-or-url#comment12075005_9531210
+        if not re.match(ur'(?:\S+|^)\/\/', h):
+            h = "//{}".format(h)
+
+        o = urlparse(h)
+
+        self._host = o.hostname
+        if o.port: self.port = o.port
+
+    def __init__(self, **kwargs):
+        """
+        set all the values by passing them into this constructor, any unrecognized kwargs get put into .options
+
+        example --
+            c = Connection(
+                database="dbname",
+                port=5000,
+                some_random_thing="foo"
+            )
+
+            print c.port # 5000
+            print c.options # {"some_random_thing": "foo"}
+        """
+        self.options = {}
+
+        for key, val in kwargs.iteritems():
+            if hasattr(self, key):
+                setattr(self, key, val)
+            else:
+                self.options[key] = val
+
 
 class Schema(object):
+    """
+    handles all table schema definition
+
+    the table schema definition includes the table name, the fields the table has, and
+    the indexes that are on the table
+    """
 
     table = u""
-    """set the table name for this schema instance"""
+    """string -- set the table name for this schema instance"""
 
-    fields = {}
-    """all the fields this schema instance will use"""
+    fields = None
+    """dict -- all the fields this schema instance will use"""
 
-    indexes = {}
-    """all the indexes this schema will have"""
+    indexes = None
+    """dict -- all the indexes this schema will have"""
 
     def __init__(self, table, **fields):
+        """
+        create an instance
 
+        every Orm should have a .schema attribute that is an instance of this class
+
+        example --
+
+            self.schema = Schema(
+                "table_name"
+                field1=(int, True),
+                field2=(str,),
+                index_fields=("field1", "field2")
+            )
+
+        table -- string -- the table name
+        **fields -- a dict of field name or index keys with tuple values, see __getattr__ for more details
+        """
+        self.fields = {}
+        self.indexes = {}
         self.table = table
 
-        self._id = long, True
+        self._id = long, True, dict(primary_key=True)
         self._created = long, True
         self._updated = long, True
 
@@ -49,6 +145,10 @@ class Schema(object):
             self.index_foobar = self.foo, self.bar
             self.unique_bar = self.bar
         """
+        # canary, ignore already defined attributes
+        #if hasattr(self, name):
+        if name in self.__dict__ or name in self.__class__.__dict__:
+            return object.__setattr__(self, name, val)
 
         # compensate for the special _name fields
         if name[0] != '_':
@@ -58,22 +158,20 @@ class Schema(object):
 
         is_field = True
 
-        index_name = u""
-        if len(name_bits) > 1: # we might have an index
-            index_name = name_bits[1]
-            index_types = {
-                # index_type : **kwargs options
-                'index': {},
-                'unique': {unique=True}
-            }
+        index_name = name_bits[1] if len(name_bits) > 1 else u""
+        index_types = {
+            # index_type : **kwargs options
+            'index': {},
+            'unique': dict(unique=True)
+        }
 
-            if name_bits[0] in index_types:
-                is_field = False
-                # compensate for passing in one value instead of a tuple
-                if isinstance(val, (types.DictType, types.StringType)):
-                    val = (val,)
+        if name_bits[0] in index_types:
+            is_field = False
+            # compensate for passing in one value instead of a tuple
+            if isinstance(val, (types.DictType, types.StringType)):
+                val = (val,)
 
-                self.set_index(index_name, val, **index_types[name_bits[0]])
+            self.set_index(index_name, val, **index_types[name_bits[0]])
 
         if is_field:
             # compensate for passing in one value, not a tuple
@@ -84,11 +182,11 @@ class Schema(object):
 
     def __getattr__(self, name):
         """
-        this is mainly here to enable fluid defining of indexes
+        this is mainly here to enable fluid defining of indexes using class attributes
 
         example -- 
             self.foo = int, True
-            self.index_foo = s.foo
+            self.index_foo = s.foo # s.foo seems more fluid to me than "foo" :P
 
         return -- string -- the string value of the attribute name, eg, self.foo returns "foo"
         """
@@ -97,16 +195,75 @@ class Schema(object):
 
         return self.fields[name]['name']
 
+    def set_field(self, field_name, field_type, required=False, options=None):
+        """
+        add a field to the schema
+
+        field_name -- string -- the name of the field
+        field_type -- type -- the python type of the field, so for a string you would pass str, integer: int,
+            boolean: bool, float: float, big int: long
+        required -- boolean -- true if this field has to be there to insert
+        options -- dict -- everything else in key: val notation. Current options:
+            size -- int -- the size you want the string to be, or the int to be
+            min_size -- int -- the minimum size
+            max_size -- int -- if you want a varchar, set this
+        """
+        if not field_name:
+            raise ValueError("field_name is empty")
+        if not isinstance(field_type, types.TypeType):
+            raise ValueError("field_type is not a valid python built-in type: str, int, float, ...")
+        if field_name in self.fields:
+            raise ValueError("{} already exists and cannot be changed".format(field_name))
+        if not options: options = {}
+
+        d = {
+            'name': field_name,
+            'type': field_type,
+            'required': required
+        }
+
+        min_size = options.pop("min_size", None)
+        max_size = options.pop("max_size", None)
+        size = options.pop("size", None)
+
+        if size > 0:
+            d['size'] = size
+        else:
+            if min_size > 0 and max_size == None:
+                raise ValueError("min_size option was set with no corresponding max_size")
+
+            elif min_size == None and max_size > 0:
+                d['max_size'] = max_size
+
+            elif min_size >= 0 and max_size >= 0:
+                d['min_size'] = min_size
+                d['max_size'] = max_size
+
+        d.update(options)
+        self.fields[field_name] = d
+
+        return self
+
     def set_index(self, index_name, index_fields, unique=False):
+        """
+        add an index to the schema
+
+        for the most part, you will use the __getattr__ method of adding indexes for a more fluid interface,
+        but you can use this if you want to get closer to the bare metal
+
+        index_name -- string -- the name of the index
+        index_fields -- list -- the string field_names this index will index on, fields have to be already added
+            to this schema index
+        unique -- boolean -- True if the index should be unique, false otherwise
+        """
         if not index_fields:
-            raise ValueError("index_fields list was empty")
+            raise ValueError("index_fields list is empty")
+        if index_name in self.indexes:
+            raise ValueError("index_name has already been defined on {}".format(str(self.indexes[index_name]['fields'])))
 
         field_names = []
         for field_name in index_fields:
             field_name = str(field_name)
-            if not field_name in self.fields:
-                raise NameError("no field named {} so cannot set index on it".format(field_name))
-
             field_names.append(field_name)
 
         if not index_name:
@@ -120,34 +277,3 @@ class Schema(object):
 
         return self
 
-    def set_field(self, field_name, field_type, required=False, options=None):
-        if field_name in self.fields:
-            raise ValueError("{} already exists and cannot be changed".format(field_name))
-
-        d = {
-            'name': field_name,
-            'type': field_type,
-            'required': required
-        }
-
-        size_a = options.get("min_size", None)
-        size_b = options.get("max_size", None)
-        size = options.get("size", None)
-        size_min = size_max = size = None
-
-        if size > 0:
-            d['size'] = size
-        else:
-            if size_a > 0 and size_b == None:
-                d['size'] = size_a
-
-            elif size_a == None and size_b > 0:
-                d['size'] = size_b
-
-            elif size_a >= 0 and size_b >= 0:
-                d['min_size'] = size_a
-                d['max_size'] = size_b
-
-        self.fields[field_name] = d
-
-        return self
