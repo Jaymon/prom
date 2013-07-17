@@ -1,6 +1,8 @@
 from unittest import TestCase
 import os
 import sys
+import random
+import string
 
 from prom import query
 from prom.config import Schema, Connection
@@ -131,6 +133,12 @@ class ConfigSchemaTest(TestCase):
         s.unique_test3 = s.foo,
         self.assertEqual({'name': "test3", 'fields': ["foo"], 'unique': True}, s.indexes["test3"])
 
+    def test_primary_key(self):
+        s = Schema("foo")
+        s.bar = int, False
+
+        self.assertEqual(s._id, s.primary_key)
+
 class ConfigConnectionTest(TestCase):
 
     def test___init__(self):
@@ -174,6 +182,7 @@ class ConfigConnectionTest(TestCase):
 class InterfacePostgresTest(TestCase):
 
     def get_interface(self):
+        # TODO change all this to use an environment variable DSN
         config = Connection()
         config.database = "vagrant"
         config.username = "vagrant"
@@ -185,6 +194,50 @@ class InterfacePostgresTest(TestCase):
         self.assertTrue(i.connection is not None)
         self.assertTrue(i.connected)
         return i
+
+    def get_schema(self, table_name=None):
+        if not table_name:
+            table_name = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+
+        s = Schema(
+            table_name,
+            foo=(int, True),
+            bar=(str, True),
+            index_ifoobar=("foo", "bar")
+        )
+
+        return s
+
+    def get_table(self, table_name=None):
+        """
+        return an interface and schema for a table in the db
+        
+        return -- tuple -- interface, schema
+        """
+        i = self.get_interface()
+        s = self.get_schema(table_name)
+        i.set_table(s)
+        return i, s
+
+    def insert(self, interface, schema, count):
+        """
+        insert count rows into schema using interface
+        """
+        _ids = []
+
+        for i in xrange(1, count + 1):
+            d = {
+                'foo': i,
+                'bar': 'value {}'.format(i)
+            }
+            d = interface.set(schema, d)
+
+            self.assertTrue('foo' in d)
+            self.assertTrue('bar' in d)
+            self.assertTrue(schema._id in d)
+            _ids.append(d[schema._id])
+
+        return _ids
 
     def test_connect(self):
         i = self.get_interface()
@@ -202,13 +255,7 @@ class InterfacePostgresTest(TestCase):
 
     def test_set_table(self):
         i = self.get_interface()
-        s = Schema(
-            "foobar_table",
-            foo=(int, True),
-            bar=(str, True),
-            index_ifoobar=("foo", "bar")
-        )
-
+        s = self.get_schema()
         r = i.has_table(s.table)
         self.assertFalse(r)
 
@@ -216,6 +263,203 @@ class InterfacePostgresTest(TestCase):
 
         r = i.has_table(s.table)
         self.assertTrue(r)
+
+        # make sure it persists
+        i.close()
+        i = self.get_interface()
+        self.assertTrue(i.has_table(s.table))
+
+        # make sure known indexes are there
+        indexes = i.get_indexes(s)
+        count = 0
+        for known_index_name, known_index_d in s.indexes.iteritems():
+            for index_name, index_fields in indexes.iteritems():
+                if known_index_d['fields'] == index_fields:
+                    count += 1
+
+        self.assertEqual(len(s.indexes), count)
+
+    def test_get_tables(self):
+        i = self.get_interface()
+        s = self.get_schema()
+        r = i.set_table(s)
+        r = i.get_tables()
+        self.assertTrue(s.table in r)
+
+        r = i.get_tables(s.table)
+        self.assertTrue(s.table in r)
+
+    def test_delete_table(self):
+        i = self.get_interface()
+        s = self.get_schema()
+
+        r = i.set_table(s)
+        self.assertTrue(i.has_table(s.table))
+
+        r = i.delete_table(s)
+        self.assertFalse(i.has_table(s.table))
+
+        # make sure it persists
+        i.close()
+        i = self.get_interface()
+        self.assertFalse(i.has_table(s.table))
+
+    def test_insert(self):
+        i = self.get_interface()
+        s = self.get_schema()
+        i.set_table(s)
+
+        d = {
+            'foo': 1,
+            'bar': 'this is the value',
+        }
+
+        rd = i.insert(s, d)
+        self.assertGreater(rd[s._id], 0)
+
+    def test_get_sql(self):
+        i = self.get_interface()
+        s = self.get_schema()
+        q = query.Query()
+        q.in__id(*range(1, 5))
+        sql, sql_args = i.get_SQL(s, q)
+        self.assertTrue('_id' in sql)
+        self.assertEqual(4, len(sql_args))
+
+        q.gt_foo(5)
+
+        sql, sql_args = i.get_SQL(s, q)
+        self.assertTrue('foo' in sql)
+        self.assertTrue('AND' in sql)
+        self.assertEqual(5, len(sql_args))
+
+        q.asc_foo().desc_bar()
+        sql, sql_args = i.get_SQL(s, q)
+        self.assertTrue('ORDER BY' in sql)
+        self.assertTrue('ASC' in sql)
+        self.assertTrue('DESC' in sql)
+
+        q.set_limit(222).set_offset(111)
+
+        sql, sql_args = i.get_SQL(s, q)
+        self.assertTrue('LIMIT' in sql)
+        self.assertTrue('OFFSET' in sql)
+        self.assertTrue('222' in sql)
+        self.assertTrue('111' in sql)
+
+    def test_get_one(self):
+        i, s = self.get_table()
+        _ids = self.insert(i, s, 2)
+
+        for _id in _ids:
+            q = query.Query()
+            q.is__id(_id)
+            d = i.get_one(s, q)
+            self.assertEqual(d[s._id], _id)
+
+        q = query.Query()
+        q.is__id(12334342)
+        d = i.get_one(s, q)
+        self.assertEqual({}, d)
+
+    def test_get(self):
+        i, s = self.get_table()
+        _ids = self.insert(i, s, 5)
+
+        q = query.Query()
+        q.in__id(*_ids)
+        l = i.get(s, q)
+        self.assertEqual(len(_ids), len(l))
+        for d in l:
+            self.assertTrue(d[s._id] in _ids)
+
+        q.set_limit(2)
+        l = i.get(s, q)
+        self.assertEqual(2, len(l))
+        for d in l:
+            self.assertTrue(d[s._id] in _ids)
+
+    def test_get_no_where(self):
+        i, s = self.get_table()
+        _ids = self.insert(i, s, 5)
+
+        q = None
+        l = i.get(s, q)
+        self.assertEqual(5, len(l))
+
+    def test_get_pagination(self):
+        i, s = self.get_table()
+        _ids = self.insert(i, s, 12)
+
+        q = query.Query()
+        q.set_limit(5)
+        count = 0
+        for p in xrange(1, 5):
+            q.set_page(p)
+            l = i.get(s, q)
+            for d in l:
+                self.assertTrue(d[s._id] in _ids)
+
+            count += len(l)
+
+        self.assertEqual(12, count)
+
+    def test_count(self):
+        i, s = self.get_table()
+
+        # first try it with no rows
+        q = query.Query()
+        r = i.count(s, q)
+        self.assertEqual(0, r)
+
+        # now try it with rows
+        _ids = self.insert(i, s, 5)
+        q = query.Query()
+        r = i.count(s, q)
+        self.assertEqual(5, r)
+
+    def test_delete(self):
+        i, s = self.get_table()
+        _ids = self.insert(i, s, 5)
+
+        q = query.Query()
+        q.in__id(*_ids)
+        l = i.get(s, q)
+        self.assertEqual(5, len(l))
+
+        i.delete(s, q)
+
+        l = i.get(s, q)
+        self.assertEqual(0, len(l))
+
+        # make sure it stuck
+        i.close()
+        i = self.get_interface()
+        l = i.get(s, q)
+        self.assertEqual(0, len(l))
+
+    def test_update(self):
+        i = self.get_interface()
+        s = self.get_schema()
+        i.set_table(s)
+
+        d = {
+            'foo': 1,
+            'bar': 'value 1',
+        }
+
+        rd = i.insert(s, d)
+        self.assertGreater(rd[s._id], 0)
+
+        rd['foo'] = 2
+        rd['bar'] = 'value 2'
+        d = dict(rd)
+
+        ud = i.update(s, d[s._id], d)
+
+        self.assertEqual(ud['foo'], d['foo'])
+        self.assertEqual(ud['bar'], d['bar'])
+        self.assertEqual(ud[s._id], d[s._id])
 
 
 class QueryTest(TestCase):

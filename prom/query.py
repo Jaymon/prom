@@ -14,16 +14,28 @@ example --
 
 class Query(object):
 
-    def __init__(self, table_name, *args, **kwargs):
-        self.table_name = table_name
+    def __init__(self, interface=None, schema=None, *args, **kwargs):
+
+        # needed to use the db querying methods like get() and get_one()
+        self.interface = interface
+        self.schema = schema
+
+        self.fields = []
         self.fields_where = []
         self.fields_sort = []
         self.bounds = {}
         self.args = args
         self.kwargs = kwargs
 
-    def set_field(self, field_name, field_val):
-        return self.is_field(field_name, field_val)
+    def set_field(self, field_name, field_val=None):
+        """
+        set a field into .fields attribute
+
+        this has a dual role, in select queries, these are the select fields, but in insert/update
+        queries, these are the fields that will be inserted/updated into the db
+        """
+        self.fields.append([field_name, field_val])
+        return self
 
     def is_field(self, field_name, field_val):
         self.fields_where.append(["is", field_name, field_val])
@@ -156,14 +168,6 @@ class Query(object):
 
     def set(self):
         # use _insert and _update to persist the object
-        pass
-
-    def _insert(self):
-        # insert the key: val dict that was added via set_fields() and set_field()
-        pass
-
-    def _update(self):
-        # update using the where criteria the set_fields() and set_field() values
         pass
 
     def delete(self):

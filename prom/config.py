@@ -89,6 +89,20 @@ class Schema(object):
     indexes = None
     """dict -- all the indexes this schema will have"""
 
+    @property
+    def primary_key(self):
+        """return the primary key of the table schema, or None if there isn't one"""
+        ret = None
+        for field_name, field_options in self.fields.iteritems():
+            if field_options.get('primary_key', False):
+                ret = field_name
+                break
+
+        if not ret:
+            raise AttributeError("no primary key in schema")
+
+        return ret
+
     def __init__(self, table, **fields):
         """
         create an instance
@@ -109,7 +123,7 @@ class Schema(object):
         """
         self.fields = {}
         self.indexes = {}
-        self.table = table
+        self.table = str(table)
 
         self._id = long, True, dict(primary_key=True)
         self._created = long, True
@@ -119,6 +133,9 @@ class Schema(object):
 
         for field_name, field_val in fields.iteritems():
             setattr(self, field_name, field_val)
+
+    def __str__(self):
+        return self.table
 
     def __setattr__(self, name, val):
         """
