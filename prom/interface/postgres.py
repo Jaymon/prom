@@ -246,6 +246,9 @@ class Interface(BaseInterface):
         """
         convert the query instance into SQL
 
+        this is the glue method that translates the generic Query() instance to the postgres
+        specific SQL query, this is where the magic happens
+
         **sql_options -- dict
             count_query -- boolean -- true if this is a count query SELECT
             only_where_clause -- boolean -- true to only return after WHERE ...

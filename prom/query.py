@@ -14,11 +14,11 @@ example --
 
 class Query(object):
 
-    def __init__(self, interface=None, schema=None, *args, **kwargs):
+    def __init__(self, orm=None, *args, **kwargs):
 
-        # needed to use the db querying methods like get() and get_one()
-        self.interface = interface
-        self.schema = schema
+        # needed to use the db querying methods like get(), if you just want to build
+        # a query then you don't need to bother passing this in
+        self.orm = orm
 
         self.fields = []
         self.fields_where = []
@@ -67,10 +67,16 @@ class Query(object):
         return self
 
     def in_field(self, field_name, *field_vals):
+        """
+        NOTE -- if you have a list of values, it has to be passed in using the *, in_field("name", *list_of_values)
+        """
         self.fields_where.append(["in", field_name, field_vals])
         return self
 
     def nin_field(self, field_name, *field_vals):
+        """
+        NOTE -- if you have a list of values, it has to be passed in using the *, nin_field("name", *list_of_values)
+        """
         self.fields_where.append(["nin", field_name, field_vals])
         return self
 
@@ -156,24 +162,33 @@ class Query(object):
         if page is not None:
             self.set_page(page)
 
-        # pass this to a db object that is capable of making a query
+        return self._query('get')
 
     def get_one(self):
-        # get one row from the db
-        pass
+        """get one row from the db"""
+        return self._query('get_one')
 
     def count(self):
-        # return the count of the criteria
-        pass
+        """return the count of the criteria"""
+        return self._query('count')
 
-    def set(self):
-        # use _insert and _update to persist the object
-        pass
+#    def set(self):
+#        # use _insert and _update to persist the object
+#        pass
 
     def delete(self):
-        # remove fields matching the where criteria
-        pass
+        """remove fields matching the where criteria"""
+        return self._query('delete')
 
-def table(table_name, *args, **kwargs):
-    return Query(table_name, *args, **kwargs)
+    def get_query(self, query_str, *query_args, **query_options):
+        """
+        use the interface query method to pass in your own raw query
+        """
+        i = self.orm.interface
+        return i.query(query_str, *query_args, **query_options)
+
+    def _query(self, method_name):
+        i = self.orm.interface
+        s = self.orm.schema
+        return getattr(i, method_name)(s, self)
 

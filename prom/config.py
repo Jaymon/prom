@@ -1,7 +1,7 @@
 import types
-from urlparse import urlparse
-import re
+import urlparse
 
+import re
 
 class Connection(object):
     """
@@ -9,6 +9,11 @@ class Connection(object):
 
     https://github.com/Jaymon/Mingo/blob/master/Mingo/MingoConfig.php
     """
+    name = ""
+    """string -- the name of this connection (eg, Postgres, or SQLite)"""
+
+    interface_name = ""
+    """string -- full Interface class name -- the interface the connection should use to talk with the db"""
 
     database = ""
     """the db name to use, in postgres, this is the database name"""
@@ -25,12 +30,13 @@ class Connection(object):
     options = None
     """any other db options, these can be interface implementation specific"""
 
-    debug = False
+    #debug = False
     """true to turn on debugging for this connection"""
 
     @property
     def host(self):
         """the db host"""
+        if not hasattr(self, '_host'): self._host = None
         return self._host
 
     @host.setter
@@ -38,13 +44,12 @@ class Connection(object):
         """
         check host for a :port, and split that off into the .port attribute if there
         """
-
         # normalize the host so urlparse can parse it correctly
         # http://stackoverflow.com/questions/9530950/parsing-hostname-and-port-from-string-or-url#comment12075005_9531210
         if not re.match(ur'(?:\S+|^)\/\/', h):
             h = "//{}".format(h)
 
-        o = urlparse(h)
+        o = urlparse.urlparse(h)
 
         self._host = o.hostname
         if o.port: self.port = o.port
@@ -71,6 +76,62 @@ class Connection(object):
             else:
                 self.options[key] = val
 
+class DsnConnection(Connection):
+    """
+    sets up a connection configuration using a "prom dsn" or connection string
+
+    the prom dsn is in the form:
+
+        <full.python.path.InterfaceClass>://<username>:<password>@<host>:<port>/<database>?<options=val&query=string>#<name>
+
+    This is useful to allow connections coming in through environment variables as described
+    http://www.12factor.net/backing-services
+
+    It tooks its inspiration from this project https://github.com/kennethreitz/dj-database-url
+
+    http://en.wikipedia.org/wiki/Connection_string
+    http://en.wikipedia.org/wiki/Data_source_name
+    """
+    def __init__(self, dsn):
+        # get the scheme, which is actually our interface_name
+        first_colon = dsn.find(':')
+        interface_name = dsn[0:first_colon]
+        dsn_url = dsn[first_colon+1:]
+        url = urlparse.urlparse(dsn_url)
+
+        # parse the query into options
+        options = {}
+        if url.query:
+            for k, kv in urlparse.parse_qs(url.query, True).iteritems():
+                if len(kv) > 1:
+                    options[k] = kv
+                else:
+                    options[k] = kv[0]
+
+        d = {
+            'interface_name': interface_name,
+            'database': url.path[1:],
+        }
+
+        if url.hostname:
+            d['host'] = url.hostname
+
+        if url.port:
+            d['port'] = url.port
+
+        if url.username:
+            d['username'] = url.username
+
+        if url.password:
+            d['password'] = url.password
+
+        if url.fragment:
+            d['name'] = url.fragment
+
+        if options:
+            d['options'] = options
+
+        super(DsnConnection, self).__init__(**d)
 
 class Schema(object):
     """

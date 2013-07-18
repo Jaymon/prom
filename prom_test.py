@@ -5,10 +5,166 @@ import random
 import string
 
 from prom import query
-from prom.config import Schema, Connection
-
-
+from prom.config import Schema, Connection, DsnConnection
 from prom.interface.postgres import Interface as PGInterface
+from prom.orm import Orm
+import prom
+
+def get_interface():
+    # TODO change all this to use an environment variable DSN
+    config = Connection()
+    config.database = "vagrant"
+    config.username = "vagrant"
+    config.password = "vagrant"
+    config.host = "localhost"
+
+    i = PGInterface()
+    i.connect(config)
+    assert i.connection is not None
+    assert i.connected
+
+    return i
+
+def get_schema(table_name=None):
+    if not table_name:
+        table_name = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+
+    s = Schema(
+        table_name,
+        foo=(int, True),
+        bar=(str, True),
+        index_ifoobar=("foo", "bar")
+    )
+
+    return s
+
+def get_table(table_name=None):
+    """
+    return an interface and schema for a table in the db
+    
+    return -- tuple -- interface, schema
+    """
+    i = get_interface()
+    s = get_schema(table_name)
+    i.set_table(s)
+    return i, s
+
+def insert(interface, schema, count):
+    """
+    insert count rows into schema using interface
+    """
+    _ids = []
+
+    for i in xrange(1, count + 1):
+        d = {
+            'foo': i,
+            'bar': 'value {}'.format(i)
+        }
+        d = interface.set(schema, d)
+
+        assert 'foo' in d
+        assert 'bar' in d
+        assert schema._id in d
+        _ids.append(d[schema._id])
+
+    return _ids
+
+class Torm(Orm):
+    pass
+
+class Torm2Query(query.Query):
+    pass
+class Torm2(Orm):
+    pass
+
+class OrmTest(TestCase):
+
+    def setUp(self):
+        i, s = get_table()
+        Torm.schema = s
+        prom.set_interface(i)
+        prom.set_interface(i, "torm2")
+
+        Torm2.schema = s
+        Torm2.connection_name = "torm2"
+
+    def test_query(self):
+        _ids = insert(Torm.interface, Torm.schema, 5)
+        l = Torm.query.in__id(*_ids).get()
+        self.assertEqual(len(_ids), len(l))
+
+    def test_query_class(self):
+        """
+        I just wanted to make sure you can set the query class and it is picked up
+        correctly, also, defining a class in a function is a special case that I wanted
+        to see how it was handled
+        """
+
+        class QueryClassTormQuery(query.Query):
+            pass
+
+        class QueryClassTorm(Orm):
+            query_class = QueryClassTormQuery
+            pass
+
+        self.assertEqual(QueryClassTorm.query_class, QueryClassTormQuery)
+        self.assertEqual(Torm.query_class, query.Query)
+        self.assertEqual(Torm2.query_class, Torm2Query)
+
+    def test_interface(self):
+        i = Torm.interface
+        self.assertFalse(i is None)
+
+        i = Torm2.interface
+        self.assertFalse(i is None)
+
+        # even though connection name has changed, interface was cached, so there shouldn't
+        # be a problem, (I think this should be expected behavior, how often would this really happen?)
+        Torm2.connection_name = "blkasdfjksdafjdkfklsd"
+        i = Torm2.interface
+        self.assertFalse(i is None)
+
+        # now let's make sure a different orm with a bad connection name gets flagged
+        class TormInterfaceOrm(Orm):
+            connection_name = "blkasdfjksdafjdkfklsd"
+            pass
+
+        with self.assertRaises(KeyError):
+            i = TormInterfaceOrm.interface
+
+    def test___init__(self):
+        t = Torm(foo=1)
+        self.assertTrue('foo' in t.modified_fields)
+        self.assertEqual(1, t.foo)
+
+
+class PromTest(TestCase):
+    def test_configure(self):
+        dsn = 'prom.interface.postgres.Interface://username:password@localhost/db'
+        prom.configure(dsn)
+        i = prom.get_interface()
+        self.assertTrue(i is not None)
+
+        dsn += '#postgres'
+        prom.configure(dsn)
+        i = prom.get_interface('postgres')
+        self.assertTrue(i is not None)
+
+        dsn = 'bogus.earaskdfaksfk.Interface://host/dbname#postgres'
+        with self.assertRaises(ValueError):
+            prom.configure(dsn)
+
+        dsn = 'bogus.earaskdfaksfk.Interface://host/dbname'
+        with self.assertRaises(ValueError):
+            prom.configure(dsn)
+
+        dsn = 'bogus.earaskdfaksfk.Interface://host/dbname#bogus1'
+        with self.assertRaises(ImportError):
+            prom.configure(dsn)
+
+        dsn = 'prom.interface.postgres.BogusSdjaksdfInterface://host/dbname#bogus2'
+        with self.assertRaises(AttributeError):
+            prom.configure(dsn)
 
 class ConfigSchemaTest(TestCase):
 
@@ -139,6 +295,115 @@ class ConfigSchemaTest(TestCase):
 
         self.assertEqual(s._id, s.primary_key)
 
+class ConfigDsnConnectionTest(TestCase):
+    def test_dsn(self):
+
+        tests = [
+            (
+                "some.Backend://username:password@localhost:5000/database?option=1&var=2#fragment",
+                {
+                    'username': "username",
+                    'interface_name': "some.Backend",
+                    'database': "database",
+                    'host': "localhost",
+                    'port': 5000,
+                    'password': "password",
+                    'options': {
+                        'var': "2",
+                        'option': "1"
+                    }
+                }
+            ),
+            (
+                "a.long.backend.Interface://localhost:5/database2",
+                {
+                    'interface_name': "a.long.backend.Interface",
+                    'database': "database2",
+                    'host': "localhost",
+                    'port': 5,
+                }
+            ),
+            (
+                "Interface://localhost/db3",
+                {
+                    'interface_name': "Interface",
+                    'database': "db3",
+                    'host': "localhost",
+                }
+            ),
+            (
+                "Interface:///db4",
+                {
+                    'interface_name': "Interface",
+                    'database': "db4",
+                }
+            ),
+            (
+                "Interface:///relative/path/to/db/4.sqlite",
+                {
+                    'interface_name': "Interface",
+                    'database': "relative/path/to/db/4.sqlite",
+                }
+            ),
+            (
+                "Interface:////abs/path/to/db/4.sqlite",
+                {
+                    'interface_name': "Interface",
+                    'database': "/abs/path/to/db/4.sqlite",
+                }
+            ),
+            (
+                "Interface:////abs/path/to/db/4.sqlite?var1=1&var2=2",
+                {
+                    'interface_name': "Interface",
+                    'database': "/abs/path/to/db/4.sqlite",
+                    'options': {
+                        'var1': "1",
+                        'var2': "2"
+                    }
+                }
+            ),
+            (
+                "Interface:////abs/path/to/db/4.sqlite?var1=1&var2=2#name",
+                {
+                    'interface_name': "Interface",
+                    'database': "/abs/path/to/db/4.sqlite",
+                    'name': "name",
+                }
+            ),
+            (
+                "Interface:////abs/path/to/db/4.sqlite?var1=1&var2=2#name",
+                {
+                    'interface_name': "Interface",
+                    'database': "/abs/path/to/db/4.sqlite",
+                    'name': "name",
+                    'options': {
+                        'var1': "1",
+                        'var2': "2"
+                    }
+                }
+            ),
+            (
+                "Interface://localhost/db3?var1=1&var2=2#name",
+                {
+                    'interface_name': "Interface",
+                    'database': "db3",
+                    'host': "localhost",
+                    'name': "name",
+                    'options': {
+                        'var1': "1",
+                        'var2': "2"
+                    }
+                }
+            ),
+        ]
+
+        for t in tests:
+           c = DsnConnection(t[0])
+           for attr, val in t[1].iteritems():
+               self.assertEqual(val, getattr(c, attr))
+
+
 class ConfigConnectionTest(TestCase):
 
     def test___init__(self):
@@ -180,64 +445,18 @@ class ConfigConnectionTest(TestCase):
 
 
 class InterfacePostgresTest(TestCase):
-
+    # TODO -- switch all get_interface, get_schema, and get_table to not use self.
     def get_interface(self):
-        # TODO change all this to use an environment variable DSN
-        config = Connection()
-        config.database = "vagrant"
-        config.username = "vagrant"
-        config.password = "vagrant"
-        config.host = "localhost"
-
-        i = PGInterface()
-        i.connect(config)
-        self.assertTrue(i.connection is not None)
-        self.assertTrue(i.connected)
-        return i
+        return get_interface()
 
     def get_schema(self, table_name=None):
-        if not table_name:
-            table_name = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
-
-        s = Schema(
-            table_name,
-            foo=(int, True),
-            bar=(str, True),
-            index_ifoobar=("foo", "bar")
-        )
-
-        return s
+        return get_schema(table_name)
 
     def get_table(self, table_name=None):
-        """
-        return an interface and schema for a table in the db
-        
-        return -- tuple -- interface, schema
-        """
-        i = self.get_interface()
-        s = self.get_schema(table_name)
-        i.set_table(s)
-        return i, s
+        return get_table(table_name)
 
     def insert(self, interface, schema, count):
-        """
-        insert count rows into schema using interface
-        """
-        _ids = []
-
-        for i in xrange(1, count + 1):
-            d = {
-                'foo': i,
-                'bar': 'value {}'.format(i)
-            }
-            d = interface.set(schema, d)
-
-            self.assertTrue('foo' in d)
-            self.assertTrue('bar' in d)
-            self.assertTrue(schema._id in d)
-            _ids.append(d[schema._id])
-
-        return _ids
+        return insert(interface, schema, count)
 
     def test_connect(self):
         i = self.get_interface()

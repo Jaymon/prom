@@ -18,6 +18,9 @@ class Interface(object):
     transaction = False
     """true if currently in a transaction, false if not in a transaction, see transaction_start(), transaction_stop()"""
 
+    def __init__(self, connection_config=None):
+        self.connection_config = connection_config
+
     def connect(self, connection_config=None, *args, **kwargs):
         """
         connect to the interface
