@@ -9,7 +9,7 @@ from .query import Query
 from .interface.postgres import Interface as PostgresInterface
 from . import decorators
 
-__version__ = '0.4'
+__version__ = '0.4.1'
 
 _interfaces = {}
 """holds all the configured interfaces"""
@@ -103,8 +103,7 @@ class Orm(object):
     @decorators.cachedclassproperty
     def query_class(cls):
         """
-        return the Query instance this class will use create Query instances to actually
-        query the db
+        return the Query class this class will use create Query instances to actually query the db
 
         To be as magical and helpful as possible, this will start at the child class and look
         for a ChildClassNameQuery defined in the same module, it will then move down through

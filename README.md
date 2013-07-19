@@ -23,12 +23,12 @@ Here is how you would define a new Orm class:
             index_email=('email') # set a normal index on email field
         )
 
-You can specify the connection using an environment and a prom dsn url:
+You can specify the connection using a prom dsn url:
 
     
     <full.python.path.InterfaceClass>://<username>:<password>@<host>:<port>/<database>?<options=val&query=string>#<name>
 
-So to use the builtin Postgres interface on `testdb` database `localhost` with username `testuser` and password `testpw`:
+So to use the builtin Postgres interface on `testdb` database on host `localhost` with username `testuser` and password `testpw`:
 
     prom.PostgresInterface://testuser:testpw@localhost/testdb
 
@@ -62,8 +62,114 @@ To use our new User class:
     for u in User.query.get():
         print u.username
 
-## Opinionated
+## The Query class
 
-Prom is pretty opinionated in what it does, it assumes you don't want to do joins, and that you never want to do an `OR` query on two different fields.
+You can access the query, or table, instance for each `prom.Orm` child you create by calling its `.query` class property:
 
+    print User.query # prom.Query
 
+Through the power of magic, everytime you call this property, a new `prom.Query` instance will be created.
+
+### Customize the Query class
+
+By default, Prom will look for a `<name>Query` class in the same module as your `prom.Orm` child, so, continuing the User example from above, if you wanted to make a custom `UserQuery` class:
+
+    # app.models (app/models.py)
+
+    class UserQuery(prom.Query):
+      def get_by_emails(self, *emails):
+        """get all users with matching emails, ordered by last updated first"""
+        return self.in_email(*emails).desc_updated().get()
+
+Now, we can further use the power of magic:
+
+    print User.query # app.models.UserQuery
+
+And boom, we were able to customize our queries by just adding a class. If you want to explicitely set the class your `prom.Orm` child should use (eg, you want all your models to use `random.module.CustomQuery` which wouldn't be auto-discovered by prom), you can set the `query_class` class property to whatever you want:
+
+    class DemoOrm(prom.Orm):
+      query_class = random.module.CustomQuery
+
+and then every instance of `DemoOrm` (or child that derives from it) will forever use `random.module.CustomQuery`.
+
+### Using the Query class
+
+You should check the actual code for the query class in `prom.query.Query` for all the methods you can use to create your queries, Prom allows you to set up the query using psuedo method names in the form:
+
+    command_fieldname(field_value)
+
+or, if you have the name in the field as a string:
+
+    command_field(fieldname, field_value)
+
+The different WHERE commands:
+
+  * `in` -- in_field(fieldname, *field_vals) -- do a sql `fieldname IN (field_val1, ...)` query
+  * `nin` -- nin_field(fieldname, *field_vals) -- do a sql `fieldname NOT IN (field_val1, ...)` query
+  * `is` -- is_field(fieldname, field_val) -- do a sql `fieldname = field_val` query
+  * `not` -- not_field(fieldname, field_val) -- do a sql `fieldname != field_val` query
+  * `gt` -- gt_field(fieldname, field_val) -- do a sql `fieldname > field_val` query
+  * `gte` -- gte_field(fieldname, field_val) -- do a sql `fieldname >= field_val` query
+  * `lt` -- lt_field(fieldname, field_val) -- do a sql `fieldname < field_val` query
+  * `lte` -- lte_field(fieldname, field_val) -- do a sql `fieldname <= field_val` query
+
+The different ORDER BY commands:
+
+  * `asc` -- asc_field(fieldname) -- do a sql `ORDER BY fieldname ASC` query
+  * `desc` -- desc_field(fieldname) -- do a sql `ORDER BY fieldname DESC` query
+
+And you can also set limit and page in the get query:
+
+    query.get(10, 1) # get 10 results for page 1 (offset 0)
+    query.get(10, 2) # get 10 results for page 2 (offset 10)
+
+They can be changed together:
+
+    # SELECT * from table_name WHERE foo=10 AND bar='value 2' ORDER BY che DESC LIMIT 5
+    query.is_foo(10).is_bar("value 2").desc_che().get(5)
+
+You can also write your own queries by hand:
+
+    query.get_query("SELECT * FROM table_name WHERE foo = %s", [foo_val])
+
+This is the only way to do join queries.
+
+## Multiple db interfaces or connections
+
+It's easy to have one set of `prom.Orm` children use one connection and another set use a different connection, the fragment part of a Prom dsn url sets the name:
+
+    import prom
+    prom.configure(prom.PostgresInterface://testuser:testpw@localhost/testdb#connection_1")
+    prom.configure(prom.PostgresInterface://testuser:testpw@localhost/testdb#connection_2")
+
+    class Orm1(prom.Orm):
+      connection_name = "connection_1"
+      
+    class Orm2(prom.Orm):
+      connection_name = "connection_2"
+
+Now, any class that extends `Orm1` will use `connection_1` and any orm that extends `Orm2` will use `connection_2`.
+
+## Using for the first time
+
+Prom takes the approach that you don't want to be hassled with installation while developing, so when it tries to do something and sees that the table doesn't exist, it will use your defined `prom.Schema` for your `prom.Orm` child and create a table for you, that way you don't have to remember to run a script or craft some custom db query to add your tables, Prom takes care of that for you automatically.
+
+## Other things
+
+Prom has a very similar interface to [Mingo](https://github.com/Jaymon/Mingo).
+
+I built Prom because I didn't feel like Python had a good "get out of your way" relational db orm that wasn't tied to some giant framework or that didn't try to be all things to all people.
+
+Prom is really super beta right now, built for [First Opinion](http://firstopinion.co/).
+
+Prom assumes you want to do certain things, and so it tries to make those things really easy to do, while assuming you don't want to do things like `JOIN` queries, so those are harder to do.
+
+## Installation
+
+Use pip
+
+    pip install prom
+
+License
+
+MIT

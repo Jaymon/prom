@@ -23,11 +23,11 @@ if not version:
 setup(
     name=name,
     version=version,
-    description='An opinionated lightweight orm for Postgres',
+    description='An opinionated lightweight db orm for Postgres',
     author='Jay Marcyes',
     author_email='jay@marcyes.com',
     url='http://github.com/firsopinion/{}'.format(name),
-    packages=[name],
+    packages=[name, '{}.interface'.format(name)],
     license="MIT",
     classifiers=[ # https://pypi.python.org/pypi?:action=list_classifiers
         'Development Status :: 4 - Beta',
