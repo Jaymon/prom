@@ -16,6 +16,7 @@ class classproperty(property):
 
     http://stackoverflow.com/questions/128573/using-property-on-classmethods
     http://stackoverflow.com/questions/5189699/how-can-i-make-a-class-property-in-python
+    http://docs.python.org/2/reference/datamodel.html#object.__setattr__
     """
     def __get__(self, instance, cls):
         return self.fget(cls)
@@ -44,6 +45,7 @@ class cachedclassproperty(classproperty):
     """
     def __get__(self, instance, cls):
         v = self.fget(cls)
+        # http://stackoverflow.com/questions/432786/how-can-i-assign-a-new-class-attribute-via-dict-in-python
         setattr(cls, self.fget.__name__, v)
         return v
 

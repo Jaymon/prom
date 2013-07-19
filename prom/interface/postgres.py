@@ -1,5 +1,9 @@
 """
 http://pythonhosted.org/psycopg2/module.html
+
+http://zetcode.com/db/postgresqlpythontutorial/
+http://wiki.postgresql.org/wiki/Using_psycopg2_with_PostgreSQL
+http://pythonhosted.org/psycopg2/
 """
 import os
 
@@ -33,7 +37,6 @@ class Interface(BaseInterface):
     def _query(self, query_str, query_args=None, **query_options):
         """
         **query_options -- dict
-            transaction -- boolean -- true to run this in a transaction
             ignore_result -- boolean -- true to not attempt to fetch results
             fetchone -- boolean -- true to only fetch one result
         """
