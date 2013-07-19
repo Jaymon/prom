@@ -6,10 +6,12 @@ import sys
 # first party
 from .config import DsnConnection, Schema
 from .query import Query
-from .interface.postgres import Interface as PostgresInterface
+# this needs psycopg2 to be installed to import, so I think it is better to make
+# it only available in longform so there are no unneeded dependencies to import prom
+#from .interface.postgres import Interface as PostgresInterface
 from . import decorators
 
-__version__ = '0.4.1'
+__version__ = '0.4.3'
 
 _interfaces = {}
 """holds all the configured interfaces"""

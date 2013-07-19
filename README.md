@@ -30,7 +30,7 @@ You can specify the connection using a prom dsn url:
 
 So to use the builtin Postgres interface on `testdb` database on host `localhost` with username `testuser` and password `testpw`:
 
-    prom.PostgresInterface://testuser:testpw@localhost/testdb
+    prom.interface.postgres.Interface://testuser:testpw@localhost/testdb
 
 To use our new User class:
 
@@ -38,7 +38,7 @@ To use our new User class:
     import prom
     from app.models import User
 
-    prom.configure("prom.PostgresInterface://testuser:testpw@localhost/testdb")
+    prom.configure("prom.interface.postgres.Interface://testuser:testpw@localhost/testdb")
 
     # create a user
     u = User(username='foo', password='awesome_and_secure_pw_hash', email='foo@bar.com')
@@ -139,8 +139,8 @@ This is the only way to do join queries.
 It's easy to have one set of `prom.Orm` children use one connection and another set use a different connection, the fragment part of a Prom dsn url sets the name:
 
     import prom
-    prom.configure(prom.PostgresInterface://testuser:testpw@localhost/testdb#connection_1")
-    prom.configure(prom.PostgresInterface://testuser:testpw@localhost/testdb#connection_2")
+    prom.configure(Interface://testuser:testpw@localhost/testdb#connection_1")
+    prom.configure(Interface://testuser:testpw@localhost/testdb#connection_2")
 
     class Orm1(prom.Orm):
       connection_name = "connection_1"
@@ -166,10 +166,16 @@ Prom assumes you want to do certain things, and so it tries to make those things
 
 ## Installation
 
-Use pip
+Prom currently requires psycopg2 since it only works with Postgres right now:
 
-    pip install prom
+    $ apt-get install libpq-dev python-dev
+    $ pip install psycopg
 
-License
+Then you can also use pip to install Prom:
+
+    $ pip install prom
+
+## License
 
 MIT
+
