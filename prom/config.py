@@ -151,8 +151,8 @@ class Schema(object):
     """dict -- all the indexes this schema will have"""
 
     @property
-    def primary_key(self):
-        """return the primary key of the table schema, or None if there isn't one"""
+    def pk(self):
+        """return the primary key of the table schema"""
         ret = None
         for field_name, field_options in self.fields.iteritems():
             if field_options.get('primary_key', False):

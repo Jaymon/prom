@@ -47,18 +47,3 @@ class cachedclassproperty(classproperty):
         setattr(cls, self.fget.__name__, v)
         return v
 
-# TODO -- remove
-def get_parents(cls):
-    parents = []
-    current_cls = [cls]
-
-    while current_cls:
-        parent = current_cls.pop()
-        pout.v(parent, parent.__subclasses__())
-        for child in parent.__subclasses__():
-            if child not in parents:
-                parents.append(child)
-                current_cls.append(child)
-
-    return parents
-

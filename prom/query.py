@@ -37,6 +37,15 @@ class Query(object):
         self.fields.append([field_name, field_val])
         return self
 
+    def set_fields(self, fields=None, **fields_kwargs):
+        """
+        completely replaces the current .fields with fields and fields_kwargs combined
+        """
+        if not fields: fields = {}
+        fields.update(fields_kwargs)
+        self.fields = fields
+        return self
+
     def is_field(self, field_name, field_val):
         self.fields_where.append(["is", field_name, field_val])
         return self
@@ -162,19 +171,29 @@ class Query(object):
         if page is not None:
             self.set_page(page)
 
-        return self._query('get')
+        for d in self._query('get'):
+            yield self._create_orm(d)
 
     def get_one(self):
         """get one row from the db"""
-        return self._query('get_one')
+        o = None
+        d = self._query('get_one')
+        if d:
+            o = self._create_orm(d)
+        return o
+
+    def get_pk(self, field_val):
+        """convenience method for running is__id(_id).get_one() since this is so common"""
+        field_name = self.orm.schema.pk
+        return self.is_field(field_name, field_val).get_one()
 
     def count(self):
         """return the count of the criteria"""
         return self._query('count')
 
-#    def set(self):
-#        # use _insert and _update to persist the object
-#        pass
+    def set(self):
+        """persist the .fields using .fields_where (if available)"""
+        return self._query('set')
 
     def delete(self):
         """remove fields matching the where criteria"""
@@ -191,4 +210,9 @@ class Query(object):
         i = self.orm.interface
         s = self.orm.schema
         return getattr(i, method_name)(s, self)
+
+    def _create_orm(self, d):
+        o = self.orm(**d)
+        o.reset_modified()
+        return o
 

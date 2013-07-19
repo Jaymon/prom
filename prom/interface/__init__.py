@@ -273,24 +273,22 @@ class Interface(object):
         """
         raise NotImplementedError("this needs to be implemented in a child class")
 
-    def update(self, schema, _id, d):
+    def update(self, schema, query):
         """
-        Persist d into the db at primary key value _id
+        Persist the query.fields into the db that match query.fields_where
 
         schema -- Schema()
-        _id -- id -- primary key value
-        d -- dict -- the values to persist
+        query -- Query() -- will be used to create the where clause
 
         return -- dict -- the dict that was inserted into the db
         """
         self.assure(schema)
+        d = query.fields
         d = self.prepare_dict(schema, d)
 
         try:
             self.transaction_start()
-            d.pop(schema._id, None) # we don't want to set the pk
-            r = self._update(schema, _id, d)
-            d[schema._id] = _id
+            r = self._update(schema, query, d)
             self.transaction_stop()
 
         except Exception, e:
@@ -298,20 +296,32 @@ class Interface(object):
 
         return d
 
-    def _update(self, schema, _id, d):
+    def _update(self, schema, query, d):
         raise NotImplementedError("this needs to be implemented in a child class")
 
-    def set(self, schema, d):
+    def set(self, schema, query):
         """
-        set d into the db
-        """
-        if schema._id in d:
-            _id = d.pop(schema._id, None)
-            d = self.update(schema, _id, d)
+        set d into the db, this is just a convenience method that will call either insert
+        or update depending on if query has a where clause
 
-        else:
-            # insert
-            d = self.insert(schema, d)
+        schema -- Schema()
+        query -- Query() -- set a where clause to perform an update, insert otherwise
+        return -- dict -- the dict inserted into the db
+        """
+        try:
+            if query.fields_where:
+                d = self.update(schema, query)
+
+            else:
+                # insert
+                d = query.fields
+                d = self.insert(schema, d)
+
+        except Exception, e:
+            if self.handle_error(schema, e):
+                d = self.set(schema, query)
+            else:
+                raise
 
         return d
 
@@ -343,7 +353,7 @@ class Interface(object):
 
         return -- dict -- the matching row
         """
-        ret = self._get_query(self._get, schema, query)
+        ret = self._get_query(self._get_one, schema, query)
         if not ret: ret = {}
         return ret
 
@@ -388,6 +398,9 @@ class Interface(object):
         return ret
 
     def _delete(self, schema, query):
+        raise NotImplementedError("this needs to be implemented in a child class")
+
+    def handle_error(self, schema, query):
         raise NotImplementedError("this needs to be implemented in a child class")
 
 

@@ -108,20 +108,18 @@ class Orm(object):
         query_class = cls.query_class
         return query_class(orm=cls)
 
+    @property
+    def pk(self):
+        """wrapper method to return the primary key, None if the primary key is not set"""
+        return getattr(self, self.schema.pk, None)
+
     def __init__(self, **fields):
 
-        self.modified_fields = set()
+        self.reset_modified()
 
         # go through and set all the values for 
         for field_name, field_val in fields.iteritems():
             setattr(self, field_name, field_val)
-
-
-#        s = self.schema
-#        for field_name in s.fields:
-#            if field_name in fields:
-#                setattr(self, field_name, fields[field_name])
-
 
     def __setattr__(self, field_name, field_val):
 
@@ -130,22 +128,77 @@ class Orm(object):
 
         s = self.schema
         if field_name in s.fields:
-            pout.v(field_name, field_val)
             self.modified_fields.add(field_name)
 
         self.__dict__[field_name] = field_val
 
     def set(self):
 
+        ret = False
         d = {}
 
         # get all the modified fields
         for field_name in self.modified_fields:
             d[field_name] = getattr(self, field_name)
 
+        if d:
+            q = self.query
+            # check if we should update, or insert
+            _id_name = self.schema.pk
+            _id = self.pk
+            if _id:
+                q.is_field(_id_name, _id)
 
-        _id = getattr(self, s.schema._id, None)
+            q.set_fields(d)
+            d = q.set()
+
+            for field_name, field_val in d.iteritems():
+                d[field_name] = setattr(self, field_name, field_val)
+
+            # orm values have now been persisted, so reset
+            self.modified_fields = set()
+            ret = True
+
+        return ret
+
+    def delete(self):
+
+        ret = False
+        q = self.query
+        _id = self.pk
+        _id_name = self.schema.pk
         if _id:
-            # insert
+            self.query.is_field(_id_name, _id).delete()
+            # get rid of _id
+            delattr(self, _id_name)
 
-        else
+            # mark all the fields that still exist as modified
+            self.reset_modified()
+            for field_name in self.schema.fields:
+                if hasattr(self, field_name):
+                    self.modified_fields.add(field_name)
+
+            ret = True
+
+        return ret
+
+    def is_modified(self):
+        """true if a field has been changed from its original value, false otherwise"""
+        return len(self.modified_fields) > 0
+
+    def reset_modified(self):
+        """
+        reset field modification tracking
+
+        this is handy for when you are loading a new Orm with the results from a query and
+        you don't want set() to do anything, you can Orm(**fields) and then orm.reset_modified() to
+        clear all the passed in fields from the modified list
+        """
+#        if b:
+#            if len(self.modified_fields) == 0:
+#                for field_name in self.schema.fields:
+#                    if not field_name.startwith('_'): # ignore the magic fields
+#                        self.modified_fields.add(field_name)
+#        else:
+        self.modified_fields = set()
+

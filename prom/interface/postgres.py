@@ -174,7 +174,7 @@ class Interface(BaseInterface):
     def _insert(self, schema, d):
 
         # get the primary key
-        primary_key_name = schema.primary_key
+        pk_name = schema.pk
 
         field_formats = []
         field_names = []
@@ -188,32 +188,33 @@ class Interface(BaseInterface):
             schema.table,
             ', '.join(field_names),
             ', '.join(field_formats),
-            primary_key_name
+            pk_name
         )
 
         ret = self._query(query_str, query_vals)
-        return ret[0][primary_key_name]
+        return ret[0][pk_name]
 
-    def _update(self, schema, _id, d):
+    def _update(self, schema, query, d):
 
-        primary_key_name = schema.primary_key
+        where_query_str, where_query_args = self.get_SQL(schema, query, only_where_clause=True)
+        pk_name = schema.pk
 
-        query_str = 'UPDATE {} SET {} WHERE {} = %s'
-        query_vals = []
+        query_str = 'UPDATE {} SET {} {}'
+        query_args = []
 
         field_str = []
         for field_name, field_val in d.iteritems():
             field_str.append('{} = %s'.format(field_name))
-            query_vals.append(field_val)
+            query_args.append(field_val)
 
         query_str = query_str.format(
             schema.table,
             ',{}'.format(os.linesep).join(field_str),
-            primary_key_name
+            where_query_str
         )
-        query_vals.append(_id)
+        query_args.extend(where_query_args)
 
-        return self._query(query_str, query_vals, ignore_result=True)
+        return self._query(query_str, query_args, ignore_result=True)
 
     def _get_one(self, schema, query):
         query_str, query_args = self.get_SQL(schema, query)
@@ -241,6 +242,15 @@ class Interface(BaseInterface):
         query_str.append(where_query_str)
         query_str = os.linesep.join(query_str)
         ret = self._query(query_str, query_args, ignore_result=True)
+
+    def handle_error(self, schema, e):
+        ret = False
+        if isinstance(e, psycopg2.ProgrammingError):
+            if schema.table in e.message and "does not exist" in e.message:
+                self.set_table(schema)
+                ret = True
+
+        return ret
 
     def get_SQL(self, schema, query, **sql_options):
         """

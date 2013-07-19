@@ -4,10 +4,9 @@ import sys
 import random
 import string
 
-from prom import query
+from prom import query, Orm
 from prom.config import Schema, Connection, DsnConnection
 from prom.interface.postgres import Interface as PGInterface
-from prom.orm import Orm
 import prom
 
 def get_interface():
@@ -56,11 +55,12 @@ def insert(interface, schema, count):
     _ids = []
 
     for i in xrange(1, count + 1):
-        d = {
+        q = query.Query()
+        q.set_fields({
             'foo': i,
             'bar': 'value {}'.format(i)
-        }
-        d = interface.set(schema, d)
+        })
+        d = interface.set(schema, q)
 
         assert 'foo' in d
         assert 'bar' in d
@@ -90,8 +90,8 @@ class OrmTest(TestCase):
 
     def test_query(self):
         _ids = insert(Torm.interface, Torm.schema, 5)
-        l = Torm.query.in__id(*_ids).get()
-        self.assertEqual(len(_ids), len(l))
+        lc = Torm.query.in__id(*_ids).count()
+        self.assertEqual(len(_ids), lc)
 
     def test_query_class(self):
         """
@@ -137,8 +137,56 @@ class OrmTest(TestCase):
         self.assertTrue('foo' in t.modified_fields)
         self.assertEqual(1, t.foo)
 
+    def test_set(self):
+        t = Torm(foo=1, bar="value 1", this_is_ignored="as it should be")
+        self.assertEqual(1, t.foo)
+        self.assertEqual("value 1", t.bar)
+        self.assertFalse(hasattr(t, '_id'))
+        self.assertTrue(t.is_modified())
+        t.set()
+        self.assertTrue(hasattr(t, '_id'))
+        self.assertFalse(t.is_modified())
+
+        t.foo = 2
+        t.bar = "value 2"
+        self.assertTrue(t.is_modified())
+        t.set()
+        self.assertEqual(2, t.foo)
+        self.assertEqual("value 2", t.bar)
+
+        # make sure set doesn't work again
+        r = t.set()
+        self.assertFalse(r)
+
+        # make sure it persisted
+        t.interface.close()
+        t2 = Torm.query.is__id(t._id).get_one()
+        self.assertFalse(t2.is_modified())
+        self.assertEqual(2, t2.foo)
+        self.assertEqual("value 2", t2.bar)
+
+    def test_delete(self):
+        t = Torm(foo=1, bar="value 1")
+        r = t.delete()
+        self.assertFalse(r)
+        t.set()
+        self.assertTrue(t.pk)
+        _id = t.pk
+
+        t.delete()
+        self.assertFalse(t.pk)
+        self.assertTrue(t.is_modified())
+
+        # make sure it persists
+        t.interface.close()
+        t2 = Torm.query.get_pk(_id)
+        self.assertEqual(None, t2)
 
 class PromTest(TestCase):
+
+    def setUp(self):
+        prom._interfaces = {}
+
     def test_configure(self):
         dsn = 'prom.interface.postgres.Interface://username:password@localhost/db'
         prom.configure(dsn)
@@ -165,6 +213,24 @@ class PromTest(TestCase):
         dsn = 'prom.interface.postgres.BogusSdjaksdfInterface://host/dbname#bogus2'
         with self.assertRaises(AttributeError):
             prom.configure(dsn)
+
+    def test_failure_set(self):
+        class FailureSetTorm(Orm):
+            interface = get_interface()
+            schema = get_schema()
+
+        f = FailureSetTorm(foo=1, bar="value 1")
+        f.set()
+        self.assertTrue(f.pk)
+
+    def test_failure_get(self):
+        class FailureGetTorm(Orm):
+            interface = get_interface()
+            schema = get_schema()
+
+        f = FailureGetTorm(foo=1, bar="value 1")
+        f.query.get()
+        # we succeeded if no error was raised
 
 class ConfigSchemaTest(TestCase):
 
@@ -293,7 +359,7 @@ class ConfigSchemaTest(TestCase):
         s = Schema("foo")
         s.bar = int, False
 
-        self.assertEqual(s._id, s.primary_key)
+        self.assertEqual(s._id, s.pk)
 
 class ConfigDsnConnectionTest(TestCase):
     def test_dsn(self):
@@ -445,36 +511,23 @@ class ConfigConnectionTest(TestCase):
 
 
 class InterfacePostgresTest(TestCase):
-    # TODO -- switch all get_interface, get_schema, and get_table to not use self.
-    def get_interface(self):
-        return get_interface()
-
-    def get_schema(self, table_name=None):
-        return get_schema(table_name)
-
-    def get_table(self, table_name=None):
-        return get_table(table_name)
-
-    def insert(self, interface, schema, count):
-        return insert(interface, schema, count)
-
     def test_connect(self):
-        i = self.get_interface()
+        i = get_interface()
 
     def test_close(self):
-        i = self.get_interface()
+        i = get_interface()
         i.close()
         self.assertTrue(i.connection is None)
         self.assertFalse(i.connected)
 
     def test_query(self):
-        i = self.get_interface()
+        i = get_interface()
         rows = i.query('SELECT version()')
         self.assertGreater(len(rows), 0)
 
     def test_set_table(self):
-        i = self.get_interface()
-        s = self.get_schema()
+        i = get_interface()
+        s = get_schema()
         r = i.has_table(s.table)
         self.assertFalse(r)
 
@@ -485,7 +538,7 @@ class InterfacePostgresTest(TestCase):
 
         # make sure it persists
         i.close()
-        i = self.get_interface()
+        i = get_interface()
         self.assertTrue(i.has_table(s.table))
 
         # make sure known indexes are there
@@ -499,8 +552,8 @@ class InterfacePostgresTest(TestCase):
         self.assertEqual(len(s.indexes), count)
 
     def test_get_tables(self):
-        i = self.get_interface()
-        s = self.get_schema()
+        i = get_interface()
+        s = get_schema()
         r = i.set_table(s)
         r = i.get_tables()
         self.assertTrue(s.table in r)
@@ -509,8 +562,8 @@ class InterfacePostgresTest(TestCase):
         self.assertTrue(s.table in r)
 
     def test_delete_table(self):
-        i = self.get_interface()
-        s = self.get_schema()
+        i = get_interface()
+        s = get_schema()
 
         r = i.set_table(s)
         self.assertTrue(i.has_table(s.table))
@@ -520,14 +573,11 @@ class InterfacePostgresTest(TestCase):
 
         # make sure it persists
         i.close()
-        i = self.get_interface()
+        i = get_interface()
         self.assertFalse(i.has_table(s.table))
 
     def test_insert(self):
-        i = self.get_interface()
-        s = self.get_schema()
-        i.set_table(s)
-
+        i, s = get_table()
         d = {
             'foo': 1,
             'bar': 'this is the value',
@@ -536,9 +586,22 @@ class InterfacePostgresTest(TestCase):
         rd = i.insert(s, d)
         self.assertGreater(rd[s._id], 0)
 
+    def test_set_insert(self):
+        """test just the insert portion of set"""
+        i, s = get_table()
+        q = query.Query()
+
+        q.set_fields({
+            'foo': 1,
+            'bar': 'this is the value',
+        })
+
+        rd = i.set(s, q)
+        self.assertGreater(rd[s._id], 0)
+
     def test_get_sql(self):
-        i = self.get_interface()
-        s = self.get_schema()
+        i = get_interface()
+        s = get_schema()
         q = query.Query()
         q.in__id(*range(1, 5))
         sql, sql_args = i.get_SQL(s, q)
@@ -567,8 +630,8 @@ class InterfacePostgresTest(TestCase):
         self.assertTrue('111' in sql)
 
     def test_get_one(self):
-        i, s = self.get_table()
-        _ids = self.insert(i, s, 2)
+        i, s = get_table()
+        _ids = insert(i, s, 2)
 
         for _id in _ids:
             q = query.Query()
@@ -582,8 +645,8 @@ class InterfacePostgresTest(TestCase):
         self.assertEqual({}, d)
 
     def test_get(self):
-        i, s = self.get_table()
-        _ids = self.insert(i, s, 5)
+        i, s = get_table()
+        _ids = insert(i, s, 5)
 
         q = query.Query()
         q.in__id(*_ids)
@@ -599,16 +662,18 @@ class InterfacePostgresTest(TestCase):
             self.assertTrue(d[s._id] in _ids)
 
     def test_get_no_where(self):
-        i, s = self.get_table()
-        _ids = self.insert(i, s, 5)
+        """test get with no where clause"""
+        i, s = get_table()
+        _ids = insert(i, s, 5)
 
         q = None
         l = i.get(s, q)
         self.assertEqual(5, len(l))
 
     def test_get_pagination(self):
-        i, s = self.get_table()
-        _ids = self.insert(i, s, 12)
+        """test get but moving through the results a page at a time to make sure limit and offset works"""
+        i, s = get_table()
+        _ids = insert(i, s, 12)
 
         q = query.Query()
         q.set_limit(5)
@@ -624,7 +689,7 @@ class InterfacePostgresTest(TestCase):
         self.assertEqual(12, count)
 
     def test_count(self):
-        i, s = self.get_table()
+        i, s = get_table()
 
         # first try it with no rows
         q = query.Query()
@@ -632,14 +697,14 @@ class InterfacePostgresTest(TestCase):
         self.assertEqual(0, r)
 
         # now try it with rows
-        _ids = self.insert(i, s, 5)
+        _ids = insert(i, s, 5)
         q = query.Query()
         r = i.count(s, q)
         self.assertEqual(5, r)
 
     def test_delete(self):
-        i, s = self.get_table()
-        _ids = self.insert(i, s, 5)
+        i, s = get_table()
+        _ids = insert(i, s, 5)
 
         q = query.Query()
         q.in__id(*_ids)
@@ -653,15 +718,13 @@ class InterfacePostgresTest(TestCase):
 
         # make sure it stuck
         i.close()
-        i = self.get_interface()
+        i = get_interface()
         l = i.get(s, q)
         self.assertEqual(0, len(l))
 
     def test_update(self):
-        i = self.get_interface()
-        s = self.get_schema()
-        i.set_table(s)
-
+        i, s = get_table()
+        q = query.Query()
         d = {
             'foo': 1,
             'bar': 'value 1',
@@ -670,39 +733,49 @@ class InterfacePostgresTest(TestCase):
         rd = i.insert(s, d)
         self.assertGreater(rd[s._id], 0)
 
-        rd['foo'] = 2
-        rd['bar'] = 'value 2'
-        d = dict(rd)
+        d = {
+            'foo': 2,
+            'bar': 'value 2',
+        }
+        q.set_fields(d)
+        q.is_field(s._id, rd[s._id])
 
-        ud = i.update(s, d[s._id], d)
+        ud = i.update(s, q)
 
         self.assertEqual(ud['foo'], d['foo'])
         self.assertEqual(ud['bar'], d['bar'])
-        self.assertEqual(ud[s._id], d[s._id])
+
+        # let's pull it out and make sure it persisted
+        q = query.Query()
+        q.is__id(rd[s._id])
+        gd = i.get_one(s, q)
+        self.assertEqual(ud['foo'], gd['foo'])
+        self.assertEqual(ud['bar'], gd['bar'])
+        self.assertEqual(rd[s._id], gd[s._id])
 
 
 class QueryTest(TestCase):
 
-    def test_split_method(self):
+    def test__split_method(self):
 
         tests = [
             ("get_foo", ("get", "foo")),
             ("is_foo", ("is", "foo")),
-            ("gt_foo_bar", ("is", "foo_bar")),
+            ("gt_foo_bar", ("gt", "foo_bar")),
         ]
 
-        q = query.Query("foo")
+        q = query.Query()
 
         for t in tests:
-            r = q.split_method(t[0])
+            r = q._split_method(t[0])
             self.assertEqual(t[1], r)
 
         with self.assertRaises(ValueError):
-            q.split_method("testing")
+            q._split_method("testing")
 
     def test___getattr__(self):
         
-        q = query.Query("foo")
+        q = query.Query()
         q.is_foo(1)
         self.assertEqual(1, len(q.fields_where))
         self.assertEqual(["is", "foo", 1], q.fields_where[0])
@@ -712,7 +785,6 @@ class QueryTest(TestCase):
 
     def test_where_field_methods(self):
         tests = [
-            ("set_field", ["foo", 1], ["is", "foo", 1]),
             ("is_field", ["foo", 1], ["is", "foo", 1]),
             ("not_field", ["foo", 1], ["not", "foo", 1]),
             ("lte_field", ["foo", 1], ["lte", "foo", 1]),
@@ -792,4 +864,44 @@ class QueryTest(TestCase):
 
         q.set_limit(-10)
         self.assertEqual((0, 0, 0), q.get_bounds())
+
+    def test_set(self):
+        i, s = get_table()
+        class TestSetTorm(Orm):
+            interface = i
+            schema = s
+
+        q = query.Query(orm=TestSetTorm)
+        d = q.set_fields(foo=1, bar="value 1").set()
+        for field_name in ['_id', 'foo', 'bar']:
+            self.assertTrue(field_name in d)
+            self.assertTrue(d[field_name])
+
+    def test_get(self):
+        i, s = get_table()
+        _ids = insert(i, s, 2)
+        class TestGetTorm(Orm):
+            interface = i
+            schema = s
+
+        q = query.Query(orm=TestGetTorm)
+        for o in q.get():
+            self.assertEqual(type(o), TestGetTorm)
+            self.assertTrue(o._id in _ids)
+            self.assertFalse(o.is_modified())
+
+
+    def test_get_one(self):
+        i, s = get_table()
+        _ids = insert(i, s, 1)
+        class TestGetOneTorm(Orm):
+            interface = i
+            schema = s
+
+        q = query.Query(orm=TestGetOneTorm)
+        o = q.get_one()
+        self.assertEqual(type(o), TestGetOneTorm)
+        self.assertTrue(o._id in _ids)
+        self.assertFalse(o.is_modified())
+
 
