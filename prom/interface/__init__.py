@@ -140,7 +140,7 @@ class Interface(object):
             self._set_table(schema)
 
             for index_name, index_d in schema.indexes.iteritems():
-                self.set_index(schema.table, **index_d)
+                self.set_index(schema, **index_d)
 
             self.transaction_stop()
 
@@ -210,11 +210,11 @@ class Interface(object):
     def _get_indexes(self, schema):
         raise NotImplementedError("this needs to be implemented in a child class")
 
-    def set_index(self, table_name, name, fields, unique=False):
+    def set_index(self, schema, name, fields, unique=False):
         """
-        add an index to table_name
+        add an index to the table
 
-        table_name -- string
+        schema -- Schema()
         name -- string -- the name of the index
         fields -- array -- the fields the index should be on
         unique -- boolean -- true if this is a unique index
@@ -222,14 +222,14 @@ class Interface(object):
         self.assure()
         try:
             self.transaction_start()
-            self._set_index(table_name, name, fields, unique)
+            self._set_index(schema, name, fields, unique)
             self.transaction_stop()
         except Exception, e:
             self.transaction_fail(e)
 
         return True
     
-    def _set_index(self, table_name, name, fields, unique=False):
+    def _set_index(self, schema, name, fields, unique=False):
         raise NotImplementedError("this needs to be implemented in a child class")
 
     def prepare_dict(self, schema, d):
@@ -400,8 +400,16 @@ class Interface(object):
     def _delete(self, schema, query):
         raise NotImplementedError("this needs to be implemented in a child class")
 
-    def handle_error(self, schema, query):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def handle_error(self, schema, e):
+        """
+        try and handle the error, return False if the error can't be handled
+
+        TODO -- this method is really general, maybe change this so there are a couple other methods
+        like isTableError() and isFieldError() that the child needs to flesh out, maybe someday
+
+        return -- boolean -- True if the error was handled, False if it wasn't
+        """
+        return False
 
 
 

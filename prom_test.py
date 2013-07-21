@@ -23,9 +23,13 @@ def get_interface():
 
     return i
 
+def get_table_name():
+    """return a random table name"""
+    return "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+
 def get_schema(table_name=None):
     if not table_name:
-        table_name = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+        table_name = get_table_name()
 
     s = Schema(
         table_name,
@@ -757,6 +761,105 @@ class InterfacePostgresTest(TestCase):
         self.assertEqual(ud['foo'], gd['foo'])
         self.assertEqual(ud['bar'], gd['bar'])
         self.assertEqual(rd[s._id], gd[s._id])
+
+    def test_ref(self):
+        i = get_interface()
+        table_name_1 = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+        table_name_2 = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+
+        s_1 = Schema(
+            table_name_1,
+            foo=(int, True)
+        )
+        s_2 = Schema(
+            table_name_2,
+            s_pk=(int, True, dict(ref=s_1)),
+        )
+
+        i.set_table(s_1)
+        i.set_table(s_2)
+
+        d1 = i.insert(s_1, {'foo': 1})
+        pk1 = d1[s_1.pk]
+
+        d2 = i.insert(s_2, {'s_pk': pk1})
+        pk2 = d2[s_2.pk]
+        q2 = query.Query()
+        q2.is__id(pk2)
+        # make sure it exists and is visible
+        r = i.get_one(s_2, q2)
+        self.assertGreater(len(r), 0)
+
+        q1 = query.Query()
+        q1.is__id(pk1)
+        i.delete(s_1, q1)
+
+        r = i.get_one(s_2, q2)
+        self.assertEqual({}, r)
+
+    def test_weak_ref(self):
+        i = get_interface()
+        table_name_1 = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+        table_name_2 = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+
+        s_1 = Schema(
+            table_name_1,
+            foo=(int, True)
+        )
+        s_2 = Schema(
+            table_name_2,
+            s_pk=(int, False, dict(weak_ref=s_1)),
+        )
+
+        i.set_table(s_1)
+        i.set_table(s_2)
+
+        d1 = i.insert(s_1, {'foo': 1})
+        pk1 = d1[s_1.pk]
+
+        d2 = i.insert(s_2, {'s_pk': pk1})
+        pk2 = d2[s_2.pk]
+        q2 = query.Query()
+        q2.is__id(pk2)
+        # make sure it exists and is visible
+        r = i.get_one(s_2, q2)
+        self.assertGreater(len(r), 0)
+
+        q1 = query.Query()
+        q1.is__id(pk1)
+        i.delete(s_1, q1)
+
+        r = i.get_one(s_2, q2)
+        self.assertGreater(len(r), 0)
+        self.assertIsNone(r['s_pk'])
+
+    def test_unique(self):
+        i = get_interface()
+        s = get_schema()
+        s.should_be_unique = int, True, dict(unique=True)
+        i.set_table(s)
+
+        d = i.insert(s, {'foo': 1, 'bar': 'v1', 'should_be_unique': 1})
+
+        with self.assertRaises(Exception):
+            d = i.insert(s, {'foo': 2, 'bar': 'v2', 'should_be_unique': 1})
+
+    def test_index_case(self):
+        # TODO -- make this work, _set_index() and get_SQL() need to be modified
+        return
+        i = get_interface()
+        s = Schema(
+            get_table_name(),
+            foo=(str, True),
+            index_foo=('foo'),
+        )
+        i.set_table(s)
+
+        d = i.insert(s, {'foo': 'FOO'})
+        q = query.Query()
+        q.is_foo('foo')
+        r = i.get_one(s, q)
+        pout.v(r)
 
 
 class QueryTest(TestCase):

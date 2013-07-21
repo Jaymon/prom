@@ -11,7 +11,7 @@ from .query import Query
 #from .interface.postgres import Interface as PostgresInterface
 from . import decorators
 
-__version__ = '0.4.4'
+__version__ = '0.5'
 
 _interfaces = {}
 """holds all the configured interfaces"""
@@ -105,7 +105,7 @@ class Orm(object):
     @decorators.cachedclassproperty
     def query_class(cls):
         """
-        return the Query class this class will use create Query instances to actually query the db
+        return the Query class this class will use to create Query instances to actually query the db
 
         To be as magical and helpful as possible, this will start at the child class and look
         for a ChildClassNameQuery defined in the same module, it will then move down through
@@ -156,6 +156,16 @@ class Orm(object):
         """wrapper method to return the primary key, None if the primary key is not set"""
         return getattr(self, self.schema.pk, None)
 
+    @property
+    def created(self):
+        """wrapper property method to return the created timestamp"""
+        return getattr(self, self.schema._created, None)
+
+    @property
+    def updated(self):
+        """wrapper property method to return the updated timestamp"""
+        return getattr(self, self.schema._updated, None)
+
     def __init__(self, **fields):
 
         self.reset_modified()
@@ -197,8 +207,7 @@ class Orm(object):
             for field_name, field_val in d.iteritems():
                 d[field_name] = setattr(self, field_name, field_val)
 
-            # orm values have now been persisted, so reset
-            self.modified_fields = set()
+            self.reset_modified()
             ret = True
 
         return ret
@@ -236,11 +245,9 @@ class Orm(object):
         you don't want set() to do anything, you can Orm(**fields) and then orm.reset_modified() to
         clear all the passed in fields from the modified list
         """
-#        if b:
-#            if len(self.modified_fields) == 0:
-#                for field_name in self.schema.fields:
-#                    if not field_name.startwith('_'): # ignore the magic fields
-#                        self.modified_fields.add(field_name)
-#        else:
         self.modified_fields = set()
+
+    def install(self):
+        """install the Orm's table using the Orm's schema"""
+        return self.interface.set_table(self.schema)
 

@@ -154,6 +154,33 @@ Now, any class that extends `Orm1` will use `connection_1` and any orm that exte
 
 Prom takes the approach that you don't want to be hassled with installation while developing, so when it tries to do something and sees that the table doesn't exist, it will use your defined `prom.Schema` for your `prom.Orm` child and create a table for you, that way you don't have to remember to run a script or craft some custom db query to add your tables, Prom takes care of that for you automatically.
 
+If you want to install the tables manually, you can create a script or something and use the `install()` method:
+
+    SomeOrm.install()
+
+## Schema class
+
+### Foreign Keys
+
+You can have a field reference the primary key of another field:
+
+    s1 = prom.Schema(
+      "table_1",
+      foo=(int,)
+    )
+
+    s2 = prom.Schema(
+      "table_2",
+      s1_id=(int, True, dict(ref=s1))
+    )
+
+the `ref` option creates a strong reference, which will delete the row from `s2` if the row from `s1` is deleted, if you would rather have the `s1_id` just set to None you can use the `weak_ref` option:
+
+    s2 = prom.Schema(
+      "table_2",
+      s1_id=(int, False, dict(weak_ref=s1))
+    )
+
 ## Other things
 
 Prom has a very similar interface to [Mingo](https://github.com/Jaymon/Mingo).
@@ -179,13 +206,3 @@ Then you can also use pip to install Prom:
 
 MIT
 
-## Thoughts
-
-#### Foreign keys
-
-I think you could do a psuedo foreign key using the schema options
-
-    schema.foo = int, True, dict(foreign_key=[OtherOrm, "field_name"])
-
-This would work, but there could be annoying problems, you would have to make sure the define order is correct (ie, a class above a class it wants to foreign key reference will throw an error, so the referenced Orm class will have to go above the class, this could get hairy).
-The other way to handle this is just to override some install method, so you could manually craft the queries, not crazy about this either, which is why it is just manually handled right now

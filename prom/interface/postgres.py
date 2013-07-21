@@ -6,6 +6,7 @@ http://wiki.postgresql.org/wiki/Using_psycopg2_with_PostgreSQL
 http://pythonhosted.org/psycopg2/
 """
 import os
+import types
 
 # third party
 import psycopg2
@@ -84,7 +85,9 @@ class Interface(BaseInterface):
         return [r['tablename'] for r in ret]
 
     def _set_table(self, schema):
-
+        """
+        http://www.postgresql.org/docs/9.1/static/sql-createtable.html
+        """
         query_str = []
         query_str.append("CREATE TABLE {} (".format(schema.table))
         query_fields = []
@@ -102,7 +105,7 @@ class Interface(BaseInterface):
                     # TODO, decide on SMALLINT if size is set
                 elif issubclass(field_options['type'], long):
                     field_type = 'BIGINT'
-                elif issubclass(field_options['type'], (str, unicode)):
+                elif issubclass(field_options['type'], types.StringTypes):
                     if 'size' in field_options:
                         field_type = 'CHAR({})'.format(field_options['size'])
                     elif 'max_size' in field_options:
@@ -118,8 +121,15 @@ class Interface(BaseInterface):
                     # http://pythonhosted.org/psycopg2/usage.html#adaptation-of-python-values-to-sql-types
                     raise ValueError('unknown python type: {}'.format(field_options['type'].__name__))
 
-                if 'required' in field_options:
+                if field_options.get('required', False):
                     field_type += ' NOT NULL'
+
+                if 'ref' in field_options: # strong ref, it deletes on fk row removal
+                    ref_s = field_options['ref']
+                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s.table, ref_s.pk)
+                elif 'weak_ref' in field_options: # weak ref, it sets column to null on fk row removal
+                    ref_s = field_options['weak_ref']
+                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s.table, ref_s.pk)
 
             query_fields.append('  {} {}'.format(field_name, field_type))
 
@@ -159,16 +169,25 @@ class Interface(BaseInterface):
 
         return ret
 
-    def _set_index(self, table_name, name, fields, unique=False):
+    def _set_index(self, schema, name, fields, unique=False):
         """
         NOTE -- we set the index name using <table_name>_<name> format since indexes have to have
         a globally unique name in postgres
+
+        http://www.postgresql.org/docs/9.1/static/sql-createindex.html
         """
+        # TODO -- indexes on strings are always case-insensitive in prom land?
+#        for i in xrange(len(fields)):
+#            field_name = fields[i]
+#            field_options = schema.fields[field_name]
+#            # if issubclass(field_options['type'], types.StringTypes):
+#            #    fields[i] = 'lower({})'.format(field_name)
+
         query_str = 'CREATE {}INDEX {}_{} ON {} USING BTREE ({})'.format(
-            'UNIQUE' if unique else '',
-            table_name,
+            'UNIQUE ' if unique else '',
+            schema,
             name,
-            table_name,
+            schema,
             ', '.join(fields)
         )
 
