@@ -179,3 +179,13 @@ Then you can also use pip to install Prom:
 
 MIT
 
+## Thoughts
+
+#### Foreign keys
+
+I think you could do a psuedo foreign key using the schema options
+
+    schema.foo = int, True, dict(foreign_key=[OtherOrm, "field_name"])
+
+This would work, but there could be annoying problems, you would have to make sure the define order is correct (ie, a class above a class it wants to foreign key reference will throw an error, so the referenced Orm class will have to go above the class, this could get hairy).
+The other way to handle this is just to override some install method, so you could manually craft the queries, not crazy about this either, which is why it is just manually handled right now

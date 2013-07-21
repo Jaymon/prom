@@ -10,12 +10,11 @@ from prom.interface.postgres import Interface as PGInterface
 import prom
 
 def get_interface():
-    # TODO change all this to use an environment variable DSN
-    config = Connection()
-    config.database = "vagrant"
-    config.username = "vagrant"
-    config.password = "vagrant"
-    config.host = "localhost"
+    config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
+#    config.database = "vagrant"
+#    config.username = "vagrant"
+#    config.password = "vagrant"
+#    config.host = "localhost"
 
     i = PGInterface()
     i.connect(config)
@@ -300,6 +299,12 @@ class ConfigSchemaTest(TestCase):
         s = Schema("foo")
         s.set_field("foo", int, options={"min_size": 10, "max_size": 50})
         self.assertEqual({'name': "foo", 'type': int, 'required': False, "min_size": 10, "max_size": 50}, s.fields["foo"])
+        self.assertFalse("foo" in s.indexes)
+
+        s = Schema("foo")
+        s.set_field("foo", int, options={"unique": True})
+        self.assertEqual({'name': "foo", 'type': int, 'required': False}, s.fields["foo"])
+        self.assertEqual({'name': "foo", 'fields': ["foo"], 'unique': True}, s.indexes["foo"])
 
     def test___setattr__field(self):
         s = Schema("foo")

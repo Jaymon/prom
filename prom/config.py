@@ -285,6 +285,9 @@ class Schema(object):
             size -- int -- the size you want the string to be, or the int to be
             min_size -- int -- the minimum size
             max_size -- int -- if you want a varchar, set this
+            unique -- boolean -- True to set a unique index on this field, this is just for convenience and is
+                equal to self.set_index(field_name, [field_name], unique=True). this is a convenience option
+                to set a unique index on the field without having to add a separate index statement
         """
         if not field_name:
             raise ValueError("field_name is empty")
@@ -316,6 +319,10 @@ class Schema(object):
             elif min_size >= 0 and max_size >= 0:
                 d['min_size'] = min_size
                 d['max_size'] = max_size
+
+        unique = options.pop("unique", False)
+        if unique:
+            self.set_index(field_name, [field_name], unique=unique)
 
         d.update(options)
         self.fields[field_name] = d
