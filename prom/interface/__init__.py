@@ -210,26 +210,26 @@ class Interface(object):
     def _get_indexes(self, schema):
         raise NotImplementedError("this needs to be implemented in a child class")
 
-    def set_index(self, schema, name, fields, unique=False):
+    def set_index(self, schema, name, fields, **index_options):
         """
         add an index to the table
 
         schema -- Schema()
         name -- string -- the name of the index
         fields -- array -- the fields the index should be on
-        unique -- boolean -- true if this is a unique index
+        **index_options -- dict -- any index options that might be useful to create the index
         """
         self.assure()
         try:
             self.transaction_start()
-            self._set_index(schema, name, fields, unique)
+            self._set_index(schema, name, fields, **index_options)
             self.transaction_stop()
         except Exception, e:
             self.transaction_fail(e)
 
         return True
     
-    def _set_index(self, schema, name, fields, unique=False):
+    def _set_index(self, schema, name, fields, **index_options):
         raise NotImplementedError("this needs to be implemented in a child class")
 
     def prepare_dict(self, schema, d):

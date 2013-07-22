@@ -343,6 +343,14 @@ class ConfigSchemaTest(TestCase):
         s.set_index("testing", [s.che], True)
         self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True}, s.indexes["testing"])
 
+        s = Schema("foo")
+        s.set_index("testing", ["che"], unique=True, ignore_case=True)
+        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True, 'ignore_case': True}, s.indexes["testing"])
+
+        s = Schema("foo")
+        s.set_index("testing", ["che"], ignore_case=True)
+        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': False, 'ignore_case': True}, s.indexes["testing"])
+
     def test___setattr__index(self):
         s = Schema("foo")
         s.foo = int,
@@ -363,6 +371,14 @@ class ConfigSchemaTest(TestCase):
 
         s.unique_test3 = s.foo,
         self.assertEqual({'name': "test3", 'fields': ["foo"], 'unique': True}, s.indexes["test3"])
+
+        s = Schema("foo")
+        s.iunique_testing = "che",
+        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True, 'ignore_case': True}, s.indexes["testing"])
+
+        s = Schema("foo")
+        s.iindex_testing =  "che",
+        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': False, 'ignore_case': True}, s.indexes["testing"])
 
     def test_primary_key(self):
         s = Schema("foo")

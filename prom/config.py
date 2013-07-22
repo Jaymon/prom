@@ -240,7 +240,9 @@ class Schema(object):
         index_types = {
             # index_type : **kwargs options
             'index': {},
+            'iindex': dict(ignore_case=True),
             'unique': dict(unique=True)
+            'iunique': dict(unique=True, ignore_case=True)
         }
 
         if name_bits[0] in index_types:
@@ -321,15 +323,16 @@ class Schema(object):
                 d['max_size'] = max_size
 
         unique = options.pop("unique", False)
-        if unique:
-            self.set_index(field_name, [field_name], unique=unique)
+        iunique = options.pop("iunique", False)
+        if unique or iunique:
+            self.set_index(field_name, [field_name], unique=True, ignore_case=iunique)
 
         d.update(options)
         self.fields[field_name] = d
 
         return self
 
-    def set_index(self, index_name, index_fields, unique=False):
+    def set_index(self, index_name, index_fields, unique=False, ignore_case=False):
         """
         add an index to the schema
 
@@ -340,6 +343,7 @@ class Schema(object):
         index_fields -- list -- the string field_names this index will index on, fields have to be already added
             to this schema index
         unique -- boolean -- True if the index should be unique, false otherwise
+        ignore_case -- boolean -- True if the index should ignore case, false if case is important
         """
         if not index_fields:
             raise ValueError("index_fields list is empty")
@@ -357,7 +361,8 @@ class Schema(object):
         self.indexes[index_name] = {
             'name': index_name,
             'fields': field_names,
-            'unique': unique
+            'unique': unique,
+            'ignore_case': ignore_case
         }
 
         return self

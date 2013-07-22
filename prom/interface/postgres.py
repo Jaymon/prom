@@ -169,7 +169,7 @@ class Interface(BaseInterface):
 
         return ret
 
-    def _set_index(self, schema, name, fields, unique=False):
+    def _set_index(self, schema, name, fields, **index_options):
         """
         NOTE -- we set the index name using <table_name>_<name> format since indexes have to have
         a globally unique name in postgres
@@ -177,14 +177,15 @@ class Interface(BaseInterface):
         http://www.postgresql.org/docs/9.1/static/sql-createindex.html
         """
         # TODO -- indexes on strings are always case-insensitive in prom land?
-#        for i in xrange(len(fields)):
-#            field_name = fields[i]
-#            field_options = schema.fields[field_name]
-#            # if issubclass(field_options['type'], types.StringTypes):
-#            #    fields[i] = 'lower({})'.format(field_name)
+        if index_options.pop('ignore_case', False):
+            for i in xrange(len(fields)):
+                field_name = fields[i]
+                field_options = schema.fields[field_name]
+                if issubclass(field_options['type'], types.StringTypes):
+                    fields[i] = 'lower({})'.format(field_name)
 
         query_str = 'CREATE {}INDEX {}_{} ON {} USING BTREE ({})'.format(
-            'UNIQUE ' if unique else '',
+            'UNIQUE ' if index_options.pop('unique', True) else '',
             schema,
             name,
             schema,
