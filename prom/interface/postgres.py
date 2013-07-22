@@ -176,20 +176,20 @@ class Interface(BaseInterface):
 
         http://www.postgresql.org/docs/9.1/static/sql-createindex.html
         """
-        # TODO -- indexes on strings are always case-insensitive in prom land?
-        if index_options.pop('ignore_case', False):
-            for i in xrange(len(fields)):
-                field_name = fields[i]
-                field_options = schema.fields[field_name]
-                if issubclass(field_options['type'], types.StringTypes):
-                    fields[i] = 'lower({})'.format(field_name)
+        index_fields = []
+        for field_name in fields:
+            field_options = schema.fields[field_name]
+            if issubclass(field_options['type'], types.StringTypes):
+                if field_options.get('ignore_case', False):
+                    field_name = 'UPPER({})'.format(field_name)
+            index_fields.append(field_name)
 
         query_str = 'CREATE {}INDEX {}_{} ON {} USING BTREE ({})'.format(
-            'UNIQUE ' if index_options.pop('unique', True) else '',
+            'UNIQUE ' if index_options.get('unique', False) else '',
             schema,
             name,
             schema,
-            ', '.join(fields)
+            ', '.join(index_fields)
         )
 
         return self._query(query_str, ignore_result=True)
@@ -275,6 +275,26 @@ class Interface(BaseInterface):
 
         return ret
 
+    def _normalize_list_SQL(self, schema, symbol, field_name, field_vals):
+
+        format_str = '%s'
+
+        # postgres specific for getting around case sensitivity:
+        if schema.fields[field_name].get('ignore_case', False):
+            format_str = 'UPPER(%s)'
+
+        return '{} {} ({})'.format(field_name, symbol, ', '.join([format_str] * len(field_vals)))
+
+    def _normalize_val_SQL(self, schema, symbol, field_name, field_val):
+
+        format_str = '%s'
+
+        # postgres specific for getting around case sensitivity:
+        if schema.fields[field_name].get('ignore_case', False):
+            format_str = 'UPPER(%s)'
+
+        return '{} {} {}'.format(field_name, symbol, format_str)
+
     def get_SQL(self, schema, query, **sql_options):
         """
         convert the query instance into SQL
@@ -288,18 +308,18 @@ class Interface(BaseInterface):
         """
         only_where_clause = sql_options.get('only_where_clause', False)
 
-        normalize_list = lambda symbol, field_name, args: '{} {} ({})'.format(field_name, symbol, ', '.join(['%s'] * len(args)))
-        normalize_val = lambda symbol, field_name, arg: '{} {} %s'.format(field_name, symbol)
+        #normalize_list = lambda symbol, field_name, args: '{} {} ({})'.format(field_name, symbol, ', '.join(['%s'] * len(args)))
+        #normalize_val = lambda symbol, field_name, arg: '{} {} %s'.format(field_name, symbol)
 
         symbol_map = {
-            'in': {'args': normalize_list, 'symbol': 'IN'},
-            'nin': {'args': normalize_list, 'symbol': 'NOT IN'},
-            'is': {'arg': normalize_val, 'symbol': '='},
-            'not': {'arg': normalize_val, 'symbol': '!='},
-            'gt': {'arg': normalize_val, 'symbol': '>'},
-            'gte': {'arg': normalize_val, 'symbol': '>='},
-            'lt': {'arg': normalize_val, 'symbol': '<'},
-            'lte': {'arg': normalize_val, 'symbol': '<='},
+            'in': {'args': self._normalize_list_SQL, 'symbol': 'IN'},
+            'nin': {'args': self._normalize_list_SQL, 'symbol': 'NOT IN'},
+            'is': {'arg': self._normalize_val_SQL, 'symbol': '='},
+            'not': {'arg': self._normalize_val_SQL, 'symbol': '!='},
+            'gt': {'arg': self._normalize_val_SQL, 'symbol': '>'},
+            'gte': {'arg': self._normalize_val_SQL, 'symbol': '>='},
+            'lt': {'arg': self._normalize_val_SQL, 'symbol': '<'},
+            'lte': {'arg': self._normalize_val_SQL, 'symbol': '<='},
         }
 
         query_args = []
@@ -328,10 +348,10 @@ class Interface(BaseInterface):
 
                 sd = symbol_map[field[0]]
                 if 'args' in sd:
-                    query_str.append('  {}'.format(sd['args'](sd['symbol'], field[1], field[2])))
+                    query_str.append('  {}'.format(sd['args'](schema, sd['symbol'], field[1], field[2])))
                     query_args.extend(field[2])
                 elif 'arg' in sd:
-                    query_str.append('  {}'.format(sd['arg'](sd['symbol'], field[1], field[2])))
+                    query_str.append('  {}'.format(sd['arg'](schema, sd['symbol'], field[1], field[2])))
                     query_args.append(field[2])
 
         if query.fields_sort:
@@ -349,6 +369,5 @@ class Interface(BaseInterface):
 
         query_str = os.linesep.join(query_str)
         return query_str, query_args
-
 
 

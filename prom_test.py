@@ -310,6 +310,10 @@ class ConfigSchemaTest(TestCase):
         self.assertEqual({'name': "foo", 'type': int, 'required': False}, s.fields["foo"])
         self.assertEqual({'name': "foo", 'fields': ["foo"], 'unique': True}, s.indexes["foo"])
 
+        s = Schema("foo")
+        s.set_field("foo", int, options={"ignore_case": True})
+        self.assertEqual({'name': "foo", 'type': int, 'required': False, 'ignore_case': True}, s.fields["foo"])
+
     def test___setattr__field(self):
         s = Schema("foo")
         s.bar = int, True
@@ -340,16 +344,16 @@ class ConfigSchemaTest(TestCase):
         with self.assertRaises(ValueError):
             s.set_index("bar_che", ["che", "bar"])
 
-        s.set_index("testing", [s.che], True)
+        s.set_index("testing", [s.che], unique=True)
         self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True}, s.indexes["testing"])
 
-        s = Schema("foo")
-        s.set_index("testing", ["che"], unique=True, ignore_case=True)
-        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True, 'ignore_case': True}, s.indexes["testing"])
-
-        s = Schema("foo")
-        s.set_index("testing", ["che"], ignore_case=True)
-        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': False, 'ignore_case': True}, s.indexes["testing"])
+#        s = Schema("foo")
+#        s.set_index("testing", ["che"], unique=True, ignore_case=True)
+#        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True, 'ignore_case': True}, s.indexes["testing"])
+#
+#        s = Schema("foo")
+#        s.set_index("testing", ["che"], ignore_case=True)
+#        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': False, 'ignore_case': True}, s.indexes["testing"])
 
     def test___setattr__index(self):
         s = Schema("foo")
@@ -372,13 +376,13 @@ class ConfigSchemaTest(TestCase):
         s.unique_test3 = s.foo,
         self.assertEqual({'name': "test3", 'fields': ["foo"], 'unique': True}, s.indexes["test3"])
 
-        s = Schema("foo")
-        s.iunique_testing = "che",
-        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True, 'ignore_case': True}, s.indexes["testing"])
-
-        s = Schema("foo")
-        s.iindex_testing =  "che",
-        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': False, 'ignore_case': True}, s.indexes["testing"])
+#        s = Schema("foo")
+#        s.iunique_testing = "che",
+#        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True, 'ignore_case': True}, s.indexes["testing"])
+#
+#        s = Schema("foo")
+#        s.iindex_testing =  "che",
+#        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': False, 'ignore_case': True}, s.indexes["testing"])
 
     def test_primary_key(self):
         s = Schema("foo")
@@ -860,23 +864,32 @@ class InterfacePostgresTest(TestCase):
         with self.assertRaises(Exception):
             d = i.insert(s, {'foo': 2, 'bar': 'v2', 'should_be_unique': 1})
 
-    def test_index_case(self):
+    def test_index_ignore_case(self):
         # TODO -- make this work, _set_index() and get_SQL() need to be modified
-        return
         i = get_interface()
         s = Schema(
             get_table_name(),
-            foo=(str, True),
-            index_foo=('foo'),
+            foo=(str, True, dict(ignore_case=True)),
+            bar=(str, True),
+            index_foo=('foo', 'bar'),
         )
         i.set_table(s)
 
-        d = i.insert(s, {'foo': 'FOO'})
+        d = i.insert(s, {'foo': 'FOO', 'bar': 'bar'})
         q = query.Query()
         q.is_foo('foo')
         r = i.get_one(s, q)
-        pout.v(r)
+        self.assertGreater(len(r), 0)
 
+        q = query.Query()
+        q.is_foo('Foo').is_bar('BAR')
+        r = i.get_one(s, q)
+        self.assertEqual(len(r), 0)
+
+        q = query.Query()
+        q.is_foo('FoO').is_bar('bar')
+        r = i.get_one(s, q)
+        self.assertGreater(len(r), 0)
 
 class QueryTest(TestCase):
 

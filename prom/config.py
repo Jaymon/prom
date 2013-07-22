@@ -240,9 +240,9 @@ class Schema(object):
         index_types = {
             # index_type : **kwargs options
             'index': {},
-            'iindex': dict(ignore_case=True),
+            #'iindex': dict(ignore_case=True),
             'unique': dict(unique=True)
-            'iunique': dict(unique=True, ignore_case=True)
+            #'iunique': dict(unique=True, ignore_case=True)
         }
 
         if name_bits[0] in index_types:
@@ -275,7 +275,7 @@ class Schema(object):
 
         return self.fields[name]['name']
 
-    def set_field(self, field_name, field_type, required=False, options=None):
+    def set_field(self, field_name, field_type, required=False, options=None, **options_kwargs):
         """
         add a field to the schema
 
@@ -290,6 +290,7 @@ class Schema(object):
             unique -- boolean -- True to set a unique index on this field, this is just for convenience and is
                 equal to self.set_index(field_name, [field_name], unique=True). this is a convenience option
                 to set a unique index on the field without having to add a separate index statement
+            ignore_case -- boolean -- True to ignore case if this field is used in indexes
         """
         if not field_name:
             raise ValueError("field_name is empty")
@@ -297,7 +298,9 @@ class Schema(object):
             raise ValueError("field_type is not a valid python built-in type: str, int, float, ...")
         if field_name in self.fields:
             raise ValueError("{} already exists and cannot be changed".format(field_name))
-        if not options: options = {}
+        if not options:
+            options = {}
+        options.update(options_kwargs)
 
         d = {
             'name': field_name,
@@ -323,16 +326,15 @@ class Schema(object):
                 d['max_size'] = max_size
 
         unique = options.pop("unique", False)
-        iunique = options.pop("iunique", False)
-        if unique or iunique:
-            self.set_index(field_name, [field_name], unique=True, ignore_case=iunique)
+        if unique:
+            self.set_index(field_name, [field_name], unique=True)
 
         d.update(options)
         self.fields[field_name] = d
 
         return self
 
-    def set_index(self, index_name, index_fields, unique=False, ignore_case=False):
+    def set_index(self, index_name, index_fields, **options):
         """
         add an index to the schema
 
@@ -342,8 +344,8 @@ class Schema(object):
         index_name -- string -- the name of the index
         index_fields -- list -- the string field_names this index will index on, fields have to be already added
             to this schema index
-        unique -- boolean -- True if the index should be unique, false otherwise
-        ignore_case -- boolean -- True if the index should ignore case, false if case is important
+        **options -- dict --
+            unique -- boolean -- True if the index should be unique, false otherwise
         """
         if not index_fields:
             raise ValueError("index_fields list is empty")
@@ -361,9 +363,9 @@ class Schema(object):
         self.indexes[index_name] = {
             'name': index_name,
             'fields': field_names,
-            'unique': unique,
-            'ignore_case': ignore_case
+            'unique': False
         }
+        self.indexes[index_name].update(options)
 
         return self
 
