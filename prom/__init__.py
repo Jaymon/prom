@@ -11,7 +11,7 @@ from .query import Query
 #from .interface.postgres import Interface as PostgresInterface
 from . import decorators
 
-__version__ = '0.5.1'
+__version__ = '0.6'
 
 _interfaces = {}
 """holds all the configured interfaces"""

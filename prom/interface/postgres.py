@@ -15,6 +15,7 @@ import psycopg2.extras
 # first party
 from ..interface import Interface as BaseInterface
 
+
 class Interface(BaseInterface):
 
     def _connect(self, connection_config):
@@ -48,8 +49,10 @@ class Interface(BaseInterface):
         one_result = query_options.get('fetchone', False)
 
         if not query_args:
+            self.log(query_str)
             cur.execute(query_str)
         else:
+            self.log("{}{}{}", query_str, os.linesep, query_args)
             cur.execute(query_str, query_args)
 
         if not ignore_result:

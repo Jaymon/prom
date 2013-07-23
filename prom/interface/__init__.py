@@ -1,8 +1,11 @@
 import calendar
 import datetime
+import logging
 
 # first party
 from ..query import Query
+
+logger = logging.getLogger(__name__)
 
 class Interface(object):
 
@@ -15,8 +18,15 @@ class Interface(object):
     connection_config = None
     """a config.Connection() instance"""
 
-    transaction = False
-    """true if currently in a transaction, false if not in a transaction, see transaction_start(), transaction_stop()"""
+    transaction = 0
+    """
+    counting semaphore, greater than 0 if in a transaction, 0 if no current current transaction.
+
+    This will be incremented everytime transaction_start() is called, and decremented
+    everytime transaction_stop() is called.
+
+    transaction_fail will set this back to 0 and rollback the transaction
+    """
 
     def __init__(self, connection_config=None):
         self.connection_config = connection_config
@@ -42,6 +52,7 @@ class Interface(object):
         else:
             raise ValueError("the ._connect() method did not set .connection attribute")
 
+        self.log("Connected {}", self.connection_config.interface_name)
         return self.connected
 
     def _connect(self, connection_config):
@@ -57,6 +68,7 @@ class Interface(object):
         self.connection.close()
         self.connection = None
         self.connected = False
+        self.log("Closed Connection {}", self.connection_config.interface_name)
         return True
 
     def assure(self, schema=None):
@@ -81,41 +93,49 @@ class Interface(object):
         """
         start a transaction
 
-        this should set self.transaction to true, this takes transaction management into your
-        hands, so you will have to call transaction_stop() to actually commit the changes, this
-        is indempotent, multiple calls are ignored if already in a transaction
+        this will increment transaction and start the transaction in the interface 
+        by calling _transaction_start() if this is the first time this is called.
+        Multiple calls will just increment the semaphore, but not call _transaction_start()
+        again
         """
-        if self.transaction: return True
+        if self.transaction == 0:
+            self._transaction_start()
 
-        self._transaction_start()
-        self.transaction = True
-        return True
+        self.transaction += 1
+        return self.transaction
 
     def _transaction_start(self):
         raise NotImplementedError("this needs to be implemented in a child class")
 
     def transaction_stop(self):
         """
-        stop/commit a transaction
+        stop/commit a transaction if ready
 
-        this should set self.transaction to False
+        this will decrement the transaction semaphore, if it decrements to 0 then it
+        will call _transaction_stop(), otherwise it won't
         """
-        if not self.transaction: return True
+        self.transaction -= 1
 
-        self._transaction_stop()
-        self.transaction = False
-        return True
+        if self.transaction == 0:
+            self._transaction_stop()
+        elif self.transaction < 0:
+            self.transaction = 0
+
+        return self.transaction
 
     def _transaction_stop(self):
         raise NotImplementedError("this needs to be implemented in a child class")
 
     def transaction_fail(self, e=None):
         """
-        rollback a transaction
+        rollback a transaction if currently in one
+
+        e -- Exception() -- if passed in, bubble up the exception by re-raising it
         """
-        if self.transaction: 
+        if self.transaction > 0: 
             self._transaction_fail(e)
-            self.transaction = False
+
+        self.transaction = 0
 
         if not e:
             return True
@@ -411,5 +431,19 @@ class Interface(object):
         """
         return False
 
+    def log(self, format_str, *format_args, **log_options):
+        """
+        wrapper around the module's logger
 
+        format_str -- string -- the message to log
+        *format_args -- list -- if format_str is a string containing {}, then format_str.format(*format_args) is ran
+        **log_options -- 
+            level -- something like logging.DEBUG
+        """
+        log_level = log_options.get('level', logging.DEBUG)
+        if logger.isEnabledFor(log_level):
+            if format_args:
+                logger.log(log_level, format_str.format(*format_args))
+            else:
+                logger.log(log_level, format_str)
 

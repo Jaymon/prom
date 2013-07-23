@@ -3,11 +3,20 @@ import os
 import sys
 import random
 import string
+import logging
 
 from prom import query, Orm
 from prom.config import Schema, Connection, DsnConnection
 from prom.interface.postgres import Interface as PGInterface
 import prom
+
+# configure root logger
+#logger = logging.getLogger()
+#logger.setLevel(logging.DEBUG)
+#log_handler = logging.StreamHandler(stream=sys.stderr)
+#log_formatter = logging.Formatter('[%(levelname)s] %(message)s')
+#log_handler.setFormatter(log_formatter)
+#logger.addHandler(log_handler)
 
 def get_interface():
     config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
@@ -227,6 +236,10 @@ class PromTest(TestCase):
         self.assertTrue(f.pk)
 
     def test_failure_get(self):
+        """
+        test to make sure getting on a table that doesn't exist works without raising
+        an error
+        """
         class FailureGetTorm(Orm):
             interface = get_interface()
             schema = get_schema()
@@ -865,7 +878,6 @@ class InterfacePostgresTest(TestCase):
             d = i.insert(s, {'foo': 2, 'bar': 'v2', 'should_be_unique': 1})
 
     def test_index_ignore_case(self):
-        # TODO -- make this work, _set_index() and get_SQL() need to be modified
         i = get_interface()
         s = Schema(
             get_table_name(),
