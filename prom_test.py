@@ -893,6 +893,17 @@ class InterfacePostgresTest(TestCase):
 
 class QueryTest(TestCase):
 
+    def test_child_magic(self):
+
+        class ChildQuery(query.Query):
+            pass
+
+        q = ChildQuery()
+        q.is_foo(1) # if there is no error, it passed
+
+        with self.assertRaises(AttributeError):
+            q.aksdlfjldks_foo(2)
+
     def test__split_method(self):
 
         tests = [

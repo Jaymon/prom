@@ -116,7 +116,7 @@ class Query(object):
             field_method_name = "{}_field".format(command)
             command_field_method = None
 
-            if field_method_name in self.__class__.__dict__:
+            if getattr(type(self), field_method_name, None):
                 command_field_method = getattr(self, field_method_name)
             else:
                 raise AttributeError('No "{}" method derived from "{}"'.format(field_method_name, method_name))
