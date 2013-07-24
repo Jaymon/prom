@@ -99,7 +99,10 @@ class Interface(object):
         again
         """
         if self.transaction == 0:
+            self.log("Transaction started")
             self._transaction_start()
+        else:
+            self.log("Transaction incremented {}", self.transaction + 1)
 
         self.transaction += 1
         return self.transaction
@@ -117,9 +120,12 @@ class Interface(object):
         self.transaction -= 1
 
         if self.transaction == 0:
+            self.log("Transaction stopped")
             self._transaction_stop()
         elif self.transaction < 0:
             self.transaction = 0
+        else:
+            self.log("Transaction decremented {}", self.transaction)
 
         return self.transaction
 
@@ -133,6 +139,7 @@ class Interface(object):
         e -- Exception() -- if passed in, bubble up the exception by re-raising it
         """
         if self.transaction > 0: 
+            self.log("Transaction fail")
             self._transaction_fail(e)
 
         self.transaction = 0
@@ -359,8 +366,11 @@ class Interface(object):
             ret = callback(schema, query, *args, **kwargs)
 
         except Exception, e:
-            # TODO handle exceptions were we should add the table or field and stuff
-            raise
+            if self.handle_error(schema, e):
+                ret = callback(schema, query, *args, **kwargs)
+
+            else:
+                raise
 
         return ret
 

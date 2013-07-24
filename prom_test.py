@@ -245,7 +245,7 @@ class PromTest(TestCase):
             schema = get_schema()
 
         f = FailureGetTorm(foo=1, bar="value 1")
-        f.query.get()
+        f.query.get_one()
         # we succeeded if no error was raised
 
 class ConfigSchemaTest(TestCase):

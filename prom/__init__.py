@@ -11,7 +11,7 @@ from .query import Query
 #from .interface.postgres import Interface as PostgresInterface
 from . import decorators
 
-__version__ = '0.6'
+__version__ = '0.6.1'
 
 _interfaces = {}
 """holds all the configured interfaces"""
@@ -247,7 +247,8 @@ class Orm(object):
         """
         self.modified_fields = set()
 
-    def install(self):
+    @classmethod
+    def install(cls):
         """install the Orm's table using the Orm's schema"""
-        return self.interface.set_table(self.schema)
+        return cls.interface.set_table(cls.schema)
 

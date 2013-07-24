@@ -81,7 +81,7 @@ class Interface(BaseInterface):
 
         if table_name:
             query_str += ' AND tablename = %s'
-            query_args.append(table_name)
+            query_args.append(str(table_name))
 
         ret = self._query(query_str, query_args)
         # http://www.postgresql.org/message-id/CA+mi_8Y6UXtAmYKKBZAHBoY7F6giuT5WfE0wi3hR44XXYDsXzg@mail.gmail.com
@@ -271,6 +271,7 @@ class Interface(BaseInterface):
 
     def handle_error(self, schema, e):
         ret = False
+        self.connection.rollback() # the last query failed, so let's rollback
         if isinstance(e, psycopg2.ProgrammingError):
             if schema.table in e.message and "does not exist" in e.message:
                 self.set_table(schema)
