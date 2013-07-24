@@ -155,7 +155,7 @@ class Schema(object):
         """return the primary key of the table schema"""
         ret = None
         for field_name, field_options in self.fields.iteritems():
-            if field_options.get('primary_key', False):
+            if field_options.get('pk', False):
                 ret = field_name
                 break
 
@@ -186,7 +186,7 @@ class Schema(object):
         self.indexes = {}
         self.table = str(table)
 
-        self._id = long, True, dict(primary_key=True)
+        self._id = long, True, dict(pk=True)
         self._created = long, True
         self._updated = long, True
 

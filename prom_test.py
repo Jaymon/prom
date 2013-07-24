@@ -4,6 +4,8 @@ import sys
 import random
 import string
 import logging
+import decimal
+import datetime
 
 from prom import query, Orm
 from prom.config import Schema, Connection, DsnConnection
@@ -601,12 +603,41 @@ class InterfacePostgresTest(TestCase):
 
         self.assertEqual(len(s.indexes), count)
 
+        # make sure more exotic datatypes are respected
+        s_ref = get_schema()
+        i.set_table(s_ref)
+        s_ref_id = insert(i, s_ref, 1)[0]
+
         s = prom.Schema(
             get_table_name(),
-            one=(bool, True)
+            one=(bool, True),
+            two=(int, True, dict(size=50)),
+            three=(decimal.Decimal,),
+            four=(float, True, dict(size=10)),
+            five=(float, True,),
+            six=(long, True,),
+            seven=(int, False, dict(ref=s_ref)),
+            eight=(datetime.datetime,),
+            nine=(datetime.date,),
         )
         r = i.set_table(s)
-        i.insert(s, {'one': True})
+        d = {
+            'one': True,
+            'two': 50,
+            'three': decimal.Decimal('1.5'),
+            'four': 1.987654321,
+            'five': 1.987654321,
+            'six': 4000000000,
+            'seven': s_ref_id,
+            'eight': datetime.datetime(2005, 7, 14, 12, 30),
+            'nine': datetime.date(2005, 9, 14),
+        }
+        o = i.insert(s, d)
+        q = query.Query()
+        q.is__id(o[s.pk])
+        odb = i.get_one(s, q)
+        d['five'] = 1.98765
+        self.assertEqual(d, odb)
 
     def test_get_tables(self):
         i = get_interface()

@@ -7,6 +7,8 @@ http://pythonhosted.org/psycopg2/
 """
 import os
 import types
+import decimal
+import datetime
 
 # third party
 import psycopg2
@@ -88,6 +90,8 @@ class Interface(BaseInterface):
     def _set_table(self, schema):
         """
         http://www.postgresql.org/docs/9.1/static/sql-createtable.html
+        http://www.postgresql.org/docs/8.1/static/datatype.html
+        http://pythonhosted.org/psycopg2/usage.html#adaptation-of-python-values-to-sql-types
         """
         query_str = []
         query_str.append("CREATE TABLE {} (".format(schema.table))
@@ -97,17 +101,31 @@ class Interface(BaseInterface):
 
             field_type = ""
 
-            if field_options.get('primary_key', False):
-                field_type = 'SERIAL PRIMARY KEY'
+            if field_options.get('pk', False):
+                field_type = 'BIGSERIAL PRIMARY KEY'
 
             else:
                 if issubclass(field_options['type'], bool):
                     field_type = 'BOOL'
+
                 elif issubclass(field_options['type'], int):
-                    field_type = 'INTEGER'
-                    # TODO, decide on SMALLINT if size is set
+                    size = 2147483647
+                    if 'size' in field_options:
+                        size = field_options['size']
+                    elif 'max_size' in field_options:
+                        size = field_options['max_size']
+
+                    if size < 32767:
+                        field_type = 'SMALLINT'
+                    else:
+                        if 'ref' in field_options or 'weak_ref' in field_options:
+                            field_type = 'BIGINT'
+                        else:
+                            field_type = 'INTEGER'
+
                 elif issubclass(field_options['type'], long):
                     field_type = 'BIGINT'
+
                 elif issubclass(field_options['type'], types.StringTypes):
                     if 'size' in field_options:
                         field_type = 'CHAR({})'.format(field_options['size'])
@@ -116,10 +134,23 @@ class Interface(BaseInterface):
                     else:
                         field_type = 'TEXT'
 
+                elif issubclass(field_options['type'], datetime.datetime):
+                    # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
+                    field_type = 'TIMESTAMP WITHOUT TIME ZONE'
+
+                elif issubclass(field_options['type'], datetime.date):
+                    field_type = 'DATE'
+
                 elif issubclass(field_options['type'], float):
                     field_type = 'REAL'
+                    size = field_options.get('size', field_options.get('max_size', 0))
+                    if size > 6:
+                        field_type = 'DOUBLE PRECISION'
+
+                elif issubclass(field_options['type'], decimal.Decimal):
+                    field_type = 'NUMERIC'
+
                 else:
-                    # http://pythonhosted.org/psycopg2/usage.html#adaptation-of-python-values-to-sql-types
                     raise ValueError('unknown python type: {}'.format(field_options['type'].__name__))
 
                 if field_options.get('required', False):
@@ -128,6 +159,7 @@ class Interface(BaseInterface):
                 if 'ref' in field_options: # strong ref, it deletes on fk row removal
                     ref_s = field_options['ref']
                     field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s.table, ref_s.pk)
+
                 elif 'weak_ref' in field_options: # weak ref, it sets column to null on fk row removal
                     ref_s = field_options['weak_ref']
                     field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s.table, ref_s.pk)
