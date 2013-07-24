@@ -112,7 +112,7 @@ class Interface(BaseInterface):
                     if 'size' in field_options:
                         field_type = 'CHAR({})'.format(field_options['size'])
                     elif 'max_size' in field_options:
-                        field_type = 'VARCHAR({})'.format(field_options['size'])
+                        field_type = 'VARCHAR({})'.format(field_options['max_size'])
                     else:
                         field_type = 'TEXT'
 
