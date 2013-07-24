@@ -108,7 +108,7 @@ class Interface(object):
         return self.transaction
 
     def _transaction_start(self):
-        raise NotImplementedError("this needs to be implemented in a child class")
+        pass
 
     def transaction_stop(self):
         """
@@ -130,7 +130,7 @@ class Interface(object):
         return self.transaction
 
     def _transaction_stop(self):
-        raise NotImplementedError("this needs to be implemented in a child class")
+        pass
 
     def transaction_fail(self, e=None):
         """
@@ -150,7 +150,7 @@ class Interface(object):
             raise e
 
     def _transaction_fail(self, e=None):
-        raise NotImplementedError("this needs to be implemented in a child class")
+        pass
 
     def set_table(self, schema):
         """
@@ -220,6 +220,22 @@ class Interface(object):
         return True
 
     def _delete_table(self, schema):
+        raise NotImplementedError("this needs to be implemented in a child class")
+
+    def clear_tables(self, **kwargs):
+        """
+        removes all the tables from the db
+
+        this is, obviously, very bad if you didn't mean to call this, because of that, you
+        have to pass in disable_protection=True, if it doesn't get that passed in, it won't
+        run this method
+        """
+        if not kwargs.get('disable_protection', False):
+            raise ValueError('You cannot clear the tables, in order to clear them, pass in disable_protection=True')
+
+        self._clear_tables(**kwargs)
+
+    def _clear_tables(self, **kwargs):
         raise NotImplementedError("this needs to be implemented in a child class")
 
     def get_indexes(self, schema):

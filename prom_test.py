@@ -18,6 +18,13 @@ import prom
 #log_handler.setFormatter(log_formatter)
 #logger.addHandler(log_handler)
 
+def setUpModule():
+    """
+    http://docs.python.org/2/library/unittest.html#setupmodule-and-teardownmodule
+    """
+    i = get_interface()
+    i.clear_tables(disable_protection=True)
+
 def get_interface():
     config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
 #    config.database = "vagrant"
@@ -29,6 +36,7 @@ def get_interface():
     i.connect(config)
     assert i.connection is not None
     assert i.connected
+
 
     return i
 
@@ -617,6 +625,26 @@ class InterfacePostgresTest(TestCase):
         i.close()
         i = get_interface()
         self.assertFalse(i.has_table(s.table))
+
+    def test_clear_tables(self):
+
+        i = get_interface()
+        s1 = get_schema()
+        i.set_table(s1)
+        s2 = get_schema()
+        i.set_table(s2)
+
+        self.assertTrue(i.has_table(s1))
+        self.assertTrue(i.has_table(s2))
+
+        # make sure you can't shoot yourself in the foot willy nilly
+        with self.assertRaises(ValueError):
+            i.clear_tables()
+
+        i.clear_tables(disable_protection=True)
+
+        self.assertFalse(i.has_table(s1))
+        self.assertFalse(i.has_table(s2))
 
     def test_insert(self):
         i, s = get_table()

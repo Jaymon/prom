@@ -63,13 +63,11 @@ class Interface(BaseInterface):
 
         return ret
 
-    def _transaction_start(self):
+    def _transaction_stop(self):
         """
         http://initd.org/psycopg/docs/usage.html#transactions-control
+        https://news.ycombinator.com/item?id=4269241
         """
-        pass
-
-    def _transaction_stop(self):
         self.connection.commit()
 
     def _transaction_fail(self, e=None):
@@ -142,8 +140,24 @@ class Interface(BaseInterface):
         ret = self._query(query_str, ignore_result=True)
 
     def _delete_table(self, schema):
-        query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(schema.table)
+        query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(str(schema))
         ret = self._query(query_str, ignore_result=True)
+
+    def _clear_tables(self, **kwargs):
+        """
+        http://stackoverflow.com/questions/3327312/drop-all-tables-in-postgresql
+        """
+        if not kwargs.get('disable_protection', False):
+            raise ValueError('You cannot clear the tables, in order to clear them, pass in disable_protection=True')
+
+        # get all the tables owned by the connection owner
+        for table_name in self.get_tables():
+            self.transaction_start()
+            self._delete_table(table_name)
+            self.transaction_stop()
+
+        return True
+        #return self._query("DROP SCHEMA public CASCADE")
 
     def _get_indexes(self, schema):
         ret = {}
