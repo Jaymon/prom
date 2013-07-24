@@ -601,6 +601,13 @@ class InterfacePostgresTest(TestCase):
 
         self.assertEqual(len(s.indexes), count)
 
+        s = prom.Schema(
+            get_table_name(),
+            one=(bool, True)
+        )
+        r = i.set_table(s)
+        i.insert(s, {'one': True})
+
     def test_get_tables(self):
         i = get_interface()
         s = get_schema()

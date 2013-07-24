@@ -101,7 +101,9 @@ class Interface(BaseInterface):
                 field_type = 'SERIAL PRIMARY KEY'
 
             else:
-                if issubclass(field_options['type'], int):
+                if issubclass(field_options['type'], bool):
+                    field_type = 'BOOL'
+                elif issubclass(field_options['type'], int):
                     field_type = 'INTEGER'
                     # TODO, decide on SMALLINT if size is set
                 elif issubclass(field_options['type'], long):
@@ -114,8 +116,6 @@ class Interface(BaseInterface):
                     else:
                         field_type = 'TEXT'
 
-                elif issubclass(field_options['type'], bool):
-                    field_type = 'BOOL'
                 elif issubclass(field_options['type'], float):
                     field_type = 'REAL'
                 else:
