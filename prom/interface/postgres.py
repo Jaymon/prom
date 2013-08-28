@@ -175,12 +175,10 @@ class Interface(BaseInterface):
         query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(str(schema))
         ret = self._query(query_str, ignore_result=True)
 
-    def _clear_tables(self, **kwargs):
+    def _delete_tables(self, **kwargs):
         """
         http://stackoverflow.com/questions/3327312/drop-all-tables-in-postgresql
         """
-        if not kwargs.get('disable_protection', False):
-            raise ValueError('You cannot clear the tables, in order to clear them, pass in disable_protection=True')
 
         # get all the tables owned by the connection owner
         for table_name in self.get_tables():

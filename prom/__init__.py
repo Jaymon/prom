@@ -6,14 +6,11 @@ import sys
 # first party
 from .config import DsnConnection, Schema
 from .query import Query
-# this needs psycopg2 to be installed to import, so I think it is better to make
-# it only available in longform so there are no unneeded dependencies to import prom
-#from .interface.postgres import Interface as PostgresInterface
 from . import decorators
 
-__version__ = '0.7.5'
+__version__ = '0.7.6'
 
-_interfaces = {}
+interfaces = {}
 """holds all the configured interfaces"""
 
 def configure(dsn):
@@ -25,8 +22,10 @@ def configure(dsn):
 
     dsn -- string -- a properly formatted prom dsn, see DsnConnection for how to format the dsn
     """
+    global interfaces
+
     c = DsnConnection(dsn)
-    if c.name in _interfaces:
+    if c.name in interfaces:
         raise ValueError('a connection named "{}" has already been configured'.format(c.name))
 
     interface_module_name, interface_class_name = c.interface_name.rsplit('.', 1)
@@ -42,7 +41,9 @@ def set_interface(interface, name=''):
     don't want to bother with a dsn? Use this method to make an interface available
     """
     if not interface: raise ValueError('interface is empty')
-    _interfaces[name] = interface
+
+    global interfaces
+    interfaces[name] = interface
 
 def get_interface(name=''):
     """
@@ -50,7 +51,8 @@ def get_interface(name=''):
 
     name -- string -- the name of the connection for the interface to return
     """
-    return _interfaces[name]
+    global interfaces
+    return interfaces[name]
 
 class Orm(object):
     """
@@ -128,7 +130,6 @@ class Orm(object):
         for parent in parents:
             parent_module_name = parent.__module__
             parent_class_name = '{}Query'.format(parent.__name__)
-            #pout.v(parent_module_name, parent_class_name)
             if parent_module_name in sys.modules:
                 parent_class = getattr(sys.modules[parent_module_name], parent_class_name, None)
                 if parent_class:

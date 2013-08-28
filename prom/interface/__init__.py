@@ -222,7 +222,7 @@ class Interface(object):
     def _delete_table(self, schema):
         raise NotImplementedError("this needs to be implemented in a child class")
 
-    def clear_tables(self, **kwargs):
+    def delete_tables(self, **kwargs):
         """
         removes all the tables from the db
 
@@ -231,11 +231,11 @@ class Interface(object):
         run this method
         """
         if not kwargs.get('disable_protection', False):
-            raise ValueError('You cannot clear the tables, in order to clear them, pass in disable_protection=True')
+            raise ValueError('In order to delete all the tables, pass in disable_protection=True')
 
-        self._clear_tables(**kwargs)
+        self._delete_tables(**kwargs)
 
-    def _clear_tables(self, **kwargs):
+    def _delete_tables(self, **kwargs):
         raise NotImplementedError("this needs to be implemented in a child class")
 
     def get_indexes(self, schema):

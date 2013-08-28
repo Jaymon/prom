@@ -25,14 +25,10 @@ def setUpModule():
     http://docs.python.org/2/library/unittest.html#setupmodule-and-teardownmodule
     """
     i = get_interface()
-    i.clear_tables(disable_protection=True)
+    i.delete_tables(disable_protection=True)
 
 def get_interface():
     config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
-#    config.database = "vagrant"
-#    config.username = "vagrant"
-#    config.password = "vagrant"
-#    config.host = "localhost"
 
     i = PGInterface()
     i.connect(config)
@@ -121,7 +117,6 @@ class OrmTest(TestCase):
         correctly, also, defining a class in a function is a special case that I wanted
         to see how it was handled
         """
-
         class QueryClassTormQuery(query.Query):
             pass
 
@@ -207,7 +202,7 @@ class OrmTest(TestCase):
 class PromTest(TestCase):
 
     def setUp(self):
-        prom._interfaces = {}
+        prom.interfaces = {}
 
     def test_configure(self):
         dsn = 'prom.interface.postgres.Interface://username:password@localhost/db'
@@ -370,14 +365,6 @@ class ConfigSchemaTest(TestCase):
         s.set_index("testing", [s.che], unique=True)
         self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True}, s.indexes["testing"])
 
-#        s = Schema("foo")
-#        s.set_index("testing", ["che"], unique=True, ignore_case=True)
-#        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True, 'ignore_case': True}, s.indexes["testing"])
-#
-#        s = Schema("foo")
-#        s.set_index("testing", ["che"], ignore_case=True)
-#        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': False, 'ignore_case': True}, s.indexes["testing"])
-
     def test___setattr__index(self):
         s = Schema("foo")
         s.foo = int,
@@ -399,19 +386,12 @@ class ConfigSchemaTest(TestCase):
         s.unique_test3 = s.foo,
         self.assertEqual({'name': "test3", 'fields': ["foo"], 'unique': True}, s.indexes["test3"])
 
-#        s = Schema("foo")
-#        s.iunique_testing = "che",
-#        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True, 'ignore_case': True}, s.indexes["testing"])
-#
-#        s = Schema("foo")
-#        s.iindex_testing =  "che",
-#        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': False, 'ignore_case': True}, s.indexes["testing"])
-
     def test_primary_key(self):
         s = Schema("foo")
         s.bar = int, False
 
         self.assertEqual(s._id, s.pk)
+
 
 class ConfigDsnConnectionTest(TestCase):
     def test_dsn(self):
@@ -664,7 +644,7 @@ class InterfacePostgresTest(TestCase):
         i = get_interface()
         self.assertFalse(i.has_table(s.table))
 
-    def test_clear_tables(self):
+    def test_delete_tables(self):
 
         i = get_interface()
         s1 = get_schema()
@@ -677,9 +657,9 @@ class InterfacePostgresTest(TestCase):
 
         # make sure you can't shoot yourself in the foot willy nilly
         with self.assertRaises(ValueError):
-            i.clear_tables()
+            i.delete_tables()
 
-        i.clear_tables(disable_protection=True)
+        i.delete_tables(disable_protection=True)
 
         self.assertFalse(i.has_table(s1))
         self.assertFalse(i.has_table(s2))

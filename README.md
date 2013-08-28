@@ -206,3 +206,18 @@ Then you can also use pip to install Prom:
 
 MIT
 
+## Todo
+
+### Schema installation queries
+
+You could do something like this:
+
+    s = prom.Schema(
+      "table_name"
+      field_name=(int, required_bool, options_dict),
+      "CREATE INDEX foo ON table_name USING BTREE (field_name)",
+      "INSERT INTO table_name (field_name) VALUES ('some value)"
+    )
+
+That way you can do crazy indexes and maybe add an admin user or something. I don't know if I Like the syntax, but it's the best I've come up with to allow things like creating statement indexes on the month and day of a timestamp index for example.
+
