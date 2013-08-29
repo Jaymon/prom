@@ -49,11 +49,11 @@ u.set()
 u = User.query.is_username('foo').get_one()
 print u.username # foo
 
-get the user again via the primary key:
+# get the user again via the primary key:
 u2 = User.query.get_pk(u.pk)
 print u.username # foo
 
-let's add a bunch more users:
+# let's add a bunch more users:
 for x in xrange(10):
     username = "foo{}".format(x)
     ut = User(username=username, password="...", email="{}@bar.com".format(username))
@@ -68,7 +68,9 @@ for u in User.query.get():
 
 You can access the query, or table, instance for each `prom.Orm` child you create by calling its `.query` class property:
 
-    print User.query # prom.Query
+```python
+print User.query # prom.Query
+```
 
 Through the power of magic, everytime you call this property, a new `prom.Query` instance will be created.
 
@@ -146,7 +148,7 @@ You can also write your own queries by hand:
 query.get_query("SELECT * FROM table_name WHERE foo = %s", [foo_val])
 ```
 
-This is the only way to do join queries.
+**NOTE**, Doing custom queries using `get_query` would be the only way to do join queries.
 
 ## Multiple db interfaces or connections
 
