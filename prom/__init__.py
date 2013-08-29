@@ -8,7 +8,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.7.6'
+__version__ = '0.7.7'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -174,6 +174,24 @@ class Orm(object):
         # go through and set all the values for 
         for field_name, field_val in fields.iteritems():
             setattr(self, field_name, field_val)
+
+    @classmethod
+    def normalize(cls, d):
+        """
+        return only fields in d that are also in schema
+
+        you can override this method to do some sanity checking of the fields
+
+        d -- dict -- a dict of field/values
+        return -- dict -- the field/values that are in cls.schema
+        """
+        rd = {}
+        s = cls.schema
+        for field_name, field_val in d.iteritems():
+            if field_name in s.fields:
+                rd[field_name] = field_val
+
+        return rd
 
     def __setattr__(self, field_name, field_val):
         s = self.schema
