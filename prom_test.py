@@ -171,9 +171,10 @@ class OrmTest(TestCase):
         self.assertEqual(2, t.foo)
         self.assertEqual("value 2", t.bar)
 
-        # make sure set doesn't work again
+        # set should only update timestamps and stuff without changing unmodified values
+        self.assertFalse(t.is_modified())
         r = t.set()
-        self.assertFalse(r)
+        self.assertTrue(r)
 
         # make sure it persisted
         t.interface.close()

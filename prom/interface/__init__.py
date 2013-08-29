@@ -276,8 +276,6 @@ class Interface(object):
         raise NotImplementedError("this needs to be implemented in a child class")
 
     def prepare_dict(self, schema, d):
-        if not d: raise ValueError('no point in preparing an empty dict')
-
         # update the times
         # http://crazytechthoughts.blogspot.com/2012/02/get-current-utc-timestamp-in-python.html
         now = calendar.timegm(datetime.datetime.utcnow().utctimetuple())

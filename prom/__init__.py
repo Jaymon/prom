@@ -8,7 +8,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.7.7'
+__version__ = '0.8'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -170,10 +170,8 @@ class Orm(object):
     def __init__(self, **fields):
 
         self.reset_modified()
+        self.modify(fields)
 
-        # go through and set all the values for 
-        for field_name, field_val in fields.iteritems():
-            setattr(self, field_name, field_val)
 
     @classmethod
     def normalize(cls, d):
@@ -200,34 +198,47 @@ class Orm(object):
 
         self.__dict__[field_name] = field_val
 
+    def insert(self):
+        """persist the field values of this orm"""
+        fields = self.get_modified()
+        q = self.query
+        q.set_fields(fields)
+        fields = q.set()
+        self.modify(fields)
+        self.reset_modified()
+        return True
+
+    def update(self):
+        """re-persist the updated field values of this orm that has a primary key"""
+        fields = self.get_modified()
+
+        q = self.query
+        _id_name = self.schema.pk
+        _id = self.pk
+        if _id:
+            q.is_field(_id_name, _id)
+
+        q.set_fields(fields)
+        fields = q.set()
+        self.modify(fields)
+        self.reset_modified()
+        return True
+
     def set(self):
         """
         persist the fields in this object into the db, this will update if _id is set, otherwise
         it will insert
+
+        see also -- .insert(), .update()
         """
         ret = False
-        d = {}
 
-        # get all the modified fields
-        for field_name in self.modified_fields:
-            d[field_name] = getattr(self, field_name)
-
-        if d:
-            q = self.query
-            # check if we should update, or insert
-            _id_name = self.schema.pk
-            _id = self.pk
-            if _id:
-                q.is_field(_id_name, _id)
-
-            q.set_fields(d)
-            d = q.set()
-
-            for field_name, field_val in d.iteritems():
-                d[field_name] = setattr(self, field_name, field_val)
-
-            self.reset_modified()
-            ret = True
+        _id_name = self.schema.pk
+        _id = self.pk
+        if _id:
+            ret = self.update()
+        else:
+            ret = self.insert()
 
         return ret
 
@@ -251,6 +262,19 @@ class Orm(object):
             ret = True
 
         return ret
+
+    def get_modified(self):
+        """return the modified fields and their new values"""
+        fields = {}
+        for field_name in self.modified_fields:
+            fields[field_name] = getattr(self, field_name)
+
+        return fields
+
+    def modify(self, fields):
+        """update the fields of this instance with the values in dict fields"""
+        for field_name, field_val in fields.iteritems():
+            setattr(self, field_name, field_val)
 
     def is_modified(self):
         """true if a field has been changed from its original value, false otherwise"""
