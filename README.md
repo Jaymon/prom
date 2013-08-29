@@ -8,24 +8,24 @@ Prom tries to make it as easy as possible on the developer to set common options
 
 Here is how you would define a new Orm class:
 
-    # app.models (app/models.py)
-    import prom
+```python
+# app.models (app/models.py)
+import prom
 
-    class User(prom.Orm):
+class User(prom.Orm):
 
-        schema = prom.Schema(
-            "user_table_name", # the db table name
-            username=(str, True), # string field (required)
-            password=(str, True), # string field (required)
-            email=(str, True), # string field (required)
-            is_admin=(int,), # integer field (not required)
-            unique_user=('username') # set a unique index on username field
-            index_email=('email') # set a normal index on email field
-        )
+    schema = prom.Schema(
+        "user_table_name", # the db table name
+        username=(str, True), # string field (required)
+        password=(str, True), # string field (required)
+        email=(str,), # string field (not required)
+        unique_user=('username',) # set a unique index on username field
+        index_email=('email',) # set a normal index on email field
+    )
+```
 
 You can specify the connection using a prom dsn url:
 
-    
     <full.python.path.InterfaceClass>://<username>:<password>@<host>:<port>/<database>?<options=val&query=string>#<name>
 
 So to use the builtin Postgres interface on `testdb` database on host `localhost` with username `testuser` and password `testpw`:
@@ -34,33 +34,35 @@ So to use the builtin Postgres interface on `testdb` database on host `localhost
 
 To use our new User class:
 
-    # testprom.py
-    import prom
-    from app.models import User
+```python
+# testprom.py
+import prom
+from app.models import User
 
-    prom.configure("prom.interface.postgres.Interface://testuser:testpw@localhost/testdb")
+prom.configure("prom.interface.postgres.Interface://testuser:testpw@localhost/testdb")
 
-    # create a user
-    u = User(username='foo', password='awesome_and_secure_pw_hash', email='foo@bar.com')
-    u.set()
+# create a user
+u = User(username='foo', password='awesome_and_secure_pw_hash', email='foo@bar.com')
+u.set()
 
-    # query for our new user
-    u = User.query.is_username('foo').get_one()
-    print u.username # foo
+# query for our new user
+u = User.query.is_username('foo').get_one()
+print u.username # foo
 
-    get the user again via the primary key:
-    u2 = User.query.get_pk(u.pk)
-    print u.username # foo
+get the user again via the primary key:
+u2 = User.query.get_pk(u.pk)
+print u.username # foo
 
-    let's add a bunch more users:
-    for x in xrange(10):
-        username = "foo{}".format(x)
-        ut = User(username=username, password="...", email="{}@bar.com".format(username))
-        ut.set()
+let's add a bunch more users:
+for x in xrange(10):
+    username = "foo{}".format(x)
+    ut = User(username=username, password="...", email="{}@bar.com".format(username))
+    ut.set()
 
-    # now let's iterate through all our new users:
-    for u in User.query.get():
-        print u.username
+# now let's iterate through all our new users:
+for u in User.query.get():
+    print u.username
+```
 
 ## The Query class
 
@@ -74,21 +76,27 @@ Through the power of magic, everytime you call this property, a new `prom.Query`
 
 By default, Prom will look for a `<name>Query` class in the same module as your `prom.Orm` child, so, continuing the User example from above, if you wanted to make a custom `UserQuery` class:
 
-    # app.models (app/models.py)
+```python
+# app.models (app/models.py)
 
-    class UserQuery(prom.Query):
-      def get_by_emails(self, *emails):
+class UserQuery(prom.Query):
+    def get_by_emails(self, *emails):
         """get all users with matching emails, ordered by last updated first"""
         return self.in_email(*emails).desc_updated().get()
+```
 
 Now, we can further use the power of magic:
 
-    print User.query # app.models.UserQuery
+```python
+print User.query # app.models.UserQuery
+```
 
 And boom, we were able to customize our queries by just adding a class. If you want to explicitely set the class your `prom.Orm` child should use (eg, you want all your models to use `random.module.CustomQuery` which wouldn't be auto-discovered by prom), you can set the `query_class` class property to whatever you want:
 
-    class DemoOrm(prom.Orm):
-      query_class = random.module.CustomQuery
+```python
+class DemoOrm(prom.Orm):
+    query_class = random.module.CustomQuery
+```
 
 and then every instance of `DemoOrm` (or child that derives from it) will forever use `random.module.CustomQuery`.
 
@@ -120,17 +128,23 @@ The different ORDER BY commands:
 
 And you can also set limit and page in the get query:
 
-    query.get(10, 1) # get 10 results for page 1 (offset 0)
-    query.get(10, 2) # get 10 results for page 2 (offset 10)
+```python
+query.get(10, 1) # get 10 results for page 1 (offset 0)
+query.get(10, 2) # get 10 results for page 2 (offset 10)
+```
 
 They can be changed together:
 
-    # SELECT * from table_name WHERE foo=10 AND bar='value 2' ORDER BY che DESC LIMIT 5
-    query.is_foo(10).is_bar("value 2").desc_che().get(5)
+```python
+# SELECT * from table_name WHERE foo=10 AND bar='value 2' ORDER BY che DESC LIMIT 5
+query.is_foo(10).is_bar("value 2").desc_che().get(5)
+```
 
 You can also write your own queries by hand:
 
-    query.get_query("SELECT * FROM table_name WHERE foo = %s", [foo_val])
+```python
+query.get_query("SELECT * FROM table_name WHERE foo = %s", [foo_val])
+```
 
 This is the only way to do join queries.
 
@@ -138,15 +152,17 @@ This is the only way to do join queries.
 
 It's easy to have one set of `prom.Orm` children use one connection and another set use a different connection, the fragment part of a Prom dsn url sets the name:
 
-    import prom
-    prom.configure(Interface://testuser:testpw@localhost/testdb#connection_1")
-    prom.configure(Interface://testuser:testpw@localhost/testdb#connection_2")
+```python
+import prom
+prom.configure("Interface://testuser:testpw@localhost/testdb#connection_1")
+prom.configure("Interface://testuser:testpw@localhost/testdb#connection_2")
 
-    class Orm1(prom.Orm):
-      connection_name = "connection_1"
-      
-    class Orm2(prom.Orm):
-      connection_name = "connection_2"
+class Orm1(prom.Orm):
+    connection_name = "connection_1"
+  
+class Orm2(prom.Orm):
+    connection_name = "connection_2"
+```
 
 Now, any class that extends `Orm1` will use `connection_1` and any orm that extends `Orm2` will use `connection_2`.
 
@@ -164,22 +180,26 @@ If you want to install the tables manually, you can create a script or something
 
 You can have a field reference the primary key of another field:
 
-    s1 = prom.Schema(
-      "table_1",
-      foo=(int,)
-    )
+```python
+s1 = prom.Schema(
+    "table_1",
+    foo=(int,)
+)
 
-    s2 = prom.Schema(
-      "table_2",
-      s1_id=(int, True, dict(ref=s1))
-    )
+s2 = prom.Schema(
+    "table_2",
+    s1_id=(int, True, dict(ref=s1))
+)
+```
 
 the `ref` option creates a strong reference, which will delete the row from `s2` if the row from `s1` is deleted, if you would rather have the `s1_id` just set to None you can use the `weak_ref` option:
 
-    s2 = prom.Schema(
-      "table_2",
-      s1_id=(int, False, dict(weak_ref=s1))
-    )
+```python
+s2 = prom.Schema(
+    "table_2",
+    s1_id=(int, False, dict(weak_ref=s1))
+)
+```
 
 ## Other things
 
