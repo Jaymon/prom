@@ -913,6 +913,28 @@ class InterfacePostgresTest(TestCase):
         self.assertGreater(len(r), 0)
         self.assertIsNone(r['s_pk'])
 
+    def test_handle_error_ref(self):
+        i = get_interface()
+        table_name_1 = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+        table_name_2 = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+
+        s_1 = Schema(
+            table_name_1,
+            foo=(int, True)
+        )
+        s_2 = Schema(
+            table_name_2,
+            bar=(int, True),
+            s_pk=(int, True, dict(ref=s_1)),
+        )
+
+        q2 = query.Query()
+        q2.is_bar(1)
+
+        r = i.get_one(s_2, q2)
+        self.assertTrue(i.has_table(table_name_1))
+        self.assertTrue(i.has_table(table_name_2))
+
     def test_unique(self):
         i = get_interface()
         s = get_schema()

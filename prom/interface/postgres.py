@@ -318,10 +318,28 @@ class Interface(BaseInterface):
         self.connection.rollback() # the last query failed, so let's rollback
         if isinstance(e, psycopg2.ProgrammingError):
             if schema.table in e.message and "does not exist" in e.message:
-                self.set_table(schema)
+                self._set_all_tables(schema)
                 ret = True
 
         return ret
+
+    def _set_all_tables(self, schema):
+        """
+        You can run into a problem when you are trying to set a table and it has a 
+        foreign key to a table that doesn't exist, so this method will go through 
+        all fk refs and make sure the tables exist
+        """
+        self.transaction_start()
+        # go through and make sure all foreign key referenced tables exist
+        for field_name, field_val in schema.fields.iteritems():
+            for fn in ['ref', 'weak_ref']:
+                if fn in field_val:
+                    self._set_all_tables(field_val[fn])
+
+        # now that we know all fk tables exist, create this table
+        self.set_table(schema)
+        self.transaction_stop()
+        return True
 
     def _normalize_list_SQL(self, schema, symbol, field_name, field_vals):
 
