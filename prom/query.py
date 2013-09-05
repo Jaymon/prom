@@ -20,7 +20,7 @@ class Query(object):
         # a query then you don't need to bother passing this in
         self.orm = orm
 
-        self.fields = []
+        self.fields = {}
         self.fields_where = []
         self.fields_sort = []
         self.bounds = {}
@@ -34,7 +34,8 @@ class Query(object):
         this has a dual role, in select queries, these are the select fields, but in insert/update
         queries, these are the fields that will be inserted/updated into the db
         """
-        self.fields.append([field_name, field_val])
+        #self.fields.append([field_name, field_val])
+        self.fields[field_name] = field_val
         return self
 
     def set_fields(self, fields=None, **fields_kwargs):

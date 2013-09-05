@@ -93,43 +93,36 @@ class Interface(object):
         """
         start a transaction
 
-        this will increment transaction and start the transaction in the interface 
-        by calling _transaction_start() if this is the first time this is called.
-        Multiple calls will just increment the semaphore, but not call _transaction_start()
-        again
+        this will increment transaction semaphore and pass it to _transaction_start()
         """
-        if self.transaction == 0:
-            self.log("Transaction started")
-            self._transaction_start()
-        else:
-            self.log("Transaction incremented {}", self.transaction + 1)
-
         self.transaction += 1
+        if self.transaction == 1:
+            self.log("Transaction started")
+        else:
+            self.log("Transaction incremented {}", self.transaction)
+
+        self._transaction_start(self.transaction)
         return self.transaction
 
-    def _transaction_start(self):
+    def _transaction_start(self, count):
+        """count = 1 is the first call, count = 2 is the second transaction call"""
         pass
 
     def transaction_stop(self):
-        """
-        stop/commit a transaction if ready
+        """stop/commit a transaction if ready"""
+        if self.transaction > 0:
+            if self.transaction == 1:
+                self.log("Transaction stopped")
+            else:
+                self.log("Transaction decremented {}", self.transaction)
 
-        this will decrement the transaction semaphore, if it decrements to 0 then it
-        will call _transaction_stop(), otherwise it won't
-        """
-        self.transaction -= 1
-
-        if self.transaction == 0:
-            self.log("Transaction stopped")
-            self._transaction_stop()
-        elif self.transaction < 0:
-            self.transaction = 0
-        else:
-            self.log("Transaction decremented {}", self.transaction)
+            self._transaction_stop(self.transaction)
+            self.transaction -= 1
 
         return self.transaction
 
-    def _transaction_stop(self):
+    def _transaction_stop(self, count):
+        """count = 1 is the last time this will be called for current set of transactions"""
         pass
 
     def transaction_fail(self, e=None):
@@ -140,16 +133,15 @@ class Interface(object):
         """
         if self.transaction > 0: 
             self.log("Transaction fail")
-            self._transaction_fail(e)
-
-        self.transaction = 0
+            self._transaction_fail(self.transaction, e)
+            self.transaction -= 1
 
         if not e:
             return True
         else:
             raise e
 
-    def _transaction_fail(self, e=None):
+    def _transaction_fail(self, count, e=None):
         pass
 
     def set_table(self, schema):

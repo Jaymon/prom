@@ -37,6 +37,8 @@ class Interface(BaseInterface):
             port=port,
             cursor_factory=psycopg2.extras.RealDictCursor
         )
+        # http://initd.org/psycopg/docs/connection.html#connection.autocommit
+        self.connection.autocommit = True
 
     def _query(self, query_str, query_args=None, **query_options):
         """
@@ -65,15 +67,29 @@ class Interface(BaseInterface):
 
         return ret
 
-    def _transaction_stop(self):
+    def _transaction_start(self, count):
+        if count == 1:
+            self._query("BEGIN", ignore_result=True)
+        else:
+            # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
+            self._query("SAVEPOINT prom", ignore_result=True)
+
+    def _transaction_stop(self, count):
         """
         http://initd.org/psycopg/docs/usage.html#transactions-control
         https://news.ycombinator.com/item?id=4269241
         """
-        self.connection.commit()
+        if count == 1:
+            #self.connection.commit()
+            self._query("COMMIT", ignore_result=True)
 
-    def _transaction_fail(self, e=None):
-        self.connection.rollback()
+    def _transaction_fail(self, count, e=None):
+        if count == 1:
+            #self.connection.rollback()
+            self._query("ROLLBACK", ignore_result=True)
+        else:
+            # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
+            self._query("ROLLBACK TO SAVEPOINT prom", ignore_result=True)
 
     def _get_tables(self, table_name):
         query_str = 'SELECT tablename FROM pg_tables WHERE tableowner = %s'

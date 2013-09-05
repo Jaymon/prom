@@ -34,8 +34,6 @@ def get_interface():
     i.connect(config)
     assert i.connection is not None
     assert i.connected
-
-
     return i
 
 def get_table_name():
@@ -915,8 +913,8 @@ class InterfacePostgresTest(TestCase):
 
     def test_handle_error_ref(self):
         i = get_interface()
-        table_name_1 = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
-        table_name_2 = "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+        table_name_1 = get_table_name()
+        table_name_2 = get_table_name()
 
         s_1 = Schema(
             table_name_1,
@@ -934,6 +932,84 @@ class InterfacePostgresTest(TestCase):
         r = i.get_one(s_2, q2)
         self.assertTrue(i.has_table(table_name_1))
         self.assertTrue(i.has_table(table_name_2))
+
+    def test_transaction_nested_fail_1(self):
+        """make sure 2 new tables in a wrapped transaction work as expected"""
+        i = get_interface()
+        table_name_1 = get_table_name()
+        table_name_2 = get_table_name()
+
+        s1 = Schema(
+            table_name_1,
+            foo=(int, True)
+        )
+        s2 = Schema(
+            table_name_2,
+            bar=(int, True),
+            s_pk=(int, True, dict(ref=s1)),
+        )
+
+        i.transaction_start()
+        q1 = query.Query()
+        q1.set_foo(1)
+        d1 = i.set(s1, q1)
+
+        q2 = query.Query()
+        q2.set_bar(2).set_s_pk(d1['_id'])
+        d2 = i.set(s2, q2)
+        i.transaction_stop()
+
+        q1 = query.Query()
+        q1.is__id(d1['_id'])
+        r1 = i.get_one(s1, q1)
+        self.assertEqual(r1['_id'], d1['_id'])
+
+        q2 = query.Query()
+        q2.is__id(d2['_id'])
+        r2 = i.get_one(s2, q2)
+        self.assertEqual(r2['_id'], d2['_id'])
+        self.assertEqual(r2['s_pk'], d1['_id'])
+
+    def test_transaction_nested_fail_2(self):
+        """make sure 2 tables where the first one already exists works in a nested transaction"""
+        i = get_interface()
+        table_name_1 = get_table_name()
+        table_name_2 = get_table_name()
+#        table_name_1 = "table_1"
+#        table_name_2 = "table_2"
+
+        s1 = Schema(
+            table_name_1,
+            foo=(int, True)
+        )
+        i.set_table(s1)
+
+        s2 = Schema(
+            table_name_2,
+            bar=(int, True),
+            s_pk=(int, True, dict(ref=s1)),
+        )
+
+        i.transaction_start()
+        q1 = query.Query()
+        q1.set_foo(1)
+        d1 = i.set(s1, q1)
+
+        q2 = query.Query()
+        q2.set_bar(2).set_s_pk(d1['_id'])
+        d2 = i.set(s2, q2)
+        i.transaction_stop()
+
+        q1 = query.Query()
+        q1.is__id(d1['_id'])
+        r1 = i.get_one(s1, q1)
+        self.assertEqual(r1['_id'], d1['_id'])
+
+        q2 = query.Query()
+        q2.is__id(d2['_id'])
+        r2 = i.get_one(s2, q2)
+        self.assertEqual(r2['_id'], d2['_id'])
+        self.assertEqual(r2['s_pk'], d1['_id'])
 
     def test_unique(self):
         i = get_interface()
