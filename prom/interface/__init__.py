@@ -267,11 +267,17 @@ class Interface(object):
     def _set_index(self, schema, name, fields, **index_options):
         raise NotImplementedError("this needs to be implemented in a child class")
 
-    def prepare_dict(self, schema, d):
+    def prepare_dict(self, schema, d, is_insert):
+        """
+        prepare the dict for insert/update
+
+        is_insert -- boolean -- True if insert, False if update
+        return -- dict -- the same dict, but now prepared
+        """
         # update the times
         # http://crazytechthoughts.blogspot.com/2012/02/get-current-utc-timestamp-in-python.html
         now = calendar.timegm(datetime.datetime.utcnow().utctimetuple())
-        if schema._created not in d:
+        if is_insert:
             d[schema._created] = now
         d[schema._updated] = now
 
@@ -287,7 +293,7 @@ class Interface(object):
         return -- dict -- the dict that was inserted into the db
         """
         self.assure(schema)
-        d = self.prepare_dict(schema, d)
+        d = self.prepare_dict(schema, d, is_insert=True)
 
         try:
             self.transaction_start()
@@ -317,7 +323,7 @@ class Interface(object):
         """
         self.assure(schema)
         d = query.fields
-        d = self.prepare_dict(schema, d)
+        d = self.prepare_dict(schema, d, is_insert=False)
 
         try:
             self.transaction_start()
