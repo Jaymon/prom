@@ -1,6 +1,7 @@
 import calendar
 import datetime
 import logging
+from contextlib import contextmanager
 
 # first party
 from ..query import Query
@@ -18,7 +19,7 @@ class Interface(object):
     connection_config = None
     """a config.Connection() instance"""
 
-    transaction = 0
+    transaction_count = 0
     """
     counting semaphore, greater than 0 if in a transaction, 0 if no current current transaction.
 
@@ -89,20 +90,43 @@ class Interface(object):
     def _query(self, query_str, query_args=None, query_options=None):
         raise NotImplementedError("this needs to be implemented in a child class")
 
+    @contextmanager
+    def transaction(self):
+        """
+        a simple context manager useful for when you want to wrap a bunch of db calls in a transaction
+
+        This is useful for making sure the db is connected before starting a transaction
+
+        http://docs.python.org/2/library/contextlib.html
+        http://docs.python.org/release/2.5/whatsnew/pep-343.html
+
+        example --
+            with self.transaction()
+                # do a bunch of calls
+            # those db calls will be committed by this line
+        """
+        self.assure()
+        self.transaction_start()
+        try:
+            yield self
+            self.transaction_stop()
+        except Exception, e:
+            self.transaction_fail(e)
+
     def transaction_start(self):
         """
         start a transaction
 
         this will increment transaction semaphore and pass it to _transaction_start()
         """
-        self.transaction += 1
-        if self.transaction == 1:
+        self.transaction_count += 1
+        if self.transaction_count == 1:
             self.log("Transaction started")
         else:
-            self.log("Transaction incremented {}", self.transaction)
+            self.log("Transaction incremented {}", self.transaction_count)
 
-        self._transaction_start(self.transaction)
-        return self.transaction
+        self._transaction_start(self.transaction_count)
+        return self.transaction_count
 
     def _transaction_start(self, count):
         """count = 1 is the first call, count = 2 is the second transaction call"""
@@ -110,16 +134,16 @@ class Interface(object):
 
     def transaction_stop(self):
         """stop/commit a transaction if ready"""
-        if self.transaction > 0:
-            if self.transaction == 1:
+        if self.transaction_count > 0:
+            if self.transaction_count == 1:
                 self.log("Transaction stopped")
             else:
-                self.log("Transaction decremented {}", self.transaction)
+                self.log("Transaction decremented {}", self.transaction_count)
 
-            self._transaction_stop(self.transaction)
-            self.transaction -= 1
+            self._transaction_stop(self.transaction_count)
+            self.transaction_count -= 1
 
-        return self.transaction
+        return self.transaction_count
 
     def _transaction_stop(self, count):
         """count = 1 is the last time this will be called for current set of transactions"""
@@ -131,10 +155,10 @@ class Interface(object):
 
         e -- Exception() -- if passed in, bubble up the exception by re-raising it
         """
-        if self.transaction > 0: 
+        if self.transaction_count > 0: 
             self.log("Transaction fail")
-            self._transaction_fail(self.transaction, e)
-            self.transaction -= 1
+            self._transaction_fail(self.transaction_count, e)
+            self.transaction_count -= 1
 
         if not e:
             return True

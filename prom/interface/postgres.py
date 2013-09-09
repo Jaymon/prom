@@ -331,11 +331,19 @@ class Interface(BaseInterface):
 
     def handle_error(self, schema, e):
         ret = False
-        self.connection.rollback() # the last query failed, so let's rollback
-        if isinstance(e, psycopg2.ProgrammingError):
-            if schema.table in e.message and "does not exist" in e.message:
-                self._set_all_tables(schema)
-                ret = True
+        # http://initd.org/psycopg/docs/connection.html#connection.closed
+        if self.connection.closed == 0:
+            self.connection.rollback() # the last query failed, so let's rollback
+
+            # http://initd.org/psycopg/docs/module.html#psycopg2.ProgrammingError
+            if isinstance(e, psycopg2.ProgrammingError):
+                if schema.table in e.message and "does not exist" in e.message:
+                    self._set_all_tables(schema)
+                    ret = True
+
+        else:
+            self.close()
+            ret = self.connect()
 
         return ret
 
@@ -363,6 +371,7 @@ class Interface(BaseInterface):
 
         # postgres specific for getting around case sensitivity:
         if schema.fields[field_name].get('ignore_case', False):
+            field_name = 'UPPER({})'.format(field_name)
             format_str = 'UPPER(%s)'
 
         return '{} {} ({})'.format(field_name, symbol, ', '.join([format_str] * len(field_vals)))
@@ -373,6 +382,7 @@ class Interface(BaseInterface):
 
         # postgres specific for getting around case sensitivity:
         if schema.fields[field_name].get('ignore_case', False):
+            field_name = 'UPPER({})'.format(field_name)
             format_str = 'UPPER(%s)'
 
         return '{} {} {}'.format(field_name, symbol, format_str)

@@ -6,6 +6,8 @@ import string
 import logging
 import decimal
 import datetime
+import time
+import subprocess
 
 from prom import query, Orm
 from prom.config import Schema, Connection, DsnConnection
@@ -13,12 +15,12 @@ from prom.interface.postgres import Interface as PGInterface
 import prom
 
 # configure root logger
-#logger = logging.getLogger()
-#logger.setLevel(logging.DEBUG)
-#log_handler = logging.StreamHandler(stream=sys.stderr)
-#log_formatter = logging.Formatter('[%(levelname)s] %(message)s')
-#log_handler.setFormatter(log_formatter)
-#logger.addHandler(log_handler)
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+log_handler = logging.StreamHandler(stream=sys.stderr)
+log_formatter = logging.Formatter('[%(levelname)s] %(message)s')
+log_handler.setFormatter(log_formatter)
+logger.addHandler(log_handler)
 
 def setUpModule():
     """
@@ -1032,11 +1034,29 @@ class InterfacePostgresTest(TestCase):
         )
         i.set_table(s)
 
-        d = i.insert(s, {'foo': 'FOO', 'bar': 'bar'})
+        v = 'justin-lee@mail.com'
+        d = i.insert(s, {'foo': v, 'bar': 'bar'})
+        q = query.Query()
+        q.is_foo(v)
+        r = i.get_one(s, q)
+        self.assertGreater(len(r), 0)
+
+        lv = list(v)
+        for x in xrange(len(v)):
+            lv[x] = lv[x].upper()
+            qv = "".join(lv)
+            q = query.Query()
+            q.is_foo(qv)
+            r = i.get_one(s, q)
+            self.assertGreater(len(r), 0)
+            lv[x] = lv[x].lower()
+
+        d = i.insert(s, {'foo': 'FoO', 'bar': 'bar'})
         q = query.Query()
         q.is_foo('foo')
         r = i.get_one(s, q)
         self.assertGreater(len(r), 0)
+        self.assertEqual(r['foo'], 'FoO')
 
         q = query.Query()
         q.is_foo('Foo').is_bar('BAR')
@@ -1047,6 +1067,14 @@ class InterfacePostgresTest(TestCase):
         q.is_foo('FoO').is_bar('bar')
         r = i.get_one(s, q)
         self.assertGreater(len(r), 0)
+        self.assertEqual(r['foo'], 'FoO')
+
+        d = i.insert(s, {'foo': 'foo2', 'bar': 'bar'})
+        q = query.Query()
+        q.is_foo('foo2')
+        r = i.get_one(s, q)
+        self.assertGreater(len(r), 0)
+        self.assertEqual(r['foo'], 'foo2')
 
 class QueryTest(TestCase):
 
@@ -1208,5 +1236,50 @@ class QueryTest(TestCase):
         self.assertEqual(type(o), TestGetOneTorm)
         self.assertTrue(o._id in _ids)
         self.assertFalse(o.is_modified())
+
+    def test_db_disconnect(self):
+        """make sure interface can recover if the db disconnects mid script execution"""
+        i, s = get_table()
+        _id = insert(i, s, 1)[0]
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertGreater(len(d), 0)
+
+        exit_code = subprocess.check_call("sudo /etc/init.d/postgresql restart", shell=True)
+        time.sleep(1)
+
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertGreater(len(d), 0)
+
+    def test_transaction_context_manager(self):
+        """make sure the with transaction() context manager works as expected"""
+        i, s = get_table()
+        _id = None
+        with i.transaction():
+            _id = insert(i, s, 1)[0]
+
+        self.assertTrue(_id)
+
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertGreater(len(d), 0)
+
+        with self.assertRaises(RuntimeError):
+            with i.transaction():
+                _id = insert(i, s, 1)[0]
+                raise RuntimeError("this should fail")
+
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertEqual(len(d), 0)
+
+
+
+
 
 
