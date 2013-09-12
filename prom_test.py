@@ -108,7 +108,7 @@ class OrmTest(TestCase):
 
     def test_query(self):
         _ids = insert(Torm.interface, Torm.schema, 5)
-        lc = Torm.query.in__id(*_ids).count()
+        lc = Torm.query.in__id(_ids).count()
         self.assertEqual(len(_ids), lc)
 
     def test_query_class(self):
@@ -710,7 +710,7 @@ class InterfacePostgresTest(TestCase):
         i = get_interface()
         s = get_schema()
         q = query.Query()
-        q.in__id(*range(1, 5))
+        q.in__id(range(1, 5))
         sql, sql_args = i.get_SQL(s, q)
         self.assertTrue('_id' in sql)
         self.assertEqual(4, len(sql_args))
@@ -756,7 +756,7 @@ class InterfacePostgresTest(TestCase):
         _ids = insert(i, s, 5)
 
         q = query.Query()
-        q.in__id(*_ids)
+        q.in__id(_ids)
         l = i.get(s, q)
         self.assertEqual(len(_ids), len(l))
         for d in l:
@@ -814,7 +814,7 @@ class InterfacePostgresTest(TestCase):
         _ids = insert(i, s, 5)
 
         q = query.Query()
-        q.in__id(*_ids)
+        q.in__id(_ids)
         l = i.get(s, q)
         self.assertEqual(5, len(l))
 
@@ -1094,7 +1094,31 @@ class InterfacePostgresTest(TestCase):
         self.assertGreater(len(r), 0)
         self.assertEqual(r['foo'], 'foo2')
 
+    def test_in_sql(self):
+        i, s = get_table()
+        _ids = insert(i, s, 5)
+
+        q = query.Query()
+        q.in__id(_ids)
+        l = list(i.get(s, q))
+
+        self.assertEqual(len(l), 5)
+
+
 class QueryTest(TestCase):
+
+    def test_in_field(self):
+        q = query.Query()
+        q.in_foo([1, 2])
+        self.assertEqual(q.fields_where[0][2], [1, 2,])
+
+        q = query.Query()
+        q.in_foo([1])
+        self.assertEqual(q.fields_where[0][2], [1])
+
+        q = query.Query()
+        q.in_foo([1, 2])
+        self.assertEqual(q.fields_where[0][2], [1, 2])
 
     def test_child_magic(self):
 
@@ -1142,8 +1166,8 @@ class QueryTest(TestCase):
             ("lt_field", ["foo", 1], ["lt", "foo", 1]),
             ("gte_field", ["foo", 1], ["gte", "foo", 1]),
             ("gt_field", ["foo", 1], ["gt", "foo", 1]),
-            ("in_field", ["foo", 1, 2, 3], ["in", "foo", (1, 2, 3)]),
-            ("nin_field", ["foo", 1, 2, 3], ["nin", "foo", (1, 2, 3)]),
+            ("in_field", ["foo", (1, 2, 3)], ["in", "foo", (1, 2, 3)]),
+            ("nin_field", ["foo", (1, 2, 3)], ["nin", "foo", (1, 2, 3)]),
         ]
 
         q = query.Query("foo")

@@ -76,16 +76,16 @@ class Query(object):
         self.fields_where.append(["gt", field_name, field_val])
         return self
 
-    def in_field(self, field_name, *field_vals):
+    def in_field(self, field_name, field_vals):
         """
-        NOTE -- if you have a list of values, it has to be passed in using the *, in_field("name", *list_of_values)
+        field_vals -- list -- a list of field_val values
         """
         self.fields_where.append(["in", field_name, field_vals])
         return self
 
-    def nin_field(self, field_name, *field_vals):
+    def nin_field(self, field_name, field_vals):
         """
-        NOTE -- if you have a list of values, it has to be passed in using the *, nin_field("name", *list_of_values)
+        field_vals -- list -- a list of field_val values
         """
         self.fields_where.append(["nin", field_name, field_vals])
         return self
