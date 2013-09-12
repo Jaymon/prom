@@ -395,8 +395,26 @@ class ConfigSchemaTest(TestCase):
 
 
 class ConfigDsnConnectionTest(TestCase):
-    def test_dsn(self):
 
+    def test_environ(self):
+        os.environ['PROM_DSN'] = "prom.interface.postgres.Interface://localhost:5000/database#i0"
+        os.environ['PROM_DSN_1'] = "prom.interface.postgres.Interface://localhost:5000/database#i1"
+        os.environ['PROM_DSN_2'] = "prom.interface.postgres.Interface://localhost:5000/database#i2"
+        os.environ['PROM_DSN_4'] = "prom.interface.postgres.Interface://localhost:5000/database#i4"
+        prom.configure_environ()
+        self.assertTrue('i0' in prom.interfaces)
+        self.assertTrue('i1' in prom.interfaces)
+        self.assertTrue('i2' in prom.interfaces)
+        self.assertTrue('i3' not in prom.interfaces)
+        self.assertTrue('i4' not in prom.interfaces)
+
+        prom.interfaces.pop('i0', None)
+        prom.interfaces.pop('i1', None)
+        prom.interfaces.pop('i2', None)
+        prom.interfaces.pop('i3', None)
+        prom.interfaces.pop('i4', None)
+
+    def test_dsn(self):
         tests = [
             (
                 "some.Backend://username:password@localhost:5000/database?option=1&var=2#fragment",
