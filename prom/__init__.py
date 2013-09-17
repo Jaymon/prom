@@ -9,7 +9,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.8.6'
+__version__ = '0.8.8'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -214,22 +214,36 @@ class Orm(object):
 
 
     @classmethod
-    def normalize(cls, d):
+    def normalize(cls, fields):
         """
-        return only fields in d that are also in schema
+        return only the fields in the fields dict that are also in schema
 
         you can override this method to do some sanity checking of the fields
 
-        d -- dict -- a dict of field/values
+        fields -- dict -- a dict of field/values
         return -- dict -- the field/values that are in cls.schema
         """
         rd = {}
         s = cls.schema
-        for field_name, field_val in d.iteritems():
+        for field_name, field_val in fields.iteritems():
             if field_name in s.fields:
                 rd[field_name] = field_val
 
         return rd
+
+    @classmethod
+    def create(cls, fields, **field_kwargs):
+        """
+        create an instance of cls with the passed in fields and set it into the db
+
+        fields -- dict -- field_name keys, with their respective values
+        **field_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
+        """
+        if not fields: fields = {}
+        fields.update(field_kwargs)
+        instance = cls(cls.normalize(fields))
+        instance.set()
+        return instance
 
     def __setattr__(self, field_name, field_val):
         s = self.schema
