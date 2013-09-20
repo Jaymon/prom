@@ -9,7 +9,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.8.8'
+__version__ = '0.8.9'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -212,7 +212,6 @@ class Orm(object):
         self.reset_modified()
         self.modify(fields)
 
-
     @classmethod
     def normalize(cls, fields):
         """
@@ -228,6 +227,10 @@ class Orm(object):
         for field_name, field_val in fields.iteritems():
             if field_name in s.fields:
                 rd[field_name] = field_val
+
+        for field_name, field in cls.schema.required_fields.iteritems():
+            if field_name not in rd:
+                raise KeyError("Missing required field {}".format(field_name))
 
         return rd
 

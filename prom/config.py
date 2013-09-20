@@ -164,6 +164,21 @@ class Schema(object):
 
         return ret
 
+    @property
+    def normal_fields(self):
+        """fields that aren't magic (eg, aren't _id, _created, _updated)"""
+        return {f:v for f, v in self.fields.iteritems() if not f.startswith('_')}
+
+    @property
+    def required_fields(self):
+        """The normal required fields (eg, no magic fields like _id are included)"""
+        return {f:v for f, v in self.normal_fields.iteritems() if v['required']}
+
+    @property
+    def magic_fields(self):
+        """the magic fields for the schema"""
+        return {f:v for f, v in self.fields.iteritems() if f.startswith('_')}
+
     def __init__(self, table, **fields):
         """
         create an instance

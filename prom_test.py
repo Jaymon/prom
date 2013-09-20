@@ -106,6 +106,27 @@ class OrmTest(TestCase):
         Torm2.schema = s
         Torm2.connection_name = "torm2"
 
+    def test_normalize(self):
+        table_name = get_table_name()
+        Torm.schema = Schema(
+            table_name,
+            foo=(int, True),
+            bar=(str, True),
+            che=(str, False),
+        )
+
+        with self.assertRaises(KeyError):
+            Torm.normalize({})
+
+        d = Torm.normalize({'foo': 1, 'bar': 'bar1'})
+        self.assertTrue('foo' in d)
+        self.assertTrue('bar' in d)
+        self.assertFalse('che' in d)
+
+        d_in = {'foo': 2, 'bar': 'bar2', 'che': 'che2'}
+        d = Torm.normalize(d_in)
+        self.assertEquals(d, d_in)
+
     def test_query(self):
         _ids = insert(Torm.interface, Torm.schema, 5)
         lc = Torm.query.in__id(_ids).count()
