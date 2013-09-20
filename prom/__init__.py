@@ -9,7 +9,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.8.9'
+__version__ = '0.9'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -235,7 +235,7 @@ class Orm(object):
         return rd
 
     @classmethod
-    def create(cls, fields, **field_kwargs):
+    def create(cls, fields=None, **field_kwargs):
         """
         create an instance of cls with the passed in fields and set it into the db
 
