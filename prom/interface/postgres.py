@@ -337,9 +337,12 @@ class Interface(BaseInterface):
 
             # http://initd.org/psycopg/docs/module.html#psycopg2.ProgrammingError
             if isinstance(e, psycopg2.ProgrammingError):
-                if schema.table in e.message and "does not exist" in e.message:
-                    self._set_all_tables(schema)
-                    ret = True
+                # avoid column false postitives
+                # psycopg2.ProgrammingError - column "name" of relation "table_name" does not exist
+                if "column" not in e.message:
+                    if schema.table in e.message and "does not exist" in e.message:
+                        self._set_all_tables(schema)
+                        ret = True
 
         else:
             self.close()

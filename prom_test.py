@@ -11,6 +11,7 @@ import subprocess
 
 from prom import query, Orm
 from prom.config import Schema, Connection, DsnConnection
+from prom.interface import postgres
 from prom.interface.postgres import Interface as PGInterface
 import prom
 
@@ -220,6 +221,13 @@ class OrmTest(TestCase):
         t.interface.close()
         t2 = Torm.query.get_pk(_id)
         self.assertEqual(None, t2)
+
+    def test_create(self):
+        t = Torm.create(foo=1000, bar="value1000")
+        self.assertLess(0, t.pk)
+        self.assertEqual(1000, t.foo)
+        self.assertEqual("value1000", t.bar)
+
 
 class PromTest(TestCase):
 
@@ -973,6 +981,19 @@ class InterfacePostgresTest(TestCase):
         r = i.get_one(s_2, q2)
         self.assertTrue(i.has_table(table_name_1))
         self.assertTrue(i.has_table(table_name_2))
+
+    def test_handle_error_column(self):
+        i, s = get_table()
+        s.che = str, True
+        q = query.Query()
+        q.set_fields({
+            'foo': 1,
+            'bar': 'v1',
+            'che': "this field will cause the query to fail",
+        })
+
+        with self.assertRaises(postgres.psycopg2.ProgrammingError):
+            rd = i.set(s, q)
 
     def test_transaction_nested_fail_1(self):
         """make sure 2 new tables in a wrapped transaction work as expected"""
