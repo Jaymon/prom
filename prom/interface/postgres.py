@@ -330,6 +330,8 @@ class Interface(BaseInterface):
         ret = self._query(query_str, query_args, ignore_result=True)
 
     def handle_error(self, schema, e):
+        if not self.connection: return False
+
         ret = False
         # http://initd.org/psycopg/docs/connection.html#connection.closed
         if self.connection.closed == 0:

@@ -1146,6 +1146,21 @@ class InterfacePostgresTest(TestCase):
 
         self.assertEqual(len(l), 5)
 
+    def test_no_db_error(self):
+        # we want to replace the db with a bogus db error
+        i, s = get_table()
+        #i = get_interface()
+        config = i.connection_config
+        config.database = 'this_is_a_bogus_db_name'
+        i = PGInterface(config)
+        q = query.Query()
+        q.set_fields({
+            'foo': 1,
+            'bar': 'v1',
+        })
+        with self.assertRaises(postgres.psycopg2.OperationalError):
+            rd = i.set(s, q)
+
 
 class QueryTest(TestCase):
 
