@@ -13,6 +13,7 @@ import datetime
 # third party
 import psycopg2
 import psycopg2.extras
+import psycopg2.extensions
 
 # first party
 from ..interface import Interface as BaseInterface
@@ -39,6 +40,10 @@ class Interface(BaseInterface):
         )
         # http://initd.org/psycopg/docs/connection.html#connection.autocommit
         self.connection.autocommit = True
+        # unicode harden for python 2
+        # http://initd.org/psycopg/docs/usage.html#unicode-handling
+        psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, self.connection)
+        psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, self.connection)
 
     def _query(self, query_str, query_args=None, **query_options):
         """

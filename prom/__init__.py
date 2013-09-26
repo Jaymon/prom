@@ -9,7 +9,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.9.3'
+__version__ = '0.9.4'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -208,7 +208,6 @@ class Orm(object):
         return getattr(self, self.schema._updated, None)
 
     def __init__(self, **fields):
-
         self.reset_modified()
         self.modify(fields)
 
@@ -328,8 +327,11 @@ class Orm(object):
 
         return fields
 
-    def modify(self, fields):
+    def modify(self, fields=None, **field_kwargs):
         """update the fields of this instance with the values in dict fields"""
+        if not fields: fields = {}
+        fields.update(field_kwargs)
+
         for field_name, field_val in fields.iteritems():
             setattr(self, field_name, field_val)
 

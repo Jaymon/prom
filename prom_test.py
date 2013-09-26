@@ -9,6 +9,8 @@ import datetime
 import time
 import subprocess
 
+import testdata
+
 from prom import query, Orm
 from prom.config import Schema, Connection, DsnConnection
 from prom.interface import postgres
@@ -127,6 +129,34 @@ class OrmTest(TestCase):
         d_in = {'foo': 2, 'bar': 'bar2', 'che': 'che2'}
         d = Torm.normalize(d_in)
         self.assertEquals(d, d_in)
+
+    def test_unicode(self):
+        """
+        Jarid was having encoding issues, so I'm finally making sure prom only ever
+        returns unicode strings
+        """
+        table_name = get_table_name()
+        Torm.schema = Schema(
+            table_name,
+            foo=(unicode, True),
+            bar=(str, True),
+            che=(str, False),
+            baz=(int, False),
+        )
+
+        t = Torm.create(
+            foo=testdata.get_unicode_name(),
+            bar=testdata.get_unicode_words(),
+            che=testdata.get_unicode_words().encode('utf-8'),
+            baz=testdata.get_int(1, 100000)
+        )
+
+        t2 = Torm.query.get_pk(t.pk)
+
+        self.assertEqual(t.foo, t2.foo)
+        self.assertEqual(t.bar, t2.bar)
+        self.assertEqual(t.che, t2.che.encode('utf-8'))
+        self.assertTrue(isinstance(t.baz, int))
 
     def test_query(self):
         _ids = insert(Torm.interface, Torm.schema, 5)
