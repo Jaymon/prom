@@ -3,13 +3,14 @@ import importlib
 import inspect
 import sys
 import os
+import datetime
 
 # first party
 from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.9.4'
+__version__ = '0.9.5'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -348,6 +349,47 @@ class Orm(object):
         clear all the passed in fields from the modified list
         """
         self.modified_fields = set()
+
+    def jsonable(self):
+        """
+        return a version of this instance that can be jsonified
+
+        Note that this does not return _id, _created, _updated, the reason why is
+        because lots of times you have a different name for _id (like if it is a 
+        user object, then you might want to call it user_id instead of _id) and I
+        didn't want to make assumptions
+
+        note 2, I'm not crazy about the name, but I didn't like to_dict() and pretty
+        much any time I need to convert the object to a dict is for json
+        """
+        d = {}
+        def default_field_type(field_type):
+            r = ''
+            if issubclass(field_type, int):
+                r = 0
+            elif issubclass(field_type, bool):
+                r = False
+            elif issubclass(field_type, float):
+                r = 0.0
+
+            return r
+
+        for field_name, field_info in self.schema.normal_fields.iteritems():
+            try:
+                d[field_name] = getattr(self, field_name, None)
+                if d[field_name]:
+                    if isinstance(d[field_name], datetime.date):
+                        d[field_name] = str(d[field_name])
+                    elif isinstance(d[field_name], datetime.datetime):
+                        d[field_name] = str(d[field_name])
+
+                else:
+                    d[field_name] = default_field_type(field_info['type'])
+
+            except AttributeError:
+                d[field_name] = default_field_type(field_info['type'])
+
+        return d
 
     @classmethod
     def install(cls):

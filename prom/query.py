@@ -80,14 +80,14 @@ class Query(object):
         """
         field_vals -- list -- a list of field_val values
         """
-        self.fields_where.append(["in", field_name, field_vals])
+        self.fields_where.append(["in", field_name, list(field_vals)])
         return self
 
     def nin_field(self, field_name, field_vals):
         """
         field_vals -- list -- a list of field_val values
         """
-        self.fields_where.append(["nin", field_name, field_vals])
+        self.fields_where.append(["nin", field_name, list(field_vals)])
         return self
 
     def sort_field(self, field_name, direction):

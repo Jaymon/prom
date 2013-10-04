@@ -109,6 +109,21 @@ class OrmTest(TestCase):
         Torm2.schema = s
         Torm2.connection_name = "torm2"
 
+    def test_jsonable(self):
+        table_name = get_table_name()
+        Torm.schema = Schema(
+            table_name,
+            foo=(int, True),
+            bar=(str, True),
+            che=(str, False),
+        )
+
+        t = Torm.create(foo=1, bar="blah")
+        d = t.jsonable()
+        self.assertEqual(1, d['foo'])
+        self.assertEqual("blah", d['bar'])
+        self.assertEqual("", d['che'])
+
     def test_normalize(self):
         table_name = get_table_name()
         Torm.schema = Schema(
@@ -1207,6 +1222,14 @@ class QueryTest(TestCase):
         q.in_foo([1, 2])
         self.assertEqual(q.fields_where[0][2], [1, 2])
 
+        q = query.Query()
+        q.in_foo(xrange(1, 3))
+        self.assertEqual(q.fields_where[0][2], [1, 2,])
+
+        q = query.Query()
+        q.in_foo((x for x in [1, 2]))
+        self.assertEqual(q.fields_where[0][2], [1, 2,])
+
     def test_child_magic(self):
 
         class ChildQuery(query.Query):
@@ -1253,8 +1276,8 @@ class QueryTest(TestCase):
             ("lt_field", ["foo", 1], ["lt", "foo", 1]),
             ("gte_field", ["foo", 1], ["gte", "foo", 1]),
             ("gt_field", ["foo", 1], ["gt", "foo", 1]),
-            ("in_field", ["foo", (1, 2, 3)], ["in", "foo", (1, 2, 3)]),
-            ("nin_field", ["foo", (1, 2, 3)], ["nin", "foo", (1, 2, 3)]),
+            ("in_field", ["foo", (1, 2, 3)], ["in", "foo", [1, 2, 3]]),
+            ("nin_field", ["foo", (1, 2, 3)], ["nin", "foo", [1, 2, 3]]),
         ]
 
         q = query.Query("foo")
