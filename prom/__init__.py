@@ -10,7 +10,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.9.5'
+__version__ = '0.9.6'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -248,12 +248,30 @@ class Orm(object):
         instance.set()
         return instance
 
+    @classmethod
+    def populate(cls, fields=None, **field_kwargs):
+        """
+        create an instance of cls with the passed in fields but don't set it into the db or mark the passed
+        in fields as modified, this is used by the Query class to hydrate objects
+
+        fields -- dict -- field_name keys, with their respective values
+        **field_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
+        """
+        if not fields: fields = {}
+        fields.update(field_kwargs)
+        instance = cls(**fields)
+        instance.reset_modified()
+        return instance
+
     def __setattr__(self, field_name, field_val):
         s = self.schema
         if field_name in s.fields:
             self.modified_fields.add(field_name)
 
         self.__dict__[field_name] = field_val
+
+    def __int__(self):
+        return int(self.pk)
 
     def insert(self):
         """persist the field values of this orm"""

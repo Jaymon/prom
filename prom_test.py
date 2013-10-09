@@ -69,6 +69,12 @@ def get_table(table_name=None):
     i.set_table(s)
     return i, s
 
+def get_query():
+    i, s = get_table()
+    Torm.schema = s
+    Torm.interface = i
+    return query.Query(Torm)
+
 def insert(interface, schema, count):
     """
     insert count rows into schema using interface
@@ -177,6 +183,11 @@ class OrmTest(TestCase):
         _ids = insert(Torm.interface, Torm.schema, 5)
         lc = Torm.query.in__id(_ids).count()
         self.assertEqual(len(_ids), lc)
+
+    def test___int__(self):
+        _id = insert(Torm.interface, Torm.schema, 1)[0]
+        t = Torm.query.get_pk(_id)
+        self.assertEqual(_id, int(t))
 
     def test_query_class(self):
         """
@@ -1207,7 +1218,102 @@ class InterfacePostgresTest(TestCase):
             rd = i.set(s, q)
 
 
+class IteratorTest(TestCase):
+
+    def get_iterator(self, count=5, limit=5, page=0):
+        q = get_query()
+        insert(q.orm.interface, q.orm.schema, count)
+        i = q.get(limit, page)
+        i.q = q
+        return i
+
+    def test___iter__(self):
+        count = 5
+        i = self.get_iterator(count)
+
+        rcount = 0
+        for t in i:
+            rcount += 1
+
+        self.assertEqual(count, rcount)
+
+    def test___getitem__(self):
+        count = 5
+        i = self.get_iterator(count)
+        for x in xrange(count):
+            self.assertEqual(i[x].pk, i.results[x]['_id'])
+
+        with self.assertRaises(IndexError):
+            i[count + 1]
+
+    def test___len__(self):
+        count = 5
+        i = self.get_iterator(count)
+        self.assertEqual(len(i), count)
+
+    def test___getattr__(self):
+        count = 5
+        i = self.get_iterator(count)
+        rs = list(i.foo)
+        self.assertEqual(count, len(rs))
+
+        with self.assertRaises(KeyError):
+            i.kadfjkadfjkhjkgfkjfkjk_bogus_field
+
+    def test_pk(self):
+        count = 5
+        i = self.get_iterator(count)
+        rs = list(i.pk)
+        self.assertEqual(count, len(rs))
+
+    def test_has_more(self):
+        limit = 3
+        count = 5
+        q = get_query()
+        insert(q.orm.interface, q.orm.schema, count)
+
+        i = q.get(limit, 0)
+        self.assertTrue(i.has_more)
+
+        i = q.get(limit, 2)
+        self.assertFalse(i.has_more)
+
+        i = q.get(limit, 1)
+        self.assertTrue(i.has_more)
+
+        i = q.get(0, 0)
+        self.assertFalse(i.has_more)
+
+
 class QueryTest(TestCase):
+
+    def test___iter__(self):
+        count = 5
+        q = get_query()
+        insert(q.orm.interface, q.orm.schema, count)
+
+        rcount = 0
+        for t in q:
+            rcount += 1
+
+        self.assertEqual(count, rcount)
+
+    def test_all(self):
+        count = 10
+        q = get_query()
+        insert(q.orm.interface, q.orm.schema, count)
+
+        q.set_limit(1)
+        rcount = 0
+        for r in q.all():
+            rcount += 1
+        self.assertEqual(count, rcount)
+
+        q.set_limit(6).set_offset(0)
+        rcount = 0
+        for r in q.all():
+            rcount += 1
+        self.assertEqual(count, rcount)
 
     def test_in_field(self):
         q = query.Query()

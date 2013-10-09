@@ -1,10 +1,5 @@
 """
-Handle standard query creation
-
-example --
-
-    query.table("table_name").is_foo(1).desc_bar().set_limit(10).set_page(2).get()
-
+Classes and stuff that handle querying the interface for a passed in Orm class
 """
 #    query.table("table_name").is_foo(1).desc_bar().limit(10).page(2).get()
 #    query.table("table_name").is_foo(1).desc_bar().set_limit(10).set_page(2).get()
@@ -12,8 +7,100 @@ example --
 #    query.table("table_name").is_foo(1).desc_bar().use_limit(10).use_page(2).get()
 #    query.table("table_name").is_foo(1).desc_bar().limit_to(10).on_page(2).with_offset(5).get()
 
-class Query(object):
 
+class Iterator(object):
+    """
+    smartly iterate through a result set
+
+    this is returned from the Query.get() and Query.all() methods, it acts as much
+    like a list as possible to make using it as seemless as can be
+
+    fields --
+        has_more -- boolean -- True if there are more results in the db, false otherwise
+
+    examples --
+        # iterate through all the primary keys of some orm
+        for pk in SomeOrm.query.all().pk:
+            print pk
+    """
+    def __init__(self, results, orm=None, has_more=False):
+        self.results = results
+        self.orm = orm
+        self.has_more = has_more
+        self.iresults = self.results.__iter__() # hack
+
+    def next(self):
+        r = self._get_result(self.iresults.next())
+        return r
+
+    def __iter__(self):
+        return self
+
+    def __len__(self):
+        return len(self.results)
+
+    def __getitem__(self, k):
+        k = int(k)
+        return self._get_result(self.results[k])
+
+    def __getattr__(self, k):
+        """
+        this allows you to focus in on certain fields of results
+
+        It's just an easier way of doing: (getattr(x, k, None) for x in self)
+        """
+        if k == 'pk': k = self.orm.schema.pk
+        if k not in self.orm.schema.fields:
+            raise KeyError("key {} is not in the {} schema".format(k, self.orm.schema))
+
+        return (getattr(r, k, None) for r in self)
+
+    def _get_result(self, d):
+        r = None
+        if self.orm:
+            r = self.orm.populate(d)
+        else:
+            r = d
+
+        return r
+
+
+class AllIterator(Iterator):
+    """
+    Similar to Iterator, but will chunk up results and make another query for the next
+    chunk of results until there are no more results of the passed in Query(), so you
+    can just iterate through every row of the db without worrying about pulling too
+    many rows at one time
+    """
+    def __init__(self, query):
+        limit, offset, _ = query.get_bounds()
+        if not limit:
+            limit = 5000
+
+        self.chunk_limit = limit
+        self.offset = offset
+        self.query = query
+        super(AllIterator, self).__init__(results=[], orm=self.query.orm)
+
+    def __iter__(self):
+        has_more = True
+        while has_more:
+            self.results = self.query.set_offset(self.offset).get(self.chunk_limit)
+            has_more = self.results.has_more
+            for r in self.results:
+                yield r
+
+            self.offset += self.chunk_limit
+
+
+class Query(object):
+    """
+    Handle standard query creation and allow interface querying
+
+    example --
+        q = Query(orm)
+        q.is_foo(1).desc_bar().set_limit(10).set_page(2).get()
+    """
     def __init__(self, orm=None, *args, **kwargs):
 
         # needed to use the db querying methods like get(), if you just want to build
@@ -26,6 +113,9 @@ class Query(object):
         self.bounds = {}
         self.args = args
         self.kwargs = kwargs
+
+    def __iter__(self):
+        return self.get()
 
     def set_field(self, field_name, field_val=None):
         """
@@ -167,20 +257,49 @@ class Query(object):
         return len(self.bounds) > 0
 
     def get(self, limit=None, page=None):
+        """
+        get results from the db
+
+        return -- Iterator()
+        """
         if limit is not None:
             self.set_limit(limit)
         if page is not None:
             self.set_page(page)
 
-        for d in self._query('get'):
-            yield self._create_orm(d)
+        has_more = False
+        limit, offset, limit_paginate = self.get_bounds()
+        if limit_paginate:
+            self.set_limit(limit_paginate)
+
+        results = self._query('get')
+
+        if limit_paginate:
+            self.set_limit(limit)
+            if len(results) == limit_paginate:
+                has_more = True
+                results.pop(limit)
+
+        return Iterator(results, orm=self.orm, has_more=has_more)
+
+    def all(self):
+        """
+        return every possible result for this query
+
+        This is smart about returning results and will use the set limit (or a default if no
+        limit was set) to chunk up the results, this means you can work your way through
+        really big result sets without running out of memory
+
+        return -- Iterator()
+        """
+        return AllIterator(self)
 
     def get_one(self):
         """get one row from the db"""
         o = None
         d = self._query('get_one')
         if d:
-            o = self._create_orm(d)
+            o = self.orm.populate(d)
         return o
 
     def get_pk(self, field_val):
