@@ -1234,7 +1234,12 @@ class IteratorTest(TestCase):
         rcount = 0
         for t in i:
             rcount += 1
+        self.assertEqual(count, rcount)
 
+        rcount = 0
+        for t in i:
+            self.assertTrue(isinstance(t, Torm))
+            rcount += 1
         self.assertEqual(count, rcount)
 
     def test___getitem__(self):

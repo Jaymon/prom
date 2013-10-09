@@ -384,3 +384,16 @@ class Schema(object):
 
         return self
 
+    def field_name(self, k):
+        """
+        get the field name of k
+
+        most of the time, the field_name of k will just be k, but this makes special
+        allowance for k's like "pk" which will return _id
+        """
+        if k == u'pk': k = self.pk
+        if k not in self.fields:
+            raise KeyError(u"key {} is not in the {} schema".format(k, self.table))
+
+        return k
+

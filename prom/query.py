@@ -22,18 +22,23 @@ class Iterator(object):
         # iterate through all the primary keys of some orm
         for pk in SomeOrm.query.all().pk:
             print pk
+
+    http://docs.python.org/2/library/stdtypes.html#iterator-types
     """
     def __init__(self, results, orm=None, has_more=False):
         self.results = results
         self.orm = orm
         self.has_more = has_more
-        self.iresults = self.results.__iter__() # hack
+        self.reset()
+
+    def reset(self):
+        self.iresults = (self._get_result(x) for x in self.results)
 
     def next(self):
-        r = self._get_result(self.iresults.next())
-        return r
+        return self.iresults.next()
 
     def __iter__(self):
+        self.reset()
         return self
 
     def __len__(self):
@@ -49,11 +54,8 @@ class Iterator(object):
 
         It's just an easier way of doing: (getattr(x, k, None) for x in self)
         """
-        if k == 'pk': k = self.orm.schema.pk
-        if k not in self.orm.schema.fields:
-            raise KeyError("key {} is not in the {} schema".format(k, self.orm.schema))
-
-        return (getattr(r, k, None) for r in self)
+        field_name = self.orm.schema.field_name(k)
+        return (getattr(r, field_name, None) for r in self)
 
     def _get_result(self, d):
         r = None
