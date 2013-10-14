@@ -108,25 +108,38 @@ You should check the actual code for the query class in `prom.query.Query` for a
 
     command_fieldname(field_value)
 
+So, if you wanted to select on the `foo` fields, you could do:
+
+```python
+query.is_foo(5)
+```
+
 or, if you have the name in the field as a string:
 
     command_field(fieldname, field_value)
 
+so, we could also select on `foo` this way:
+
+```python
+name = 'foo'
+query.is_field(name, 5)
+```
+
 The different WHERE commands:
 
-  * `in` -- in_field(fieldname, *field_vals) -- do a sql `fieldname IN (field_val1, ...)` query
-  * `nin` -- nin_field(fieldname, *field_vals) -- do a sql `fieldname NOT IN (field_val1, ...)` query
-  * `is` -- is_field(fieldname, field_val) -- do a sql `fieldname = field_val` query
-  * `not` -- not_field(fieldname, field_val) -- do a sql `fieldname != field_val` query
-  * `gt` -- gt_field(fieldname, field_val) -- do a sql `fieldname > field_val` query
-  * `gte` -- gte_field(fieldname, field_val) -- do a sql `fieldname >= field_val` query
-  * `lt` -- lt_field(fieldname, field_val) -- do a sql `fieldname < field_val` query
-  * `lte` -- lte_field(fieldname, field_val) -- do a sql `fieldname <= field_val` query
+  * `in` -- `in_field(fieldname, *field_vals)` -- do a sql `fieldname IN (field_val1, ...)` query
+  * `nin` -- `nin_field(fieldname, *field_vals)` -- do a sql `fieldname NOT IN (field_val1, ...)` query
+  * `is` -- `is_field(fieldname, field_val)` -- do a sql `fieldname = field_val` query
+  * `not` -- `not_field(fieldname, field_val)` -- do a sql `fieldname != field_val` query
+  * `gt` -- `gt_field(fieldname, field_val)` -- do a sql `fieldname > field_val` query
+  * `gte` -- `gte_field(fieldname, field_val)` -- do a sql `fieldname >= field_val` query
+  * `lt` -- `lt_field(fieldname, field_val)` -- do a sql `fieldname < field_val` query
+  * `lte` -- `lte_field(fieldname, field_val)` -- do a sql `fieldname <= field_val` query
 
 The different ORDER BY commands:
 
-  * `asc` -- asc_field(fieldname) -- do a sql `ORDER BY fieldname ASC` query
-  * `desc` -- desc_field(fieldname) -- do a sql `ORDER BY fieldname DESC` query
+  * `asc` -- `asc_field(fieldname)` -- do a sql `ORDER BY fieldname ASC` query
+  * `desc` -- `desc_field(fieldname)` -- do a sql `ORDER BY fieldname DESC` query
 
 And you can also set limit and page in the get query:
 
@@ -148,7 +161,20 @@ You can also write your own queries by hand:
 query.get_query("SELECT * FROM table_name WHERE foo = %s", [foo_val])
 ```
 
+The `prom.Query` has a couple helpful query methods to make grabbing rows easy:
+
+  * `get` -- `get(limit=None, page=None)` -- run the select query.
+  * `get_one` -- `get_one()` -- run the select query with a LIMIT 1.
+  * `has` -- `has()` -- return True if there is atleast one row in the db matching query
+  * `get_pk` -- `get_pk(pk)` -- run the select query with a `WHERE _id = pk`
+  * `get_query` -- `get_query(query_str, *query_args, **query_options)` -- run a raw query
+  * `all` -- `all()` -- return an iterator that can move through every row in the db matching query
+
 **NOTE**, Doing custom queries using `get_query` would be the only way to do join queries.
+
+### The Iterator class
+
+the `get` and `all` query methods return a `prom.query.Iterator` instance. This instance has a useful attribute `has_more` that will be true if there are more rows in the db that match the query.
 
 ## Multiple db interfaces or connections
 

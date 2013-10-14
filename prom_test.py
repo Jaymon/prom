@@ -1224,8 +1224,35 @@ class IteratorTest(TestCase):
         q = get_query()
         insert(q.orm.interface, q.orm.schema, count)
         i = q.get(limit, page)
-        i.q = q
         return i
+
+    def test_values(self):
+        count = 5
+        q = get_query()
+        insert(q.orm.interface, q.orm.schema, count)
+        q.set_bar()
+        g = q.get().values()
+        icount = 0
+        for i, v in enumerate(g, 1):
+            self.assertEqual(u"value {}".format(i), v)
+            icount += 1
+        self.assertEqual(count, icount)
+
+        q.fields_set = []
+        q.set_bar().set_foo()
+        g = q.get().values()
+        icount = 0
+        for i, v in enumerate(g, 1):
+            icount += 1
+            self.assertEqual(u"value {}".format(i), v[0])
+            self.assertEqual(i, v[1])
+        self.assertEqual(count, icount)
+
+        q.fields_set = []
+        i = q.get()
+        with self.assertRaises(ValueError):
+            g = i.values()
+            for v in g: pass
 
     def test___iter__(self):
         count = 5
@@ -1303,6 +1330,14 @@ class QueryTest(TestCase):
 
         self.assertEqual(count, rcount)
 
+    def test_has(self):
+        q = get_query()
+        self.assertFalse(q.has())
+
+        count = 1
+        insert(q.orm.interface, q.orm.schema, count)
+        self.assertTrue(q.has())
+
     def test_all(self):
         count = 10
         q = get_query()
@@ -1322,6 +1357,10 @@ class QueryTest(TestCase):
 
     def test_in_field(self):
         q = query.Query()
+        with self.assertRaises(AssertionError):
+            q.in_foo([])
+
+        q = query.Query()
         q.in_foo([1, 2])
         self.assertEqual(q.fields_where[0][2], [1, 2,])
 
@@ -1340,6 +1379,29 @@ class QueryTest(TestCase):
         q = query.Query()
         q.in_foo((x for x in [1, 2]))
         self.assertEqual(q.fields_where[0][2], [1, 2,])
+
+    def test_fields_set(self):
+        q = query.Query()
+        fields_select = ['foo', 'bar', 'che']
+        fields = dict(zip(fields_select, [None] * len(fields_select)))
+        q.set_fields(*fields_select)
+        self.assertEqual(fields_select, q.fields_select)
+        self.assertEqual(fields, q.fields)
+
+        q = query.Query()
+        q.set_fields(fields)
+        self.assertEqual(fields_select, q.fields_select)
+        self.assertEqual(fields, q.fields)
+
+        q = query.Query()
+        q.set_fields(fields_select)
+        self.assertEqual(fields_select, q.fields_select)
+        self.assertEqual(fields, q.fields)
+
+        q = query.Query()
+        q.set_fields(**fields)
+        self.assertEqual(fields_select, q.fields_select)
+        self.assertEqual(fields, q.fields)
 
     def test_child_magic(self):
 

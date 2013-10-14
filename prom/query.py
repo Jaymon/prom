@@ -1,3 +1,4 @@
+import types
 """
 Classes and stuff that handle querying the interface for a passed in Orm class
 """
@@ -25,10 +26,19 @@ class Iterator(object):
 
     http://docs.python.org/2/library/stdtypes.html#iterator-types
     """
-    def __init__(self, results, orm=None, has_more=False):
+    def __init__(self, results, orm=None, has_more=False, query=None):
+        """
+        create a result set iterator
+
+        results -- list -- the list of results
+        orm -- Orm -- the Orm class that each row in results should be wrapped with
+        has_more -- boolean -- True if there are more results
+        query -- Query -- the query instance that produced this iterator
+        """
         self.results = results
         self.orm = orm
         self.has_more = has_more
+        self.query = query
         self.reset()
 
     def reset(self):
@@ -36,6 +46,26 @@ class Iterator(object):
 
     def next(self):
         return self.iresults.next()
+
+    def values(self):
+        """
+        similar to the dict.values() method, this will only return the selected fields
+        in a tuple
+
+        return -- generator -- each iteration will return just the field values in
+            the order they were selected, if you only selected one field, than just that field
+            will be returned, if you selected multiple fields than a tuple of the fields in
+            the order you selected them will be returned
+        """
+        field_names = self.query.fields_select
+        fcount = len(field_names)
+        if fcount:
+            for x in self.results:
+                field_vals = [x.get(fn, None) for fn in field_names]
+                yield field_vals if fcount > 1 else field_vals[0]
+
+        else:
+            raise ValueError("no select fields were set, so cannot iterate values")
 
     def __iter__(self):
         self.reset()
@@ -54,6 +84,7 @@ class Iterator(object):
 
         It's just an easier way of doing: (getattr(x, k, None) for x in self)
         """
+        pout.v(k)
         field_name = self.orm.schema.field_name(k)
         return (getattr(r, field_name, None) for r in self)
 
@@ -81,8 +112,7 @@ class AllIterator(Iterator):
 
         self.chunk_limit = limit
         self.offset = offset
-        self.query = query
-        super(AllIterator, self).__init__(results=[], orm=self.query.orm)
+        super(AllIterator, self).__init__(results=[], orm=query.orm, query=query)
 
     def __iter__(self):
         has_more = True
@@ -103,13 +133,22 @@ class Query(object):
         q = Query(orm)
         q.is_foo(1).desc_bar().set_limit(10).set_page(2).get()
     """
+
+    @property
+    def fields(self):
+        return dict(self.fields_set)
+
+    @property
+    def fields_select(self):
+        return [select_field for select_field, _ in self.fields_set]
+
     def __init__(self, orm=None, *args, **kwargs):
 
         # needed to use the db querying methods like get(), if you just want to build
         # a query then you don't need to bother passing this in
         self.orm = orm
 
-        self.fields = {}
+        self.fields_set = []
         self.fields_where = []
         self.fields_sort = []
         self.bounds = {}
@@ -126,17 +165,35 @@ class Query(object):
         this has a dual role, in select queries, these are the select fields, but in insert/update
         queries, these are the fields that will be inserted/updated into the db
         """
-        #self.fields.append([field_name, field_val])
-        self.fields[field_name] = field_val
+        self.fields_set.append([field_name, field_val])
         return self
 
-    def set_fields(self, fields=None, **fields_kwargs):
+    def set_fields(self, fields=None, *fields_args, **fields_kwargs):
         """
         completely replaces the current .fields with fields and fields_kwargs combined
         """
-        if not fields: fields = {}
-        fields.update(fields_kwargs)
-        self.fields = fields
+        if fields_args:
+            fields = [fields]
+            fields.extend(fields_args)
+            for field_name in fields:
+                self.set_field(field_name)
+
+        elif fields_kwargs:
+            if not fields: fields = {}
+            if fields_kwargs:
+                fields.update(fields_kwargs)
+                for field_name, field_val in fields.iteritems():
+                    self.set_field(field_name, field_val)
+
+        else:
+            if isinstance(fields, (types.DictType, types.DictProxyType)):
+                for field_name, field_val in fields.iteritems():
+                    self.set_field(field_name, field_val)
+
+            else:
+                for field_name in fields:
+                    self.set_field(field_name)
+
         return self
 
     def is_field(self, field_name, field_val):
@@ -172,6 +229,7 @@ class Query(object):
         """
         field_vals -- list -- a list of field_val values
         """
+        assert field_vals, "Cannot IN an empty list"
         self.fields_where.append(["in", field_name, list(field_vals)])
         return self
 
@@ -179,6 +237,7 @@ class Query(object):
         """
         field_vals -- list -- a list of field_val values
         """
+        assert field_vals, "Cannot NIN an empty list"
         self.fields_where.append(["nin", field_name, list(field_vals)])
         return self
 
@@ -282,7 +341,7 @@ class Query(object):
                 has_more = True
                 results.pop(limit)
 
-        return Iterator(results, orm=self.orm, has_more=has_more)
+        return Iterator(results, orm=self.orm, has_more=has_more, query=self)
 
     def all(self):
         """
@@ -312,6 +371,11 @@ class Query(object):
     def count(self):
         """return the count of the criteria"""
         return self._query('count')
+
+    def has(self):
+        """returns true if there is atleast one row in the db matching the query, False otherwise"""
+        v = self.get_one()
+        return True if v else False
 
     def set(self):
         """persist the .fields using .fields_where (if available)"""

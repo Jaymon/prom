@@ -433,8 +433,7 @@ class Interface(BaseInterface):
             if sql_options.get('count_query', False):
                 query_str.append('  count(*) as ct')
             else:
-                #select_fields = [select_field for select_field, _ in query.fields]
-                select_fields = [select_field for select_field in query.fields]
+                select_fields = query.fields_select
                 if select_fields:
                     query_str.append('  ' + ',{}'.format(os.linesep).join(select_fields))
                 else:
