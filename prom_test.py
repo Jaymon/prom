@@ -1319,6 +1319,42 @@ class IteratorTest(TestCase):
 
 class QueryTest(TestCase):
 
+    def test_value(self):
+        q = get_query()
+        q.set_foo()
+        v = q.value()
+        self.assertEqual(None, v)
+        count = 2
+        insert(q.orm.interface, q.orm.schema, count)
+        v = q.value()
+        self.assertEqual(1, v)
+
+        q.set_bar()
+        v = q.value()
+        self.assertEqual(1, v[0])
+        self.assertEqual(u"value 1", v[1])
+
+    def test_values(self):
+        count = 2
+        q = get_query()
+        q.set_foo()
+        insert(q.orm.interface, q.orm.schema, count)
+
+        icount = 0
+        for i, v in enumerate(q.values(), 1):
+            icount += 1
+            self.assertEqual(i, v)
+        self.assertEqual(count, icount)
+
+        q.set_bar()
+        icount = 0
+        for i, v in enumerate(q.values(), 1):
+            icount += 1
+            self.assertEqual(i, v[0])
+            self.assertEqual(u"value {}".format(i), v[1])
+        self.assertEqual(count, icount)
+
+
     def test___iter__(self):
         count = 5
         q = get_query()

@@ -363,6 +363,27 @@ class Query(object):
             o = self.orm.populate(d)
         return o
 
+    def values(self):
+        """convenience method to get just the values from the query"""
+        return self.get().values()
+
+    def value(self):
+        """convenience method to just get one value or tuple of values for the query"""
+        field_vals = None
+        field_names = self.fields_select
+        fcount = len(field_names)
+        if fcount:
+            d = self._query('get_one')
+            if d:
+                field_vals = [d.get(fn, None) for fn in field_names]
+                if fcount == 1:
+                    field_vals = field_vals[0]
+
+        else:
+            raise ValueError("no select fields were set, so cannot return value")
+
+        return field_vals
+
     def get_pk(self, field_val):
         """convenience method for running is__id(_id).get_one() since this is so common"""
         field_name = self.orm.schema.pk
