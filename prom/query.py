@@ -84,7 +84,6 @@ class Iterator(object):
 
         It's just an easier way of doing: (getattr(x, k, None) for x in self)
         """
-        pout.v(k)
         field_name = self.orm.schema.field_name(k)
         return (getattr(r, field_name, None) for r in self)
 
