@@ -64,6 +64,25 @@ for u in User.query.get():
     print u.username
 ```
 
+## Environment Configuration
+
+Prom can be automatically configured on import by setting the environment variable `PROM_DSN`:
+
+    export PROM_DSN=prom.interface.postgres.Interface://testuser:testpw@localhost/testdb
+
+If you have multiple connections, you can actually set multiple environment variables:
+
+    export PROM_DSN_1=prom.interface.postgres.Interface://testuser:testpw@localhost/testdb1#conn_1
+    export PROM_DSN_2=prom.interface.postgres.Interface://testuser:testpw@localhost/testdb2#conn_2
+
+After you've set the environment variable, then you just need to import Prom in your code:
+
+```python
+import prom
+```
+
+and Prom will take care of parsing the dsn url(s) and creating the connection(s) automatically.
+
 ## The Query class
 
 You can access the query, or table, instance for each `prom.Orm` child you create by calling its `.query` class property:
@@ -167,6 +186,7 @@ The `prom.Query` has a couple helpful query methods to make grabbing rows easy:
   * `get_one` -- `get_one()` -- run the select query with a LIMIT 1.
   * `has` -- `has()` -- return True if there is atleast one row in the db matching query
   * `get_pk` -- `get_pk(pk)` -- run the select query with a `WHERE _id = pk`
+  * `get_pks` -- `get_pks([pk1, pk2,...])` -- run the select query with `WHERE _id IN (...)`
   * `get_query` -- `get_query(query_str, *query_args, **query_options)` -- run a raw query
   * `all` -- `all()` -- return an iterator that can move through every row in the db matching query
 
@@ -233,11 +253,25 @@ s2 = prom.Schema(
 
 Prom has a very similar interface to [Mingo](https://github.com/Jaymon/Mingo).
 
-I built Prom because I didn't feel like Python had a good "get out of your way" relational db orm that wasn't tied to some giant framework or that didn't try to be all things to all people.
+I built Prom because I didn't feel like Python had a good "get out of your way" relational db orm that wasn't tied to some giant framework or that didn't try to be all things to all people, or that didn't suck.
 
 Prom is really super beta right now, built for [First Opinion](http://firstopinion.co/).
 
 Prom assumes you want to do certain things, and so it tries to make those things really easy to do, while assuming you don't want to do things like `JOIN` queries, so those are harder to do.
+
+## Versions
+
+While Prom will most likely work on other versions, these are the versions we are running it on (just for references):
+
+### Python
+
+    $ python --version
+    Python 2.7.3
+
+### Postgres
+
+    $ psql --version
+    psql (PostgreSQL) 9.1.9
 
 ## Installation
 
