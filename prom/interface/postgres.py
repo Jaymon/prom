@@ -116,76 +116,10 @@ class Interface(BaseInterface):
         """
         query_str = []
         query_str.append("CREATE TABLE {} (".format(schema.table))
+
         query_fields = []
-        
         for field_name, field_options in schema.fields.iteritems():
-
-            field_type = ""
-
-            if field_options.get('pk', False):
-                field_type = 'BIGSERIAL PRIMARY KEY'
-
-            else:
-                if issubclass(field_options['type'], bool):
-                    field_type = 'BOOL'
-
-                elif issubclass(field_options['type'], int):
-                    size = 2147483647
-                    if 'size' in field_options:
-                        size = field_options['size']
-                    elif 'max_size' in field_options:
-                        size = field_options['max_size']
-
-                    if size < 32767:
-                        field_type = 'SMALLINT'
-                    else:
-                        if 'ref' in field_options or 'weak_ref' in field_options:
-                            field_type = 'BIGINT'
-                        else:
-                            field_type = 'INTEGER'
-
-                elif issubclass(field_options['type'], long):
-                    field_type = 'BIGINT'
-
-                elif issubclass(field_options['type'], types.StringTypes):
-                    if 'size' in field_options:
-                        field_type = 'CHAR({})'.format(field_options['size'])
-                    elif 'max_size' in field_options:
-                        field_type = 'VARCHAR({})'.format(field_options['max_size'])
-                    else:
-                        field_type = 'TEXT'
-
-                elif issubclass(field_options['type'], datetime.datetime):
-                    # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
-                    field_type = 'TIMESTAMP WITHOUT TIME ZONE'
-
-                elif issubclass(field_options['type'], datetime.date):
-                    field_type = 'DATE'
-
-                elif issubclass(field_options['type'], float):
-                    field_type = 'REAL'
-                    size = field_options.get('size', field_options.get('max_size', 0))
-                    if size > 6:
-                        field_type = 'DOUBLE PRECISION'
-
-                elif issubclass(field_options['type'], decimal.Decimal):
-                    field_type = 'NUMERIC'
-
-                else:
-                    raise ValueError('unknown python type: {}'.format(field_options['type'].__name__))
-
-                if field_options.get('required', False):
-                    field_type += ' NOT NULL'
-
-                if 'ref' in field_options: # strong ref, it deletes on fk row removal
-                    ref_s = field_options['ref']
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s.table, ref_s.pk)
-
-                elif 'weak_ref' in field_options: # weak ref, it sets column to null on fk row removal
-                    ref_s = field_options['weak_ref']
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s.table, ref_s.pk)
-
-            query_fields.append('  {} {}'.format(field_name, field_type))
+            query_fields.append('  {}'.format(self.get_field_SQL(field_name, field_options)))
 
         query_str.append(",{}".format(os.linesep).join(query_fields))
         query_str.append(')')
@@ -210,7 +144,26 @@ class Interface(BaseInterface):
         return True
         #return self._query("DROP SCHEMA public CASCADE")
 
+    def _get_fields(self, schema):
+        """return all the fields for the given schema"""
+        ret = []
+        query_str = []
+        query_str.append('SELECT')
+        query_str.append('  attname')
+        query_str.append('FROM')
+        query_str.append('  pg_class, pg_attribute')
+        query_str.append('WHERE')
+        query_str.append('  pg_class.relname = %s')
+        query_str.append('  AND pg_class.oid = pg_attribute.attrelid')
+        query_str.append('  AND pg_attribute.attnum > 0')
+        #query_str.append('ORDER BY')
+        #query_str.append('  attname')
+        query_str = os.linesep.join(query_str)
+        fields = self._query(query_str, [schema.table])
+        return set((d['attname'] for d in fields))
+
     def _get_indexes(self, schema):
+        """return all the indexes for the given schema"""
         ret = {}
         query_str = []
         query_str.append('SELECT')
@@ -344,18 +297,46 @@ class Interface(BaseInterface):
 
             # http://initd.org/psycopg/docs/module.html#psycopg2.ProgrammingError
             if isinstance(e, psycopg2.ProgrammingError):
-                # avoid column false postitives
-                # psycopg2.ProgrammingError - column "name" of relation "table_name" does not exist
-                if "column" not in e.message:
-                    if schema.table in e.message and "does not exist" in e.message:
-                        self._set_all_tables(schema)
-                        ret = True
+                e_msg = str(e)
+                if schema.table in e_msg and "does not exist" in e_msg:
+                    # psycopg2.ProgrammingError - column "name" of relation "table_name" does not exist
+                    if "column" in e_msg:
+                        try:
+                            ret = self._set_all_fields(schema)
+                        except ValueError:
+                            ret = False
+
+                    else:
+                        ret = self._set_all_tables(schema)
 
         else:
             self.close()
             ret = self.connect()
 
         return ret
+
+    def _set_all_fields(self, schema):
+        """
+        this will add fields that don't exist in the table if they can be set to NULL,
+        the reason they have to be NULL is adding fields to Postgres that can be NULL
+        is really light, but if they have a default value, then it can be costly
+        """
+        current_fields = self._get_fields(schema)
+        for field_name, field_options in schema.fields.iteritems():
+            if field_name not in current_fields:
+                if field_options.get('required', False):
+                    raise ValueError('Cannot safely add {} on the fly because it is required'.format(field_name))
+
+                else:
+                    query_str = []
+                    query_str.append('ALTER TABLE')
+                    query_str.append('  {}'.format(schema))
+                    query_str.append('ADD COLUMN')
+                    query_str.append('  {}'.format(self.get_field_SQL(field_name, field_options)))
+                    query_str = os.linesep.join(query_str)
+                    self._query(query_str, [], ignore_result=True)
+
+        return True
 
     def _set_all_tables(self, schema):
         """
@@ -472,4 +453,82 @@ class Interface(BaseInterface):
         query_str = os.linesep.join(query_str)
         return query_str, query_args
 
+
+    def get_field_SQL(self, field_name, field_options):
+        """
+        returns the SQL for a given field with full type information
+
+        field_name -- string -- the field's name
+        field_options -- dict -- the set options for the field
+
+        return -- string -- the field type (eg, foo BOOL NOT NULL)
+        """
+        field_type = ""
+
+        if field_options.get('pk', False):
+            field_type = 'BIGSERIAL PRIMARY KEY'
+
+        else:
+            if issubclass(field_options['type'], bool):
+                field_type = 'BOOL'
+
+            elif issubclass(field_options['type'], int):
+                size = 2147483647
+                if 'size' in field_options:
+                    size = field_options['size']
+                elif 'max_size' in field_options:
+                    size = field_options['max_size']
+
+                if size < 32767:
+                    field_type = 'SMALLINT'
+                else:
+                    if 'ref' in field_options or 'weak_ref' in field_options:
+                        field_type = 'BIGINT'
+                    else:
+                        field_type = 'INTEGER'
+
+            elif issubclass(field_options['type'], long):
+                field_type = 'BIGINT'
+
+            elif issubclass(field_options['type'], types.StringTypes):
+                if 'size' in field_options:
+                    field_type = 'CHAR({})'.format(field_options['size'])
+                elif 'max_size' in field_options:
+                    field_type = 'VARCHAR({})'.format(field_options['max_size'])
+                else:
+                    field_type = 'TEXT'
+
+            elif issubclass(field_options['type'], datetime.datetime):
+                # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
+                field_type = 'TIMESTAMP WITHOUT TIME ZONE'
+
+            elif issubclass(field_options['type'], datetime.date):
+                field_type = 'DATE'
+
+            elif issubclass(field_options['type'], float):
+                field_type = 'REAL'
+                size = field_options.get('size', field_options.get('max_size', 0))
+                if size > 6:
+                    field_type = 'DOUBLE PRECISION'
+
+            elif issubclass(field_options['type'], decimal.Decimal):
+                field_type = 'NUMERIC'
+
+            else:
+                raise ValueError('unknown python type: {}'.format(field_options['type'].__name__))
+
+            if field_options.get('required', False):
+                field_type += ' NOT NULL'
+            else:
+                field_type += ' NULL'
+
+            if 'ref' in field_options: # strong ref, it deletes on fk row removal
+                ref_s = field_options['ref']
+                field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s.table, ref_s.pk)
+
+            elif 'weak_ref' in field_options: # weak ref, it sets column to null on fk row removal
+                ref_s = field_options['weak_ref']
+                field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s.table, ref_s.pk)
+
+        return '{} {}'.format(field_name, field_type)
 

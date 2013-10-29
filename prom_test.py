@@ -32,6 +32,22 @@ def setUpModule():
     i = get_interface()
     i.delete_tables(disable_protection=True)
 
+
+def get_orm_class(table_name=None):
+    i, s = get_table(table_name=table_name)
+    t = Torm
+    t.schema = s
+    t.interface = i
+    return t
+
+#def get_orm(table_name=None):
+#    i, s = get_table(table_name=table_name)
+#    t = Torm()
+#    t.schema = s
+#    t.interface = i
+#    return t
+
+
 def get_interface():
     config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
 
@@ -41,9 +57,11 @@ def get_interface():
     assert i.connected
     return i
 
+
 def get_table_name():
     """return a random table name"""
     return "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+
 
 def get_schema(table_name=None):
     if not table_name:
@@ -57,6 +75,7 @@ def get_schema(table_name=None):
     )
 
     return s
+
 
 def get_table(table_name=None):
     """
@@ -1051,6 +1070,35 @@ class InterfacePostgresTest(TestCase):
         with self.assertRaises(postgres.psycopg2.ProgrammingError):
             rd = i.set(s, q)
 
+        s = get_schema(table_name=s.table)
+        s.che = str, False
+        rd = i.set(s, q)
+        self.assertTrue('che' in rd)
+
+    def test__set_all_fields(self):
+        i, s = get_table()
+        s.che = str, True
+        q = query.Query()
+        q.set_fields({
+            'foo': 1,
+            'bar': 'v1',
+            'che': "this field will cause the query to fail",
+        })
+
+        with self.assertRaises(ValueError):
+            ret = i._set_all_fields(s)
+
+        s = get_schema(table_name=s.table)
+        s.che = str, False
+        ret = i._set_all_fields(s)
+        self.assertTrue(ret)
+
+    def test__get_fields(self):
+        i, s = get_table()
+        fields = set([u'_created', u'_id', u'_updated', u'bar', u'foo'])
+        ret_fields = i._get_fields(s)
+        self.assertEqual(fields, ret_fields)
+
     def test_transaction_nested_fail_1(self):
         """make sure 2 new tables in a wrapped transaction work as expected"""
         i = get_interface()
@@ -1318,6 +1366,24 @@ class IteratorTest(TestCase):
 
 
 class QueryTest(TestCase):
+
+    def test_get_pks(self):
+        tclass = get_orm_class()
+        t = tclass()
+        t.foo = 1
+        t.bar = "bar1"
+        t.set()
+
+        t2 = tclass()
+        t2.foo = 2
+        t2.bar = "bar2"
+        t2.set()
+
+        pks = [t.pk, t2.pk]
+
+        res = tclass.query.get_pks(pks)
+        self.assertEqual(2, len(res))
+        self.assertEqual(list(res.pk), pks)
 
     def test_value(self):
         q = get_query()
@@ -1597,6 +1663,23 @@ class QueryTest(TestCase):
         self.assertEqual(type(o), TestGetOneTorm)
         self.assertTrue(o._id in _ids)
         self.assertFalse(o.is_modified())
+
+    def test_first_and_last(self):
+        tclass = get_orm_class()
+        first_pk = insert(tclass.interface, tclass.schema, 1)[0]
+
+        t = tclass.query.first()
+        self.assertEqual(first_pk, t.pk)
+
+        t = tclass.query.last()
+        self.assertEqual(first_pk, t.pk)
+
+        last_pk = insert(tclass.interface, tclass.schema, 1)[0]
+        t = tclass.query.first()
+        self.assertEqual(first_pk, t.pk)
+
+        t = tclass.query.last()
+        self.assertEqual(last_pk, t.pk)
 
     def test_db_disconnect(self):
         """make sure interface can recover if the db disconnects mid script execution"""

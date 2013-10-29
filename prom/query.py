@@ -383,10 +383,23 @@ class Query(object):
 
         return field_vals
 
+    def get_pks(self, field_vals):
+        """convenience method for running in__id([...]).get() since this is so common"""
+        field_name = self.orm.schema.pk
+        return self.in_field(field_name, field_vals).get()
+
     def get_pk(self, field_val):
         """convenience method for running is__id(_id).get_one() since this is so common"""
         field_name = self.orm.schema.pk
         return self.is_field(field_name, field_val).get_one()
+
+    def first(self):
+        """convenience method for running asc__id().get_one()"""
+        return self.asc__id().get_one()
+
+    def last(self):
+        """convenience method for running desc__id().get_one()"""
+        return self.desc__id().get_one()
 
     def count(self):
         """return the count of the criteria"""
