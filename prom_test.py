@@ -914,16 +914,29 @@ class InterfacePostgresTest(TestCase):
         self.assertEqual(5, r)
 
     def test_delete(self):
+        # try deleting with no table
+        i = get_interface()
+        s = get_schema()
+        q = query.Query().is_foo(1)
+        i.delete(s, q)
+
         i, s = get_table()
+
+        # try deleting with no values in the table
+        q = query.Query()
+        q.is_foo(1)
+        i.delete(s, q)
+
         _ids = insert(i, s, 5)
 
+        # delete all the inserted values
         q = query.Query()
         q.in__id(_ids)
         l = i.get(s, q)
         self.assertEqual(5, len(l))
-
         i.delete(s, q)
 
+        # verify rows are deleted
         l = i.get(s, q)
         self.assertEqual(0, len(l))
 

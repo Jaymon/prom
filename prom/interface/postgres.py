@@ -57,18 +57,22 @@ class Interface(BaseInterface):
         ignore_result = query_options.get('ignore_result', False)
         one_result = query_options.get('fetchone', False)
 
-        if not query_args:
-            self.log(query_str)
-            cur.execute(query_str)
-        else:
-            self.log("{}{}{}", query_str, os.linesep, query_args)
-            cur.execute(query_str, query_args)
-
-        if not ignore_result:
-            if one_result:
-                ret = cur.fetchone()
+        try:
+            if not query_args:
+                self.log(query_str)
+                cur.execute(query_str)
             else:
-                ret = cur.fetchall()
+                self.log("{}{}{}", query_str, os.linesep, query_args)
+                cur.execute(query_str, query_args)
+
+            if not ignore_result:
+                if one_result:
+                    ret = cur.fetchone()
+                else:
+                    ret = cur.fetchall()
+        except Exception, e:
+            self.log(e)
+            raise
 
         return ret
 
@@ -293,7 +297,8 @@ class Interface(BaseInterface):
         ret = False
         # http://initd.org/psycopg/docs/connection.html#connection.closed
         if self.connection.closed == 0:
-            self.connection.rollback() # the last query failed, so let's rollback
+            self.transaction_stop()
+            #self.connection.rollback() # the last query failed, so let's rollback
 
             # http://initd.org/psycopg/docs/module.html#psycopg2.ProgrammingError
             if isinstance(e, psycopg2.ProgrammingError):
