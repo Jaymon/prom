@@ -1,5 +1,6 @@
 import types
 import urlparse
+import datetime
 
 import re
 
@@ -202,8 +203,8 @@ class Schema(object):
         self.table = str(table)
 
         self._id = long, True, dict(pk=True)
-        self._created = long, True
-        self._updated = long, True
+        self._created = datetime.datetime, True
+        self._updated = datetime.datetime, True
 
         self.index_updated = self._updated
 
@@ -239,7 +240,6 @@ class Schema(object):
             self.unique_bar = self.bar
         """
         # canary, ignore already defined attributes
-        #if hasattr(self, name):
         if name in self.__dict__ or name in self.__class__.__dict__:
             return object.__setattr__(self, name, val)
 
@@ -255,9 +255,7 @@ class Schema(object):
         index_types = {
             # index_type : **kwargs options
             'index': {},
-            #'iindex': dict(ignore_case=True),
             'unique': dict(unique=True)
-            #'iunique': dict(unique=True, ignore_case=True)
         }
 
         if name_bits[0] in index_types:

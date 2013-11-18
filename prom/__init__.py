@@ -10,7 +10,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.9.12'
+__version__ = '0.9.13'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -54,6 +54,7 @@ def configure_environ(dsn_env_name='PROM_DSN'):
         except KeyError:
             pass
 
+
 def configure(dsn):
     """
     configure an interface to be used to query a backend
@@ -77,6 +78,7 @@ def configure(dsn):
     set_interface(i, c.name)
     return i
 
+
 def set_interface(interface, name=''):
     """
     don't want to bother with a dsn? Use this method to make an interface available
@@ -86,6 +88,7 @@ def set_interface(interface, name=''):
     global interfaces
     interfaces[name] = interface
 
+
 def get_interface(name=''):
     """
     get an interface that was created using configure()
@@ -94,6 +97,7 @@ def get_interface(name=''):
     """
     global interfaces
     return interfaces[name]
+
 
 class Orm(object):
     """

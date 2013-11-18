@@ -299,8 +299,7 @@ class Interface(object):
         return -- dict -- the same dict, but now prepared
         """
         # update the times
-        # http://crazytechthoughts.blogspot.com/2012/02/get-current-utc-timestamp-in-python.html
-        now = calendar.timegm(datetime.datetime.utcnow().utctimetuple())
+        now = datetime.datetime.utcnow()
         if is_insert:
             d[schema._created] = now
         d[schema._updated] = now
