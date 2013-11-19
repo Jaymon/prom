@@ -308,7 +308,7 @@ class Interface(BaseInterface):
                     if "column" in e_msg:
                         try:
                             ret = self._set_all_fields(schema)
-                        except ValueError:
+                        except ValueError, e:
                             ret = False
 
                     else:

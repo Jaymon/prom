@@ -300,9 +300,14 @@ class Interface(object):
         """
         # update the times
         now = datetime.datetime.utcnow()
+        field_created = schema._created
+        field_updated = schema._updated
         if is_insert:
-            d[schema._created] = now
-        d[schema._updated] = now
+            if field_created not in d:
+                d[field_created] = now
+
+        if field_updated not in d:
+            d[field_updated] = now
 
         return d
 

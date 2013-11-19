@@ -4,6 +4,7 @@ import inspect
 import sys
 import os
 import datetime
+import types
 
 # first party
 from .config import DsnConnection, Schema
@@ -313,7 +314,11 @@ class Orm(object):
         ret = False
 
         _id_name = self.schema.pk
-        _id = self.pk
+        # we will only use the primary key if it hasn't been modified
+        _id = None
+        if _id_name not in self.modified_fields:
+            _id = self.pk
+
         if _id:
             ret = self.update()
         else:
@@ -371,6 +376,46 @@ class Orm(object):
         clear all the passed in fields from the modified list
         """
         self.modified_fields = set()
+
+    @classmethod
+    def load(cls, fields):
+        """if you've dumped an object using .dump(), then you can reload it using this method"""
+        for field_name, val in fields.iteritems():
+            if isinstance(val, types.StringTypes):
+                if val.startswith(u'datetime '):
+                    _, datetime_str = val.split(' ', 1)
+                    d = datetime.datetime.strptime(datetime_str, '%Y-%m-%d %H:%M:%S.%f')
+                    fields[field_name] = d
+                elif val.startswith(u'date '):
+                    _, datetime_str = val.split(' ', 1)
+                    d = datetime.datetime.strptime(datetime_str, '%Y-%m-%d').date()
+                    fields[field_name] = d
+
+        instance = cls(**fields)
+        return instance
+
+    def dump(self):
+        """
+        this is very similar to jsonable() but where jsonable() is made for dumping
+        the data publicly (like to an api) this is made for dumping the data privately
+        (like to a file while migrating databases). This dumps all the values of
+        the class in a jsonable format that can then be used in load()
+
+        example -- 
+            foo = SomeOrm()
+            foo.bar = 1
+            d = foo.dump()
+            foo2 = SomeOrm.load(d)
+        """
+        d = {}
+        for field_name in self.schema.fields.keys():
+            val = getattr(self, field_name, None)
+            if isinstance(val, datetime.date):
+                val = "{} {}".format(type(val).__name__, str(val))
+
+            d[field_name] = val
+
+        return d
 
     def jsonable(self):
         """

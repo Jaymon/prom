@@ -251,6 +251,84 @@ class OrmTest(TestCase):
         self.assertTrue('foo' in t.modified_fields)
         self.assertEqual(1, t.foo)
 
+    def test_dump_load(self):
+        t = Torm()
+        t.schema.che = datetime.date, False,
+        t.foo = 1
+        t.bar = "1"
+        t.che = datetime.datetime.utcnow().date()
+        d = t.dump()
+        for f in t.schema.fields:
+            self.assertTrue(f in d)
+        for f in t.schema.magic_fields:
+            self.assertEqual(None, d[f])
+        for f in t.schema.normal_fields:
+            self.assertNotEqual(None, d[f])
+
+        t.set()
+        d = t.dump()
+        self.assertEqual(len(Torm.schema.fields), len(d))
+        for f in t.schema.fields:
+            self.assertTrue(f in d)
+            self.assertNotEqual(None, d[f])
+
+        self.assertTrue(d[t.schema._updated].startswith('datetime '))
+
+        t2 = Torm.load(d)
+
+        self.assertEqual(t.updated, t2.updated)
+        self.assertEqual(t.created, t2.created)
+        self.assertEqual(t.che, t2.che)
+
+    def test_modify_magic_fields(self):
+        """make sure setting magic values like _created will work correctly, this came
+        into play when I was loading from a json dump file"""
+        t = Torm()
+        dt = datetime.datetime(2009, 10, 11, 12, 13, 14)
+        t._updated = dt
+        t._created = dt
+        t.foo = 1
+        t.bar = "1"
+
+        t.set()
+        self.assertEqual(dt, t._updated)
+        self.assertEqual(dt, t._created)
+
+        t.foo = 2
+        t.set()
+        self.assertEqual(dt, t._created)
+        self.assertNotEqual(dt, t._updated)
+
+        t.bar = "2"
+        t._updated = dt
+        t.set()
+        self.assertEqual(dt, t._updated)
+        self.assertEqual(dt, t._created)
+
+        t2 = Torm()
+        t2.foo = 1
+        t2.bar = "1"
+        t2.set()
+        self.assertTrue(isinstance(t2._created, datetime.datetime))
+        self.assertTrue(isinstance(t2._updated, datetime.datetime))
+
+        t3 = Torm()
+        t3._id = 10
+        t3.foo = 1
+        t3.bar = "1"
+        t3.set()
+        
+        rt3 = Torm.query.get_pk(10)
+        self.assertEqual(rt3.dump(), t3.dump())
+
+        rt3.foo = 2
+        rt3.set()
+        self.assertEqual(t3.pk, rt3.pk)
+        self.assertNotEqual(t3.foo, rt3.foo)
+
+
+
+
     def test_set(self):
         t = Torm(foo=1, bar="value 1", this_is_ignored="as it should be")
         self.assertEqual(1, t.foo)
@@ -1277,6 +1355,31 @@ class InterfacePostgresTest(TestCase):
         })
         with self.assertRaises(postgres.psycopg2.OperationalError):
             rd = i.set(s, q)
+
+    def test__id_insert(self):
+        """this fails, so you should be really careful if you set _id and make sure you
+        set the auto-increment appropriately"""
+        return 
+        interface, schema = get_table()
+        start = 5
+        stop = 10
+        for i in xrange(start, stop):
+            q = query.Query()
+            q.set_fields({
+                '_id': i,
+                'foo': i,
+                'bar': 'v{}'.format(i)
+            })
+            d = interface.set(schema, q)
+
+        for i in xrange(0, stop):
+            q = query.Query()
+            q.set_fields({
+                'foo': stop + 1,
+                'bar': 'v{}'.format(stop + 1)
+            })
+            d = interface.set(schema, q)
+            pout.v(d['_id'])
 
 
 class IteratorTest(TestCase):
