@@ -418,9 +418,19 @@ class Query(object):
         """remove fields matching the where criteria"""
         return self._query('delete')
 
-    def get_query(self, query_str, *query_args, **query_options):
+    def raw(self, query_str, *query_args, **query_options):
         """
-        use the interface query method to pass in your own raw query
+        use the interface.query() method to pass in your own raw query without
+        any processing
+
+        NOTE -- This will allow you to make any raw query and will usually return
+        raw results, it won't wrap those results in a prom.Orm iterator instance
+        like other methods like .all() and .get()
+
+        query_str -- string -- the raw query for whatever the backend interface is
+        query_args -- list -- if you have named parameters, you can pass in the values
+        **query_options -- dict -- key:val options for the backend, these are very backend specific
+        return -- mixed -- depends on the backend and the type of query
         """
         i = self.orm.interface
         return i.query(query_str, *query_args, **query_options)

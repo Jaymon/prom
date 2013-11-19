@@ -11,7 +11,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.9.13'
+__version__ = '0.9.14'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -213,6 +213,18 @@ class Orm(object):
         """wrapper property method to return the updated timestamp"""
         return getattr(self, self.schema._updated, None)
 
+    @property
+    def fields(self):
+        """
+        return all the fields and their raw values for this Orm instance. This
+        property returns a dict with the field names and their current values
+
+        if you want a dump of *all* the fields in an easy to serialize to json format
+        use .dump(), if you want to control the values for like an api, use 
+        .jsonable()
+        """
+        return {k:getattr(self, k, None) for k in self.schema.fields}
+
     def __init__(self, **fields):
         self.reset_modified()
         self.modify(fields)
@@ -379,7 +391,13 @@ class Orm(object):
 
     @classmethod
     def load(cls, fields):
-        """if you've dumped an object using .dump(), then you can reload it using this method"""
+        """
+        if you've dumped an object using .dump(), then you can reload it using this method
+
+        .modify() works on an instance and does no manipulation of the data, this will
+        manipulate data if it needs to and works at the class level (not the instance level),
+        returning an instance of the class
+        """
         for field_name, val in fields.iteritems():
             if isinstance(val, types.StringTypes):
                 if val.startswith(u'datetime '):

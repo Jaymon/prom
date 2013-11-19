@@ -177,7 +177,7 @@ query.is_foo(10).is_bar("value 2").desc_che().get(5)
 You can also write your own queries by hand:
 
 ```python
-query.get_query("SELECT * FROM table_name WHERE foo = %s", [foo_val])
+query.raw("SELECT * FROM table_name WHERE foo = %s", [foo_val])
 ```
 
 The `prom.Query` has a couple helpful query methods to make grabbing rows easy:
@@ -187,10 +187,10 @@ The `prom.Query` has a couple helpful query methods to make grabbing rows easy:
   * `has` -- `has()` -- return True if there is atleast one row in the db matching query
   * `get_pk` -- `get_pk(pk)` -- run the select query with a `WHERE _id = pk`
   * `get_pks` -- `get_pks([pk1, pk2,...])` -- run the select query with `WHERE _id IN (...)`
-  * `get_query` -- `get_query(query_str, *query_args, **query_options)` -- run a raw query
+  * `raw` -- `raw(query_str, *query_args, **query_options)` -- run a raw query
   * `all` -- `all()` -- return an iterator that can move through every row in the db matching query
 
-**NOTE**, Doing custom queries using `get_query` would be the only way to do join queries.
+**NOTE**, Doing custom queries using `raw` would be the only way to do join queries.
 
 ### The Iterator class
 

@@ -381,6 +381,16 @@ class OrmTest(TestCase):
         self.assertEqual(1000, t.foo)
         self.assertEqual("value1000", t.bar)
 
+    def test_fields(self):
+        t = Torm.create(foo=1000, bar="value1000")
+        d = t.fields
+        for f in t.schema.fields:
+            self.assertTrue(f in d)
+
+        # just make sure changing the dict doesn't mess up the Orm instance
+        d[t.schema.pk] = d[t.schema.pk] + 1
+        self.assertNotEqual(d[t.schema.pk], t.pk)
+
 
 class PromTest(TestCase):
 
