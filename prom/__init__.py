@@ -11,7 +11,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.9.14'
+__version__ = '0.9.15'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -397,6 +397,9 @@ class Orm(object):
         .modify() works on an instance and does no manipulation of the data, this will
         manipulate data if it needs to and works at the class level (not the instance level),
         returning an instance of the class
+
+        would a better name be undump? I originally did load and dump to match with the json
+        and serialize modules, but I kind of like undump for some reason
         """
         for field_name, val in fields.iteritems():
             if isinstance(val, types.StringTypes):

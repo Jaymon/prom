@@ -490,10 +490,13 @@ class Interface(object):
         **log_options -- 
             level -- something like logging.DEBUG
         """
-        log_level = log_options.get('level', logging.DEBUG)
-        if logger.isEnabledFor(log_level):
-            if format_args:
-                logger.log(log_level, format_str.format(*format_args))
-            else:
-                logger.log(log_level, format_str)
+        if isinstance(format_str, Exception):
+            logger.exception(format_str, *format_args)
+        else:
+            log_level = log_options.get('level', logging.DEBUG)
+            if logger.isEnabledFor(log_level):
+                if format_args:
+                    logger.log(log_level, format_str.format(*format_args))
+                else:
+                    logger.log(log_level, format_str)
 
