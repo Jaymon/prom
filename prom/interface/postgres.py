@@ -102,7 +102,7 @@ class Interface(BaseInterface):
 
     def _get_tables(self, table_name):
         query_str = 'SELECT tablename FROM pg_tables WHERE tableowner = %s'
-        query_args = [self.connection_config.database]
+        query_args = [self.connection_config.username]
 
         if table_name:
             query_str += ' AND tablename = %s'

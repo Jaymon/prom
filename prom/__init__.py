@@ -11,7 +11,7 @@ from .config import DsnConnection, Schema
 from .query import Query
 from . import decorators
 
-__version__ = '0.9.15'
+__version__ = '0.9.16'
 
 interfaces = {}
 """holds all the configured interfaces"""
