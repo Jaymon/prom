@@ -8,6 +8,7 @@ import decimal
 import datetime
 import time
 import subprocess
+import pickle
 
 import testdata
 
@@ -391,6 +392,26 @@ class OrmTest(TestCase):
         d[t.schema.pk] = d[t.schema.pk] + 1
         self.assertNotEqual(d[t.schema.pk], t.pk)
 
+    def test_pickling(self):
+        t = Torm(foo=10000, bar="value10000")
+
+        p = pickle.dumps(t)
+        t2 = pickle.loads(p)
+        self.assertEqual(t.fields, t2.fields)
+        self.assertEqual(t.modified_fields, t2.modified_fields)
+
+        t.set()
+        p = pickle.dumps(t)
+        t2 = pickle.loads(p)
+        self.assertEqual(t.fields, t2.fields)
+        self.assertEqual(t.modified_fields, t2.modified_fields)
+
+        t2.foo += 1
+        t2.set()
+
+        t3 = Torm.query.get_pk(t2.pk)
+        self.assertEqual(t3.fields, t2.fields)
+
 
 class PromTest(TestCase):
 
@@ -486,60 +507,60 @@ class ConfigSchemaTest(TestCase):
     def test_set_field(self):
         s = Schema("foo")
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(AssertionError):
             s.set_field("", int)
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(AssertionError):
             s.set_field("foo", "bogus")
 
-        s.set_field("foo", int)
-        self.assertEqual({'name': "foo", 'type': int, 'required': False}, s.fields["foo"])
+        s.set_field("foo", prom.Field(int))
+        self.assertEqual({'name': "foo", 'type': int, 'required': False, 'unique': False}, s.fields["foo"])
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(AssertionError):
             s.set_field("foo", int)
 
-        s.set_field("bar", int, True)
-        self.assertEqual({'name': "bar", 'type': int, 'required': True}, s.fields["bar"])
+        s.set_field("bar", prom.Field(int, True))
+        self.assertEqual({'name': "bar", 'type': int, 'required': True, 'unique': False}, s.fields["bar"])
 
-        s.set_field("che", int, True, {"size": 10})
-        self.assertEqual({'name': "che", 'type': int, 'required': True, "size": 10}, s.fields["che"])
+        s.set_field("che", prom.Field(int, True, size=10))
+        self.assertEqual({'name': "che", 'type': int, 'required': True, "size": 10, 'unique': False}, s.fields["che"])
 
         with self.assertRaises(ValueError):
-            s.set_field("baz", int, True, {"min_size": 10})
+            s.set_field("baz", prom.Field(int, True, min_size=10))
 
         s = Schema("foo")
-        s.set_field("foo", int, options={"size": 10, "max_size": 50})
-        self.assertEqual({'name': "foo", 'type': int, 'required': False, "size": 10}, s.fields["foo"])
+        s.set_field("foo", prom.Field(int, size=10, max_size=50))
+        self.assertEqual({'name': "foo", 'type': int, 'required': False, "size": 10, 'unique': False}, s.fields["foo"])
 
         s = Schema("foo")
-        s.set_field("foo", int, options={"min_size": 10, "max_size": 50})
-        self.assertEqual({'name': "foo", 'type': int, 'required': False, "min_size": 10, "max_size": 50}, s.fields["foo"])
+        s.set_field("foo", prom.Field(int, min_size=10, max_size=50))
+        self.assertEqual({'name': "foo", 'type': int, 'required': False, "min_size": 10, "max_size": 50, 'unique': False}, s.fields["foo"])
         self.assertFalse("foo" in s.indexes)
 
         s = Schema("foo")
-        s.set_field("foo", int, options={"unique": True})
-        self.assertEqual({'name': "foo", 'type': int, 'required': False}, s.fields["foo"])
+        s.set_field("foo", prom.Field(int, unique=True))
+        self.assertEqual({'name': "foo", 'type': int, 'required': False, 'unique': True}, s.fields["foo"])
         self.assertEqual({'name': "foo", 'fields': ["foo"], 'unique': True}, s.indexes["foo"])
 
         s = Schema("foo")
-        s.set_field("foo", int, options={"ignore_case": True})
-        self.assertEqual({'name': "foo", 'type': int, 'required': False, 'ignore_case': True}, s.fields["foo"])
+        s.set_field("foo", prom.Field(int, ignore_case=True))
+        self.assertEqual({'name': "foo", 'type': int, 'required': False, 'ignore_case': True, 'unique': False}, s.fields["foo"])
 
     def test___setattr__field(self):
         s = Schema("foo")
         s.bar = int, True
-        self.assertEqual({'name': "bar", 'type': int, 'required': True}, s.fields["bar"])
+        self.assertEqual({'name': "bar", 'type': int, 'required': True, 'unique': False}, s.fields["bar"])
 
         s.che = int
-        self.assertEqual({'name': "che", 'type': int, 'required': False}, s.fields["che"])
+        self.assertEqual({'name': "che", 'type': int, 'required': False, 'unique': False}, s.fields["che"])
 
         s.foobar = int,
-        self.assertEqual({'name': "foobar", 'type': int, 'required': False}, s.fields["foobar"])
+        self.assertEqual({'name': "foobar", 'type': int, 'required': False, 'unique': False}, s.fields["foobar"])
 
         s.baz = int, True, {"size": 10}
-        self.assertEqual({'name': "baz", 'type': int, 'required': True, "size": 10}, s.fields["baz"])
+        self.assertEqual({'name': "baz", 'type': int, 'required': True, "size": 10, 'unique': False}, s.fields["baz"])
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(AssertionError):
             s.che = str,
 
     def test_set_index(self):
@@ -752,6 +773,20 @@ class ConfigConnectionTest(TestCase):
         self.assertEqual("blah.example.com", p.host)
         self.assertEqual(43, p.port)
 
+class ConfigFieldTest(TestCase):
+
+    def test___new__(self):
+        f = prom.Field(str, True)
+        self.assertTrue(f[1])
+        self.assertTrue(issubclass(f[0], str))
+        self.assertTrue(isinstance(f, tuple))
+
+        with self.assertRaises(TypeError):
+            f = prom.Field()
+
+        f = prom.Field(int, max_length=100)
+        self.assertTrue(issubclass(f[0], int))
+        self.assertEqual(f[2]['max_length'], 100)
 
 class InterfacePostgresTest(TestCase):
     def test_connect(self):

@@ -202,9 +202,9 @@ class Schema(object):
         self.indexes = {}
         self.table = str(table)
 
-        self._id = long, True, dict(pk=True)
-        self._created = datetime.datetime, True
-        self._updated = datetime.datetime, True
+        self._id = Field(long, True, pk=True)
+        self._created = Field(datetime.datetime, True)
+        self._updated = Field(datetime.datetime, True)
 
         self.index_updated = self._updated
 
@@ -269,9 +269,21 @@ class Schema(object):
         if is_field:
             # compensate for passing in one value, not a tuple
             if isinstance(val, types.TypeType):
-                val = (val,)
+                val = Field(val)
 
-            self.set_field(name, *val)
+            else:
+                if not isinstance(val, Field):
+                    v_len = len(val)
+                    if v_len == 1:
+                        val = Field(val[0])
+                    elif v_len == 2:
+                        val = Field(val[0], val[1])
+                    elif v_len == 3:
+                        val = Field(val[0], val[1], **val[2])
+                    else:
+                        raise ValueError("unknown val type")
+
+            self.set_field(name, val)
 
     def __getattr__(self, name):
         """
@@ -288,61 +300,21 @@ class Schema(object):
 
         return self.fields[name]['name']
 
-    def set_field(self, field_name, field_type, required=False, options=None, **options_kwargs):
-        """
-        add a field to the schema
-
-        field_name -- string -- the name of the field
-        field_type -- type -- the python type of the field, so for a string you would pass str, integer: int,
-            boolean: bool, float: float, big int: long
-        required -- boolean -- true if this field has to be there to insert
-        options -- dict -- everything else in key: val notation. Current options:
-            size -- int -- the size you want the string to be, or the int to be
-            min_size -- int -- the minimum size
-            max_size -- int -- if you want a varchar, set this
-            unique -- boolean -- True to set a unique index on this field, this is just for convenience and is
-                equal to self.set_index(field_name, [field_name], unique=True). this is a convenience option
-                to set a unique index on the field without having to add a separate index statement
-            ignore_case -- boolean -- True to ignore case if this field is used in indexes
-        """
-        if not field_name:
-            raise ValueError("field_name is empty")
-        if not isinstance(field_type, types.TypeType):
-            raise ValueError("field_type is not a valid python built-in type: str, int, float, ...")
-        if field_name in self.fields:
-            raise ValueError("{} already exists and cannot be changed".format(field_name))
-        if not options:
-            options = {}
-        options.update(options_kwargs)
+    def set_field(self, field_name, field):
+        assert field_name, "field_name is empty"
+        assert field_name not in self.fields, "{} already exists and cannot be changed".format(field_name)
+        assert isinstance(field, Field), "{} is not a Field instance".format(type(field))
 
         d = {
             'name': field_name,
-            'type': field_type,
-            'required': required
+            'type': field[0],
+            'required': field[1]
         }
 
-        min_size = options.pop("min_size", None)
-        max_size = options.pop("max_size", None)
-        size = options.pop("size", None)
-
-        if size > 0:
-            d['size'] = size
-        else:
-            if min_size > 0 and max_size == None:
-                raise ValueError("min_size option was set with no corresponding max_size")
-
-            elif min_size == None and max_size > 0:
-                d['max_size'] = max_size
-
-            elif min_size >= 0 and max_size >= 0:
-                d['min_size'] = min_size
-                d['max_size'] = max_size
-
-        unique = options.pop("unique", False)
-        if unique:
+        if field[2]['unique']:
             self.set_index(field_name, [field_name], unique=True)
 
-        d.update(options)
+        d.update(field[2])
         self.fields[field_name] = d
 
         return self
@@ -394,4 +366,48 @@ class Schema(object):
             raise KeyError(u"key {} is not in the {} schema".format(k, self.table))
 
         return k
+
+class Field(tuple):
+    def __new__(cls, field_type, field_required=False, **field_options):
+        """
+        create a field tuple
+
+        field_type -- type -- the python type of the field, so for a string you would pass str, integer: int,
+            boolean: bool, float: float, big int: long
+        field_required -- boolean -- true if this field has to be there to insert
+        **field_options -- dict -- everything else in key: val notation. Current options:
+            size -- int -- the size you want the string to be, or the int to be
+            min_size -- int -- the minimum size
+            max_size -- int -- if you want a varchar, set this
+            unique -- boolean -- True to set a unique index on this field, this is just for convenience and is
+                equal to self.set_index(field_name, [field_name], unique=True). this is a convenience option
+                to set a unique index on the field without having to add a separate index statement
+            ignore_case -- boolean -- True to ignore case if this field is used in indexes
+        """
+        if not isinstance(field_type, types.TypeType):
+            raise ValueError("field_type is not a valid python built-in type: str, int, float, ...")
+
+        d = {}
+        min_size = field_options.pop("min_size", None)
+        max_size = field_options.pop("max_size", None)
+        size = field_options.pop("size", None)
+
+        if size > 0:
+            d['size'] = size
+        else:
+            if min_size > 0 and max_size == None:
+                raise ValueError("min_size option was set with no corresponding max_size")
+
+            elif min_size == None and max_size > 0:
+                d['max_size'] = max_size
+
+            elif min_size >= 0 and max_size >= 0:
+                d['min_size'] = min_size
+                d['max_size'] = max_size
+
+        field_options.setdefault("unique", False)
+        field_options.update(d)
+
+        instance = super(Field, cls).__new__(cls, [field_type, field_required, field_options])
+        return instance
 

@@ -7,11 +7,11 @@ import datetime
 import types
 
 # first party
-from .config import DsnConnection, Schema
+from .config import DsnConnection, Schema, Field
 from .query import Query
 from . import decorators
 
-__version__ = '0.9.16'
+__version__ = '0.9.17'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -432,15 +432,17 @@ class Orm(object):
         for field_name in self.schema.fields.keys():
             val = getattr(self, field_name, None)
             if isinstance(val, datetime.date):
+                # http://stackoverflow.com/questions/10721409/
+                # http://stackoverflow.com/questions/11875770/
                 val = "{} {}".format(type(val).__name__, str(val))
 
             d[field_name] = val
 
         return d
 
-    def jsonable(self):
+    def jsonable(self, *args, **options):
         """
-        return a version of this instance that can be jsonified
+        return a public version of this instance that can be jsonified
 
         Note that this does not return _id, _created, _updated, the reason why is
         because lots of times you have a different name for _id (like if it is a 
@@ -448,7 +450,8 @@ class Orm(object):
         didn't want to make assumptions
 
         note 2, I'm not crazy about the name, but I didn't like to_dict() and pretty
-        much any time I need to convert the object to a dict is for json
+        much any time I need to convert the object to a dict is for json, I kind of
+        like dictify() though, but I've already used this method in so many places
         """
         d = {}
         def default_field_type(field_type):

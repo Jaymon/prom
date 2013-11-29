@@ -16,9 +16,9 @@ class User(prom.Orm):
 
     schema = prom.Schema(
         "user_table_name", # the db table name
-        username=(str, True), # string field (required)
-        password=(str, True), # string field (required)
-        email=(str,), # string field (not required)
+        username=prom.Field(str, True), # string field (required)
+        password=prom.Field(str, True), # string field (required)
+        email=prom.Field(str), # string field (not required)
         unique_user=('username',) # set a unique index on username field
         index_email=('email',) # set a normal index on email field
     )
@@ -224,6 +224,28 @@ If you want to install the tables manually, you can create a script or something
 
 ## Schema class
 
+### The Field class
+
+You can create fields in your schema using the `Field` class, the field has a signature like this:
+
+```python
+Field(field_type, field_required, **field_options)
+```
+
+The `field_type` is the python type (eg, `str` or `int` or `datetime`) you want the field to be.
+
+The `field_required` is a boolean, it is true if the field needs to have a value, false if it doesn't need to be in the db.
+
+The `field_options` are any other settings for the fields, some possible values:
+
+  * `ref` -- a Foreign key strong reference to another schema
+  * `weak_ref` -- a Foreign key weak reference to another schema
+  * `size` -- the size of the field (for a `str` this would be the number of characters in the string)
+  * `max_size` -- The max size of the field (for a `str`, the maximum number of characters, for an `int`, the biggest number you're expecting)
+  * `min_size` -- The minimum size of the field (can only be used with a corresponding `max_size` value)
+  * `unique` -- set to True if this field value should be unique among all the fields in the db.
+  * `ignore_case` -- set to True if indexes on this field should ignore case
+
 ### Foreign Keys
 
 You can have a field reference the primary key of another field:
@@ -231,12 +253,12 @@ You can have a field reference the primary key of another field:
 ```python
 s1 = prom.Schema(
     "table_1",
-    foo=(int,)
+    foo=prom.Field(int)
 )
 
 s2 = prom.Schema(
     "table_2",
-    s1_id=(int, True, dict(ref=s1))
+    s1_id=prom.Field(int, True, ref=s1)
 )
 ```
 
@@ -245,9 +267,10 @@ the `ref` option creates a strong reference, which will delete the row from `s2`
 ```python
 s2 = prom.Schema(
     "table_2",
-    s1_id=(int, False, dict(weak_ref=s1))
+    s1_id=prom.Field(int, weak_ref=s1)
 )
 ```
+
 
 ## Other things
 
