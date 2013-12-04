@@ -273,15 +273,7 @@ class Schema(object):
 
             else:
                 if not isinstance(val, Field):
-                    v_len = len(val)
-                    if v_len == 1:
-                        val = Field(val[0])
-                    elif v_len == 2:
-                        val = Field(val[0], val[1])
-                    elif v_len == 3:
-                        val = Field(val[0], val[1], **val[2])
-                    else:
-                        raise ValueError("unknown val type")
+                    val = Field(*val)
 
             self.set_field(name, val)
 
@@ -368,14 +360,14 @@ class Schema(object):
         return k
 
 class Field(tuple):
-    def __new__(cls, field_type, field_required=False, **field_options):
+    def __new__(cls, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
         create a field tuple
 
         field_type -- type -- the python type of the field, so for a string you would pass str, integer: int,
             boolean: bool, float: float, big int: long
         field_required -- boolean -- true if this field has to be there to insert
-        **field_options -- dict -- everything else in key: val notation. Current options:
+        field_options -- dict -- everything else in key: val notation. Current options:
             size -- int -- the size you want the string to be, or the int to be
             min_size -- int -- the minimum size
             max_size -- int -- if you want a varchar, set this
@@ -383,11 +375,15 @@ class Field(tuple):
                 equal to self.set_index(field_name, [field_name], unique=True). this is a convenience option
                 to set a unique index on the field without having to add a separate index statement
             ignore_case -- boolean -- True to ignore case if this field is used in indexes
+        **field_options_kwargs -- will be combined with field_options
         """
         if not isinstance(field_type, types.TypeType):
             raise ValueError("field_type is not a valid python built-in type: str, int, float, ...")
 
         d = {}
+        if not field_options: field_options = {}
+        if field_options_kwargs: field_options.update(field_options_kwargs)
+
         min_size = field_options.pop("min_size", None)
         max_size = field_options.pop("max_size", None)
         size = field_options.pop("size", None)

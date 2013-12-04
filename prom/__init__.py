@@ -11,7 +11,7 @@ from .config import DsnConnection, Schema, Field
 from .query import Query
 from . import decorators
 
-__version__ = '0.9.17'
+__version__ = '0.9.18'
 
 interfaces = {}
 """holds all the configured interfaces"""
@@ -219,18 +219,17 @@ class Orm(object):
         return all the fields and their raw values for this Orm instance. This
         property returns a dict with the field names and their current values
 
-        if you want a dump of *all* the fields in an easy to serialize to json format
-        use .dump(), if you want to control the values for like an api, use 
-        .jsonable()
+        if you want to control the values for outputting to an api, use .jsonable()
         """
         return {k:getattr(self, k, None) for k in self.schema.fields}
 
-    def __init__(self, **fields):
+    def __init__(self, fields=None, **fields_kwargs):
+        fields = self._normalize_dict(fields, fields_kwargs)
         self.reset_modified()
         self.modify(fields)
 
     @classmethod
-    def normalize(cls, fields):
+    def normalize(cls, fields=None, **fields_kwargs):
         """
         return only the fields in the fields dict that are also in schema
 
@@ -240,6 +239,7 @@ class Orm(object):
         return -- dict -- the field/values that are in cls.schema
         """
         rd = {}
+        fields = cls._normalize_dict(fields, fields_kwargs)
         s = cls.schema
         for field_name, field_val in fields.iteritems():
             if field_name in s.fields:
@@ -252,30 +252,28 @@ class Orm(object):
         return rd
 
     @classmethod
-    def create(cls, fields=None, **field_kwargs):
+    def create(cls, fields=None, **fields_kwargs):
         """
         create an instance of cls with the passed in fields and set it into the db
 
         fields -- dict -- field_name keys, with their respective values
-        **field_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
+        **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
         """
-        if not fields: fields = {}
-        fields.update(field_kwargs)
+        fields = cls._normalize_dict(fields, fields_kwargs)
         instance = cls(**cls.normalize(fields))
         instance.set()
         return instance
 
     @classmethod
-    def populate(cls, fields=None, **field_kwargs):
+    def populate(cls, fields=None, **fields_kwargs):
         """
         create an instance of cls with the passed in fields but don't set it into the db or mark the passed
         in fields as modified, this is used by the Query class to hydrate objects
 
         fields -- dict -- field_name keys, with their respective values
-        **field_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
+        **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
         """
-        if not fields: fields = {}
-        fields.update(field_kwargs)
+        fields = cls._normalize_dict(fields, fields_kwargs)
         instance = cls(**fields)
         instance.reset_modified()
         return instance
@@ -367,11 +365,9 @@ class Orm(object):
 
         return fields
 
-    def modify(self, fields=None, **field_kwargs):
+    def modify(self, fields=None, **fields_kwargs):
         """update the fields of this instance with the values in dict fields"""
-        if not fields: fields = {}
-        fields.update(field_kwargs)
-
+        fields = self._normalize_dict(fields, fields_kwargs)
         for field_name, field_val in fields.iteritems():
             setattr(self, field_name, field_val)
 
@@ -388,57 +384,6 @@ class Orm(object):
         clear all the passed in fields from the modified list
         """
         self.modified_fields = set()
-
-    @classmethod
-    def load(cls, fields):
-        """
-        if you've dumped an object using .dump(), then you can reload it using this method
-
-        .modify() works on an instance and does no manipulation of the data, this will
-        manipulate data if it needs to and works at the class level (not the instance level),
-        returning an instance of the class
-
-        would a better name be undump? I originally did load and dump to match with the json
-        and serialize modules, but I kind of like undump for some reason
-        """
-        for field_name, val in fields.iteritems():
-            if isinstance(val, types.StringTypes):
-                if val.startswith(u'datetime '):
-                    _, datetime_str = val.split(' ', 1)
-                    d = datetime.datetime.strptime(datetime_str, '%Y-%m-%d %H:%M:%S.%f')
-                    fields[field_name] = d
-                elif val.startswith(u'date '):
-                    _, datetime_str = val.split(' ', 1)
-                    d = datetime.datetime.strptime(datetime_str, '%Y-%m-%d').date()
-                    fields[field_name] = d
-
-        instance = cls(**fields)
-        return instance
-
-    def dump(self):
-        """
-        this is very similar to jsonable() but where jsonable() is made for dumping
-        the data publicly (like to an api) this is made for dumping the data privately
-        (like to a file while migrating databases). This dumps all the values of
-        the class in a jsonable format that can then be used in load()
-
-        example -- 
-            foo = SomeOrm()
-            foo.bar = 1
-            d = foo.dump()
-            foo2 = SomeOrm.load(d)
-        """
-        d = {}
-        for field_name in self.schema.fields.keys():
-            val = getattr(self, field_name, None)
-            if isinstance(val, datetime.date):
-                # http://stackoverflow.com/questions/10721409/
-                # http://stackoverflow.com/questions/11875770/
-                val = "{} {}".format(type(val).__name__, str(val))
-
-            d[field_name] = val
-
-        return d
 
     def jsonable(self, *args, **options):
         """
@@ -483,9 +428,21 @@ class Orm(object):
         return d
 
     @classmethod
+    def _normalize_dict(cls, fields, fields_kwargs):
+        """lot's of methods take a dict or kwargs, this combines those"""
+        if not fields:
+            fields = {}
+
+        if fields_kwargs:
+            fields.update(fields_kwargs)
+
+        return fields
+
+    @classmethod
     def install(cls):
         """install the Orm's table using the Orm's schema"""
         return cls.interface.set_table(cls.schema)
+
 
 configure_environ()
 
