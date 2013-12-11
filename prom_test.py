@@ -1489,6 +1489,26 @@ class IteratorTest(TestCase):
 
 class QueryTest(TestCase):
 
+    def test_pk_fields(self):
+        tclass = get_orm_class()
+        q = tclass.query.is_pk(1)
+        q.in_pk([1, 2, 3])
+        q.gte_pk(5).lte_pk(1).lt_pk(1).gte_pk(5)
+        q.desc_pk()
+        q.asc_pk()
+        q.set_pk()
+
+        for where_tuple in q.fields_where:
+            self.assertEqual(where_tuple[1], tclass.schema.pk)
+
+        for sort_tuple in q.fields_sort:
+            self.assertEqual(sort_tuple[1], tclass.schema.pk)
+
+        for set_tuple in q.fields_set:
+            self.assertEqual(set_tuple[0], tclass.schema.pk)
+
+        #self.assertEqual(q.fields_where[0][1], tclass.schema.pk)
+
     def test_get_pks(self):
         tclass = get_orm_class()
         t = tclass()
@@ -1542,6 +1562,10 @@ class QueryTest(TestCase):
             self.assertEqual(u"value {}".format(i), v[1])
         self.assertEqual(count, icount)
 
+        icount = 0
+        for v in q.values(limit=1):
+            icount += 1
+        self.assertEqual(1, icount)
 
     def test___iter__(self):
         count = 5

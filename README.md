@@ -182,14 +182,28 @@ query.raw("SELECT * FROM table_name WHERE foo = %s", [foo_val])
 
 The `prom.Query` has a couple helpful query methods to make grabbing rows easy:
 
-  * `get` -- `get(limit=None, page=None)` -- run the select query.
-  * `get_one` -- `get_one()` -- run the select query with a LIMIT 1.
-  * `has` -- `has()` -- return True if there is atleast one row in the db matching query
-  * `get_pk` -- `get_pk(pk)` -- run the select query with a `WHERE _id = pk`
-  * `get_pks` -- `get_pks([pk1, pk2,...])` -- run the select query with `WHERE _id IN (...)`
-  * `raw` -- `raw(query_str, *query_args, **query_options)` -- run a raw query
-  * `all` -- `all()` -- return an iterator that can move through every row in the db matching query
+  * get -- `get(limit=None, page=None)` -- run the select query.
+  * get_one -- `get_one()` -- run the select query with a LIMIT 1.
+  * value -- `value()` -- similar to `get_one()` but only returns the selected field(s)
+  * values -- `values(limit=None, page=None)` -- return the selected fields as a tuple, not an Orm instance
 
+    This is really handy for when you want to get all the ids as a list:
+
+    ```python
+    # get all the bar ids we want
+    bar_ids = Bar.query.set__id().values()
+
+    # now pull out the Foo instances that correspond to the Bar ids
+    foos = Foo.query.is_bar_id(bar_ids).get()
+    ```
+
+  * has -- `has()` -- return True if there is atleast one row in the db matching query
+  * get_pk -- `get_pk(pk)` -- run the select query with a `WHERE _id = pk`
+  * get_pks -- `get_pks([pk1, pk2,...])` -- run the select query with `WHERE _id IN (...)`
+  * raw -- `raw(query_str, *query_args, **query_options)` -- run a raw query
+  * all -- `all()` -- return an iterator that can move through every row in the db matching query
+  * count -- `count()` -- return an integer of how many rows match the query
+    
 **NOTE**, Doing custom queries using `raw` would be the only way to do join queries.
 
 ### The Iterator class

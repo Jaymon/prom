@@ -278,6 +278,8 @@ class Query(object):
 
     def _split_method(self, method_name):
         command, field_name = method_name.split(u"_", 1)
+        if self.orm: field_name = self.orm.schema.field_name(field_name)
+
         return command, field_name
 
     def set_limit(self, limit):
@@ -362,9 +364,9 @@ class Query(object):
             o = self.orm.populate(d)
         return o
 
-    def values(self):
+    def values(self, limit=None, page=None):
         """convenience method to get just the values from the query"""
-        return self.get().values()
+        return self.get(limit=limit, page=page).values()
 
     def value(self):
         """convenience method to just get one value or tuple of values for the query"""
