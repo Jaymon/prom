@@ -157,12 +157,24 @@ class Query(object):
     def __iter__(self):
         return self.get()
 
+    def select_field(self, field_name):
+        """set a field to be selected"""
+        return self.set_field(field_name, None)
+
+    def select_fields(self, *fields):
+        """set multiple fields to be selected"""
+        if fields:
+            if not isinstance(fields[0], types.StringTypes): 
+                fields = list(fields[0]) + list(fields)[1:]
+
+        for field_name in fields:
+            self.set_field(field_name)
+
     def set_field(self, field_name, field_val=None):
         """
         set a field into .fields attribute
 
-        this has a dual role, in select queries, these are the select fields, but in insert/update
-        queries, these are the fields that will be inserted/updated into the db
+        n insert/update queries, these are the fields that will be inserted/updated into the db
         """
         self.fields_set.append([field_name, field_val])
         return self
@@ -384,6 +396,16 @@ class Query(object):
             raise ValueError("no select fields were set, so cannot return value")
 
         return field_vals
+
+    def pks(self, limit=None, page=None):
+        """convenience method for setting select_pk().values() since this is so common"""
+        self.fields_set = []
+        return self.select_pk().values(limit, page)
+
+    def pk(self):
+        """convenience method for setting select_pk().value() since this is so common"""
+        self.fields_set = []
+        return self.select_pk().value()
 
     def get_pks(self, field_vals):
         """convenience method for running in__id([...]).get() since this is so common"""

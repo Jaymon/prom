@@ -191,12 +191,14 @@ The `prom.Query` has a couple helpful query methods to make grabbing rows easy:
 
     ```python
     # get all the bar ids we want
-    bar_ids = Bar.query.set__id().values()
+    bar_ids = Bar.query.select_pk().values()
 
     # now pull out the Foo instances that correspond to the Bar ids
     foos = Foo.query.is_bar_id(bar_ids).get()
     ```
 
+  * pk -- `pk()` -- return the selected primary key
+  * pks -- `pks(limit=None, page=None)` -- return the selected primary keys
   * has -- `has()` -- return True if there is atleast one row in the db matching query
   * get_pk -- `get_pk(pk)` -- run the select query with a `WHERE _id = pk`
   * get_pks -- `get_pks([pk1, pk2,...])` -- run the select query with `WHERE _id IN (...)`

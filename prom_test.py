@@ -1567,6 +1567,26 @@ class QueryTest(TestCase):
             icount += 1
         self.assertEqual(1, icount)
 
+    def test_pk(self):
+        q = get_query()
+        v = q.pk()
+        self.assertEqual(None, v)
+        count = 2
+        insert(q.orm.interface, q.orm.schema, count)
+
+        v = q.pk()
+        self.assertEqual(1, v)
+
+    def test_pks(self):
+        q = get_query()
+        v = list(q.pks())
+        self.assertEqual(0, len(v))
+        count = 2
+        insert(q.orm.interface, q.orm.schema, count)
+
+        v = list(q.pks())
+        self.assertEqual(2, len(v))
+
     def test___iter__(self):
         count = 5
         q = get_query()
@@ -1650,6 +1670,20 @@ class QueryTest(TestCase):
         q.set_fields(**fields)
         self.assertEqual(fields_select, q.fields_select)
         self.assertEqual(fields, q.fields)
+
+    def test_fields_select(self):
+        q = query.Query()
+        fields_select = ['foo', 'bar', 'che']
+        q.select_fields(*fields_select)
+        self.assertEqual(fields_select, q.fields_select)
+
+        q = query.Query()
+        q.select_fields(fields_select)
+        self.assertEqual(fields_select, q.fields_select)
+
+        q = query.Query()
+        q.select_fields(fields_select, 'baz')
+        self.assertEqual(fields_select + ['baz'], q.fields_select)
 
     def test_child_magic(self):
 
