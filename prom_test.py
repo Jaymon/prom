@@ -12,8 +12,9 @@ import pickle
 
 import testdata
 
-from prom import query, Orm
-from prom.config import Schema, Connection, DsnConnection
+from prom import query
+from prom.model import Orm
+from prom.config import Schema, Connection, DsnConnection, Field
 from prom.interface import postgres
 from prom.interface.postgres import Interface as PGInterface
 import prom
@@ -25,6 +26,7 @@ log_handler = logging.StreamHandler(stream=sys.stderr)
 log_formatter = logging.Formatter('[%(levelname)s] %(message)s')
 log_handler.setFormatter(log_formatter)
 logger.addHandler(log_handler)
+
 
 def setUpModule():
     """
@@ -40,6 +42,7 @@ def get_orm_class(table_name=None):
     t.schema = s
     t.interface = i
     return t
+
 
 #def get_orm(table_name=None):
 #    i, s = get_table(table_name=table_name)
@@ -135,6 +138,38 @@ class OrmTest(TestCase):
         Torm2.schema = s
         Torm2.connection_name = "torm2"
 
+    def test_none(self):
+        s = Schema(
+            get_table_name(),
+            foo=Field(int),
+            bar=Field(str),
+        )
+        Torm.schema = s
+
+        t1 = Torm()
+        t2 = Torm(foo=None, bar=None)
+        self.assertEqual(t1.fields, t2.fields)
+
+        t1.set()
+        t2.set()
+
+        t11 = Torm.query.get_pk(t1.pk)
+        t22 = Torm.query.get_pk(t2.pk)
+        ff = lambda orm: orm.schema.normal_fields
+        self.assertEqual(ff(t11), ff(t22))
+        self.assertEqual(ff(t1), ff(t11))
+        self.assertEqual(ff(t2), ff(t22))
+
+        t3 = Torm(foo=1)
+        self.assertEqual(1, t3.foo)
+        self.assertEqual(None, t3.bar)
+        t3.set()
+        self.assertEqual(1, t3.foo)
+        self.assertEqual(None, t3.bar)
+        t3 = Torm.query.get_pk(t3.pk)
+        self.assertEqual(1, t3.foo)
+        self.assertEqual(None, t3.bar)
+
     def test_jsonable(self):
         table_name = get_table_name()
         Torm.schema = Schema(
@@ -225,6 +260,18 @@ class OrmTest(TestCase):
         self.assertEqual(QueryClassTorm.query_class, QueryClassTormQuery)
         self.assertEqual(Torm.query_class, query.Query)
         self.assertEqual(Torm2.query_class, Torm2Query)
+
+    def test_query_ref(self):
+        t1 = get_orm_class()
+        t2 = get_orm_class()
+        t2.schema.che = Field(int, ref=t1)
+        orm_classpath = "{}.{}".format(t1.__module__, t1.__name__)
+        q = t2.query_ref(orm_classpath)
+        self.assertEqual([], q.fields_where)
+
+        q = t2.query_ref(orm_classpath, 1)
+        self.assertEqual('che', q.fields_where[0][1])
+        self.assertEqual(1, q.fields_where[0][2])
 
     def test_interface(self):
         i = Torm.interface
@@ -338,7 +385,7 @@ class OrmTest(TestCase):
 class PromTest(TestCase):
 
     def setUp(self):
-        prom.interfaces = {}
+        prom.interface.interfaces = {}
 
     def test_configure(self):
         dsn = 'prom.interface.postgres.Interface://username:password@localhost/db'
@@ -537,17 +584,17 @@ class ConfigDsnConnectionTest(TestCase):
         os.environ['PROM_DSN_2'] = "prom.interface.postgres.Interface://localhost:5000/database#i2"
         os.environ['PROM_DSN_4'] = "prom.interface.postgres.Interface://localhost:5000/database#i4"
         prom.configure_environ()
-        self.assertTrue('i0' in prom.interfaces)
-        self.assertTrue('i1' in prom.interfaces)
-        self.assertTrue('i2' in prom.interfaces)
-        self.assertTrue('i3' not in prom.interfaces)
-        self.assertTrue('i4' not in prom.interfaces)
+        self.assertTrue('i0' in prom.get_interfaces())
+        self.assertTrue('i1' in prom.get_interfaces())
+        self.assertTrue('i2' in prom.get_interfaces())
+        self.assertTrue('i3' not in prom.get_interfaces())
+        self.assertTrue('i4' not in prom.get_interfaces())
 
-        prom.interfaces.pop('i0', None)
-        prom.interfaces.pop('i1', None)
-        prom.interfaces.pop('i2', None)
-        prom.interfaces.pop('i3', None)
-        prom.interfaces.pop('i4', None)
+        prom.interface.interfaces.pop('i0', None)
+        prom.interface.interfaces.pop('i1', None)
+        prom.interface.interfaces.pop('i2', None)
+        prom.interface.interfaces.pop('i3', None)
+        prom.interface.interfaces.pop('i4', None)
 
     def test_dsn(self):
         tests = [
@@ -695,6 +742,7 @@ class ConfigConnectionTest(TestCase):
         self.assertEqual("blah.example.com", p.host)
         self.assertEqual(43, p.port)
 
+
 class ConfigFieldTest(TestCase):
 
     def test___new__(self):
@@ -709,6 +757,13 @@ class ConfigFieldTest(TestCase):
         f = prom.Field(int, max_length=100)
         self.assertTrue(issubclass(f[0], int))
         self.assertEqual(f[2]['max_length'], 100)
+
+    def test_ref(self):
+        t = get_orm_class()
+        bar=Field(int, ref=t)
+        self.assertTrue(issubclass(bar.options['ref_orm'], t))
+        self.assertTrue(isinstance(bar.options['ref'], Schema))
+
 
 class InterfacePostgresTest(TestCase):
     def test_connect(self):

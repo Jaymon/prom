@@ -52,20 +52,16 @@ class Iterator(object):
         similar to the dict.values() method, this will only return the selected fields
         in a tuple
 
-        return -- generator -- each iteration will return just the field values in
+        return -- ValueIterator -- each iteration will return just the field values in
             the order they were selected, if you only selected one field, than just that field
             will be returned, if you selected multiple fields than a tuple of the fields in
             the order you selected them will be returned
         """
-        field_names = self.query.fields_select
-        fcount = len(field_names)
-        if fcount:
-            for x in self.results:
-                field_vals = [x.get(fn, None) for fn in field_names]
-                yield field_vals if fcount > 1 else field_vals[0]
-
-        else:
-            raise ValueError("no select fields were set, so cannot iterate values")
+        return ValueIterator(
+            results=self.results,
+            has_more=self.has_more,
+            query=self.query
+        )
 
     def __iter__(self):
         self.reset()
@@ -94,6 +90,22 @@ class Iterator(object):
         else:
             r = d
 
+        return r
+
+
+class ValueIterator(Iterator):
+    def __init__(self, *args, **kwargs):
+        super(ValueIterator, self).__init__(*args, **kwargs)
+
+        self.field_names = self.query.fields_select
+        self.fcount = len(self.field_names)
+        if not self.fcount:
+            raise ValueError("no select fields were set, so cannot iterate values")
+
+    def _get_result(self, d):
+        r = None
+        field_vals = [d.get(fn, None) for fn in self.field_names]
+        r = field_vals if self.fcount > 1 else field_vals[0]
         return r
 
 

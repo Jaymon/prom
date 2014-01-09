@@ -4,6 +4,8 @@ import datetime
 
 import re
 
+from .model import Orm
+
 class Connection(object):
     """
     set the paramaters you want to use to connect to an interface
@@ -134,6 +136,7 @@ class DsnConnection(Connection):
 
         super(DsnConnection, self).__init__(**d)
 
+
 class Schema(object):
     """
     handles all table schema definition
@@ -207,6 +210,7 @@ class Schema(object):
         self._updated = Field(datetime.datetime, True)
 
         self.index_updated = self._updated
+        self.index_created = self._created
 
         for field_name, field_val in fields.iteritems():
             setattr(self, field_name, field_val)
@@ -359,6 +363,7 @@ class Schema(object):
 
         return k
 
+
 class Field(tuple):
     def __new__(cls, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
@@ -401,9 +406,27 @@ class Field(tuple):
                 d['min_size'] = min_size
                 d['max_size'] = max_size
 
+        # convert Orm class refs to Orm.schema refs
+        ref_key = ''
+        for k in ['ref', 'weak_ref']:
+            if k in field_options:
+                ref_key = k
+                o = field_options[k]
+                if isinstance(o, types.TypeType):
+                    if issubclass(o, Orm):
+                        field_options['ref_orm'] = o
+                        field_options[k] = o.schema
+
         field_options.setdefault("unique", False)
         field_options.update(d)
 
         instance = super(Field, cls).__new__(cls, [field_type, field_required, field_options])
+
+        # make some of the field options easier to ref
+        instance.type = instance[0]
+        instance.required = instance[1]
+        instance.options = instance[2]
+        instance.ref = instance.options.get(ref_key, None)
+
         return instance
 
