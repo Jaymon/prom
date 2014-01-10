@@ -2,11 +2,6 @@ import types
 """
 Classes and stuff that handle querying the interface for a passed in Orm class
 """
-#    query.table("table_name").is_foo(1).desc_bar().limit(10).page(2).get()
-#    query.table("table_name").is_foo(1).desc_bar().set_limit(10).set_page(2).get()
-#    query.table("table_name").is_foo(1).desc_bar().with_limit(10).with_page(2).get()
-#    query.table("table_name").is_foo(1).desc_bar().use_limit(10).use_page(2).get()
-#    query.table("table_name").is_foo(1).desc_bar().limit_to(10).on_page(2).with_offset(5).get()
 
 
 class Iterator(object):
@@ -40,6 +35,7 @@ class Iterator(object):
         self.has_more = has_more
         self.query = query
         self.reset()
+        self._values = False
 
     def reset(self):
         self.iresults = (self._get_result(x) for x in self.results)
@@ -52,16 +48,18 @@ class Iterator(object):
         similar to the dict.values() method, this will only return the selected fields
         in a tuple
 
-        return -- ValueIterator -- each iteration will return just the field values in
+        return -- self -- each iteration will return just the field values in
             the order they were selected, if you only selected one field, than just that field
             will be returned, if you selected multiple fields than a tuple of the fields in
             the order you selected them will be returned
         """
-        return ValueIterator(
-            results=self.results,
-            has_more=self.has_more,
-            query=self.query
-        )
+        self._values = True
+        self.field_names = self.query.fields_select
+        self.fcount = len(self.field_names)
+        if not self.fcount:
+            raise ValueError("no select fields were set, so cannot iterate values")
+
+        return self
 
     def __iter__(self):
         self.reset()
@@ -85,27 +83,16 @@ class Iterator(object):
 
     def _get_result(self, d):
         r = None
-        if self.orm:
-            r = self.orm.populate(d)
+        if self._values:
+            field_vals = [d.get(fn, None) for fn in self.field_names]
+            r = field_vals if self.fcount > 1 else field_vals[0]
+
         else:
-            r = d
+            if self.orm:
+                r = self.orm.populate(d)
+            else:
+                r = d
 
-        return r
-
-
-class ValueIterator(Iterator):
-    def __init__(self, *args, **kwargs):
-        super(ValueIterator, self).__init__(*args, **kwargs)
-
-        self.field_names = self.query.fields_select
-        self.fcount = len(self.field_names)
-        if not self.fcount:
-            raise ValueError("no select fields were set, so cannot iterate values")
-
-    def _get_result(self, d):
-        r = None
-        field_vals = [d.get(fn, None) for fn in self.field_names]
-        r = field_vals if self.fcount > 1 else field_vals[0]
         return r
 
 
@@ -129,6 +116,9 @@ class AllIterator(Iterator):
         has_more = True
         while has_more:
             self.results = self.query.set_offset(self.offset).get(self.chunk_limit)
+            if self._values:
+                self.results = self.results.values()
+
             has_more = self.results.has_more
             for r in self.results:
                 yield r
@@ -389,7 +379,11 @@ class Query(object):
         return o
 
     def values(self, limit=None, page=None):
-        """convenience method to get just the values from the query"""
+        """
+        convenience method to get just the values from the query (same as get().values())
+
+        if you want to get all values, you can use: self.all().values()
+        """
         return self.get(limit=limit, page=page).values()
 
     def value(self):
