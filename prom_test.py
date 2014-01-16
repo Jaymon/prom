@@ -273,6 +273,31 @@ class OrmTest(TestCase):
         self.assertEqual('che', q.fields_where[0][1])
         self.assertEqual(1, q.fields_where[0][2])
 
+    def test_query_ref_2(self):
+        t1 = get_orm_class()
+        t2 = get_orm_class()
+        t2.schema.che = Field(int, ref=t1)
+
+        ti1 = t1.create(foo=11, bar='11')
+        ti12 = t1.create(foo=12, bar='12')
+
+        ti2 = t1.create(foo=21, bar='21', che=ti1.pk)
+        ti22 = t1.create(foo=22, bar='22', che=ti12.pk)
+
+        orm_classpath = "{}.{}".format(t1.__module__, t1.__name__)
+
+        l = list(ti2.query_ref(orm_classpath, ti1.pk).select_foo().all().values())
+        self.assertEqual(21, l[0])
+
+        l = list(ti2.query_ref(orm_classpath, ti1.pk).select_foo().get().values())
+        self.assertEqual(21, l[0])
+
+        l = list(ti2.query_ref(orm_classpath, ti1.pk).select_foo().values())
+        self.assertEqual(21, l[0])
+
+        l = list(ti2.query_ref(orm_classpath).select_foo().all().values())
+        self.assertEqual(4, len(l))
+
     def test_interface(self):
         i = Torm.interface
         self.assertFalse(i is None)
