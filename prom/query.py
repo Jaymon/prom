@@ -110,14 +110,42 @@ class AllIterator(Iterator):
 
         self.chunk_limit = limit
         self.offset = offset
+        self.start_offset = offset
         super(AllIterator, self).__init__(results=[], orm=query.orm, query=query)
+
+    def __getitem__(self, k):
+        v = None
+        k = int(k)
+        lower_bound = self.offset
+        upper_bound = lower_bound + self.chunk_limit
+        if k >= lower_bound and k < upper_bound:
+            # k should be in this result set
+            if not self.results:
+                self._set_results()
+
+            i = k - lower_bound
+            v = self.results[i]
+
+        else:
+            # k is not in here, so let's just grab it
+            orm = self.query.set_offset(k).get_one() # TODO -- clone query
+            if orm:
+                v = self._get_result(orm.fields)
+            else:
+                raise IndexError("results index out of range")
+
+        return v
+
+    def _set_results(self):
+        self.results = self.query.set_offset(self.offset).get(self.chunk_limit)
+        if self._values:
+            self.results = self.results.values()
 
     def __iter__(self):
         has_more = True
+        self.offset = self.start_offset
         while has_more:
-            self.results = self.query.set_offset(self.offset).get(self.chunk_limit)
-            if self._values:
-                self.results = self.results.values()
+            self._set_results()
 
             has_more = self.results.has_more
             for r in self.results:

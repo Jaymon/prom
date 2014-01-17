@@ -1476,6 +1476,34 @@ class IteratorTest(TestCase):
         i = q.get(limit, page)
         return i
 
+    def test_all(self):
+        count = 15
+        q = get_query()
+        insert(q.orm.interface, q.orm.schema, count)
+        q.set_limit(5)
+        g = q.all()
+
+        self.assertEqual(1, g[0].foo)
+        self.assertEqual(2, g[1].foo)
+        self.assertEqual(3, g[2].foo)
+        self.assertEqual(6, g[5].foo)
+        self.assertEqual(13, g[12].foo)
+
+        with self.assertRaises(IndexError):
+            g[count + 5]
+
+        for i, x in enumerate(g):
+            if i > 7: break
+        self.assertEqual(9, g[8].foo)
+
+        gcount = 0
+        for x in g: gcount += 1
+        self.assertEqual(count, gcount)
+
+        gcount = 0
+        for x in g: gcount += 1
+        self.assertEqual(count, gcount)
+
     def test_values(self):
         count = 5
         q = get_query()
