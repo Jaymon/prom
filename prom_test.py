@@ -287,6 +287,7 @@ class OrmTest(TestCase):
         orm_classpath = "{}.{}".format(t1.__module__, t1.__name__)
 
         l = list(ti2.query_ref(orm_classpath, ti1.pk).select_foo().all().values())
+        pout.v(l)
         self.assertEqual(21, l[0])
 
         l = list(ti2.query_ref(orm_classpath, ti1.pk).select_foo().get().values())
@@ -1503,6 +1504,11 @@ class IteratorTest(TestCase):
         gcount = 0
         for x in g: gcount += 1
         self.assertEqual(count, gcount)
+
+        self.assertEqual(count, len(g))
+
+        g = q.all()
+        self.assertEqual(count, len(g))
 
     def test_values(self):
         count = 5

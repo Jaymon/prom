@@ -1,4 +1,5 @@
 import types
+import copy
 """
 Classes and stuff that handle querying the interface for a passed in Orm class
 """
@@ -33,9 +34,9 @@ class Iterator(object):
         self.results = results
         self.orm = orm
         self.has_more = has_more
-        self.query = query
-        self.reset()
+        self.query = copy.deepcopy(query)
         self._values = False
+        self.reset()
 
     def reset(self):
         self.iresults = (self._get_result(x) for x in self.results)
@@ -110,7 +111,6 @@ class AllIterator(Iterator):
 
         self.chunk_limit = limit
         self.offset = offset
-        self.start_offset = offset
         super(AllIterator, self).__init__(results=[], orm=query.orm, query=query)
 
     def __getitem__(self, k):
@@ -120,15 +120,13 @@ class AllIterator(Iterator):
         upper_bound = lower_bound + self.chunk_limit
         if k >= lower_bound and k < upper_bound:
             # k should be in this result set
-            if not self.results:
-                self._set_results()
-
             i = k - lower_bound
             v = self.results[i]
 
         else:
             # k is not in here, so let's just grab it
-            orm = self.query.set_offset(k).get_one() # TODO -- clone query
+            q = copy.deepcopy(self.query)
+            orm = q.set_offset(k).get_one()
             if orm:
                 v = self._get_result(orm.fields)
             else:
@@ -136,23 +134,52 @@ class AllIterator(Iterator):
 
         return v
 
-    def _set_results(self):
-        self.results = self.query.set_offset(self.offset).get(self.chunk_limit)
-        if self._values:
-            self.results = self.results.values()
+    def __len__(self):
+        ret = 0
+        if self.results.has_more:
+            # we need to do a count query
+            q = copy.deepcopy(self.query)
+            q.set_limit(0).set_offset(0)
+            ret = q.count()
+        else:
+            ret = (self.offset - self.start_offset) + len(self.results)
+
+        return ret
 
     def __iter__(self):
         has_more = True
-        self.offset = self.start_offset
+        self.reset()
         while has_more:
-            self._set_results()
-
             has_more = self.results.has_more
             for r in self.results:
                 yield r
 
             self.offset += self.chunk_limit
+            self._set_results()
 
+    def _set_results(self):
+        self.results = self.query.set_offset(self.offset).get(self.chunk_limit)
+        if self._values:
+            self.results = self.results.values()
+
+    def reset(self):
+        set_results = False
+        if hasattr(self, 'start_offset'):
+            set_results = self.offset != self.start_offset
+        else:
+            self.start_offset = self.offset
+            set_results = True
+
+        if set_results:
+            self.offset = self.start_offset
+            self._set_results()
+
+        else:
+            self.results.reset()
+
+    def values(self):
+        self.results = self.results.values()
+        return super(AllIterator, self).values()
 
 class Query(object):
     """
@@ -186,6 +213,23 @@ class Query(object):
 
     def __iter__(self):
         return self.get()
+
+    def __deepcopy__(self, memodict={}):
+        q = type(self)(self.orm)
+        for key, val in self.__dict__.iteritems():
+            if isinstance(val, types.ListType):
+                setattr(q, key, list(val))
+
+            elif isinstance(val, types.DictType):
+                setattr(q, key, dict(val))
+
+            elif isinstance(val, types.TupleType):
+                setattr(q, key, tuple(val))
+
+            else:
+                setattr(q, key, val)
+
+        return q
 
     def select_field(self, field_name):
         """set a field to be selected"""
