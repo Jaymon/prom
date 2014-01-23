@@ -1477,6 +1477,13 @@ class IteratorTest(TestCase):
         i = q.get(limit, page)
         return i
 
+    def test_all_len(self):
+        count = 10
+        q = get_query()
+        insert(q.orm.interface, q.orm.schema, count)
+        g = q.select_foo().desc_bar().set_limit(5).set_offset(1).all()
+        self.assertEqual(count, len(g))
+
     def test_all(self):
         count = 15
         q = get_query()

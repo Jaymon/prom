@@ -505,7 +505,17 @@ class Query(object):
 
     def count(self):
         """return the count of the criteria"""
-        return self._query('count')
+
+        # count queries shouldn't care about sorting
+        fields_sort = self.fields_sort
+        self.fields_sort = []
+
+        ret = self._query('count')
+
+        # restore previous values now that count is done
+        self.fields_sort = fields_sort
+
+        return ret
 
     def has(self):
         """returns true if there is atleast one row in the db matching the query, False otherwise"""
