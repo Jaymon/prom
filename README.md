@@ -160,6 +160,15 @@ The different ORDER BY commands:
   * `asc` -- `asc_field(fieldname)` -- do a sql `ORDER BY fieldname ASC` query
   * `desc` -- `desc_field(fieldname)` -- do a sql `ORDER BY fieldname DESC` query
 
+You can also sort by a list of values:
+
+```python
+foos = [3, 5, 2, 1]
+
+rows = query.select_foo().in_foo(foos).asc_foo(foos).values()
+print rows # [3, 5, 2, 1]
+```
+
 And you can also set limit and page in the get query:
 
 ```python

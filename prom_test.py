@@ -1869,14 +1869,64 @@ class QueryTest(TestCase):
         q.between_field("foo", 1, 2)
         self.assertEqual([["lte", "foo", 1], ["gte", "foo", 2]], q.fields_where)
 
+    def test_sort_list(self):
+        q = get_query()
+        insert(q.orm.interface, q.orm.schema, 10)
+
+        q2 = q.copy()
+        foos = list(q2.select_foo().values())
+        random.shuffle(foos)
+
+        q3 = q.copy()
+        rows = list(q3.select_foo().in_foo(foos).asc_foo(foos).values())
+        for i, r in enumerate(rows):
+            self.assertEqual(foos[i], r)
+
+        q4 = q.copy()
+        rfoos = list(reversed(foos))
+        rows = list(q4.select_foo().in_foo(foos).desc_foo(foos).values())
+        for i, r in enumerate(rows):
+            self.assertEqual(rfoos[i], r)
+
+        # now test a string value
+        qb = q.copy()
+        bars = list(qb.select_bar().values())
+        random.shuffle(bars)
+
+        qb = q.copy()
+        rows = list(qb.in_bar(bars).asc_bar(bars).get())
+        for i, r in enumerate(rows):
+            self.assertEqual(bars[i], r.bar)
+
+        # make sure limits and offsets work
+        qb = q.copy()
+        rows = list(qb.in_bar(bars).asc_bar(bars).get(5))
+        for i, r in enumerate(rows):
+            self.assertEqual(bars[i], r.bar)
+
+        qb = q.copy()
+        rows = list(qb.in_bar(bars).asc_bar(bars).get(2, 2))
+        for i, r in enumerate(rows, 3):
+            self.assertEqual(bars[i], r.bar)
+
+        # make sure you can select on one row and sort on another
+        qv = q.copy()
+        vs = list(qv.select_foo().select_bar().values())
+        random.shuffle(vs)
+
+        qv = q.copy()
+        rows = list(qv.select_foo().asc_bar((v[1] for v in vs)).values())
+        for i, r in enumerate(rows):
+            self.assertEqual(vs[i][0], r)
+
     def test_sort_field_methods(self):
         tests = [
-            ("sort_field", ["foo", 1], [1, "foo"]),
-            ("sort_field", ["foo", -1], [-1, "foo"]),
-            ("sort_field", ["foo", 5], [1, "foo"]),
-            ("sort_field", ["foo", -5], [-1, "foo"]),
-            ("asc_field", ["foo"], [1, "foo"]),
-            ("desc_field", ["foo"], [-1, "foo"]),
+            ("sort_field", ["foo", 1], [1, "foo", None]),
+            ("sort_field", ["foo", -1], [-1, "foo", None]),
+            ("sort_field", ["foo", 5], [1, "foo", None]),
+            ("sort_field", ["foo", -5], [-1, "foo", None]),
+            ("asc_field", ["foo"], [1, "foo", None]),
+            ("desc_field", ["foo"], [-1, "foo", None]),
         ]
 
         q = query.Query("foo")

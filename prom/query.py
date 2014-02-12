@@ -214,6 +214,10 @@ class Query(object):
     def __iter__(self):
         return self.get()
 
+    def copy(self):
+        """nice handy wrapper around the deepcopy"""
+        return copy.deepcopy(self)
+
     def __deepcopy__(self, memodict={}):
         q = type(self)(self.orm)
         for key, val in self.__dict__.iteritems():
@@ -326,7 +330,14 @@ class Query(object):
         self.fields_where.append(["nin", field_name, list(field_vals)])
         return self
 
-    def sort_field(self, field_name, direction):
+    def sort_field(self, field_name, direction, field_vals=None):
+        """
+        sort this query by field_name in directrion
+
+        field_name -- string -- the field to sort on
+        direction -- integer -- negative for DESC, positive for ASC
+        field_vals -- list -- the order the rows should be returned in
+        """
         if direction > 0:
             direction = 1
         elif direction < 0:
@@ -334,15 +345,15 @@ class Query(object):
         else:
             raise ValueError("direction {} is undefined".format(direction))
 
-        self.fields_sort.append([direction, field_name])
+        self.fields_sort.append([direction, field_name, list(field_vals) if field_vals else field_vals])
         return self
 
-    def asc_field(self, field_name):
-        self.sort_field(field_name, 1)
+    def asc_field(self, field_name, field_vals=None):
+        self.sort_field(field_name, 1, field_vals)
         return self
 
-    def desc_field(self, field_name):
-        self.sort_field(field_name, -1)
+    def desc_field(self, field_name, field_vals=None):
+        self.sort_field(field_name, -1, field_vals)
         return self
 
     def __getattr__(self, method_name):

@@ -446,7 +446,16 @@ class Interface(BaseInterface):
             query_sort_str = []
             query_str.append('ORDER BY')
             for field in query.fields_sort:
-                query_sort_str.append('  {} {}'.format(field[1], 'ASC' if field[0] > 0 else 'DESC'))
+                sort_dir_str = 'ASC' if field[0] > 0 else 'DESC'
+                if field[2]:
+                    # this solution is based off: http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
+                    # see also: https://gist.github.com/cpjolicoeur/3590737
+                    for v in reversed(field[2]):
+                        query_sort_str.append('  {} = %s {}'.format(field[1], sort_dir_str))
+                        query_args.append(v)
+
+                else:
+                    query_sort_str.append('  {} {}'.format(field[1], sort_dir_str))
 
             query_str.append(',{}'.format(os.linesep).join(query_sort_str))
 
