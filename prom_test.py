@@ -1355,6 +1355,63 @@ class InterfacePostgresTest(TestCase):
         self.assertEqual(r2['_id'], d2['_id'])
         self.assertEqual(r2['s_pk'], d1['_id'])
 
+    def test_transaction_nested_fail_4(self):
+        """ran into a bug where this reared its head and data was lost"""
+        i = get_interface()
+        table_name_1 = "{}_1".format(get_table_name())
+        table_name_2 = "{}_2".format(get_table_name())
+        table_name_3 = "{}_3".format(get_table_name())
+
+        # these 2 tables exist before the transaction starts
+        s1 = Schema(
+            table_name_1,
+            foo=(int, True)
+        )
+        i.set_table(s1)
+
+        s2 = Schema(
+            table_name_2,
+            bar=(int, True),
+            s_pk=(int, True, dict(ref=s1)),
+            s_pk2=(int, True, dict(ref=s1)),
+        )
+        i.set_table(s2)
+
+        # this is the table that will be created in the transaction
+        s3 = Schema(
+            table_name_3,
+            che=(int, True),
+            s_pk=(int, True, dict(ref=s1)),
+        )
+
+        q1 = query.Query()
+        q1.set_foo(1)
+        d1 = i.set(s1, q1)
+
+        q1 = query.Query()
+        q1.set_foo(12)
+        d12 = i.set(s1, q1)
+
+        self.assertEqual(0, i.count(s2, query.Query()))
+
+        with i.transaction():
+
+            # create something and put in table 2
+            q2 = query.Query()
+            q2.set_bar(2).set_s_pk(d1['_id']).set_s_pk2(d12['_id'])
+            d2 = i.set(s2, q2)
+
+            # now this should cause the stuff to fail
+            # it fails on the select because a new transaction isn't started, so 
+            # it just discards all the current stuff and adds the table, had this
+            # been a mod query (eg, insert) it would not have failed
+            pout.b()
+            q3 = query.Query()
+            q3.is_s_pk(d1['_id'])
+            d3 = i.get(s3, q3)
+
+        self.assertEqual(1, i.count(s2, query.Query()))
+
     def test_unique(self):
         i = get_interface()
         s = get_schema()

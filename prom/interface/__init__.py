@@ -141,6 +141,10 @@ class Interface(object):
         except Exception, e:
             self.transaction_fail(e)
 
+    def in_transaction(self):
+        """return true if currently in a transaction"""
+        return self.transaction_count > 0
+
     def transaction_start(self):
         """
         start a transaction
@@ -183,7 +187,7 @@ class Interface(object):
 
         e -- Exception() -- if passed in, bubble up the exception by re-raising it
         """
-        if self.transaction_count > 0: 
+        if self.in_transaction():
             self.log("Transaction fail")
             self._transaction_fail(self.transaction_count, e)
             self.transaction_count -= 1
@@ -431,9 +435,21 @@ class Interface(object):
         ret = None
 
         try:
+            # we wrap SELECT queries in a transaction if we are in a transaction because
+            # it could cause data loss if it failed by causing the db to discard
+            # anything in the current transaction if the query isn't wrapped
+            if self.in_transaction():
+                self.transaction_start()
+
             ret = callback(schema, query, *args, **kwargs)
 
+            if self.in_transaction():
+                self.transaction_stop()
+
         except Exception, e:
+            if self.in_transaction():
+                self.transaction_fail()
+
             if self.handle_error(schema, e):
                 ret = callback(schema, query, *args, **kwargs)
 
