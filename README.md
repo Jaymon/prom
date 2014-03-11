@@ -1,10 +1,12 @@
 # Prom
 
-An opinionated lightweight orm for Postgres
+A lightweight orm for PostgreSQL
+
+Lovingly crafted for [First Opinion](http://firstopinionapp.com).
+
+Prom tries to be as easy as possible on the developer so they don't need to constantly reference the documentation to get anything done.
 
 ## Example -- Create a User class
-
-Prom tries to make it as easy as possible on the developer to set common options, so you don't have to constantly look at the documentation until you need to change something significant.
 
 Here is how you would define a new Orm class:
 
@@ -146,8 +148,8 @@ query.is_field(name, 5)
 
 The different WHERE commands:
 
-  * `in` -- `in_field(fieldname, *field_vals)` -- do a sql `fieldname IN (field_val1, ...)` query
-  * `nin` -- `nin_field(fieldname, *field_vals)` -- do a sql `fieldname NOT IN (field_val1, ...)` query
+  * `in` -- `in_field(fieldname, field_vals)` -- do a sql `fieldname IN (field_val1, ...)` query
+  * `nin` -- `nin_field(fieldname, field_vals)` -- do a sql `fieldname NOT IN (field_val1, ...)` query
   * `is` -- `is_field(fieldname, field_val)` -- do a sql `fieldname = field_val` query
   * `not` -- `not_field(fieldname, field_val)` -- do a sql `fieldname != field_val` query
   * `gt` -- `gt_field(fieldname, field_val)` -- do a sql `fieldname > field_val` query
@@ -216,6 +218,32 @@ The `prom.Query` has a couple helpful query methods to make grabbing rows easy:
   * count -- `count()` -- return an integer of how many rows match the query
     
 **NOTE**, Doing custom queries using `raw` would be the only way to do join queries.
+
+
+#### Specialty Queries
+
+If you have a date or datetime field, you can pass kwargs to [fine tune date queries](http://www.postgresql.org/docs/8.3/static/functions-datetime.html#FUNCTIONS-DATETIME-EXTRACT):
+
+```python
+import datetime
+
+class Foo(prom.Orm):
+
+    schema = prom.Schema(
+        "foo_table",
+        dt=prom.Field(datetime.datetime)
+        index_dt=('dt',)
+    )
+
+# get all the foos that have the 7th of every month
+r = q.is_dt(day=7).all() # SELECT * FROM foo_table WHERE EXTRACT(DAY FROM dt) = 7
+
+# get all the foos in 2013
+r = q.is_dt(year=2013).all()
+```
+
+Hopefully you get the idea from the above code.
+
 
 ### The Iterator class
 

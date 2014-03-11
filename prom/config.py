@@ -297,9 +297,9 @@ class Schema(object):
         return self.fields[name]['name']
 
     def set_field(self, field_name, field):
-        assert field_name, "field_name is empty"
-        assert field_name not in self.fields, "{} already exists and cannot be changed".format(field_name)
-        assert isinstance(field, Field), "{} is not a Field instance".format(type(field))
+        if not field_name: raise ValueError("field_name is empty")
+        if field_name in self.fields: raise ValueError("{} already exists and cannot be changed".format(field_name))
+        if not isinstance(field, Field): raise ValueError("{} is not a Field instance".format(type(field)))
 
         d = {
             'name': field_name,

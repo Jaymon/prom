@@ -502,16 +502,16 @@ class ConfigSchemaTest(TestCase):
     def test_set_field(self):
         s = Schema("foo")
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             s.set_field("", int)
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             s.set_field("foo", "bogus")
 
         s.set_field("foo", prom.Field(int))
         self.assertEqual({'name': "foo", 'type': int, 'required': False, 'unique': False}, s.fields["foo"])
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             s.set_field("foo", int)
 
         s.set_field("bar", prom.Field(int, True))
@@ -529,7 +529,10 @@ class ConfigSchemaTest(TestCase):
 
         s = Schema("foo")
         s.set_field("foo", prom.Field(int, min_size=10, max_size=50))
-        self.assertEqual({'name': "foo", 'type': int, 'required': False, "min_size": 10, "max_size": 50, 'unique': False}, s.fields["foo"])
+        self.assertEqual(
+            {'name': "foo", 'type': int, 'required': False, "min_size": 10, "max_size": 50, 'unique': False},
+            s.fields["foo"]
+        )
         self.assertFalse("foo" in s.indexes)
 
         s = Schema("foo")
@@ -555,7 +558,7 @@ class ConfigSchemaTest(TestCase):
         s.baz = int, True, {"size": 10}
         self.assertEqual({'name': "baz", 'type': int, 'required': True, "size": 10, 'unique': False}, s.fields["baz"])
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             s.che = str,
 
     def test_set_index(self):
@@ -1404,8 +1407,8 @@ class InterfacePostgresTest(TestCase):
             # now this should cause the stuff to fail
             # it fails on the select because a new transaction isn't started, so 
             # it just discards all the current stuff and adds the table, had this
-            # been a mod query (eg, insert) it would not have failed
-            pout.b()
+            # been a mod query (eg, insert) it would not have failed, this is fixed
+            # by wrapping selects in a transaction if an active transaction is found
             q3 = query.Query()
             q3.is_s_pk(d1['_id'])
             d3 = i.get(s3, q3)
@@ -1523,7 +1526,51 @@ class InterfacePostgresTest(TestCase):
                 'bar': 'v{}'.format(stop + 1)
             })
             d = interface.set(schema, q)
-            pout.v(d['_id'])
+
+    def test__normalize_val_SQL(self):
+        i = get_interface()
+        s = Schema(
+            "fake_table_name",
+            ts=Field(datetime.datetime, True)
+        )
+
+        #kwargs = dict(day=int(datetime.datetime.utcnow().strftime('%d')))
+        kwargs = dict(day=10)
+        fstr, fargs = i._normalize_val_SQL(s, '=', 'ts', None, kwargs)
+        self.assertEqual("EXTRACT(DAY FROM ts) = %s", fstr)
+        self.assertEqual(10, fargs[0])
+
+        kwargs = dict(day=11, hour=12)
+        fstr, fargs = i._normalize_val_SQL(s, '=', 'ts', None, kwargs)
+        self.assertEqual("EXTRACT(DAY FROM ts) = %s AND EXTRACT(HOUR FROM ts) = %s", fstr)
+        self.assertEqual(11, fargs[0])
+        self.assertEqual(12, fargs[1])
+
+        kwargs = dict(bogus=5)
+        with self.assertRaises(KeyError):
+            fstr, fargs = i._normalize_val_SQL(s, '=', 'ts', None, kwargs)
+
+    def test__normalize_list_SQL(self):
+        i = get_interface()
+        s = Schema(
+            "fake_table_name",
+            ts=Field(datetime.datetime, True)
+        )
+
+        kwargs = dict(day=[10])
+        fstr, fargs = i._normalize_list_SQL(s, 'IN', 'ts', None, kwargs)
+        self.assertEqual("EXTRACT(DAY FROM ts) IN (%s)", fstr)
+        self.assertEqual(kwargs['day'], fargs)
+
+        kwargs = dict(day=[11, 13], hour=[12])
+        fstr, fargs = i._normalize_list_SQL(s, 'IN', 'ts', None, kwargs)
+        self.assertEqual("EXTRACT(DAY FROM ts) IN (%s, %s) AND EXTRACT(HOUR FROM ts) IN (%s)", fstr)
+        self.assertEqual(kwargs['day'], fargs[0:2])
+        self.assertEqual(kwargs['hour'], fargs[2:])
+
+        kwargs = dict(bogus=[5])
+        with self.assertRaises(KeyError):
+            fstr, fargs = i._normalize_list_SQL(s, 'IN', 'ts', None, kwargs)
 
 
 class IteratorTest(TestCase):
@@ -1533,6 +1580,33 @@ class IteratorTest(TestCase):
         insert(q.orm.interface, q.orm.schema, count)
         i = q.get(limit, page)
         return i
+
+    def test_list_compatibility(self):
+        count = 3
+        _q = get_query()
+        insert(_q.orm.interface, _q.orm.schema, count)
+
+        q = _q.copy()
+        l = q.get()
+
+        self.assertTrue(bool(l))
+        self.assertEqual(count, l.count())
+        self.assertEqual(range(1, count + 1), list(l.foo))
+
+        l.reverse()
+        self.assertEqual(list(reversed(xrange(1, count + 1))), list(l.foo))
+
+        r = l.pop(0)
+        self.assertEqual(count, r.foo)
+
+        r = l.pop()
+        self.assertEqual(1, r.foo)
+
+        pop_count = 0
+        while l:
+            pop_count += 1
+            l.pop()
+        self.assertGreater(pop_count, 0)
 
     def test_all_len(self):
         count = 10
@@ -1666,6 +1740,47 @@ class IteratorTest(TestCase):
 
 
 class QueryTest(TestCase):
+    def test_null_iterator(self):
+        """you can now pass empty lists to in and nin and not have them throw an
+        error, instead they return an empty iterator"""
+        _q = get_query()
+        insert(_q.orm.interface, _q.orm.schema, 1)
+
+        q = _q.copy()
+        r = q.in_foo([]).get()
+        self.assertFalse(r)
+        count = 0
+        for x in r:
+            count += 0
+        self.assertEqual(0, count)
+        self.assertEqual(0, len(r))
+
+    def test_field_datetime(self):
+        _q = get_query()
+
+        q = _q.copy()
+        q.is__created(day=int(datetime.datetime.utcnow().strftime('%d')))
+        r = q.get()
+        self.assertFalse(r)
+
+        insert(q.orm.interface, q.orm.schema, 1)
+
+        q = _q.copy()
+        q.is__created(day=int(datetime.datetime.utcnow().strftime('%d')))
+        r = q.get()
+        self.assertEqual(1, len(r))
+
+        day = int(datetime.datetime.utcnow().strftime('%d'))
+
+        q = _q.copy()
+        q.in__created(day=day)
+        r = q.get()
+        self.assertEqual(1, len(r))
+
+        q = _q.copy()
+        q.in__created(day=[day, day + 1])
+        r = q.get()
+        self.assertEqual(1, len(r))
 
     def test_pk_fields(self):
         tclass = get_orm_class()
@@ -1803,8 +1918,8 @@ class QueryTest(TestCase):
 
     def test_in_field(self):
         q = query.Query()
-        with self.assertRaises(AssertionError):
-            q.in_foo([])
+        q.in_foo([])
+        self.assertFalse(q.can_get)
 
         q = query.Query()
         q.in_foo([1, 2])
@@ -1892,25 +2007,24 @@ class QueryTest(TestCase):
             q._split_method("testing")
 
     def test___getattr__(self):
-        
         q = query.Query()
         q.is_foo(1)
         self.assertEqual(1, len(q.fields_where))
-        self.assertEqual(["is", "foo", 1], q.fields_where[0])
+        self.assertEqual(["is", "foo", 1, {}], q.fields_where[0])
 
         with self.assertRaises(AttributeError):
             q.testsfsdfsdft_fieldname(1, 2, 3)
 
     def test_where_field_methods(self):
         tests = [
-            ("is_field", ["foo", 1], ["is", "foo", 1]),
-            ("not_field", ["foo", 1], ["not", "foo", 1]),
-            ("lte_field", ["foo", 1], ["lte", "foo", 1]),
-            ("lt_field", ["foo", 1], ["lt", "foo", 1]),
-            ("gte_field", ["foo", 1], ["gte", "foo", 1]),
-            ("gt_field", ["foo", 1], ["gt", "foo", 1]),
-            ("in_field", ["foo", (1, 2, 3)], ["in", "foo", [1, 2, 3]]),
-            ("nin_field", ["foo", (1, 2, 3)], ["nin", "foo", [1, 2, 3]]),
+            ("is_field", ["foo", 1], ["is", "foo", 1, {}]),
+            ("not_field", ["foo", 1], ["not", "foo", 1, {}]),
+            ("lte_field", ["foo", 1], ["lte", "foo", 1, {}]),
+            ("lt_field", ["foo", 1], ["lt", "foo", 1, {}]),
+            ("gte_field", ["foo", 1], ["gte", "foo", 1, {}]),
+            ("gt_field", ["foo", 1], ["gt", "foo", 1, {}]),
+            ("in_field", ["foo", (1, 2, 3)], ["in", "foo", [1, 2, 3], {}]),
+            ("nin_field", ["foo", (1, 2, 3)], ["nin", "foo", [1, 2, 3], {}]),
         ]
 
         q = query.Query("foo")
@@ -1924,7 +2038,7 @@ class QueryTest(TestCase):
         # ("between_field", ["foo", 1, 2], [["lte", "foo", 1], ["gte", "foo", 2]]),
         q = query.Query("foo")
         q.between_field("foo", 1, 2)
-        self.assertEqual([["lte", "foo", 1], ["gte", "foo", 2]], q.fields_where)
+        self.assertEqual([["lte", "foo", 1, {}], ["gte", "foo", 2, {}]], q.fields_where)
 
     def test_sort_list(self):
         q = get_query()

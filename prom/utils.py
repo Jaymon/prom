@@ -1,4 +1,5 @@
 import importlib
+import types
 
 def get_objects(classpath):
     """
@@ -12,4 +13,14 @@ def get_objects(classpath):
     module = importlib.import_module(module_name)
     klass = getattr(module, class_name)
     return module, klass
+
+
+def make_list(val):
+    """make val a list, no matter what"""
+    try:
+        r = list(val)
+    except TypeError:
+        r = [val]
+
+    return r
 

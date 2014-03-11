@@ -1,8 +1,10 @@
-import types
-import copy
 """
 Classes and stuff that handle querying the interface for a passed in Orm class
 """
+import types
+import copy
+
+from .utils import make_list
 
 
 class Iterator(object):
@@ -66,12 +68,34 @@ class Iterator(object):
         self.reset()
         return self
 
+    def __nonzero__(self):
+        return True if self.count() else False
+
     def __len__(self):
+        return self.count()
+
+    def count(self):
+        """list interface compatibility"""
         return len(self.results)
 
     def __getitem__(self, k):
         k = int(k)
         return self._get_result(self.results[k])
+
+    def pop(self, k=-1):
+        """list interface compatibility"""
+        k = int(k)
+        return self._get_result(self.results.pop(k))
+
+    def reverse(self):
+        """list interface compatibility"""
+        self.results.reverse()
+        self.reset()
+
+    def sort(self, *args, **kwargs):
+        """list interface compatibility"""
+        self.results.sort(*args, **kwargs)
+        self.reset()
 
     def __getattr__(self, k):
         """
@@ -210,6 +234,7 @@ class Query(object):
         self.bounds = {}
         self.args = args
         self.kwargs = kwargs
+        self.can_get = True
 
     def __iter__(self):
         return self.get()
@@ -285,12 +310,14 @@ class Query(object):
 
         return self
 
-    def is_field(self, field_name, field_val):
-        self.fields_where.append(["is", field_name, field_val])
+    def is_field(self, field_name, *field_val, **field_kwargs):
+        fv = field_val[0] if field_val else None
+        self.fields_where.append(["is", field_name, fv, field_kwargs])
         return self
 
-    def not_field(self, field_name, field_val):
-        self.fields_where.append(["not", field_name, field_val])
+    def not_field(self, field_name, *field_val, **field_kwargs):
+        fv = field_val[0] if field_val else None
+        self.fields_where.append(["not", field_name, fv, field_kwargs])
         return self
 
     def between_field(self, field_name, low, high):
@@ -298,36 +325,60 @@ class Query(object):
         self.gte_field(field_name, high)
         return self
 
-    def lte_field(self, field_name, field_val):
-        self.fields_where.append(["lte", field_name, field_val])
+    def lte_field(self, field_name, *field_val, **field_kwargs):
+        fv = field_val[0] if field_val else None
+        self.fields_where.append(["lte", field_name, fv, field_kwargs])
         return self
 
-    def lt_field(self, field_name, field_val):
-        self.fields_where.append(["lt", field_name, field_val])
+    def lt_field(self, field_name, *field_val, **field_kwargs):
+        fv = field_val[0] if field_val else None
+        self.fields_where.append(["lt", field_name, fv, field_kwargs])
         return self
 
-    def gte_field(self, field_name, field_val):
-        self.fields_where.append(["gte", field_name, field_val])
+    def gte_field(self, field_name, *field_val, **field_kwargs):
+        fv = field_val[0] if field_val else None
+        self.fields_where.append(["gte", field_name, fv, field_kwargs])
         return self
 
-    def gt_field(self, field_name, field_val):
-        self.fields_where.append(["gt", field_name, field_val])
+    def gt_field(self, field_name, *field_val, **field_kwargs):
+        fv = field_val[0] if field_val else None
+        self.fields_where.append(["gt", field_name, fv, field_kwargs])
         return self
 
-    def in_field(self, field_name, field_vals):
+    def in_field(self, field_name, *field_vals, **field_kwargs):
         """
         field_vals -- list -- a list of field_val values
         """
-        assert field_vals, "Cannot IN an empty list"
-        self.fields_where.append(["in", field_name, list(field_vals)])
+        fv = make_list(field_vals[0]) if field_vals else None
+        if field_kwargs:
+            for k in field_kwargs:
+                if not field_kwargs[k]:
+                    raise ValueError("Cannot IN an empty list")
+
+                field_kwargs[k] = make_list(field_kwargs[k])
+
+        else:
+            if not fv: self.can_get = False
+
+        self.fields_where.append(["in", field_name, fv, field_kwargs])
         return self
 
-    def nin_field(self, field_name, field_vals):
+    def nin_field(self, field_name, *field_vals, **field_kwargs):
         """
         field_vals -- list -- a list of field_val values
         """
-        assert field_vals, "Cannot NIN an empty list"
-        self.fields_where.append(["nin", field_name, list(field_vals)])
+        fv = make_list(field_vals[0]) if field_vals else None
+        if field_kwargs:
+            for k in field_kwargs:
+                if not field_kwargs[k]:
+                    raise ValueError("Cannot IN an empty list")
+
+                field_kwargs[k] = make_list(field_kwargs[k])
+
+        else:
+            if not fv: self.can_get = False
+
+        self.fields_where.append(["nin", field_name, fv, field_kwargs])
         return self
 
     def sort_field(self, field_name, direction, field_vals=None):
@@ -394,7 +445,6 @@ class Query(object):
         return self
 
     def get_bounds(self):
-
         limit = offset = page = limit_paginate = 0
         if "limit" in self.bounds and self.bounds["limit"] > 0:
             limit = self.bounds["limit"]
@@ -431,6 +481,7 @@ class Query(object):
         if limit_paginate:
             self.set_limit(limit_paginate)
 
+        self.default_val = []
         results = self._query('get')
 
         if limit_paginate:
@@ -455,7 +506,8 @@ class Query(object):
 
     def get_one(self):
         """get one row from the db"""
-        o = None
+        self.default_val = None
+        o = self.default_val
         d = self._query('get_one')
         if d:
             o = self.orm.populate(d)
@@ -502,7 +554,7 @@ class Query(object):
         return self.in_field(field_name, field_vals).get()
 
     def get_pk(self, field_val):
-        """convenience method for running is__id(_id).get_one() since this is so common"""
+        """convenience method for running is_pk(_id).get_one() since this is so common"""
         field_name = self.orm.schema.pk
         return self.is_field(field_name, field_val).get_one()
 
@@ -521,6 +573,7 @@ class Query(object):
         fields_sort = self.fields_sort
         self.fields_sort = []
 
+        self.default_val = 0
         ret = self._query('count')
 
         # restore previous values now that count is done
@@ -535,10 +588,12 @@ class Query(object):
 
     def set(self):
         """persist the .fields using .fields_where (if available)"""
+        self.default_val = None
         return self._query('set')
 
     def delete(self):
         """remove fields matching the where criteria"""
+        self.default_val = None
         return self._query('delete')
 
     def raw(self, query_str, *query_args, **query_options):
@@ -559,12 +614,8 @@ class Query(object):
         return i.query(query_str, *query_args, **query_options)
 
     def _query(self, method_name):
+        if not self.can_get: return self.default_val
         i = self.orm.interface
         s = self.orm.schema
         return getattr(i, method_name)(s, self)
-
-    def _create_orm(self, d):
-        o = self.orm(**d)
-        o.reset_modified()
-        return o
 

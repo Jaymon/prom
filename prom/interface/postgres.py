@@ -361,27 +361,98 @@ class Interface(BaseInterface):
         self.transaction_stop()
         return True
 
-    def _normalize_list_SQL(self, schema, symbol, field_name, field_vals):
+    def _normalize_date_SQL(self, field_name, field_kwargs):
+        """
+        allow extracting information from date
 
-        format_str = '%s'
+        http://www.postgresql.org/docs/8.3/static/functions-datetime.html#FUNCTIONS-DATETIME-EXTRACT
+        """
+        fstrs = []
+        k_opts = {
+            'century': 'EXTRACT(CENTURY FROM {})',
+            'day': 'EXTRACT(DAY FROM {})',
+            'decade': 'EXTRACT(DECADE FROM {})',
+            'weekday': 'EXTRACT(DOW FROM {})',
+            'dow': 'EXTRACT(DOW FROM {})',
+            'isodow': 'EXTRACT(ISODOW FROM {})',
+            'epoch': 'EXTRACT(EPOCH FROM {})',
+            'hour': 'EXTRACT(HOUR FROM {})',
+            'year': 'EXTRACT(YEAR FROM {})',
+            'isoyear': 'EXTRACT(ISOYEAR FROM {})',
+            'minute': 'EXTRACT(MINUTE FROM {})',
+            'month': 'EXTRACT(MONTH FROM {})',
+            'quarter': 'EXTRACT(QUARTER FROM {})',
+            'week': 'EXTRACT(WEEK FROM {})',
+        }
 
-        # postgres specific for getting around case sensitivity:
-        if schema.fields[field_name].get('ignore_case', False):
-            field_name = 'UPPER({})'.format(field_name)
-            format_str = 'UPPER(%s)'
+        for k, v in field_kwargs.iteritems():
+            fstrs.append([k_opts[k].format(field_name), '%s', v])
 
-        return '{} {} ({})'.format(field_name, symbol, ', '.join([format_str] * len(field_vals)))
+        return fstrs
 
-    def _normalize_val_SQL(self, schema, symbol, field_name, field_val):
+    def _normalize_list_SQL(self, schema, symbol, field_name, field_vals, field_kwargs=None):
 
-        format_str = '%s'
+        format_str = ''
+        format_args = []
 
-        # postgres specific for getting around case sensitivity:
-        if schema.fields[field_name].get('ignore_case', False):
-            field_name = 'UPPER({})'.format(field_name)
-            format_str = 'UPPER(%s)'
+        if field_kwargs:
+            f = schema.fields[field_name]
+            if issubclass(f['type'], (datetime.datetime, datetime.date)):
+                format_strs = self._normalize_date_SQL(field_name, field_kwargs)
+                for fname, fvstr, fargs in format_strs:
+                    if format_str:
+                        format_str += ' AND '
 
-        return '{} {} {}'.format(field_name, symbol, format_str)
+                    format_str += '{} {} ({})'.format(fname, symbol, ', '.join([fvstr] * len(fargs)))
+                    format_args.extend(fargs)
+
+            else:
+                raise ValueError('Field {} does not support extended kwarg values'.format(field_name))
+
+        else:
+            format_val_str = '%s'
+
+            # postgres specific for getting around case sensitivity:
+            if schema.fields[field_name].get('ignore_case', False):
+                field_name = 'UPPER({})'.format(field_name)
+                format_val_str = 'UPPER(%s)'
+
+            format_str = '{} {} ({})'.format(field_name, symbol, ', '.join([format_val_str] * len(field_vals)))
+            format_args.extend(field_vals)
+
+        return format_str, format_args
+
+    def _normalize_val_SQL(self, schema, symbol, field_name, field_val, field_kwargs=None):
+
+        format_str = ''
+        format_args = []
+
+        if field_kwargs:
+            # kwargs take precedence because None is a perfectly valid field_val
+            f = schema.fields[field_name]
+            if issubclass(f['type'], (datetime.datetime, datetime.date)):
+                format_strs = self._normalize_date_SQL(field_name, field_kwargs)
+                for fname, fvstr, farg in format_strs:
+                    if format_str:
+                        format_str += ' AND '
+
+                    format_str += '{} {} {}'.format(fname, symbol, fvstr)
+                    format_args.append(farg)
+
+            else:
+                raise ValueError('Field {} does not support extended kwarg values'.format(field_name))
+
+        else:
+            format_val_str = '%s'
+            # postgres specific for getting around case sensitivity:
+            if schema.fields[field_name].get('ignore_case', False):
+                field_name = 'UPPER({})'.format(field_name)
+                format_val_str = 'UPPER(%s)'
+
+            format_str = '{} {} {}'.format(field_name, symbol, format_val_str)
+            format_args.append(field_val)
+
+        return format_str, format_args
 
     def get_SQL(self, schema, query, **sql_options):
         """
@@ -434,13 +505,17 @@ class Interface(BaseInterface):
             for i, field in enumerate(query.fields_where):
                 if i > 0: query_str.append('AND')
 
+                field_str = ''
+                field_args = []
                 sd = symbol_map[field[0]]
                 if 'args' in sd:
-                    query_str.append('  {}'.format(sd['args'](schema, sd['symbol'], field[1], field[2])))
-                    query_args.extend(field[2])
+                    field_str, field_args = sd['args'](schema, sd['symbol'], field[1], field[2], field[3])
+
                 elif 'arg' in sd:
-                    query_str.append('  {}'.format(sd['arg'](schema, sd['symbol'], field[1], field[2])))
-                    query_args.append(field[2])
+                    field_str, field_args = sd['arg'](schema, sd['symbol'], field[1], field[2], field[3])
+
+                query_str.append('  {}'.format(field_str))
+                query_args.extend(field_args)
 
         if query.fields_sort:
             query_sort_str = []
