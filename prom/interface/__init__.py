@@ -78,6 +78,7 @@ class Interface(object):
         self._connect(self.connection_config)
         if self.connection:
             self.connected = True
+            self.transaction_count = 0
         else:
             raise ValueError("the ._connect() method did not set .connection attribute")
 
@@ -97,6 +98,7 @@ class Interface(object):
         self.connection.close()
         self.connection = None
         self.connected = False
+        self.transaction_count = 0
         self.log("Closed Connection {}", self.connection_config.interface_name)
         return True
 

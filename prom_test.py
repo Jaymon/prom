@@ -1415,6 +1415,89 @@ class InterfacePostgresTest(TestCase):
 
         self.assertEqual(1, i.count(s2, query.Query()))
 
+    def test_transaction_context(self):
+        i = get_interface()
+        table_name_1 = "{}_1".format(get_table_name())
+        table_name_2 = "{}_2".format(get_table_name())
+
+        # these 2 tables exist before the transaction starts
+        s1 = Schema(
+            table_name_1,
+            foo=(int, True)
+        )
+        i.set_table(s1)
+
+        s2 = Schema(
+            table_name_2,
+            bar=(int, True),
+            s_pk=(int, True, dict(ref=s1)),
+        )
+        i.set_table(s2)
+
+
+        d1 = {}
+        d2 = {}
+
+        try:
+            with i.transaction():
+                q1 = query.Query()
+                q1.set_foo(1)
+                d1 = i.set(s1, q1)
+
+                with i.transaction():
+                    q2 = query.Query()
+                    q2.set_bar(2).set_s_pk(d1['_id'])
+                    d2 = i.set(s2, q2)
+
+                    raise RuntimeError("testing")
+
+        except Exception, e:
+            pass
+
+        self.assertEqual(0, i.count(s1, query.Query().is__id(d1['_id'])))
+        self.assertEqual(0, i.count(s2, query.Query().is__id(d2['_id'])))
+
+#    def test_transaction_no_savepoints(self):
+#        i = get_interface()
+#        table_name_1 = "{}_1".format(get_table_name())
+#        table_name_2 = "{}_2".format(get_table_name())
+#
+#        # these 2 tables exist before the transaction starts
+#        s1 = Schema(
+#            table_name_1,
+#            foo=(int, True)
+#        )
+#        i.set_table(s1)
+#
+#        s2 = Schema(
+#            table_name_2,
+#            bar=(int, True),
+#            s_pk=(int, True, dict(ref=s1)),
+#        )
+#        i.set_table(s2)
+#
+#
+#        d1 = {}
+#        d2 = {}
+#        pout.p("transactions")
+#        count = 1000
+#        i.transaction_start()
+#        for x in xrange(1, count + 1):
+#            q1 = query.Query()
+#            q1.set_foo(1)
+#            d1 = i.set(s1, q1)
+#
+#            q2 = query.Query()
+#            q2.set_bar(2).set_s_pk(d1['_id'])
+#            d2 = i.set(s2, q2)
+#
+#        i.transaction_stop()
+#
+#        pout.p()
+#
+#        self.assertEqual(1, i.count(s1, query.Query().is__id(d1['_id'])))
+#        self.assertEqual(1, i.count(s2, query.Query().is__id(d2['_id'])))
+
     def test_unique(self):
         i = get_interface()
         s = get_schema()
