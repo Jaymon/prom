@@ -1241,6 +1241,36 @@ class InterfacePostgresTest(TestCase):
         ret_fields = i._get_fields(s)
         self.assertEqual(fields, ret_fields)
 
+    def test_null_values(self):
+        i = get_interface()
+        table_name = get_table_name()
+
+        s = Schema(
+            table_name,
+            foo=Field(int, False),
+            bar=Field(int, False),
+        )
+
+        # add one with non NULL foo
+        q = query.Query()
+        q.set_bar(1).set_foo(2)
+        d1 = i.set(s, q)
+
+        # and one with NULL foo
+        q = query.Query()
+        q.set_bar(1)
+        d2 = i.set(s, q)
+
+        q = query.Query()
+        q.is_bar(1).is_foo(None)
+        r = i.get_one(s, q)
+        self.assertEqual(d2['_id'], r['_id'])
+
+        q = query.Query()
+        q.is_bar(1).not_foo(None)
+        r = i.get_one(s, q)
+        self.assertEqual(d1['_id'], r['_id'])
+
     def test_transaction_nested_fail_1(self):
         """make sure 2 new tables in a wrapped transaction work as expected"""
         i = get_interface()
@@ -1457,47 +1487,6 @@ class InterfacePostgresTest(TestCase):
         self.assertEqual(0, i.count(s1, query.Query().is__id(d1['_id'])))
         self.assertEqual(0, i.count(s2, query.Query().is__id(d2['_id'])))
 
-#    def test_transaction_no_savepoints(self):
-#        i = get_interface()
-#        table_name_1 = "{}_1".format(get_table_name())
-#        table_name_2 = "{}_2".format(get_table_name())
-#
-#        # these 2 tables exist before the transaction starts
-#        s1 = Schema(
-#            table_name_1,
-#            foo=(int, True)
-#        )
-#        i.set_table(s1)
-#
-#        s2 = Schema(
-#            table_name_2,
-#            bar=(int, True),
-#            s_pk=(int, True, dict(ref=s1)),
-#        )
-#        i.set_table(s2)
-#
-#
-#        d1 = {}
-#        d2 = {}
-#        pout.p("transactions")
-#        count = 1000
-#        i.transaction_start()
-#        for x in xrange(1, count + 1):
-#            q1 = query.Query()
-#            q1.set_foo(1)
-#            d1 = i.set(s1, q1)
-#
-#            q2 = query.Query()
-#            q2.set_bar(2).set_s_pk(d1['_id'])
-#            d2 = i.set(s2, q2)
-#
-#        i.transaction_stop()
-#
-#        pout.p()
-#
-#        self.assertEqual(1, i.count(s1, query.Query().is__id(d1['_id'])))
-#        self.assertEqual(1, i.count(s2, query.Query().is__id(d2['_id'])))
-
     def test_unique(self):
         i = get_interface()
         s = get_schema()
@@ -1619,19 +1608,25 @@ class InterfacePostgresTest(TestCase):
 
         #kwargs = dict(day=int(datetime.datetime.utcnow().strftime('%d')))
         kwargs = dict(day=10)
-        fstr, fargs = i._normalize_val_SQL(s, '=', 'ts', None, kwargs)
+        fstr, fargs = i._normalize_val_SQL(s, {'symbol': '='}, 'ts', None, kwargs)
         self.assertEqual("EXTRACT(DAY FROM ts) = %s", fstr)
         self.assertEqual(10, fargs[0])
 
         kwargs = dict(day=11, hour=12)
-        fstr, fargs = i._normalize_val_SQL(s, '=', 'ts', None, kwargs)
+        fstr, fargs = i._normalize_val_SQL(s, {'symbol': '='}, 'ts', None, kwargs)
         self.assertEqual("EXTRACT(DAY FROM ts) = %s AND EXTRACT(HOUR FROM ts) = %s", fstr)
         self.assertEqual(11, fargs[0])
         self.assertEqual(12, fargs[1])
 
+        fstr, fargs = i._normalize_val_SQL(s, {'symbol': '=', 'none_symbol': 'IS'}, 'ts', None)
+        self.assertEqual("ts IS %s", fstr)
+
+        fstr, fargs = i._normalize_val_SQL(s, {'symbol': '!=', 'none_symbol': 'IS NOT'}, 'ts', None)
+        self.assertEqual("ts IS NOT %s", fstr)
+
         kwargs = dict(bogus=5)
         with self.assertRaises(KeyError):
-            fstr, fargs = i._normalize_val_SQL(s, '=', 'ts', None, kwargs)
+            fstr, fargs = i._normalize_val_SQL(s, {'symbol': '='}, 'ts', None, kwargs)
 
     def test__normalize_list_SQL(self):
         i = get_interface()
@@ -1641,19 +1636,19 @@ class InterfacePostgresTest(TestCase):
         )
 
         kwargs = dict(day=[10])
-        fstr, fargs = i._normalize_list_SQL(s, 'IN', 'ts', None, kwargs)
+        fstr, fargs = i._normalize_list_SQL(s, {'symbol': 'IN'}, 'ts', None, kwargs)
         self.assertEqual("EXTRACT(DAY FROM ts) IN (%s)", fstr)
         self.assertEqual(kwargs['day'], fargs)
 
         kwargs = dict(day=[11, 13], hour=[12])
-        fstr, fargs = i._normalize_list_SQL(s, 'IN', 'ts', None, kwargs)
+        fstr, fargs = i._normalize_list_SQL(s, {'symbol': 'IN'}, 'ts', None, kwargs)
         self.assertEqual("EXTRACT(DAY FROM ts) IN (%s, %s) AND EXTRACT(HOUR FROM ts) IN (%s)", fstr)
         self.assertEqual(kwargs['day'], fargs[0:2])
         self.assertEqual(kwargs['hour'], fargs[2:])
 
         kwargs = dict(bogus=[5])
         with self.assertRaises(KeyError):
-            fstr, fargs = i._normalize_list_SQL(s, 'IN', 'ts', None, kwargs)
+            fstr, fargs = i._normalize_list_SQL(s, {'symbol': 'IN'}, 'ts', None, kwargs)
 
 
 class IteratorTest(TestCase):
