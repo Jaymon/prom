@@ -265,6 +265,9 @@ class Interface(BaseInterface):
         return self._query(query_str, query_args, ignore_result=True)
 
     def _get_one(self, schema, query):
+        # compensate for getting one with an offset
+        if query.has_bounds() and not query.has_limit():
+            query.set_limit(1)
         query_str, query_args = self.get_SQL(schema, query)
         return self._query(query_str, query_args, fetchone=True)
 

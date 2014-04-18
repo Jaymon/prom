@@ -465,6 +465,10 @@ class Query(object):
     def has_bounds(self):
         return len(self.bounds) > 0
 
+    def has_limit(self):
+        limit = self.bounds.get('limit', 0)
+        return limit > 0
+
     def get(self, limit=None, page=None):
         """
         get results from the db

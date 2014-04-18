@@ -1650,6 +1650,54 @@ class InterfacePostgresTest(TestCase):
         with self.assertRaises(KeyError):
             fstr, fargs = i._normalize_list_SQL(s, {'symbol': 'IN'}, 'ts', None, kwargs)
 
+    def test_get_one_offset(self):
+        """make sure get_one() works as expected when an offset is set"""
+        i, s = get_table()
+        q = query.Query()
+        q.set_fields({
+            'foo': 1,
+            'bar': 'v1',
+        })
+        rd = i.set(s, q)
+
+        q = query.Query()
+        q.set_fields({
+            'foo': 2,
+            'bar': 'v2',
+        })
+        rd2 = i.set(s, q)
+
+        q = query.Query()
+        q.desc__id().set_offset(1)
+        d = i.get_one(s, q)
+        self.assertEqual(d['_id'], rd['_id'])
+
+        # just make sure to get expected result if no offset
+        q = query.Query()
+        q.desc__id()
+        d = i.get_one(s, q)
+        self.assertEqual(d['_id'], rd2['_id'])
+
+        q = query.Query()
+        q.desc__id().set_offset(2)
+        d = i.get_one(s, q)
+        self.assertEqual({}, d)
+
+        q = query.Query()
+        q.desc__id().set_offset(1).set_limit(5)
+        d = i.get_one(s, q)
+        self.assertEqual(d['_id'], rd['_id'])
+
+        q = query.Query()
+        q.desc__id().set_page(2)
+        d = i.get_one(s, q)
+        self.assertEqual(d['_id'], rd['_id'])
+
+        q = query.Query()
+        q.desc__id().set_page(2).set_limit(5)
+        d = i.get_one(s, q)
+        self.assertEqual({}, d)
+
 
 class IteratorTest(TestCase):
 
