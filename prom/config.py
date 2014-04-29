@@ -47,15 +47,20 @@ class Connection(object):
         """
         check host for a :port, and split that off into the .port attribute if there
         """
-        # normalize the host so urlparse can parse it correctly
-        # http://stackoverflow.com/questions/9530950/parsing-hostname-and-port-from-string-or-url#comment12075005_9531210
-        if not re.match(ur'(?:\S+|^)\/\/', h):
-            h = "//{}".format(h)
+        if re.match(ur'\:\d+^', h):
+            # normalize the host so urlparse can parse it correctly
+            # http://stackoverflow.com/questions/9530950/parsing-hostname-and-port-from-string-or-url#comment12075005_9531210
+            if not re.match(ur'(?:\S+|^)\/\/', h):
+                h = "//{}".format(h)
 
-        o = urlparse.urlparse(h)
+            o = urlparse.urlparse(h)
 
-        self._host = o.hostname
-        if o.port: self.port = o.port
+            self._host = o.hostname
+            if o.port: self.port = o.port
+
+        else:
+            self._host = h
+
 
     def __init__(self, **kwargs):
         """
@@ -100,7 +105,9 @@ class DsnConnection(Connection):
         first_colon = dsn.find(':')
         interface_name = dsn[0:first_colon]
         dsn_url = dsn[first_colon+1:]
+        dsn_url, is_memory = re.subn(ur'\/\/\:memory\:', u'//memory', dsn_url, flags=re.I)
         url = urlparse.urlparse(dsn_url)
+        self.dsn = dsn
 
         # parse the query into options
         options = {}
@@ -117,7 +124,10 @@ class DsnConnection(Connection):
         }
 
         if url.hostname:
-            d['host'] = url.hostname
+            if is_memory:
+                d['host'] = u':memory:'
+            else:
+                d['host'] = url.hostname
 
         if url.port:
             d['port'] = url.port

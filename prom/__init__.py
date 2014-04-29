@@ -8,6 +8,7 @@ from . import decorators
 from .model import Orm
 from .interface import get_interface, set_interface, get_interfaces
 from .utils import get_objects
+from .exception import InterfaceError
 
 
 __version__ = '0.9.32'

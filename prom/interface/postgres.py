@@ -16,10 +16,24 @@ import psycopg2.extras
 import psycopg2.extensions
 
 # first party
-from ..interface import Interface as BaseInterface
+from .base import Interface as BaseInterface
 
 
 class Interface(BaseInterface):
+
+    val_placeholder = '%s'
+
+    def _normalize_field_SQL(self, schema, field_name):
+        format_field_name = field_name
+        format_val_str = self.val_placeholder
+
+        # postgres specific for getting around case sensitivity:
+        if schema.fields[field_name].get('ignore_case', False):
+            format_field_name = 'UPPER({})'.format(field_name)
+            format_val_str = 'UPPER({})'.format(self.val_placeholder)
+
+        return format_field_name, format_val_str
+
 
     def _connect(self, connection_config):
         database = connection_config.database
@@ -364,6 +378,17 @@ class Interface(BaseInterface):
         self.transaction_stop()
         return True
 
+    def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
+        # this solution is based off: http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
+        # see also: https://gist.github.com/cpjolicoeur/3590737
+        query_sort_str = []
+        query_args = []
+        for v in reversed(field_vals):
+            query_sort_str.append('  {} = {} {}'.format(field_name, self.val_placeholder, sort_dir_str))
+            query_args.append(v)
+
+        return query_sort_str, query_args
+
     def _normalize_date_SQL(self, field_name, field_kwargs):
         """
         allow extracting information from date
@@ -631,4 +656,21 @@ class Interface(BaseInterface):
                 field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s.table, ref_s.pk)
 
         return '{} {}'.format(field_name, field_type)
+
+    def _handle_error(self, schema, e):
+        ret = False
+        if isinstance(e, psycopg2.ProgrammingError):
+            e_msg = str(e)
+            if schema.table in e_msg and "does not exist" in e_msg:
+                # psycopg2.ProgrammingError - column "name" of relation "table_name" does not exist
+                if "column" in e_msg:
+                    try:
+                        ret = self._set_all_fields(schema)
+                    except ValueError, e:
+                        ret = False
+
+                else:
+                    ret = self._set_all_tables(schema)
+
+        return ret
 
