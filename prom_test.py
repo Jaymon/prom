@@ -16,7 +16,7 @@ from prom import query
 from prom.model import Orm
 from prom.config import Schema, Connection, DsnConnection, Field
 from prom.interface import postgres
-from prom.interface.postgres import Interface as PGInterface
+from prom.interface import Postgres
 from prom.interface import SQLite
 import prom
 
@@ -27,6 +27,9 @@ log_handler = logging.StreamHandler(stream=sys.stderr)
 log_formatter = logging.Formatter('[%(levelname)s] %(message)s')
 log_handler.setFormatter(log_formatter)
 logger.addHandler(log_handler)
+
+
+os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.SQLite://:memory:')
 
 
 def setUpModule():
@@ -45,18 +48,19 @@ def get_orm_class(table_name=None):
     return t
 
 
-#def get_orm(table_name=None):
-#    i, s = get_table(table_name=table_name)
-#    t = Torm()
-#    t.schema = s
-#    t.interface = i
-#    return t
+def get_orm(table_name=None):
+    i, s = get_table(table_name=table_name)
+    t = Torm()
+    t.schema = s
+    t.interface = i
+    return t
 
 
 def get_interface():
     config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
-
-    i = PGInterface()
+    i = Postgres()
+#    config = DsnConnection(os.environ["PROM_SQLITE_URL"])
+#    i = SQLite()
     i.connect(config)
     assert i.connection is not None
     assert i.connected
@@ -66,6 +70,18 @@ def get_interface():
 def get_table_name():
     """return a random table name"""
     return "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+
+
+def get_table(table_name=None):
+    """
+    return an interface and schema for a table in the db
+
+    return -- tuple -- interface, schema
+    """
+    i = get_interface()
+    s = get_schema(table_name)
+    i.set_table(s)
+    return i, s
 
 
 def get_schema(table_name=None):
@@ -82,11 +98,12 @@ def get_schema(table_name=None):
     return s
 
 
-#def get_query():
-#    i, s = get_table()
-#    Torm.schema = s
-#    Torm.interface = i
-#    return query.Query(Torm)
+def get_query():
+    i, s = get_table()
+    Torm.schema = s
+    Torm.interface = i
+    return query.Query(Torm)
+
 
 def insert(interface, schema, count):
     """
@@ -775,7 +792,6 @@ class ConfigDsnConnectionTest(TestCase):
 
 
 class ConfigConnectionTest(TestCase):
-
     def test___init__(self):
 
         c = Connection(
@@ -792,9 +808,13 @@ class ConfigConnectionTest(TestCase):
         tests = [
             ("localhost:8000", ["localhost", 8000]),
             ("localhost", ["localhost", 0]),
+            ("//localhost", ["localhost", 0]),
             ("http://localhost:10", ["localhost", 10]),
             ("http://some.crazydomain.com", ["some.crazydomain.com", 0]),
             ("http://some.crazydomain.com:1000", ["some.crazydomain.com", 1000]),
+            ("http://:memory:", [":memory:", 0]),
+            (":memory:", [":memory:", 0]),
+            ("//:memory:", [":memory:", 0]),
         ]
 
         for t in tests:
@@ -815,7 +835,6 @@ class ConfigConnectionTest(TestCase):
 
 
 class ConfigFieldTest(TestCase):
-
     def test___new__(self):
         f = prom.Field(str, True)
         self.assertTrue(f[1])
@@ -883,9 +902,11 @@ class BaseTestInterface(TestCase):
         self.assertTrue(r)
 
         # make sure it persists
-        i.close()
-        i = self.get_interface()
-        self.assertTrue(i.has_table(s.table))
+        # TODO -- this should only be tested in postgres, the SQLite :memory: db
+        # goes away when the connections is closed
+#        i.close()
+#        i = self.get_interface()
+#        self.assertTrue(i.has_table(s.table))
 
         # make sure known indexes are there
         indexes = i.get_indexes(s)
@@ -908,21 +929,17 @@ class BaseTestInterface(TestCase):
             two=(int, True, dict(size=50)),
             three=(decimal.Decimal,),
             four=(float, True, dict(size=10)),
-            five=(float, True,),
             six=(long, True,),
             seven=(int, False, dict(ref=s_ref)),
             eight=(datetime.datetime,),
             nine=(datetime.date,),
         )
-        # TODO -- move five and six originals to postgres test, they just don't work in SQLite
         r = i.set_table(s)
         d = {
             'one': True,
             'two': 50,
             'three': decimal.Decimal('1.5'),
             'four': 1.987654321,
-            'five': 1.987654321,
-            #'six': 4000000000,
             'six': 40000,
             'seven': s_ref_id,
             'eight': datetime.datetime(2005, 7, 14, 12, 30),
@@ -1724,10 +1741,63 @@ class BaseTestInterface(TestCase):
         for i, r in enumerate(rows):
             self.assertEqual(vs[i][0], r)
 
+    def test_transaction_context_manager(self):
+        """make sure the with transaction() context manager works as expected"""
+        i, s = self.get_table()
+        _id = None
+        with i.transaction():
+            _id = insert(i, s, 1)[0]
+
+        self.assertTrue(_id)
+
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertGreater(len(d), 0)
+
+        with self.assertRaises(prom.InterfaceError):
+            with i.transaction():
+                _id = insert(i, s, 1)[0]
+                raise RuntimeError("this should fail")
+
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertEqual(len(d), 0)
+
+    def test__normalize_date_SQL(self):
+        """this tests the common date kwargs you can use (in both SQLight and Postgres)
+        if we ever add other backends this might need to be moved out of the general
+        generator test"""
+        i = self.get_interface()
+        s = Schema(
+            get_table_name(),
+            foo=(datetime.datetime, True),
+            index_foo=('foo'),
+        )
+        i.set_table(s)
+
+        d20 = i.insert(s, {'foo': datetime.datetime(2014, 4, 20)})
+        d21 = i.insert(s, {'foo': datetime.datetime(2014, 4, 21)})
+
+        q = query.Query()
+        q.is_foo(day=20)
+        d = i.get_one(s, q)
+        self.assertEqual(d['_id'], d20['_id'])
+
+        q = query.Query()
+        q.is_foo(day=21, month=4)
+        d = i.get_one(s, q)
+        self.assertEqual(d['_id'], d21['_id'])
+
+        q = query.Query()
+        q.is_foo(day=21, month=3)
+        d = i.get_one(s, q)
+        self.assertFalse(d)
+
 
 class InterfaceSQLiteTest(BaseTestInterface):
     def get_interface(self):
-        os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.SQLite://:memory:')
         config = DsnConnection(os.environ["PROM_SQLITE_URL"])
         i = SQLite()
         i.connect(config)
@@ -1737,8 +1807,55 @@ class InterfaceSQLiteTest(BaseTestInterface):
 
 
 class InterfacePostgresTest(BaseTestInterface):
+    def get_interface(self):
+        config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
+        i = Postgres()
+        i.connect(config)
+        assert i.connection is not None
+        assert i.connected
+        return i
+
+    def test_set_table_postgres(self):
+        """test some postgres specific things"""
+        i = self.get_interface()
+        s = prom.Schema(
+            get_table_name(),
+            four=(float, True, dict(size=10)),
+            five=(float, True,),
+            six=(long, True,),
+        )
+        r = i.set_table(s)
+        d = {
+            'four': 1.987654321,
+            'five': 1.98765,
+            'six': 4000000000,
+        }
+        o = i.insert(s, d)
+        q = query.Query()
+        q.is__id(o[s.pk])
+        odb = i.get_one(s, q)
+        for k, v in d.iteritems():
+            self.assertEqual(v, odb[k])
+
+    def test_db_disconnect(self):
+        """make sure interface can recover if the db disconnects mid script execution"""
+        i, s = self.get_table()
+        _id = insert(i, s, 1)[0]
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertGreater(len(d), 0)
+
+        exit_code = subprocess.check_call("sudo /etc/init.d/postgresql restart", shell=True)
+        time.sleep(1)
+
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertGreater(len(d), 0)
+
     def test__normalize_val_SQL(self):
-        i = get_interface()
+        i = self.get_interface()
         s = Schema(
             "fake_table_name",
             ts=Field(datetime.datetime, True)
@@ -1767,7 +1884,7 @@ class InterfacePostgresTest(BaseTestInterface):
             fstr, fargs = i._normalize_val_SQL(s, {'symbol': '='}, 'ts', None, kwargs)
 
     def test__normalize_list_SQL(self):
-        i = get_interface()
+        i = self.get_interface()
         s = Schema(
             "fake_table_name",
             ts=Field(datetime.datetime, True)
@@ -1817,7 +1934,7 @@ class InterfacePostgresTest(BaseTestInterface):
         i, s = self.get_table()
         config = i.connection_config
         config.database = 'this_is_a_bogus_db_name'
-        i = PGInterface(config)
+        i = Postgres(config)
         q = query.Query()
         q.set_fields({
             'foo': 1,
@@ -1828,7 +1945,6 @@ class InterfacePostgresTest(BaseTestInterface):
 
 
 class IteratorTest(TestCase):
-
     def get_iterator(self, count=5, limit=5, page=0):
         q = get_query()
         insert(q.orm.interface, q.orm.schema, count)
@@ -2315,7 +2431,6 @@ class QueryTest(TestCase):
         with self.assertRaises(ValueError):
             q.sort_field("foo", 0)
 
-
     def test_bounds_methods(self):
         q = query.Query("foo")
         q.set_limit(10)
@@ -2376,7 +2491,6 @@ class QueryTest(TestCase):
             self.assertTrue(o._id in _ids)
             self.assertFalse(o.is_modified())
 
-
     def test_get_one(self):
         i, s = get_table()
         _ids = insert(i, s, 1)
@@ -2407,49 +2521,8 @@ class QueryTest(TestCase):
         t = tclass.query.last()
         self.assertEqual(last_pk, t.pk)
 
-    def test_db_disconnect(self):
-        """make sure interface can recover if the db disconnects mid script execution"""
-        i, s = get_table()
-        _id = insert(i, s, 1)[0]
-        q = query.Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
-        self.assertGreater(len(d), 0)
 
-        exit_code = subprocess.check_call("sudo /etc/init.d/postgresql restart", shell=True)
-        time.sleep(1)
-
-        q = query.Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
-        self.assertGreater(len(d), 0)
-
-    def test_transaction_context_manager(self):
-        """make sure the with transaction() context manager works as expected"""
-        i, s = get_table()
-        _id = None
-        with i.transaction():
-            _id = insert(i, s, 1)[0]
-
-        self.assertTrue(_id)
-
-        q = query.Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
-        self.assertGreater(len(d), 0)
-
-        with self.assertRaises(RuntimeError):
-            with i.transaction():
-                _id = insert(i, s, 1)[0]
-                raise RuntimeError("this should fail")
-
-        q = query.Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
-        self.assertEqual(len(d), 0)
-
-
-
-
-
+# not sure I'm a huge fan of this solution to remove common parent from testing queue
+# http://stackoverflow.com/questions/1323455/python-unit-test-with-base-and-sub-class
+del(BaseTestInterface)
 

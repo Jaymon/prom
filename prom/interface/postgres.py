@@ -16,24 +16,12 @@ import psycopg2.extras
 import psycopg2.extensions
 
 # first party
-from .base import Interface as BaseInterface
+from .base import SQLInterface
 
 
-class Interface(BaseInterface):
+class Interface(SQLInterface):
 
     val_placeholder = '%s'
-
-    def _normalize_field_SQL(self, schema, field_name):
-        format_field_name = field_name
-        format_val_str = self.val_placeholder
-
-        # postgres specific for getting around case sensitivity:
-        if schema.fields[field_name].get('ignore_case', False):
-            format_field_name = 'UPPER({})'.format(field_name)
-            format_val_str = 'UPPER({})'.format(self.val_placeholder)
-
-        return format_field_name, format_val_str
-
 
     def _connect(self, connection_config):
         database = connection_config.database
@@ -58,61 +46,6 @@ class Interface(BaseInterface):
         # http://initd.org/psycopg/docs/usage.html#unicode-handling
         psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, self.connection)
         psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, self.connection)
-
-    def _query(self, query_str, query_args=None, **query_options):
-        """
-        **query_options -- dict
-            ignore_result -- boolean -- true to not attempt to fetch results
-            fetchone -- boolean -- true to only fetch one result
-        """
-        ret = True
-        # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
-        cur = self.connection.cursor()
-        ignore_result = query_options.get('ignore_result', False)
-        one_result = query_options.get('fetchone', False)
-
-        try:
-            if not query_args:
-                self.log(query_str)
-                cur.execute(query_str)
-            else:
-                self.log("{}{}{}", query_str, os.linesep, query_args)
-                cur.execute(query_str, query_args)
-
-            if not ignore_result:
-                if one_result:
-                    ret = cur.fetchone()
-                else:
-                    ret = cur.fetchall()
-        except Exception, e:
-            self.log(e)
-            raise
-
-        return ret
-
-    def _transaction_start(self, count):
-        if count == 1:
-            self._query("BEGIN", ignore_result=True)
-        else:
-            # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-            self._query("SAVEPOINT prom", ignore_result=True)
-
-    def _transaction_stop(self, count):
-        """
-        http://initd.org/psycopg/docs/usage.html#transactions-control
-        https://news.ycombinator.com/item?id=4269241
-        """
-        if count == 1:
-            #self.connection.commit()
-            self._query("COMMIT", ignore_result=True)
-
-    def _transaction_fail(self, count, e=None):
-        if count == 1:
-            #self.connection.rollback()
-            self._query("ROLLBACK", ignore_result=True)
-        else:
-            # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-            self._query("ROLLBACK TO SAVEPOINT prom", ignore_result=True)
 
     def _get_tables(self, table_name):
         query_str = 'SELECT tablename FROM pg_tables WHERE tableowner = %s'
@@ -147,20 +80,6 @@ class Interface(BaseInterface):
     def _delete_table(self, schema):
         query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(str(schema))
         ret = self._query(query_str, ignore_result=True)
-
-    def _delete_tables(self, **kwargs):
-        """
-        http://stackoverflow.com/questions/3327312/drop-all-tables-in-postgresql
-        """
-
-        # get all the tables owned by the connection owner
-        for table_name in self.get_tables():
-            self.transaction_start()
-            self._delete_table(table_name)
-            self.transaction_stop()
-
-        return True
-        #return self._query("DROP SCHEMA public CASCADE")
 
     def _get_fields(self, schema):
         """return all the fields for the given schema"""
@@ -256,130 +175,20 @@ class Interface(BaseInterface):
         ret = self._query(query_str, query_vals)
         return ret[0][pk_name]
 
-    def _update(self, schema, query, d):
+    def _normalize_field_SQL(self, schema, field_name):
+        format_field_name = field_name
+        format_val_str = self.val_placeholder
 
-        where_query_str, where_query_args = self.get_SQL(schema, query, only_where_clause=True)
-        pk_name = schema.pk
+        # postgres specific for getting around case sensitivity:
+        if schema.fields[field_name].get('ignore_case', False):
+            format_field_name = 'UPPER({})'.format(field_name)
+            format_val_str = 'UPPER({})'.format(self.val_placeholder)
 
-        query_str = 'UPDATE {} SET {} {}'
-        query_args = []
-
-        field_str = []
-        for field_name, field_val in d.iteritems():
-            field_str.append('{} = %s'.format(field_name))
-            query_args.append(field_val)
-
-        query_str = query_str.format(
-            schema.table,
-            ',{}'.format(os.linesep).join(field_str),
-            where_query_str
-        )
-        query_args.extend(where_query_args)
-
-        return self._query(query_str, query_args, ignore_result=True)
-
-    def _get_one(self, schema, query):
-        # compensate for getting one with an offset
-        if query.has_bounds() and not query.has_limit():
-            query.set_limit(1)
-        query_str, query_args = self.get_SQL(schema, query)
-        return self._query(query_str, query_args, fetchone=True)
-
-    def _get(self, schema, query):
-        query_str, query_args = self.get_SQL(schema, query)
-        return self._query(query_str, query_args)
-
-    def _count(self, schema, query):
-        query_str, query_args = self.get_SQL(schema, query, count_query=True)
-        ret = self._query(query_str, query_args)
-        if ret:
-            ret = int(ret[0]['ct'])
-        else:
-            ret = 0
-
-        return ret
-
-    def _delete(self, schema, query):
-        where_query_str, query_args = self.get_SQL(schema, query, only_where_clause=True)
-        query_str = []
-        query_str.append('DELETE FROM')
-        query_str.append('  {}'.format(schema))
-        query_str.append(where_query_str)
-        query_str = os.linesep.join(query_str)
-        ret = self._query(query_str, query_args, ignore_result=True)
-
-    def handle_error(self, schema, e):
-        if not self.connection: return False
-
-        ret = False
-        # http://initd.org/psycopg/docs/connection.html#connection.closed
-        if self.connection.closed == 0:
-            self.transaction_stop()
-            #self.connection.rollback() # the last query failed, so let's rollback
-
-            # http://initd.org/psycopg/docs/module.html#psycopg2.ProgrammingError
-            if isinstance(e, psycopg2.ProgrammingError):
-                e_msg = str(e)
-                if schema.table in e_msg and "does not exist" in e_msg:
-                    # psycopg2.ProgrammingError - column "name" of relation "table_name" does not exist
-                    if "column" in e_msg:
-                        try:
-                            ret = self._set_all_fields(schema)
-                        except ValueError, e:
-                            ret = False
-
-                    else:
-                        ret = self._set_all_tables(schema)
-
-        else:
-            self.close()
-            ret = self.connect()
-
-        return ret
-
-    def _set_all_fields(self, schema):
-        """
-        this will add fields that don't exist in the table if they can be set to NULL,
-        the reason they have to be NULL is adding fields to Postgres that can be NULL
-        is really light, but if they have a default value, then it can be costly
-        """
-        current_fields = self._get_fields(schema)
-        for field_name, field_options in schema.fields.iteritems():
-            if field_name not in current_fields:
-                if field_options.get('required', False):
-                    raise ValueError('Cannot safely add {} on the fly because it is required'.format(field_name))
-
-                else:
-                    query_str = []
-                    query_str.append('ALTER TABLE')
-                    query_str.append('  {}'.format(schema))
-                    query_str.append('ADD COLUMN')
-                    query_str.append('  {}'.format(self.get_field_SQL(field_name, field_options)))
-                    query_str = os.linesep.join(query_str)
-                    self._query(query_str, [], ignore_result=True)
-
-        return True
-
-    def _set_all_tables(self, schema):
-        """
-        You can run into a problem when you are trying to set a table and it has a 
-        foreign key to a table that doesn't exist, so this method will go through 
-        all fk refs and make sure the tables exist
-        """
-        self.transaction_start()
-        # go through and make sure all foreign key referenced tables exist
-        for field_name, field_val in schema.fields.iteritems():
-            for fn in ['ref', 'weak_ref']:
-                if fn in field_val:
-                    self._set_all_tables(field_val[fn])
-
-        # now that we know all fk tables exist, create this table
-        self.set_table(schema)
-        self.transaction_stop()
-        return True
+        return format_field_name, format_val_str
 
     def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
-        # this solution is based off: http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
+        # this solution is based off:
+        # http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
         # see also: https://gist.github.com/cpjolicoeur/3590737
         query_sort_str = []
         query_args = []
@@ -387,7 +196,7 @@ class Interface(BaseInterface):
             query_sort_str.append('  {} = {} {}'.format(field_name, self.val_placeholder, sort_dir_str))
             query_args.append(v)
 
-        return query_sort_str, query_args
+        return ',\n'.join(query_sort_str), query_args
 
     def _normalize_date_SQL(self, field_name, field_kwargs):
         """
@@ -414,170 +223,9 @@ class Interface(BaseInterface):
         }
 
         for k, v in field_kwargs.iteritems():
-            fstrs.append([k_opts[k].format(field_name), '%s', v])
+            fstrs.append([k_opts[k].format(field_name), self.val_placeholder, v])
 
         return fstrs
-
-    def _normalize_list_SQL(self, schema, symbol_map, field_name, field_vals, field_kwargs=None):
-
-        format_str = ''
-        format_args = []
-        symbol = symbol_map['symbol']
-
-        if field_kwargs:
-            f = schema.fields[field_name]
-            if issubclass(f['type'], (datetime.datetime, datetime.date)):
-                format_strs = self._normalize_date_SQL(field_name, field_kwargs)
-                for fname, fvstr, fargs in format_strs:
-                    if format_str:
-                        format_str += ' AND '
-
-                    format_str += '{} {} ({})'.format(fname, symbol, ', '.join([fvstr] * len(fargs)))
-                    format_args.extend(fargs)
-
-            else:
-                raise ValueError('Field {} does not support extended kwarg values'.format(field_name))
-
-        else:
-            format_val_str = '%s'
-
-            # postgres specific for getting around case sensitivity:
-            if schema.fields[field_name].get('ignore_case', False):
-                field_name = 'UPPER({})'.format(field_name)
-                format_val_str = 'UPPER(%s)'
-
-            format_str = '{} {} ({})'.format(field_name, symbol, ', '.join([format_val_str] * len(field_vals)))
-            format_args.extend(field_vals)
-
-        return format_str, format_args
-
-    def _normalize_val_SQL(self, schema, symbol_map, field_name, field_val, field_kwargs=None):
-
-        format_str = ''
-        format_args = []
-
-        if field_kwargs:
-            symbol = symbol_map['symbol']
-            # kwargs take precedence because None is a perfectly valid field_val
-            f = schema.fields[field_name]
-            if issubclass(f['type'], (datetime.datetime, datetime.date)):
-                format_strs = self._normalize_date_SQL(field_name, field_kwargs)
-                for fname, fvstr, farg in format_strs:
-                    if format_str:
-                        format_str += ' AND '
-
-                    format_str += '{} {} {}'.format(fname, symbol, fvstr)
-                    format_args.append(farg)
-
-            else:
-                raise ValueError('Field {} does not support extended kwarg values'.format(field_name))
-
-        else:
-            # special handling for NULL
-            symbol = symbol_map['none_symbol'] if field_val is None else symbol_map['symbol']
-            format_val_str = '%s'
-
-            # postgres specific for getting around case sensitivity:
-            if schema.fields[field_name].get('ignore_case', False):
-                field_name = 'UPPER({})'.format(field_name)
-                format_val_str = 'UPPER(%s)'
-
-            format_str = '{} {} {}'.format(field_name, symbol, format_val_str)
-            format_args.append(field_val)
-
-        return format_str, format_args
-
-    def get_SQL(self, schema, query, **sql_options):
-        """
-        convert the query instance into SQL
-
-        this is the glue method that translates the generic Query() instance to the postgres
-        specific SQL query, this is where the magic happens
-
-        **sql_options -- dict
-            count_query -- boolean -- true if this is a count query SELECT
-            only_where_clause -- boolean -- true to only return after WHERE ...
-        """
-        only_where_clause = sql_options.get('only_where_clause', False)
-
-        #normalize_list = lambda symbol, field_name, args: '{} {} ({})'.format(field_name, symbol, ', '.join(['%s'] * len(args)))
-        #normalize_val = lambda symbol, field_name, arg: '{} {} %s'.format(field_name, symbol)
-
-        symbol_map = {
-            'in': {'args': self._normalize_list_SQL, 'symbol': 'IN'},
-            'nin': {'args': self._normalize_list_SQL, 'symbol': 'NOT IN'},
-            'is': {'arg': self._normalize_val_SQL, 'symbol': '=', 'none_symbol': 'IS'},
-            'not': {'arg': self._normalize_val_SQL, 'symbol': '!=', 'none_symbol': 'IS NOT'},
-            'gt': {'arg': self._normalize_val_SQL, 'symbol': '>'},
-            'gte': {'arg': self._normalize_val_SQL, 'symbol': '>='},
-            'lt': {'arg': self._normalize_val_SQL, 'symbol': '<'},
-            'lte': {'arg': self._normalize_val_SQL, 'symbol': '<='},
-        }
-
-        query_args = []
-        query_str = []
-
-        if not only_where_clause:
-            query_str.append('SELECT')
-
-            if sql_options.get('count_query', False):
-                query_str.append('  count(*) as ct')
-            else:
-                select_fields = query.fields_select
-                if select_fields:
-                    query_str.append('  ' + ',{}'.format(os.linesep).join(select_fields))
-                else:
-                    query_str.append('  *')
-
-            query_str.append('FROM')
-            query_str.append('  {}'.format(schema))
-
-        if query.fields_where:
-            query_str.append('WHERE')
-
-            for i, field in enumerate(query.fields_where):
-                if i > 0: query_str.append('AND')
-
-                field_str = ''
-                field_args = []
-                sd = symbol_map[field[0]]
-
-                # field[0], field[1], field[2], field[3]
-                _, field_name, field_val, field_kwargs = field
-
-                if 'args' in sd:
-                    field_str, field_args = sd['args'](schema, sd, field_name, field_val, field_kwargs)
-
-                elif 'arg' in sd:
-                    field_str, field_args = sd['arg'](schema, sd, field_name, field_val, field_kwargs)
-
-                query_str.append('  {}'.format(field_str))
-                query_args.extend(field_args)
-
-        if query.fields_sort:
-            query_sort_str = []
-            query_str.append('ORDER BY')
-            for field in query.fields_sort:
-                sort_dir_str = 'ASC' if field[0] > 0 else 'DESC'
-                if field[2]:
-                    # this solution is based off: http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
-                    # see also: https://gist.github.com/cpjolicoeur/3590737
-                    for v in reversed(field[2]):
-                        query_sort_str.append('  {} = %s {}'.format(field[1], sort_dir_str))
-                        query_args.append(v)
-
-                else:
-                    query_sort_str.append('  {} {}'.format(field[1], sort_dir_str))
-
-            query_str.append(',{}'.format(os.linesep).join(query_sort_str))
-
-        if query.bounds:
-            limit, offset, _ = query.get_bounds()
-            if limit > 0:
-                query_str.append('LIMIT {} OFFSET {}'.format(limit, offset))
-
-        query_str = os.linesep.join(query_str)
-        return query_str, query_args
 
     def get_field_SQL(self, field_name, field_options):
         """

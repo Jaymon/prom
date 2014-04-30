@@ -29,4 +29,3 @@ def get_interface(name=''):
     global interfaces
     return interfaces[name]
 
-

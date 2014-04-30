@@ -676,6 +676,9 @@ class SQLInterface(Interface):
         return format_str, format_args
 
     def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
+        """normalize the sort string
+
+        return -- tuple -- field_sort_str, field_sort_args"""
         raise NotImplemented()
 
     def get_SQL(self, schema, query, **sql_options):

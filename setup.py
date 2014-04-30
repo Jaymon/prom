@@ -23,7 +23,7 @@ if not version:
 setup(
     name=name,
     version=version,
-    description='A lightweight orm for PostgreSQL',
+    description='A lightweight orm for PostgreSQL or SQLite',
     author='Jay Marcyes',
     author_email='jay@marcyes.com',
     url='http://github.com/firstopinion/{}'.format(name),

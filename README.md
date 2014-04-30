@@ -1,10 +1,89 @@
 # Prom
 
-A lightweight orm for PostgreSQL
+A lightweight orm for PostgreSQL or SQLite.
 
 Lovingly crafted for [First Opinion](http://firstopinionapp.com).
 
 Prom tries to be as easy as possible on the developer so they don't need to constantly reference the documentation to get anything done.
+
+
+## 1 Minute Getting Started with SQLite
+
+First, install prom:
+
+    $ pip install prom
+
+Set an environment variable:
+
+    $ export PROM_DSN=prom.interface.SQLite://:memory:
+
+Start python:
+
+    $ python
+
+Create a prom Orm:
+
+```python
+>>> import prom
+>>>
+>>> class Foo(prom.Orm):
+...     schema = prom.Schema(
+...         "foo_table_name",
+...         bar=prom.Field(int, True)
+...     )
+...
+>>>
+```
+
+Now go wild and create some `Foo` objects:
+
+```python
+>>> for x in xrange(10):
+...     f = Foo.create(bar=x)
+...
+>>>
+```
+
+Now query them:
+
+```python
+>>> f = Foo.query.first()
+>>> f.bar
+0
+>>> f.pk
+1
+>>>
+>>> for f in Foo.query.in_bar([2, 3, 4]):
+...     f.pk
+...
+3
+4
+5
+>>>
+```
+
+Update them:
+
+```python
+>>> for f in Foo.query:
+...     f.bar += 100
+...     f.set()
+...
+>>>
+```
+
+and get rid of them:
+
+```python
+>>> for f in Foo.query:
+...     f.delete()
+...
+>>>
+```
+
+Congratulations, you have now created, retrieved, updated, and deleted from your database.
+
+-------------------------------------------------------------------------------
 
 ## Example -- Create a User class
 

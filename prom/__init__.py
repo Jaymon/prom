@@ -8,10 +8,10 @@ from . import decorators
 from .model import Orm
 from .interface import get_interface, set_interface, get_interfaces
 from .utils import get_objects
-from .exception import InterfaceError
+from .exception import InterfaceError, Error
 
 
-__version__ = '0.9.32'
+__version__ = '0.9.5'
 
 def configure_environ(dsn_env_name='PROM_DSN'):
     """

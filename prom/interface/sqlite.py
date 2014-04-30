@@ -1,9 +1,8 @@
 """
-http://pythonhosted.org/psycopg2/module.html
+Bindings for SQLite
 
-http://zetcode.com/db/postgresqlpythontutorial/
-http://wiki.postgresql.org/wiki/Using_psycopg2_with_PostgreSQL
-http://pythonhosted.org/psycopg2/
+https://docs.python.org/2/library/sqlite3.html
+https://docs.python.org/2/library/sqlite3.html
 """
 import os
 import types
@@ -55,22 +54,34 @@ class NumericType(object):
         return decimal.Decimal(str(val))
 
 
+class StringType(object):
+    """this just makes sure 8-bit bytestrings get converted ok"""
+    @staticmethod
+    def adapt(val):
+        if isinstance(val, str):
+            val = val.decode('utf-8')
+
+        return val
+
+
 class Interface(SQLInterface):
 
     val_placeholder = '?'
-
-#    def _query(self, *args, **kwargs):
-#        ret = super(Interface, self)._query(*args, **kwargs)
-#        if isinstance(ret, sqlite3.Row):
-#            ret = dict(ret)
-#
-#        return ret
 
     def _connect(self, connection_config):
         path = ''
         dsn = getattr(connection_config, 'dsn', '')
         if dsn:
-            path = os.pathsep.join([connection_config.host, connection_config.database])
+            host = connection_config.host
+            db = connection_config.database
+            if not host:
+                path = os.sep + db
+
+            elif not db:
+                path = host
+
+            else:
+                path = os.sep.join([host, db])
 
         else:
             path = connection_config.database
@@ -91,6 +102,8 @@ class Interface(SQLInterface):
         self.connection = sqlite3.connect(path, **options)
         # https://docs.python.org/2/library/sqlite3.html#row-objects
         self.connection.row_factory = SQLiteRowDict
+        # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
+        self.connection.text_factory = StringType.adapt
 
         sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
         sqlite3.register_converter('NUMERIC', NumericType.convert)
@@ -273,6 +286,30 @@ class Interface(SQLInterface):
         query_str = 'PRAGMA table_info({})'.format(schema)
         fields = self._query(query_str)
         return set((d['name'] for d in fields))
+
+    def _normalize_date_SQL(self, field_name, field_kwargs):
+        """
+        allow extracting information from date
+
+        http://www.sqlite.org/lang_datefunc.html
+        """
+        fstrs = []
+        k_opts = {
+            'day': "CAST(strftime('%d', {}) AS integer)",
+            'hour': "CAST(strftime('%H', {}) AS integer)",
+            'doy': "CAST(strftime('%j', {}) AS integer)", # day of year
+            'julian_day': "strftime('%J', {})", # YYYY-MM-DD
+            'month': "CAST(strftime('%m', {}) AS integer)",
+            'minute': "CAST(strftime('%M', {}) AS integer)",
+            'dow': "CAST(strftime('%w', {}) AS integer)", # day of week 0 = sunday
+            'week': "CAST(strftime('%W', {}) AS integer)",
+            'year': "CAST(strftime('%Y', {}) AS integer)"
+        }
+
+        for k, v in field_kwargs.iteritems():
+            fstrs.append([k_opts[k].format(field_name), self.val_placeholder, v])
+
+        return fstrs
 
     def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
         # this solution is based off: http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
