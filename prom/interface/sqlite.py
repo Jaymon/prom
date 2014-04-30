@@ -2,7 +2,23 @@
 Bindings for SQLite
 
 https://docs.python.org/2/library/sqlite3.html
-https://docs.python.org/2/library/sqlite3.html
+
+Notes, certain SQLite versions might have a problem with long integers
+http://jakegoulding.com/blog/2011/02/06/sqlite-64-bit-integers/
+
+Looking at the docs, it says it will set an integer value to 1-4, 6, or 8 bytes
+depending on the size, but I couldn't get it to accept anything over the 32-bit signed
+integer value of around 2billion
+
+savepoints and transactions are similar to Postgres
+https://www.sqlite.org/lang_savepoint.html
+http://sqlite.org/lang_transaction.html
+
+alter table is similar to Postgres
+https://www.sqlite.org/lang_altertable.html
+
+other links that were helpful
+http://www.numericalexpert.com/blog/sqlite_blob_time/
 """
 import os
 import types
@@ -24,6 +40,11 @@ class SQLiteRowDict(sqlite3.Row):
 
 
 class SQLiteConnection(sqlite3.Connection):
+    """
+    Thin wrapper around the default connection to make sure it has a similar interface
+    to Postgres' connection instance so the common code can all be the same in the
+    parent class
+    """
     def __init__(self, *args, **kwargs):
         super(SQLiteConnection, self).__init__(*args, **kwargs)
         self.closed = 0
@@ -130,6 +151,8 @@ class Interface(SQLInterface):
         """
         returns the SQL for a given field with full type information
 
+        http://www.sqlite.org/datatype3.html
+
         field_name -- string -- the field's name
         field_options -- dict -- the set options for the field
 
@@ -196,6 +219,9 @@ class Interface(SQLInterface):
         return '{} {}'.format(field_name, field_type)
 
     def _set_table(self, schema):
+        """
+        http://sqlite.org/lang_createtable.html
+        """
         query_str = []
         query_str.append("CREATE TABLE {} (".format(schema.table))
 
@@ -240,6 +266,9 @@ class Interface(SQLInterface):
         return ret
 
     def _insert(self, schema, d):
+        """
+        http://www.sqlite.org/lang_insert.html
+        """
 
         # get the primary key
         field_formats = []
@@ -257,6 +286,8 @@ class Interface(SQLInterface):
         )
 
         ret = self._query(query_str, query_vals, cursor_result=True)
+        # http://stackoverflow.com/questions/6242756/
+        # could also do _query('SELECT last_insert_rowid()')
         return ret.lastrowid
 
     def _delete_table(self, schema):
@@ -312,8 +343,11 @@ class Interface(SQLInterface):
         return fstrs
 
     def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
-        # this solution is based off: http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
-        # see also: https://gist.github.com/cpjolicoeur/3590737
+        """
+        allow sorting by a set of values
+
+        http://stackoverflow.com/questions/3303851/sqlite-and-custom-order-by
+        """
         fvi = None
         if sort_dir_str == 'ASC':
             fvi = (t for t in enumerate(field_vals)) 
