@@ -85,7 +85,7 @@ class StringType(object):
         return val
 
 
-class Interface(SQLInterface):
+class SQLite(SQLInterface):
 
     val_placeholder = '?'
 

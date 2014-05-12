@@ -15,9 +15,8 @@ import testdata
 from prom import query
 from prom.model import Orm
 from prom.config import Schema, Connection, DsnConnection, Field
-from prom.interface import postgres
-from prom.interface import Postgres
-from prom.interface import SQLite
+from prom.interface.postgres import PostgreSQL
+from prom.interface.sqlite import SQLite
 import prom
 
 # configure root logger
@@ -58,7 +57,7 @@ def get_orm(table_name=None):
 
 def get_interface():
     config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
-    i = Postgres()
+    i = PostgreSQL()
 #    config = DsnConnection(os.environ["PROM_SQLITE_URL"])
 #    i = SQLite()
     i.connect(config)
@@ -192,7 +191,7 @@ class OrmTest(TestCase):
         self.assertEqual("blah", d['bar'])
         self.assertEqual("", d['che'])
 
-    def test_normalize(self):
+    def test_normalize_fields(self):
         table_name = get_table_name()
         Torm.schema = Schema(
             table_name,
@@ -200,17 +199,18 @@ class OrmTest(TestCase):
             bar=(str, True),
             che=(str, False),
         )
+        t = Torm()
 
         with self.assertRaises(KeyError):
-            Torm.normalize({})
+            t.normalize_fields({}, True)
 
-        d = Torm.normalize({'foo': 1, 'bar': 'bar1'})
+        d = t.normalize_fields({'foo': 1, 'bar': 'bar1'}, True)
         self.assertTrue('foo' in d)
         self.assertTrue('bar' in d)
         self.assertFalse('che' in d)
 
         d_in = {'foo': 2, 'bar': 'bar2', 'che': 'che2'}
-        d = Torm.normalize(d_in)
+        d = t.normalize_fields(d_in, True)
         self.assertEquals(d, d_in)
 
     def test_unicode(self):
@@ -421,7 +421,7 @@ class PromTest(TestCase):
         prom.interface.interfaces = {}
 
     def test_configure(self):
-        dsn = 'prom.interface.postgres.Interface://username:password@localhost/db'
+        dsn = 'prom.interface.postgres.PostgreSQL://username:password@localhost/db'
         prom.configure(dsn)
         i = prom.get_interface()
         self.assertTrue(i is not None)
@@ -615,10 +615,10 @@ class ConfigSchemaTest(TestCase):
 class ConfigDsnConnectionTest(TestCase):
 
     def test_environ(self):
-        os.environ['PROM_DSN'] = "prom.interface.postgres.Interface://localhost:5000/database#i0"
-        os.environ['PROM_DSN_1'] = "prom.interface.postgres.Interface://localhost:5000/database#i1"
-        os.environ['PROM_DSN_2'] = "prom.interface.postgres.Interface://localhost:5000/database#i2"
-        os.environ['PROM_DSN_4'] = "prom.interface.postgres.Interface://localhost:5000/database#i4"
+        os.environ['PROM_DSN'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i0"
+        os.environ['PROM_DSN_1'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i1"
+        os.environ['PROM_DSN_2'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i2"
+        os.environ['PROM_DSN_4'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i4"
         prom.configure_environ()
         self.assertTrue('i0' in prom.get_interfaces())
         self.assertTrue('i1' in prom.get_interfaces())
@@ -1809,7 +1809,7 @@ class InterfaceSQLiteTest(BaseTestInterface):
 class InterfacePostgresTest(BaseTestInterface):
     def get_interface(self):
         config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
-        i = Postgres()
+        i = PostgreSQL()
         i.connect(config)
         assert i.connection is not None
         assert i.connected
@@ -1934,7 +1934,7 @@ class InterfacePostgresTest(BaseTestInterface):
         i, s = self.get_table()
         config = i.connection_config
         config.database = 'this_is_a_bogus_db_name'
-        i = Postgres(config)
+        i = PostgreSQL(config)
         q = query.Query()
         q.set_fields({
             'foo': 1,

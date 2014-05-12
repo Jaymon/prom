@@ -1,6 +1,3 @@
-from .postgres import Interface as Postgres
-from .sqlite import Interface as SQLite
-
 
 interfaces = {}
 """holds all the configured interfaces"""

@@ -19,7 +19,7 @@ import psycopg2.extensions
 from .base import SQLInterface
 
 
-class Interface(SQLInterface):
+class PostgreSQL(SQLInterface):
 
     val_placeholder = '%s'
 

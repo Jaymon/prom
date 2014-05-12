@@ -15,7 +15,7 @@ First, install prom:
 
 Set an environment variable:
 
-    $ export PROM_DSN=prom.interface.SQLite://:memory:
+    $ export PROM_DSN=prom.interface.sqlite.SQLite://:memory:
 
 Start python:
 
@@ -111,7 +111,7 @@ You can specify the connection using a prom dsn url:
 
 So to use the builtin Postgres interface on `testdb` database on host `localhost` with username `testuser` and password `testpw`:
 
-    prom.interface.postgres.Interface://testuser:testpw@localhost/testdb
+    prom.interface.postgres.PostgreSQL://testuser:testpw@localhost/testdb
 
 To use our new User class:
 
@@ -120,7 +120,7 @@ To use our new User class:
 import prom
 from app.models import User
 
-prom.configure("prom.interface.postgres.Interface://testuser:testpw@localhost/testdb")
+prom.configure("prom.interface.postgres.PostgreSQL://testuser:testpw@localhost/testdb")
 
 # create a user
 u = User(username='foo', password='awesome_and_secure_pw_hash', email='foo@bar.com')
@@ -149,12 +149,12 @@ for u in User.query.get():
 
 Prom can be automatically configured on import by setting the environment variable `PROM_DSN`:
 
-    export PROM_DSN=prom.interface.postgres.Interface://testuser:testpw@localhost/testdb
+    export PROM_DSN=prom.interface.postgres.PostgreSQL://testuser:testpw@localhost/testdb
 
 If you have multiple connections, you can actually set multiple environment variables:
 
-    export PROM_DSN_1=prom.interface.postgres.Interface://testuser:testpw@localhost/testdb1#conn_1
-    export PROM_DSN_2=prom.interface.postgres.Interface://testuser:testpw@localhost/testdb2#conn_2
+    export PROM_DSN_1=prom.interface.postgres.PostgreSQL://testuser:testpw@localhost/testdb1#conn_1
+    export PROM_DSN_2=prom.interface.postgres.PostgreSQL://testuser:testpw@localhost/testdb2#conn_2
 
 After you've set the environment variable, then you just need to import Prom in your code:
 

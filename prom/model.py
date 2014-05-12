@@ -168,29 +168,6 @@ class Orm(object):
         self.modify(fields)
 
     @classmethod
-    def normalize(cls, fields=None, **fields_kwargs):
-        """
-        return only the fields in the fields dict that are also in schema
-
-        you can override this method to do some sanity checking of the fields
-
-        fields -- dict -- a dict of field/values
-        return -- dict -- the field/values that are in cls.schema
-        """
-        rd = {}
-        fields = cls._normalize_dict(fields, fields_kwargs)
-        s = cls.schema
-        for field_name, field_val in fields.iteritems():
-            if field_name in s.fields:
-                rd[field_name] = field_val
-
-        for field_name, field in cls.schema.required_fields.iteritems():
-            if field_name not in rd:
-                raise KeyError("Missing required field {}".format(field_name))
-
-        return rd
-
-    @classmethod
     def create(cls, fields=None, **fields_kwargs):
         """
         create an instance of cls with the passed in fields and set it into the db
@@ -198,8 +175,9 @@ class Orm(object):
         fields -- dict -- field_name keys, with their respective values
         **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
         """
+        # NOTE -- you cannot use populate here because populate changes modified fields
         fields = cls._normalize_dict(fields, fields_kwargs)
-        instance = cls(**cls.normalize(fields))
+        instance = cls(**fields)
         instance.set()
         return instance
 
@@ -227,9 +205,29 @@ class Orm(object):
     def __int__(self):
         return int(self.pk)
 
+    def normalize_fields(self, fields, is_insert):
+        """
+        this will normalize only the values found in fields dict
+
+        you can override this method to do some sanity checking of the fields
+        before they are saved to the db
+
+        fields -- dict -- a dict of field/values, these fields are usually from
+            the modified fields, so it will most likely not contain all fields
+        is_insert -- boolean -- true if normalizing for insert, false if for update
+        return -- dict -- the field/values normalized from fields
+        """
+        if is_insert:
+            for field_name in self.schema.required_fields.iterkeys():
+                if field_name not in fields:
+                    raise KeyError("Missing required field {}".format(field_name))
+
+        return fields
+
     def insert(self):
         """persist the field values of this orm"""
         fields = self.get_modified()
+        fields = self.normalize_fields(fields, True)
         q = self.query
         q.set_fields(fields)
         fields = q.set()
@@ -240,6 +238,7 @@ class Orm(object):
     def update(self):
         """re-persist the updated field values of this orm that has a primary key"""
         fields = self.get_modified()
+        fields = self.normalize_fields(fields, False)
 
         q = self.query
         _id_name = self.schema.pk
