@@ -191,7 +191,7 @@ class OrmTest(TestCase):
         self.assertEqual("blah", d['bar'])
         self.assertEqual("", d['che'])
 
-    def test_normalize_field(self):
+    def test__normalize_field(self):
         table_name = get_table_name()
         class TNF(Torm):
             field_names = set()
@@ -202,13 +202,13 @@ class OrmTest(TestCase):
                 che=(str, False),
             )
 
-            def _normalize_field(self, field_name, field_val, in_schema):
+            def _normalize_field(self, field_name, field_val):
                 self.field_names.add(field_name)
 
                 if field_name == 'random_1':
                     self.random_2 = True
 
-                return super(TNF, self)._normalize_field(field_name, field_val, in_schema)
+                return super(TNF, self)._normalize_field(field_name, field_val)
 
         t = TNF()
 
@@ -223,6 +223,29 @@ class OrmTest(TestCase):
         with self.assertRaises(AttributeError):
             t.random_1
         self.assertTrue(t.random_2)
+
+    def test_modify(self):
+        table_name = get_table_name()
+        class TM(Torm):
+            schema = Schema(
+                table_name,
+                bar=(str, True),
+                che=(str, False),
+            )
+
+            def _normalize_field(self, field_name, field_val):
+                if field_name == 'che':
+                    if not field_val.startswith('boom'):
+                        raise ValueError("what the heck?")
+
+                return field_val
+
+        t = TM(bar='bam')
+
+        with self.assertRaises(ValueError):
+            t = TM(che='bam')
+
+        t = TM(che='boom')
 
     def test_unicode(self):
         """

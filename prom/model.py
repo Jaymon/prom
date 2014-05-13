@@ -198,15 +198,12 @@ class Orm(object):
     def __setattr__(self, field_name, field_val):
         s = self.schema
         in_schema = field_name in s.fields
-        fv = self._normalize_field(
-            field_name,
-            field_val,
-            in_schema
-        )
+        if field_val is not None:
+            field_val = self._normalize_field(field_name, field_val)
         if in_schema:
             self.modified_fields.add(field_name)
 
-        self.__dict__[field_name] = fv
+        self.__dict__[field_name] = field_val
 
     def __int__(self):
         return int(self.pk)
@@ -307,11 +304,8 @@ class Orm(object):
             else:
                 # fields that aren't in the schema just get normalized but ignored
                 # in this method
-                fv = self._normalize_field(
-                    field_name,
-                    field_val,
-                    in_schema
-                )
+                if field_val is not None:
+                    fv = self._normalize_field(field_name, field_val)
 
         # pick up any stragglers and set them to None:
         for field_name in schema_fields:
@@ -375,13 +369,16 @@ class Orm(object):
 
         return d
 
-    def _normalize_field(self, field_name, field_val, in_schema):
+    def _normalize_field(self, field_name, field_val):
         """
         you can override this to modify/check certain values as they are modified
 
+        NOTE -- this will not be called with a None value, a None value is assumed
+        to be NULL and that you don't have to do any normalizing, so it gets set
+        directly
+
         field_name -- string -- the field's name
         field_val -- mixed -- the field's value
-        in_schema -- boolean -- True if the field is in the schema, false otherwise
         return -- mixed -- the field_val, with any changes
         """
         return field_val
