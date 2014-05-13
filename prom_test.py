@@ -191,27 +191,38 @@ class OrmTest(TestCase):
         self.assertEqual("blah", d['bar'])
         self.assertEqual("", d['che'])
 
-    def test_normalize_fields(self):
+    def test_normalize_field(self):
         table_name = get_table_name()
-        Torm.schema = Schema(
-            table_name,
-            foo=(int, True),
-            bar=(str, True),
-            che=(str, False),
-        )
-        t = Torm()
+        class TNF(Torm):
+            field_names = set()
+            schema = Schema(
+                table_name,
+                foo=(int, True),
+                bar=(str, True),
+                che=(str, False),
+            )
 
-        with self.assertRaises(KeyError):
-            t.normalize_fields({}, True)
+            def _normalize_field(self, field_name, field_val, in_schema):
+                self.field_names.add(field_name)
 
-        d = t.normalize_fields({'foo': 1, 'bar': 'bar1'}, True)
-        self.assertTrue('foo' in d)
-        self.assertTrue('bar' in d)
-        self.assertFalse('che' in d)
+                if field_name == 'random_1':
+                    self.random_2 = True
 
-        d_in = {'foo': 2, 'bar': 'bar2', 'che': 'che2'}
-        d = t.normalize_fields(d_in, True)
-        self.assertEquals(d, d_in)
+                return super(TNF, self)._normalize_field(field_name, field_val, in_schema)
+
+        t = TNF()
+
+        t.random_val = 'foo'
+        self.assertTrue('random_val' in t.field_names)
+
+        t.random_1 = True
+        self.assertTrue(t.random_1)
+        self.assertTrue(t.random_2)
+
+        t = TNF(random_1=True)
+        with self.assertRaises(AttributeError):
+            t.random_1
+        self.assertTrue(t.random_2)
 
     def test_unicode(self):
         """
@@ -333,6 +344,10 @@ class OrmTest(TestCase):
         self.assertEqual(1, t.foo)
 
     def test_set(self):
+        t = Torm()
+        with self.assertRaises(KeyError):
+            t.set()
+
         t = Torm(foo=1, bar="value 1", this_is_ignored="as it should be")
         self.assertEqual(1, t.foo)
         self.assertEqual("value 1", t.bar)
@@ -360,6 +375,7 @@ class OrmTest(TestCase):
         self.assertFalse(t2.is_modified())
         self.assertEqual(2, t2.foo)
         self.assertEqual("value 2", t2.bar)
+        self.assertEqual(t.fields, t2.fields)
 
     def test_delete(self):
         t = Torm(foo=1, bar="value 1")

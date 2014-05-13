@@ -197,37 +197,28 @@ class Orm(object):
 
     def __setattr__(self, field_name, field_val):
         s = self.schema
-        if field_name in s.fields:
+        in_schema = field_name in s.fields
+        fv = self._normalize_field(
+            field_name,
+            field_val,
+            in_schema
+        )
+        if in_schema:
             self.modified_fields.add(field_name)
 
-        self.__dict__[field_name] = field_val
+        self.__dict__[field_name] = fv
 
     def __int__(self):
         return int(self.pk)
 
-    def normalize_fields(self, fields, is_insert):
-        """
-        this will normalize only the values found in fields dict
-
-        you can override this method to do some sanity checking of the fields
-        before they are saved to the db
-
-        fields -- dict -- a dict of field/values, these fields are usually from
-            the modified fields, so it will most likely not contain all fields
-        is_insert -- boolean -- true if normalizing for insert, false if for update
-        return -- dict -- the field/values normalized from fields
-        """
-        if is_insert:
-            for field_name in self.schema.required_fields.iterkeys():
-                if field_name not in fields:
-                    raise KeyError("Missing required field {}".format(field_name))
-
-        return fields
-
     def insert(self):
         """persist the field values of this orm"""
         fields = self.get_modified()
-        fields = self.normalize_fields(fields, True)
+
+        for field_name in self.schema.required_fields.iterkeys():
+            if field_name not in fields:
+                raise KeyError("Missing required field {}".format(field_name))
+
         q = self.query
         q.set_fields(fields)
         fields = q.set()
@@ -238,7 +229,6 @@ class Orm(object):
     def update(self):
         """re-persist the updated field values of this orm that has a primary key"""
         fields = self.get_modified()
-        fields = self.normalize_fields(fields, False)
 
         q = self.query
         _id_name = self.schema.pk
@@ -306,28 +296,28 @@ class Orm(object):
     def modify(self, fields=None, **fields_kwargs):
         """update the fields of this instance with the values in dict fields"""
         fields = self._normalize_dict(fields, fields_kwargs)
-        for field_name in self.schema.fields:
-            if field_name.startswith('_'):
-                if field_name in fields:
-                    setattr(self, field_name, fields[field_name])
+        schema_fields = set(self.schema.fields.iterkeys())
+
+        for field_name, field_val in fields.iteritems():
+            in_schema = field_name in schema_fields
+            if in_schema:
+                setattr(self, field_name, field_val)
+                schema_fields.discard(field_name)
 
             else:
-                if field_name in fields:
-                    setattr(self, field_name, fields[field_name])
-                else:
-                    if not hasattr(self, field_name):
-                        setattr(self, field_name, None)
-                        self.modified_fields.discard(field_name)
+                # fields that aren't in the schema just get normalized but ignored
+                # in this method
+                fv = self._normalize_field(
+                    field_name,
+                    field_val,
+                    in_schema
+                )
 
-#        for field_name in self.schema.normal_fields:
-#            field_val = fields.get(field_name, None)
-#            setattr(self, field_name, field_val)
-#            if field_name not in fields:
-#                self.modified_fields.discard(field_name)
-#
-#        for field_name in self.schema.magic_fields:
-#            if field_name in fields:
-#                setattr(self, field_name, fields[field_name])
+        # pick up any stragglers and set them to None:
+        for field_name in schema_fields:
+            if not hasattr(self, field_name) and not field_name.startswith('_'):
+                setattr(self, field_name, None)
+                self.modified_fields.discard(field_name)
 
     def is_modified(self):
         """true if a field has been changed from its original value, false otherwise"""
@@ -384,6 +374,17 @@ class Orm(object):
                 d[field_name] = default_field_type(field_info['type'])
 
         return d
+
+    def _normalize_field(self, field_name, field_val, in_schema):
+        """
+        you can override this to modify/check certain values as they are modified
+
+        field_name -- string -- the field's name
+        field_val -- mixed -- the field's value
+        in_schema -- boolean -- True if the field is in the schema, false otherwise
+        return -- mixed -- the field_val, with any changes
+        """
+        return field_val
 
     @classmethod
     def _normalize_dict(cls, fields, fields_kwargs):
