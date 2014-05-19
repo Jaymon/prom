@@ -1216,14 +1216,15 @@ class BaseTestInterface(TestCase):
         i = self.get_interface()
         s = get_schema()
         q = query.Query().is_foo(1)
-        i.delete(s, q)
+        r = i.delete(s, q)
 
         i, s = self.get_table()
 
         # try deleting with no values in the table
         q = query.Query()
         q.is_foo(1)
-        i.delete(s, q)
+        r = i.delete(s, q)
+        self.assertEqual(0, r)
 
         _ids = insert(i, s, 5)
 
@@ -1232,7 +1233,8 @@ class BaseTestInterface(TestCase):
         q.in__id(_ids)
         l = i.get(s, q)
         self.assertEqual(5, len(l))
-        i.delete(s, q)
+        r = i.delete(s, q)
+        self.assertEqual(5, r)
 
         # verify rows are deleted
         l = i.get(s, q)
@@ -2516,6 +2518,19 @@ class QueryTest(TestCase):
         for field_name in ['_id', 'foo', 'bar']:
             self.assertTrue(field_name in d)
             self.assertTrue(d[field_name])
+
+    def test_delete(self):
+        tclass = get_orm_class()
+        first_pk = insert(tclass.interface, tclass.schema, 1)[0]
+
+        with self.assertRaises(ValueError):
+            r = tclass.query.delete()
+
+        r = tclass.query.is_foo(1).delete()
+        self.assertEqual(1, r)
+
+        r = tclass.query.is_foo(1).delete()
+        self.assertEqual(0, r)
 
     def test_get(self):
         i, s = get_table()

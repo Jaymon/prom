@@ -549,18 +549,23 @@ class SQLInterface(Interface):
         query_str.append('  {}'.format(schema))
         query_str.append(where_query_str)
         query_str = os.linesep.join(query_str)
-        ret = self._query(query_str, query_args, ignore_result=True)
+        #ret = self._query(query_str, query_args, ignore_result=True)
+        ret = self._query(query_str, query_args, count_result=True)
+        #ret = self._query(query_str, query_args)
+        return ret
 
     def _query(self, query_str, query_args=None, **query_options):
         """
         **query_options -- dict
             ignore_result -- boolean -- true to not attempt to fetch results
             fetchone -- boolean -- true to only fetch one result
+            count_result -- boolean -- true to return the int count of rows affected
         """
         ret = True
         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
         cur = self.connection.cursor()
         ignore_result = query_options.get('ignore_result', False)
+        count_result = query_options.get('count_result', False)
         one_result = query_options.get('fetchone', False)
         cur_result = query_options.get('cursor_result', False)
 
@@ -579,6 +584,8 @@ class SQLInterface(Interface):
             elif not ignore_result:
                     if one_result:
                         ret = cur.fetchone()
+                    elif count_result:
+                        ret = cur.rowcount
                     else:
                         ret = cur.fetchall()
 
