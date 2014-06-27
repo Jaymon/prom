@@ -209,11 +209,11 @@ class SQLite(SQLInterface):
                 field_type += ' NULL'
 
             if 'ref' in field_options: # strong ref, it deletes on fk row removal
-                ref_s = field_options['ref']
+                ref_s = field_options.ref_schema
                 field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s.table, ref_s.pk)
 
             elif 'weak_ref' in field_options: # weak ref, it sets column to null on fk row removal
-                ref_s = field_options['weak_ref']
+                ref_s = field_options.ref_schema
                 field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s.table, ref_s.pk)
 
         return '{} {}'.format(field_name, field_type)

@@ -5,6 +5,7 @@ import datetime
 import re
 
 from .model import Orm
+from . import utils
 
 class Connection(object):
     """
@@ -334,11 +335,16 @@ class Schema(object):
         if field_name in self.fields: raise ValueError("{} already exists and cannot be changed".format(field_name))
         if not isinstance(field, Field): raise ValueError("{} is not a Field instance".format(type(field)))
 
-        d = {
-            'name': field_name,
-            'type': field[0],
-            'required': field[1]
-        }
+        d = FieldOptions(
+            name=field_name,
+            type=field[0],
+            required=field[1]
+        )
+#        d = {
+#            'name': field_name,
+#            'type': field[0],
+#            'required': field[1]
+#        }
 
         if field[2]['unique']:
             self.set_index(field_name, [field_name], unique=True)
@@ -439,27 +445,61 @@ class Field(tuple):
                 d['min_size'] = min_size
                 d['max_size'] = max_size
 
-        # convert Orm class refs to Orm.schema refs
-        ref_key = ''
-        for k in ['ref', 'weak_ref']:
-            if k in field_options:
-                ref_key = k
-                o = field_options[k]
-                if isinstance(o, types.TypeType):
-                    if issubclass(o, Orm):
-                        field_options['ref_orm'] = o
-                        field_options[k] = o.schema
-
         field_options.setdefault("unique", False)
         field_options.update(d)
 
         instance = super(Field, cls).__new__(cls, [field_type, field_required, field_options])
 
-        # make some of the field options easier to ref
+        # make some of the field options easier to reference
         instance.type = instance[0]
         instance.required = instance[1]
         instance.options = instance[2]
-        instance.ref = instance.options.get(ref_key, None)
 
         return instance
+
+
+class FieldOptions(dict):
+    """
+    Holds the options dict for the fields
+
+    This came about because of circular dependencies when using string refs, I needed
+    a way to delay actually figuring out what schema we were referencing until the
+    absolute last possible moment, and this was the simplest way I could do it while
+    keeping backwards compatibility high
+    """
+    @property
+    def ref_schema(self):
+        if 'ref_schema' in self: return self['ref_schema']
+        if 'weak_ref_schema' in self: return self['weak_ref_schema']
+        #if 'ref' not in self: return None
+        #if 'weak_ref' not in self: return None
+
+        s = None
+        for k in ['ref', 'weak_ref']:
+            if k in self:
+                o = self[k]
+                s = self._get_schema(o)
+                self['{}_schema'.format(o)] = s
+                break
+
+        return s
+
+#    def __getitem__(self, key):
+#        pout.v(key)
+#        return super(FieldOptions, self).__getitem__(key)
+
+    def _get_schema(self, o):
+        ret = None
+        if isinstance(o, types.TypeType):
+            if issubclass(o, Orm):
+                ret = o.schema
+
+        elif isinstance(o, Schema):
+            ret = o
+
+        else:
+            module, klass = utils.get_objects(o)
+            ret = klass.schema
+
+        return ret
 

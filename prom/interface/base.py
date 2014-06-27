@@ -804,9 +804,9 @@ class SQLInterface(Interface):
         self.transaction_start()
         # go through and make sure all foreign key referenced tables exist
         for field_name, field_val in schema.fields.iteritems():
-            for fn in ['ref', 'weak_ref']:
-                if fn in field_val:
-                    self._set_all_tables(field_val[fn])
+            s = field_val.ref_schema
+            if s:
+                self._set_all_tables(s)
 
         # now that we know all fk tables exist, create this table
         self.set_table(schema)

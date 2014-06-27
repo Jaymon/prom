@@ -315,30 +315,51 @@ class OrmTest(TestCase):
         self.assertEqual(1, q.fields_where[0][2])
 
     def test_query_ref_2(self):
-        t1 = get_orm_class()
-        t2 = get_orm_class()
-        t2.schema.che = Field(int, ref=t1)
+        testdata.create_modules({
+            "qr2.foo": "\n".join([
+                "import prom",
+                "class Foo(prom.Orm):",
+                "    schema = prom.Schema(",
+                "        'qr2_foo',",
+                "        foo=prom.Field(int, True),",
+                "        bar=prom.Field(str, True),",
+                "    )",
+                ""
+                "class Bar(prom.Orm):",
+                "    schema = prom.Schema(",
+                "        'qr2_Bar',",
+                "        foo=prom.Field(int, True),",
+                "        bar=prom.Field(str, True),",
+                "        che=prom.Field(int, ref=Foo)",
+                "    )",
+                ""
+            ])
+        })
+
+        from qr2.foo import Foo as t1, Bar as t2
 
         ti1 = t1.create(foo=11, bar='11')
         ti12 = t1.create(foo=12, bar='12')
 
-        ti2 = t1.create(foo=21, bar='21', che=ti1.pk)
-        ti22 = t1.create(foo=22, bar='22', che=ti12.pk)
+        ti2 = t2.create(foo=21, bar='21', che=ti1.pk)
+        ti22 = t2.create(foo=22, bar='22', che=ti12.pk)
 
-        orm_classpath = "{}.{}".format(t1.__module__, t1.__name__)
+        orm_classpath = "{}.{}".format(t2.__module__, t2.__name__)
 
-        l = list(ti2.query_ref(orm_classpath, ti1.pk).select_foo().all().values())
-        pout.v(l)
+        l = list(ti1.query_ref(orm_classpath, ti12.pk).select_foo().values())
+        self.assertEqual(22, l[0])
+
+        l = list(ti1.query_ref(orm_classpath, ti1.pk).select_foo().all().values())
         self.assertEqual(21, l[0])
 
-        l = list(ti2.query_ref(orm_classpath, ti1.pk).select_foo().get().values())
+        l = list(ti1.query_ref(orm_classpath, ti1.pk).select_foo().get().values())
         self.assertEqual(21, l[0])
 
-        l = list(ti2.query_ref(orm_classpath, ti1.pk).select_foo().values())
+        l = list(ti1.query_ref(orm_classpath, ti1.pk).select_foo().values())
         self.assertEqual(21, l[0])
 
-        l = list(ti2.query_ref(orm_classpath).select_foo().all().values())
-        self.assertEqual(4, len(l))
+        l = list(ti1.query_ref(orm_classpath).select_foo().all().values())
+        self.assertEqual(2, len(l))
 
     def test_interface(self):
         i = Torm.interface
@@ -874,6 +895,34 @@ class ConfigConnectionTest(TestCase):
 
 
 class ConfigFieldTest(TestCase):
+    def test_string_ref(self):
+        testdata.create_modules({
+            "stringref.foo": "\n".join([
+                "import prom",
+                "class Foo(prom.Orm):",
+                "    schema=prom.Schema(",
+                "        'stringref_foo',",
+                "        bar_id=prom.Field(int, ref='stringref.bar.Bar')",
+                "    )",
+                ""
+            ]),
+            "stringref.bar": "\n".join([
+                "import prom",
+                "class Bar(prom.Orm):",
+                "    schema=prom.Schema(",
+                "        'stringref_foo',",
+                "        foo_id=prom.Field(int, ref='stringref.foo.Foo')",
+                "    )",
+                ""
+            ])
+        })
+
+        from stringref.foo import Foo
+        from stringref.bar import Bar
+
+        self.assertTrue(isinstance(Foo.schema.fields['bar_id'].ref_schema, prom.Schema))
+        self.assertTrue(isinstance(Bar.schema.fields['foo_id'].ref_schema, prom.Schema))
+
     def test___new__(self):
         f = prom.Field(str, True)
         self.assertTrue(f[1])
@@ -886,12 +935,6 @@ class ConfigFieldTest(TestCase):
         f = prom.Field(int, max_length=100)
         self.assertTrue(issubclass(f[0], int))
         self.assertEqual(f[2]['max_length'], 100)
-
-    def test_ref(self):
-        t = get_orm_class()
-        bar=Field(int, ref=t)
-        self.assertTrue(issubclass(bar.options['ref_orm'], t))
-        self.assertTrue(isinstance(bar.options['ref'], Schema))
 
 
 class BaseTestInterface(TestCase):

@@ -130,7 +130,7 @@ class Orm(object):
         if cls_pk:
             ref_s = orm_class.schema
             for fn, f in ref_s.fields.iteritems():
-                cls_ref_s = f.get('ref', f.get('weak_ref', None))
+                cls_ref_s = f.ref_schema
                 if cls_ref_s and cls.schema == cls_ref_s:
                         q.is_field(fn, cls_pk)
                         break
