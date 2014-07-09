@@ -92,6 +92,10 @@ class Iterator(object):
         self.results.reverse()
         self.reset()
 
+    def __reversed__(self):
+        self.reverse()
+        return self
+
     def sort(self, *args, **kwargs):
         """list interface compatibility"""
         self.results.sort(*args, **kwargs)
