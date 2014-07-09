@@ -7,7 +7,6 @@ import datetime
 from .query import Query
 from . import decorators
 from .interface import get_interface
-from .utils import get_objects
 
 
 class Orm(object):
@@ -109,33 +108,12 @@ class Orm(object):
         return query_class(orm=cls)
 
     @classmethod
-    def query_ref(cls, orm_classpath, cls_pk=None):
+    def query_ref(cls, *args, **kwargs):
         """
-        like the query property, but takes a classpath to allow query-ing from another
-        Orm class
-
-        the reason why it takes string paths is to avoid infinite recursion import 
-        problems because an orm class from module A might have a ref from module B
-        and sometimes it is handy to have module B be able to get the objects from
-        module A that correspond to the object in module B, but you can't import
-        module A into module B because module B already imports module A.
-
-        orm_classpath -- string -- a full python class path (eg, foo.bar.Che)
-        cls_pk -- mixed -- automatically set the where field to this value if present
-        return -- Query()
+        this is a pass through to Query.ref(), check out docs for that to know
+        what to pass
         """
-        # split orm from module path
-        orm_module, orm_class = get_objects(orm_classpath)
-        q = orm_class.query
-        if cls_pk:
-            ref_s = orm_class.schema
-            for fn, f in ref_s.fields.iteritems():
-                cls_ref_s = f.ref_schema
-                if cls_ref_s and cls.schema == cls_ref_s:
-                        q.is_field(fn, cls_pk)
-                        break
-
-        return q
+        return cls.query.ref(*args, **kwargs)
 
     @property
     def pk(self):

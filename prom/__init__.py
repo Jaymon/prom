@@ -11,7 +11,7 @@ from .utils import get_objects
 from .exception import InterfaceError, Error
 
 
-__version__ = '0.9.56'
+__version__ = '0.9.57'
 
 def configure_environ(dsn_env_name='PROM_DSN'):
     """

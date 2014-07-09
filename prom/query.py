@@ -4,7 +4,7 @@ Classes and stuff that handle querying the interface for a passed in Orm class
 import types
 import copy
 
-from .utils import make_list
+from .utils import make_list, get_objects
 
 
 class Iterator(object):
@@ -239,6 +239,34 @@ class Query(object):
         self.args = args
         self.kwargs = kwargs
         self.can_get = True
+
+    def ref(self, orm_classpath, cls_pk=None):
+        """
+        takes a classpath to allow query-ing from another Orm class
+
+        the reason why it takes string paths is to avoid infinite recursion import 
+        problems because an orm class from module A might have a ref from module B
+        and sometimes it is handy to have module B be able to get the objects from
+        module A that correspond to the object in module B, but you can't import
+        module A into module B because module B already imports module A.
+
+        orm_classpath -- string -- a full python class path (eg, foo.bar.Che)
+        cls_pk -- mixed -- automatically set the where field of orm_classpath 
+            that references self.orm to the value in cls_pk if present
+        return -- Query()
+        """
+        # split orm from module path
+        orm_module, orm_class = get_objects(orm_classpath)
+        q = orm_class.query
+        if cls_pk:
+            ref_s = orm_class.schema
+            for fn, f in ref_s.fields.iteritems():
+                cls_ref_s = f.ref_schema
+                if cls_ref_s and self.orm.schema == cls_ref_s:
+                        q.is_field(fn, cls_pk)
+                        break
+
+        return q
 
     def __iter__(self):
         return self.get()
