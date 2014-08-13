@@ -32,6 +32,8 @@ class Interface(object):
     transaction_fail will set this back to 0 and rollback the transaction
     """
 
+    connection_count = 0
+
     def __init__(self, connection_config=None):
         self.connection_config = connection_config
 
@@ -73,27 +75,48 @@ class Interface(object):
         raise NotImplementedError("this needs to be implemented in a child class")
 
     @contextmanager
+    def error_recover(self, schema, callback, *args, **kwargs):
+        try:
+            yield self
+        except Exception as e:
+            exc_info = sys.exc_info()
+            if self.handle_error(schema, e):
+                d = self.set(schema, query)
+            else:
+                self.raise_error(e, exc_info)
+
+
+    @contextmanager
     def connection(self):
         try:
-            self.bind_connection()
+            if not self.connection_count:
+                self.bind_connection()
+            self.connection_count += 1
+
             yield self
 
         except Exception as e:
             self.raise_error(e)
 
         finally:
-            self.free_connection()
+            self.connection_count -= 1
+            if not self.connection_count:
+                self.free_connection()
 
     def close(self):
         """close an open connection"""
         if not self.connected: return True
 
-        self.connection.close()
-        self.connection = None
+        self._close()
+#        self.connection.close()
+#        self.connection = None
         self.connected = False
         self.transaction_count = 0
         self.log("Closed Connection {}", self.connection_config.interface_name)
         return True
+
+    def _close(self):
+        raise NotImplementedError("this needs to be implemented in a child class")
 
     def assure(self, schema=None):
         """handle any things that need to be done before a query can be performed"""
@@ -125,12 +148,13 @@ class Interface(object):
                 # do a bunch of calls
             # those db calls will be committed by this line
         """
-        self.transaction_start()
-        try:
-            yield self
-            self.transaction_stop()
-        except Exception, e:
-            self.transaction_fail(e)
+        with self.connection():
+            self.transaction_start()
+            try:
+                yield self
+                self.transaction_stop()
+            except Exception, e:
+                self.transaction_fail(e)
 
     def in_transaction(self):
         """return true if currently in a transaction"""
@@ -198,14 +222,14 @@ class Interface(object):
 
         schema -- Schema() -- contains all the information about the table
         """
-        self.assure(schema)
-        if self.has_table(schema.table): return True
+        with self.connection():
+            if self.has_table(schema.table): return True
 
-        with self.transaction():
-            self._set_table(schema)
+            with self.transaction():
+                self._set_table(schema)
 
-            for index_name, index_d in schema.indexes.iteritems():
-                self.set_index(schema, **index_d)
+                for index_name, index_d in schema.indexes.iteritems():
+                    self.set_index(schema, **index_d)
 
 
     def _set_table(self, schema):
@@ -228,8 +252,8 @@ class Interface(object):
         table_name -- string -- if you would like to filter the tables list to only include matches with this name
         return -- list -- a list of table names
         """
-        self.assure()
-        return self._get_tables(table_name)
+        with self.connection():
+            return self._get_tables(table_name)
 
     def _get_tables(self, table_name):
         raise NotImplementedError("this needs to be implemented in a child class")
@@ -275,8 +299,8 @@ class Interface(object):
 
         return -- dict -- the indexes in {indexname: fields} format
         """
-        self.assure(schema)
-        return self._get_indexes(schema)
+        with self.connection():
+            return self._get_indexes(schema)
 
     def _get_indexes(self, schema):
         raise NotImplementedError("this needs to be implemented in a child class")
@@ -329,11 +353,21 @@ class Interface(object):
         return -- dict -- the dict that was inserted into the db
         """
         d = self.prepare_dict(schema, d, is_insert=True)
+        r = 0
 
-        with self.transaction():
-            r = self._insert(schema, d)
-            d[schema._id] = r
+        with self.connection():
+            try:
+                with self.transaction():
+                    r = self._insert(schema, d)
 
+            except Exception as e:
+                exc_info = sys.exc_info()
+                if self.handle_error(schema, e):
+                    r = self._insert(schema, d)
+                else:
+                    self.raise_error(e, exc_info)
+
+        if r: d[schema._id] = r
         return d
 
     def _insert(self, schema, d):
@@ -354,8 +388,17 @@ class Interface(object):
         d = query.fields
         d = self.prepare_dict(schema, d, is_insert=False)
 
-        with self.transaction():
-            r = self._update(schema, query, d)
+        with self.connection():
+            try:
+                with self.transaction():
+                    r = self._update(schema, query, d)
+
+            except Exception as e:
+                exc_info = sys.exc_info()
+                if self.handle_error(schema, e):
+                    r = self._update(schema, query, d)
+                else:
+                    self.raise_error(e, exc_info)
 
         return d
 
@@ -371,21 +414,13 @@ class Interface(object):
         query -- Query() -- set a where clause to perform an update, insert otherwise
         return -- dict -- the dict inserted into the db
         """
-        try:
-            if query.fields_where:
-                d = self.update(schema, query)
+        if query.fields_where:
+            d = self.update(schema, query)
 
-            else:
-                # insert
-                d = query.fields
-                d = self.insert(schema, d)
-
-        except Exception as e:
-            exc_info = sys.exc_info()
-            if self.handle_error(schema, e):
-                d = self.set(schema, query)
-            else:
-                self.raise_error(e, exc_info)
+        else:
+            # insert
+            d = query.fields
+            d = self.insert(schema, d)
 
         return d
 
@@ -396,31 +431,27 @@ class Interface(object):
         """
         if not query: query = Query()
 
-        self.assure(schema)
         ret = None
+        with self.connection():
+            try:
+                if self.in_transaction():
+                    # we wrap SELECT queries in a transaction if we are in a transaction because
+                    # it could cause data loss if it failed by causing the db to discard
+                    # anything in the current transaction if the query isn't wrapped,
+                    # go ahead, ask me how I know this
+                    with self.transaction():
+                        ret = callback(schema, query, *args, **kwargs)
 
-        try:
-            # we wrap SELECT queries in a transaction if we are in a transaction because
-            # it could cause data loss if it failed by causing the db to discard
-            # anything in the current transaction if the query isn't wrapped
-            if self.in_transaction():
-                self.transaction_start()
+                else:
+                    ret = callback(schema, query, *args, **kwargs)
 
-            ret = callback(schema, query, *args, **kwargs)
+            except Exception as e:
+                exc_info = sys.exc_info()
+                if self.handle_error(schema, e):
+                    ret = callback(schema, query, *args, **kwargs)
+                else:
+                    self.raise_error(e, exc_info)
 
-            if self.in_transaction():
-                self.transaction_stop()
-
-        except Exception as e:
-            if self.in_transaction():
-                self.transaction_fail()
-
-            exc_info = sys.exc_info()
-            if self.handle_error(schema, e):
-                ret = callback(schema, query, *args, **kwargs)
-
-            else:
-                self.raise_error(e, exc_info)
 
         return ret
 
@@ -547,7 +578,6 @@ class SQLInterface(Interface):
         ret = True
         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
         connection = self.get_connection()
-        pout.v(id(connection))
         cur = connection.cursor()
         ignore_result = query_options.get('ignore_result', False)
         count_result = query_options.get('count_result', False)
@@ -758,10 +788,11 @@ class SQLInterface(Interface):
         return query_str, query_args
 
     def handle_error(self, schema, e):
-        if not self.connection: return False
+        connection = self.get_connection()
+        if not connection: return False
 
         ret = False
-        if self.connection.closed == 0:
+        if connection.closed == 0:
             self.transaction_stop()
             if isinstance(e, InterfaceError):
                 ret = self._handle_error(schema, e.e)
@@ -772,6 +803,8 @@ class SQLInterface(Interface):
         else:
             self.close()
             ret = self.connect()
+            if ret:
+                self.bind_connection()
 
         return ret
 

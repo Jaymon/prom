@@ -34,6 +34,24 @@ class ConnectionPool(ThreadedConnectionPool):
         psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, connection)
         return connection
 
+#from psycopg2.pool import AbstractConnectionPool, PoolError
+#class ConnectionPool(ConnectionPool):
+#    def __init__(self, minconn, maxconn, *args, **kwargs):
+#        super(ConnectionPool, self)._connect(minnconn, maxconn, *args, **kwargs)
+#
+#    def _connect(self, key=None):
+#        """every new connection goes through this method, so we can do initial setup"""
+#        connection = super(ConnectionPool, self)._connect(key)
+#
+#        # http://initd.org/psycopg/docs/connection.html#connection.autocommit
+#        connection.autocommit = True
+#
+#        # unicode harden for python 2
+#        # http://initd.org/psycopg/docs/usage.html#unicode-handling
+#        psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, connection)
+#        psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, connection)
+#        return connection
+
 
 class PostgreSQL(SQLInterface):
 
@@ -51,8 +69,8 @@ class PostgreSQL(SQLInterface):
         port = connection_config.port
         if not port: port = 5432
 
-        minconn = connection_config.options.get('minconn', 1)
-        maxconn = connection_config.options.get('maxconn', 1)
+        minconn = int(connection_config.options.get('minconn', 1))
+        maxconn = int(connection_config.options.get('maxconn', 1))
 
         self.connection_pool = ConnectionPool(
             minconn,
@@ -67,17 +85,19 @@ class PostgreSQL(SQLInterface):
         )
 
     def bind_connection(self):
+        self.log("binding to connection {}", id(self._connection))
         self._connection = self.connection_pool.getconn()
-#        if not self._connection:
-#            self._connection = self.connection_pool.getconn()
 
     def free_connection(self):
-        if self._connection:
-            self.connection_pool.putconn(self._connection)
-            self._connection = None
+        self.log("freeing connection {}", id(self._connection))
+        self.connection_pool.putconn(self._connection)
+        self._connection = None
 
     def get_connection(self):
         return self._connection
+
+    def _close(self):
+        self.connection_pool.closeall()
 
     def _get_tables(self, table_name):
         query_str = 'SELECT tablename FROM pg_tables WHERE tableowner = %s'
