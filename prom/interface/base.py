@@ -16,7 +16,7 @@ class Interface(object):
     connected = False
     """true if a connection has been established, false otherwise"""
 
-    connection = None
+    #connection = None
     """hold the actual raw connection to the db"""
 
     connection_config = None
@@ -44,30 +44,48 @@ class Interface(object):
         *args -- anything you want that will help the db connect
         **kwargs -- anything you want that the backend db connection will need to actually connect
         """
-
         if self.connected: return self.connected
 
         if connection_config: self.connection_config = connection_config
 
         self.connected = False
-        self._connect(self.connection_config)
-        if self.connection:
+        self.transaction_count = 0
+        try:
+            self._connect(self.connection_config)
             self.connected = True
-            self.transaction_count = 0
-        else:
-            raise ValueError("the ._connect() method did not set .connection attribute")
+
+        except Exception as e:
+            self.raise_error(e)
 
         self.log("Connected {}", self.connection_config.interface_name)
         return self.connected
 
     def _connect(self, connection_config):
-        """this *MUST* set the self.connection attribute"""
         raise NotImplementedError("this needs to be implemented in a child class")
 
+    def bind_connection(self):
+        pass
+
+    def free_connection(self):
+        pass
+
+    def get_connection(self):
+        raise NotImplementedError("this needs to be implemented in a child class")
+
+    @contextmanager
+    def connection(self):
+        try:
+            self.bind_connection()
+            yield self
+
+        except Exception as e:
+            self.raise_error(e)
+
+        finally:
+            self.free_connection()
+
     def close(self):
-        """
-        close an open connection
-        """
+        """close an open connection"""
         if not self.connected: return True
 
         self.connection.close()
@@ -89,8 +107,8 @@ class Interface(object):
         *query_args -- if the query_str is a formatting string, pass the values in this
         **query_options -- any query options can be passed in by using key=val syntax
         """
-        self.assure()
-        return self._query(query_str, query_args, **query_options)
+        with self.connection():
+            return self._query(query_str, query_args, **query_options)
 
     def _query(self, query_str, query_args=None, query_options=None):
         raise NotImplementedError("this needs to be implemented in a child class")
@@ -99,9 +117,6 @@ class Interface(object):
     def transaction(self):
         """
         a simple context manager useful for when you want to wrap a bunch of db calls in a transaction
-
-        This is useful for making sure the db is connected before starting a transaction
-
         http://docs.python.org/2/library/contextlib.html
         http://docs.python.org/release/2.5/whatsnew/pep-343.html
 
@@ -110,7 +125,6 @@ class Interface(object):
                 # do a bunch of calls
             # those db calls will be committed by this line
         """
-        self.assure()
         self.transaction_start()
         try:
             yield self
@@ -169,12 +183,11 @@ class Interface(object):
             self._transaction_fail(self.transaction_count, e)
             self.transaction_count -= 1
 
-        if not e:
-            return True
+        if e:
+            self.raise_error(e)
+
         else:
-            exc_info = sys.exc_info()
-            e = InterfaceError(e, exc_info)
-            raise e.__class__, e, exc_info[2]
+            return True
 
     def _transaction_fail(self, count, e=None):
         pass
@@ -188,18 +201,12 @@ class Interface(object):
         self.assure(schema)
         if self.has_table(schema.table): return True
 
-        try:
-            self.transaction_start()
-
+        with self.transaction():
             self._set_table(schema)
 
             for index_name, index_d in schema.indexes.iteritems():
                 self.set_index(schema, **index_d)
 
-            self.transaction_stop()
-
-        except Exception, e:
-            self.transaction_fail(e)
 
     def _set_table(self, schema):
         raise NotImplementedError("this needs to be implemented in a child class")
@@ -211,7 +218,6 @@ class Interface(object):
         table_name -- string -- the table to check
         return -- boolean -- True if the table exists, false otherwise
         """
-        self.assure()
         tables = self.get_tables(table_name)
         return len(tables) > 0
 
@@ -234,15 +240,10 @@ class Interface(object):
 
         schema -- Schema()
         """
-        self.assure(schema)
-        if not self.has_table(schema.table): return True
-
-        try:
-            self.transaction_start()
-            self._delete_table(schema)
-            self.transaction_stop()
-        except Exception, e:
-            self.transaction_fail(e)
+        with self.connection():
+            if not self.has_table(schema.table): return True
+            with self.transaction():
+                self._delete_table(schema)
 
         return True
 
@@ -260,7 +261,8 @@ class Interface(object):
         if not kwargs.get('disable_protection', False):
             raise ValueError('In order to delete all the tables, pass in disable_protection=True')
 
-        self._delete_tables(**kwargs)
+        with self.connection():
+            self._delete_tables(**kwargs)
 
     def _delete_tables(self, **kwargs):
         raise NotImplementedError("this needs to be implemented in a child class")
@@ -274,7 +276,6 @@ class Interface(object):
         return -- dict -- the indexes in {indexname: fields} format
         """
         self.assure(schema)
-
         return self._get_indexes(schema)
 
     def _get_indexes(self, schema):
@@ -289,16 +290,11 @@ class Interface(object):
         fields -- array -- the fields the index should be on
         **index_options -- dict -- any index options that might be useful to create the index
         """
-        self.assure()
-        try:
-            self.transaction_start()
+        with self.transaction():
             self._set_index(schema, name, fields, **index_options)
-            self.transaction_stop()
-        except Exception, e:
-            self.transaction_fail(e)
 
         return True
-    
+
     def _set_index(self, schema, name, fields, **index_options):
         raise NotImplementedError("this needs to be implemented in a child class")
 
@@ -309,6 +305,7 @@ class Interface(object):
         is_insert -- boolean -- True if insert, False if update
         return -- dict -- the same dict, but now prepared
         """
+        # TODO -- should this be moved to somewhere else? Not sure it is appropriate here
         # update the times
         now = datetime.datetime.utcnow()
         field_created = schema._created
@@ -331,17 +328,11 @@ class Interface(object):
 
         return -- dict -- the dict that was inserted into the db
         """
-        self.assure(schema)
         d = self.prepare_dict(schema, d, is_insert=True)
 
-        try:
-            self.transaction_start()
+        with self.transaction():
             r = self._insert(schema, d)
             d[schema._id] = r
-            self.transaction_stop()
-
-        except Exception, e:
-            self.transaction_fail(e)
 
         return d
 
@@ -360,17 +351,11 @@ class Interface(object):
 
         return -- dict -- the dict that was inserted into the db
         """
-        self.assure(schema)
         d = query.fields
         d = self.prepare_dict(schema, d, is_insert=False)
 
-        try:
-            self.transaction_start()
+        with self.transaction():
             r = self._update(schema, query, d)
-            self.transaction_stop()
-
-        except Exception, e:
-            self.transaction_fail(e)
 
         return d
 
@@ -395,13 +380,12 @@ class Interface(object):
                 d = query.fields
                 d = self.insert(schema, d)
 
-        except Exception, e:
+        except Exception as e:
+            exc_info = sys.exc_info()
             if self.handle_error(schema, e):
                 d = self.set(schema, query)
             else:
-                exc_info = sys.exc_info()
-                e = InterfaceError(e, exc_info)
-                raise e.__class__, e, exc_info[2]
+                self.raise_error(e, exc_info)
 
         return d
 
@@ -427,17 +411,16 @@ class Interface(object):
             if self.in_transaction():
                 self.transaction_stop()
 
-        except Exception, e:
+        except Exception as e:
             if self.in_transaction():
                 self.transaction_fail()
 
+            exc_info = sys.exc_info()
             if self.handle_error(schema, e):
                 ret = callback(schema, query, *args, **kwargs)
 
             else:
-                exc_info = sys.exc_info()
-                e = InterfaceError(e, exc_info)
-                raise e.__class__, e, exc_info[2]
+                self.raise_error(e, exc_info)
 
         return ret
 
@@ -484,13 +467,8 @@ class Interface(object):
         if not query or not query.fields_where:
             raise ValueError('aborting delete because there is no where clause')
 
-        try:
-            self.transaction_start()
+        with self.transaction():
             ret = self._get_query(self._delete, schema, query)
-            self.transaction_stop()
-
-        except Exception, e:
-            self.transaction_fail(e)
 
         return ret
 
@@ -527,6 +505,14 @@ class Interface(object):
                 else:
                     logger.log(log_level, format_str)
 
+    def raise_error(self, e, exc_info=None):
+        """this is just a wrapper to make the passed in exception an InterfaceError"""
+        if not exc_info:
+            exc_info = sys.exc_info()
+        if not isinstance(e, InterfaceError):
+            e = InterfaceError(e, exc_info)
+        raise e.__class__, e, exc_info[2]
+
 
 class SQLInterface(Interface):
     """Generic base class for all SQL derived interfaces"""
@@ -536,9 +522,8 @@ class SQLInterface(Interface):
 
     def _delete_tables(self, **kwargs):
         for table_name in self.get_tables():
-            self.transaction_start()
-            self._delete_table(table_name)
-            self.transaction_stop()
+            with self.transaction():
+                self._delete_table(table_name)
 
         return True
 
@@ -549,9 +534,7 @@ class SQLInterface(Interface):
         query_str.append('  {}'.format(schema))
         query_str.append(where_query_str)
         query_str = os.linesep.join(query_str)
-        #ret = self._query(query_str, query_args, ignore_result=True)
-        ret = self._query(query_str, query_args, count_result=True)
-        #ret = self._query(query_str, query_args)
+        ret = self.query(query_str, *query_args, count_result=True)
         return ret
 
     def _query(self, query_str, query_args=None, **query_options):
@@ -563,7 +546,9 @@ class SQLInterface(Interface):
         """
         ret = True
         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
-        cur = self.connection.cursor()
+        connection = self.get_connection()
+        pout.v(id(connection))
+        cur = connection.cursor()
         ignore_result = query_options.get('ignore_result', False)
         count_result = query_options.get('count_result', False)
         one_result = query_options.get('fetchone', False)
@@ -589,7 +574,7 @@ class SQLInterface(Interface):
                     else:
                         ret = cur.fetchall()
 
-        except Exception, e:
+        except Exception as e:
             self.log(e)
             raise
 
@@ -597,10 +582,10 @@ class SQLInterface(Interface):
 
     def _transaction_start(self, count):
         if count == 1:
-            self._query("BEGIN", ignore_result=True)
+            self.query("BEGIN", ignore_result=True)
         else:
             # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-            self._query("SAVEPOINT prom", ignore_result=True)
+            self.query("SAVEPOINT prom", ignore_result=True)
 
     def _transaction_stop(self, count):
         """
@@ -608,16 +593,14 @@ class SQLInterface(Interface):
         https://news.ycombinator.com/item?id=4269241
         """
         if count == 1:
-            #self.connection.commit()
-            self._query("COMMIT", ignore_result=True)
+            self.query("COMMIT", ignore_result=True)
 
     def _transaction_fail(self, count, e=None):
         if count == 1:
-            #self.connection.rollback()
-            self._query("ROLLBACK", ignore_result=True)
+            self.query("ROLLBACK", ignore_result=True)
         else:
             # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-            self._query("ROLLBACK TO SAVEPOINT prom", ignore_result=True)
+            self.query("ROLLBACK TO SAVEPOINT prom", ignore_result=True)
 
     def _normalize_date_SQL(self, field_name, field_kwargs):
         raise NotImplemented()
@@ -692,8 +675,8 @@ class SQLInterface(Interface):
         """
         convert the query instance into SQL
 
-        this is the glue method that translates the generic Query() instance to the postgres
-        specific SQL query, this is where the magic happens
+        this is the glue method that translates the generic Query() instance to
+        the SQL specific query, this is where the magic happens
 
         **sql_options -- dict
             count_query -- boolean -- true if this is a count query SELECT
@@ -801,16 +784,16 @@ class SQLInterface(Interface):
         foreign key to a table that doesn't exist, so this method will go through 
         all fk refs and make sure the tables exist
         """
-        self.transaction_start()
-        # go through and make sure all foreign key referenced tables exist
-        for field_name, field_val in schema.fields.iteritems():
-            s = field_val.ref_schema
-            if s:
-                self._set_all_tables(s)
+        with self.transaction():
+            # go through and make sure all foreign key referenced tables exist
+            for field_name, field_val in schema.fields.iteritems():
+                s = field_val.ref_schema
+                if s:
+                    self._set_all_tables(s)
 
-        # now that we know all fk tables exist, create this table
-        self.set_table(schema)
-        self.transaction_stop()
+            # now that we know all fk tables exist, create this table
+            self.set_table(schema)
+
         return True
 
     def _update(self, schema, query, d):
@@ -832,22 +815,22 @@ class SQLInterface(Interface):
         )
         query_args.extend(where_query_args)
 
-        return self._query(query_str, query_args, ignore_result=True)
+        return self.query(query_str, *query_args, ignore_result=True)
 
     def _get_one(self, schema, query):
         # compensate for getting one with an offset
         if query.has_bounds() and not query.has_limit():
             query.set_limit(1)
         query_str, query_args = self.get_SQL(schema, query)
-        return self._query(query_str, query_args, fetchone=True)
+        return self.query(query_str, *query_args, fetchone=True)
 
     def _get(self, schema, query):
         query_str, query_args = self.get_SQL(schema, query)
-        return self._query(query_str, query_args)
+        return self.query(query_str, *query_args)
 
     def _count(self, schema, query):
         query_str, query_args = self.get_SQL(schema, query, count_query=True)
-        ret = self._query(query_str, query_args)
+        ret = self.query(query_str, *query_args)
         if ret:
             ret = int(ret[0]['ct'])
         else:
@@ -874,7 +857,7 @@ class SQLInterface(Interface):
                     query_str.append('ADD COLUMN')
                     query_str.append('  {}'.format(self.get_field_SQL(field_name, field_options)))
                     query_str = os.linesep.join(query_str)
-                    self._query(query_str, [], ignore_result=True)
+                    self.query(query_str, ignore_result=True)
 
         return True
 

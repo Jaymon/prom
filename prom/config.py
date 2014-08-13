@@ -63,28 +63,6 @@ class Connection(object):
             self._host = o.hostname
             if o.port: self.port = o.port
 
-#    @host.setter
-#    def host(self, h):
-#        """
-#        check host for a :port, and split that off into the .port attribute if there
-#        """
-#
-#        if re.search(ur'\:\d+$', h):
-#            # normalize the host so urlparse can parse it correctly
-#            # http://stackoverflow.com/questions/9530950/parsing-hostname-and-port-from-string-or-url#comment12075005_9531210
-#            # we need to have either // or schema// at the front or urlparse will fail
-#            if not re.match(ur'(?:\S+|^)\/\/', h):
-#                h = "//{}".format(h)
-#
-#            o = urlparse.urlparse(h)
-#
-#            self._host = o.hostname
-#            if o.port: self.port = o.port
-#
-#        else:
-#            self._host = h
-
-
     def __init__(self, **kwargs):
         """
         set all the values by passing them into this constructor, any unrecognized kwargs get put into .options

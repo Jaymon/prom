@@ -61,7 +61,7 @@ def get_interface():
 #    config = DsnConnection(os.environ["PROM_SQLITE_URL"])
 #    i = SQLite()
     i.connect(config)
-    assert i.connection is not None
+    #assert i.connection is not None
     assert i.connected
     return i
 
@@ -1895,7 +1895,7 @@ class InterfacePostgresTest(BaseTestInterface):
         config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
         i = PostgreSQL()
         i.connect(config)
-        assert i.connection is not None
+        #assert i.connection is not None
         assert i.connected
         return i
 
@@ -2617,6 +2617,36 @@ class QueryTest(TestCase):
 
         t = tclass.query.last()
         self.assertEqual(last_pk, t.pk)
+
+
+import time
+import gevent
+from gevent.queue import Queue
+from gevent.socket import wait_read, wait_write
+from psycopg2 import extensions, OperationalError, connect
+
+class InterfacePostgresGeventTest(InterfacePostgresTest):
+    @classmethod
+    def setUpClass(cls):
+        import gevent.monkey
+        gevent.monkey.patch_all()
+        import psycogreen.gevent
+        psycogreen.gevent.patch_psycopg()
+
+    def test_concurrency(self):
+        i = self.get_interface()
+        #pool = PostgresConnectionPool("dbname=postgres", maxsize=3)
+        def run(q):
+            pout.v("running query {}".format(q))
+            i.query(q)
+
+        for _ in range(4):
+            #gevent.spawn(i.query, 'select pg_sleep(1)')
+            gevent.spawn(run, 'select pg_sleep(1)')
+
+        gevent.wait()
+        return
+
 
 
 # not sure I'm a huge fan of this solution to remove common parent from testing queue

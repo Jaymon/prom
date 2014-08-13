@@ -14,14 +14,34 @@ import datetime
 import psycopg2
 import psycopg2.extras
 import psycopg2.extensions
+from psycopg2.pool import ThreadedConnectionPool
 
 # first party
 from .base import SQLInterface
 
 
+class ConnectionPool(ThreadedConnectionPool):
+    def _connect(self, key=None):
+        """every new connection goes through this method, so we can do initial setup"""
+        connection = super(ConnectionPool, self)._connect(key)
+
+        # http://initd.org/psycopg/docs/connection.html#connection.autocommit
+        connection.autocommit = True
+
+        # unicode harden for python 2
+        # http://initd.org/psycopg/docs/usage.html#unicode-handling
+        psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, connection)
+        psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, connection)
+        return connection
+
+
 class PostgreSQL(SQLInterface):
 
     val_placeholder = '%s'
+
+    connection_pool = None
+
+    _connection = None
 
     def _connect(self, connection_config):
         database = connection_config.database
@@ -31,8 +51,13 @@ class PostgreSQL(SQLInterface):
         port = connection_config.port
         if not port: port = 5432
 
-        # http://pythonhosted.org/psycopg2/module.html
-        self.connection = psycopg2.connect(
+        minconn = connection_config.options.get('minconn', 1)
+        maxconn = connection_config.options.get('maxconn', 1)
+
+        self.connection_pool = ConnectionPool(
+            minconn,
+            maxconn,
+            # http://pythonhosted.org/psycopg2/module.html
             database=database,
             user=username,
             password=password,
@@ -40,12 +65,19 @@ class PostgreSQL(SQLInterface):
             port=port,
             cursor_factory=psycopg2.extras.RealDictCursor
         )
-        # http://initd.org/psycopg/docs/connection.html#connection.autocommit
-        self.connection.autocommit = True
-        # unicode harden for python 2
-        # http://initd.org/psycopg/docs/usage.html#unicode-handling
-        psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, self.connection)
-        psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, self.connection)
+
+    def bind_connection(self):
+        self._connection = self.connection_pool.getconn()
+#        if not self._connection:
+#            self._connection = self.connection_pool.getconn()
+
+    def free_connection(self):
+        if self._connection:
+            self.connection_pool.putconn(self._connection)
+            self._connection = None
+
+    def get_connection(self):
+        return self._connection
 
     def _get_tables(self, table_name):
         query_str = 'SELECT tablename FROM pg_tables WHERE tableowner = %s'
@@ -55,7 +87,7 @@ class PostgreSQL(SQLInterface):
             query_str += ' AND tablename = %s'
             query_args.append(str(table_name))
 
-        ret = self._query(query_str, query_args)
+        ret = self.query(query_str, *query_args)
         # http://www.postgresql.org/message-id/CA+mi_8Y6UXtAmYKKBZAHBoY7F6giuT5WfE0wi3hR44XXYDsXzg@mail.gmail.com
         return [r['tablename'] for r in ret]
 
@@ -75,11 +107,11 @@ class PostgreSQL(SQLInterface):
         query_str.append(",{}".format(os.linesep).join(query_fields))
         query_str.append(')')
         query_str = os.linesep.join(query_str)
-        ret = self._query(query_str, ignore_result=True)
+        ret = self.query(query_str, ignore_result=True)
 
     def _delete_table(self, schema):
         query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(str(schema))
-        ret = self._query(query_str, ignore_result=True)
+        ret = self.query(query_str, ignore_result=True)
 
     def _get_fields(self, schema):
         """return all the fields for the given schema"""
@@ -96,7 +128,7 @@ class PostgreSQL(SQLInterface):
         #query_str.append('ORDER BY')
         #query_str.append('  attname')
         query_str = os.linesep.join(query_str)
-        fields = self._query(query_str, [schema.table])
+        fields = self.query(query_str, schema.table)
         return set((d['attname'] for d in fields))
 
     def _get_indexes(self, schema):
@@ -115,7 +147,7 @@ class PostgreSQL(SQLInterface):
         query_str.append('  tbl.relname, i.relname')
         query_str = os.linesep.join(query_str)
 
-        indexes = self._query(query_str, ['r', schema.table])
+        indexes = self.query(query_str, 'r', schema.table)
 
         # massage the data into more readable {index_name: fields} format
         for idict in indexes:
@@ -150,7 +182,7 @@ class PostgreSQL(SQLInterface):
             ', '.join(index_fields)
         )
 
-        return self._query(query_str, ignore_result=True)
+        return self.query(query_str, ignore_result=True)
 
     def _insert(self, schema, d):
 
@@ -172,7 +204,7 @@ class PostgreSQL(SQLInterface):
             pk_name
         )
 
-        ret = self._query(query_str, query_vals)
+        ret = self.query(query_str, *query_vals)
         return ret[0][pk_name]
 
     def _normalize_field_SQL(self, schema, field_name):
@@ -314,7 +346,7 @@ class PostgreSQL(SQLInterface):
                 if "column" in e_msg:
                     try:
                         ret = self._set_all_fields(schema)
-                    except ValueError, e:
+                    except ValueError as e:
                         ret = False
 
                 else:
