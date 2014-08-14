@@ -14,43 +14,29 @@ import datetime
 import psycopg2
 import psycopg2.extras
 import psycopg2.extensions
-from psycopg2.pool import ThreadedConnectionPool
 
 # first party
 from .base import SQLInterface
+from ..utils import get_objects
 
 
-class ConnectionPool(ThreadedConnectionPool):
-    def _connect(self, key=None):
-        """every new connection goes through this method, so we can do initial setup"""
-        connection = super(ConnectionPool, self)._connect(key)
+class Connection(psycopg2.extensions.connection):
+    """
+    http://initd.org/psycopg/docs/advanced.html
+
+    http://initd.org/psycopg/docs/extensions.html#psycopg2.extensions.connection
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(Connection, self).__init__(*args, **kwargs)
 
         # http://initd.org/psycopg/docs/connection.html#connection.autocommit
-        connection.autocommit = True
+        self.autocommit = True
 
         # unicode harden for python 2
         # http://initd.org/psycopg/docs/usage.html#unicode-handling
-        psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, connection)
-        psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, connection)
-        return connection
-
-#from psycopg2.pool import AbstractConnectionPool, PoolError
-#class ConnectionPool(ConnectionPool):
-#    def __init__(self, minconn, maxconn, *args, **kwargs):
-#        super(ConnectionPool, self)._connect(minnconn, maxconn, *args, **kwargs)
-#
-#    def _connect(self, key=None):
-#        """every new connection goes through this method, so we can do initial setup"""
-#        connection = super(ConnectionPool, self)._connect(key)
-#
-#        # http://initd.org/psycopg/docs/connection.html#connection.autocommit
-#        connection.autocommit = True
-#
-#        # unicode harden for python 2
-#        # http://initd.org/psycopg/docs/usage.html#unicode-handling
-#        psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, connection)
-#        psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, connection)
-#        return connection
+        psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, self)
+        psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, self)
 
 
 class PostgreSQL(SQLInterface):
@@ -69,10 +55,16 @@ class PostgreSQL(SQLInterface):
         port = connection_config.port
         if not port: port = 5432
 
-        minconn = int(connection_config.options.get('minconn', 1))
-        maxconn = int(connection_config.options.get('maxconn', 1))
+        minconn = int(connection_config.options.get('pool_minconn', 1))
+        maxconn = int(connection_config.options.get('pool_maxconn', 1))
+        pool_class_name = connection_config.options.get(
+            'pool_class',
+            'psycopg2.pool.SimpleConnectionPool'
+        )
 
-        self.connection_pool = ConnectionPool(
+        _, pool_class = get_objects(pool_class_name)
+
+        self.connection_pool = pool_class(
             minconn,
             maxconn,
             # http://pythonhosted.org/psycopg2/module.html
@@ -81,12 +73,13 @@ class PostgreSQL(SQLInterface):
             password=password,
             host=host,
             port=port,
-            cursor_factory=psycopg2.extras.RealDictCursor
+            cursor_factory=psycopg2.extras.RealDictCursor,
+            connection_factory=Connection,
         )
 
     def bind_connection(self):
-        self.log("binding to connection {}", id(self._connection))
         self._connection = self.connection_pool.getconn()
+        self.log("binding to connection {}", id(self._connection))
 
     def free_connection(self):
         self.log("freeing connection {}", id(self._connection))

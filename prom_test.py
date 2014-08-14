@@ -61,7 +61,6 @@ def get_interface():
 #    config = DsnConnection(os.environ["PROM_SQLITE_URL"])
 #    i = SQLite()
     i.connect(config)
-    #assert i.connection is not None
     assert i.connected
     return i
 
@@ -1885,7 +1884,6 @@ class InterfaceSQLiteTest(BaseTestInterface):
         config = DsnConnection(os.environ["PROM_SQLITE_URL"])
         i = SQLite()
         i.connect(config)
-        assert i.connection is not None
         assert i.connected
         return i
 
@@ -1895,7 +1893,6 @@ class InterfacePostgresTest(BaseTestInterface):
         config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
         i = PostgreSQL()
         i.connect(config)
-        #assert i.connection is not None
         assert i.connected
         return i
 
@@ -2625,27 +2622,37 @@ from gevent.queue import Queue
 from gevent.socket import wait_read, wait_write
 from psycopg2 import extensions, OperationalError, connect
 
+
 class InterfacePostgresGeventTest(InterfacePostgresTest):
     @classmethod
     def setUpClass(cls):
         import gevent.monkey
         gevent.monkey.patch_all()
-        import psycogreen.gevent
-        psycogreen.gevent.patch_psycopg()
+
+        import prom.gevent
+        prom.gevent.patch_all()
+
+#        import psycogreen.gevent
+#        psycogreen.gevent.patch_psycopg()
 
     def test_concurrency(self):
-        return
+        orig_url = os.environ["PROM_POSTGRES_URL"]
+        os.environ["PROM_POSTGRES_URL"] += '?pool_maxconn=4&pool_class=prom.gevent.ConnectionPool'
         i = self.get_interface()
-        #pool = PostgresConnectionPool("dbname=postgres", maxsize=3)
         def run(q):
             i.query(q)
 
+        start = time.time()
         for _ in range(4):
             gevent.spawn(i.query, 'select pg_sleep(1)')
             #gevent.spawn(run, 'select pg_sleep(1)')
 
         gevent.wait()
-        return
+        stop = time.time()
+        elapsed = stop - start
+        pout.v(elapsed)
+
+        os.environ["PROM_POSTGRES_URL"] = orig_url
 
 
 

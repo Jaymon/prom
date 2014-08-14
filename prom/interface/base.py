@@ -16,9 +16,6 @@ class Interface(object):
     connected = False
     """true if a connection has been established, false otherwise"""
 
-    #connection = None
-    """hold the actual raw connection to the db"""
-
     connection_config = None
     """a config.Connection() instance"""
 
@@ -33,6 +30,7 @@ class Interface(object):
     """
 
     connection_count = 0
+    """counts how many times with connection() has been called to keep track of nesting"""
 
     def __init__(self, connection_config=None):
         self.connection_config = connection_config
@@ -62,33 +60,20 @@ class Interface(object):
         self.log("Connected {}", self.connection_config.interface_name)
         return self.connected
 
-    def _connect(self, connection_config):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _connect(self, connection_config): raise NotImplementedError()
 
-    def bind_connection(self):
-        pass
+    def bind_connection(self): pass
 
-    def free_connection(self):
-        pass
+    def free_connection(self): pass
 
-    def get_connection(self):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def get_connection(self): raise NotImplementedError()
 
     @contextmanager
-    def error_recover(self, schema, callback, *args, **kwargs):
+    def connection(self, connection=None):
         try:
-            yield self
-        except Exception as e:
-            exc_info = sys.exc_info()
-            if self.handle_error(schema, e):
-                d = self.set(schema, query)
-            else:
-                self.raise_error(e, exc_info)
+            if not connection:
+                connection = self.get_connection()
 
-
-    @contextmanager
-    def connection(self):
-        try:
             if not self.connection_count:
                 self.bind_connection()
             self.connection_count += 1
@@ -108,19 +93,12 @@ class Interface(object):
         if not self.connected: return True
 
         self._close()
-#        self.connection.close()
-#        self.connection = None
         self.connected = False
         self.transaction_count = 0
         self.log("Closed Connection {}", self.connection_config.interface_name)
         return True
 
-    def _close(self):
-        raise NotImplementedError("this needs to be implemented in a child class")
-
-    def assure(self, schema=None):
-        """handle any things that need to be done before a query can be performed"""
-        self.connect()
+    def _close(self): raise NotImplementedError()
 
     def query(self, query_str, *query_args, **query_options):
         """
@@ -130,11 +108,12 @@ class Interface(object):
         *query_args -- if the query_str is a formatting string, pass the values in this
         **query_options -- any query options can be passed in by using key=val syntax
         """
+        pout.h()
         with self.connection():
             return self._query(query_str, query_args, **query_options)
 
     def _query(self, query_str, query_args=None, query_options=None):
-        raise NotImplementedError("this needs to be implemented in a child class")
+        raise NotImplementedError()
 
     @contextmanager
     def transaction(self):
@@ -232,8 +211,7 @@ class Interface(object):
                     self.set_index(schema, **index_d)
 
 
-    def _set_table(self, schema):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _set_table(self, schema): raise NotImplementedError()
 
     def has_table(self, table_name):
         """
@@ -255,8 +233,7 @@ class Interface(object):
         with self.connection():
             return self._get_tables(table_name)
 
-    def _get_tables(self, table_name):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _get_tables(self, table_name): raise NotImplementedError()
 
     def delete_table(self, schema):
         """
@@ -271,8 +248,7 @@ class Interface(object):
 
         return True
 
-    def _delete_table(self, schema):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _delete_table(self, schema): raise NotImplementedError()
 
     def delete_tables(self, **kwargs):
         """
@@ -288,8 +264,7 @@ class Interface(object):
         with self.connection():
             self._delete_tables(**kwargs)
 
-    def _delete_tables(self, **kwargs):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _delete_tables(self, **kwargs): raise NotImplementedError()
 
     def get_indexes(self, schema):
         """
@@ -302,8 +277,7 @@ class Interface(object):
         with self.connection():
             return self._get_indexes(schema)
 
-    def _get_indexes(self, schema):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _get_indexes(self, schema): raise NotImplementedError()
 
     def set_index(self, schema, name, fields, **index_options):
         """
@@ -320,7 +294,7 @@ class Interface(object):
         return True
 
     def _set_index(self, schema, name, fields, **index_options):
-        raise NotImplementedError("this needs to be implemented in a child class")
+        raise NotImplementedError()
 
     def prepare_dict(self, schema, d, is_insert):
         """
@@ -371,10 +345,8 @@ class Interface(object):
         return d
 
     def _insert(self, schema, d):
-        """
-        return -- id -- the _id value
-        """
-        raise NotImplementedError("this needs to be implemented in a child class")
+        """return -- id -- the _id value"""
+        raise NotImplementedError()
 
     def update(self, schema, query):
         """
@@ -402,8 +374,7 @@ class Interface(object):
 
         return d
 
-    def _update(self, schema, query, d):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _update(self, schema, query, d): raise NotImplementedError()
 
     def set(self, schema, query):
         """
@@ -468,8 +439,7 @@ class Interface(object):
         if not ret: ret = {}
         return ret
 
-    def _get_one(self, schema, query):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _get_one(self, schema, query): raise NotImplementedError()
 
     def get(self, schema, query=None):
         """
@@ -484,15 +454,13 @@ class Interface(object):
         if not ret: ret = []
         return ret
 
-    def _get(self, schema, query):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _get(self, schema, query): raise NotImplementedError()
 
     def count(self, schema, query=None):
         ret = self._get_query(self._count, schema, query)
         return int(ret)
 
-    def _count(self, schema, query):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _count(self, schema, query): raise NotImplementedError()
 
     def delete(self, schema, query):
         if not query or not query.fields_where:
@@ -503,8 +471,7 @@ class Interface(object):
 
         return ret
 
-    def _delete(self, schema, query):
-        raise NotImplementedError("this needs to be implemented in a child class")
+    def _delete(self, schema, query): raise NotImplementedError()
 
     def handle_error(self, schema, e):
         """
@@ -808,8 +775,7 @@ class SQLInterface(Interface):
 
         return ret
 
-    def _handle_error(self, schema, e):
-        raise NotImplemented()
+    def _handle_error(self, schema, e): raise NotImplemented()
 
     def _set_all_tables(self, schema):
         """

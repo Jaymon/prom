@@ -89,6 +89,8 @@ class SQLite(SQLInterface):
 
     val_placeholder = '?'
 
+    _connection = None
+
     def _connect(self, connection_config):
         path = ''
         dsn = getattr(connection_config, 'dsn', '')
@@ -120,11 +122,11 @@ class SQLite(SQLInterface):
             if k in connection_config.options:
                 options[k] = connection_config.options[k]
 
-        self.connection = sqlite3.connect(path, **options)
+        self._connection = sqlite3.connect(path, **options)
         # https://docs.python.org/2/library/sqlite3.html#row-objects
-        self.connection.row_factory = SQLiteRowDict
+        self._connection.row_factory = SQLiteRowDict
         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
-        self.connection.text_factory = StringType.adapt
+        self._connection.text_factory = StringType.adapt
 
         sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
         sqlite3.register_converter('NUMERIC', NumericType.convert)
@@ -135,6 +137,13 @@ class SQLite(SQLInterface):
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
         self._query('PRAGMA foreign_keys = ON', ignore_result=True);
+
+    def get_connection(self):
+        return self._connection
+
+    def _close(self):
+        self._connection.close()
+        self._connection = None
 
     def _get_tables(self, table_name):
         query_str = 'SELECT tbl_name FROM sqlite_master WHERE type = ?'
