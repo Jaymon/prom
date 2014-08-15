@@ -11,13 +11,16 @@ import subprocess
 import pickle
 
 import testdata
+import gevent
 
+import prom.gevent
 from prom import query
 from prom.model import Orm
 from prom.config import Schema, Connection, DsnConnection, Field
 from prom.interface.postgres import PostgreSQL
 from prom.interface.sqlite import SQLite
 import prom
+import prom.interface
 
 # configure root logger
 logger = logging.getLogger()
@@ -103,7 +106,7 @@ def get_query():
     return query.Query(Torm)
 
 
-def insert(interface, schema, count):
+def insert(interface, schema, count, **kwargs):
     """
     insert count rows into schema using interface
     """
@@ -115,7 +118,7 @@ def insert(interface, schema, count):
             'foo': i,
             'bar': 'value {}'.format(i)
         })
-        d = interface.set(schema, q)
+        d = interface.set(schema, q, **kwargs)
 
         assert 'foo' in d
         assert 'bar' in d
@@ -507,6 +510,7 @@ class PromTest(TestCase):
             prom.configure(dsn)
 
     def test_failure_set(self):
+        """test to make sure setting on a table that doesn't exist doesn't actually fail"""
         class FailureSetTorm(Orm):
             interface = get_interface()
             schema = get_schema()
@@ -516,8 +520,7 @@ class PromTest(TestCase):
         self.assertTrue(f.pk)
 
     def test_failure_get(self):
-        """
-        test to make sure getting on a table that doesn't exist works without raising
+        """test to make sure getting on a table that doesn't exist works without raising
         an error
         """
         class FailureGetTorm(Orm):
@@ -1501,15 +1504,14 @@ class BaseTestInterface(TestCase):
             s_pk=(int, True, dict(ref=s1)),
         )
 
-        i.transaction_start()
-        q1 = query.Query()
-        q1.set_foo(1)
-        d1 = i.set(s1, q1)
+        with i.transaction() as connection:
+            q1 = query.Query()
+            q1.set_foo(1)
+            d1 = i.set(s1, q1, connection=connection)
 
-        q2 = query.Query()
-        q2.set_bar(2).set_s_pk(d1['_id'])
-        d2 = i.set(s2, q2)
-        i.transaction_stop()
+            q2 = query.Query()
+            q2.set_bar(2).set_s_pk(d1['_id'])
+            d2 = i.set(s2, q2, connection=connection)
 
         q1 = query.Query()
         q1.is__id(d1['_id'])
@@ -1540,15 +1542,14 @@ class BaseTestInterface(TestCase):
             s_pk=(int, True, dict(ref=s1)),
         )
 
-        i.transaction_start()
-        q1 = query.Query()
-        q1.set_foo(1)
-        d1 = i.set(s1, q1)
+        with i.transaction() as connection:
+            q1 = query.Query()
+            q1.set_foo(1)
+            d1 = i.set(s1, q1, connection=connection)
 
-        q2 = query.Query()
-        q2.set_bar(2).set_s_pk(d1['_id'])
-        d2 = i.set(s2, q2)
-        i.transaction_stop()
+            q2 = query.Query()
+            q2.set_bar(2).set_s_pk(d1['_id'])
+            d2 = i.set(s2, q2, connection=connection)
 
         q1 = query.Query()
         q1.is__id(d1['_id'])
@@ -1641,12 +1642,12 @@ class BaseTestInterface(TestCase):
 
         self.assertEqual(0, i.count(s2, query.Query()))
 
-        with i.transaction():
+        with i.transaction() as connection:
 
             # create something and put in table 2
             q2 = query.Query()
             q2.set_bar(2).set_s_pk(d1['_id']).set_s_pk2(d12['_id'])
-            d2 = i.set(s2, q2)
+            d2 = i.set(s2, q2, connection=connection)
 
             # now this should cause the stuff to fail
             # it fails on the select because a new transaction isn't started, so 
@@ -1655,7 +1656,7 @@ class BaseTestInterface(TestCase):
             # by wrapping selects in a transaction if an active transaction is found
             q3 = query.Query()
             q3.is_s_pk(d1['_id'])
-            d3 = i.get(s3, q3)
+            d3 = i.get(s3, q3, connection=connection)
 
         self.assertEqual(1, i.count(s2, query.Query()))
 
@@ -1683,15 +1684,15 @@ class BaseTestInterface(TestCase):
         d2 = {}
 
         try:
-            with i.transaction():
+            with i.transaction() as connection:
                 q1 = query.Query()
                 q1.set_foo(1)
-                d1 = i.set(s1, q1)
+                d1 = i.set(s1, q1, connection=connection)
 
-                with i.transaction():
+                with i.transaction(connection):
                     q2 = query.Query()
                     q2.set_bar(2).set_s_pk(d1['_id'])
-                    d2 = i.set(s2, q2)
+                    d2 = i.set(s2, q2, connection=connection)
 
                     raise RuntimeError("testing")
 
@@ -1828,8 +1829,8 @@ class BaseTestInterface(TestCase):
         """make sure the with transaction() context manager works as expected"""
         i, s = self.get_table()
         _id = None
-        with i.transaction():
-            _id = insert(i, s, 1)[0]
+        with i.transaction() as connection:
+            _id = insert(i, s, 1, connection=connection)[0]
 
         self.assertTrue(_id)
 
@@ -1839,8 +1840,8 @@ class BaseTestInterface(TestCase):
         self.assertGreater(len(d), 0)
 
         with self.assertRaises(prom.InterfaceError):
-            with i.transaction():
-                _id = insert(i, s, 1)[0]
+            with i.transaction() as connection:
+                _id = insert(i, s, 1, connection=connection)[0]
                 raise RuntimeError("this should fail")
 
         q = query.Query()
@@ -1929,6 +1930,11 @@ class InterfacePostgresTest(BaseTestInterface):
 
         exit_code = subprocess.check_call("sudo /etc/init.d/postgresql restart", shell=True)
         time.sleep(1)
+
+        with self.assertRaises(prom.InterfaceError):
+            q = query.Query()
+            q.is__id(_id)
+            d = i.get_one(s, q)
 
         q = query.Query()
         q.is__id(_id)
@@ -2616,45 +2622,47 @@ class QueryTest(TestCase):
         self.assertEqual(last_pk, t.pk)
 
 
-import time
-import gevent
-from gevent.queue import Queue
-from gevent.socket import wait_read, wait_write
-from psycopg2 import extensions, OperationalError, connect
-
-
 class InterfacePostgresGeventTest(InterfacePostgresTest):
     @classmethod
     def setUpClass(cls):
         import gevent.monkey
         gevent.monkey.patch_all()
 
-        import prom.gevent
         prom.gevent.patch_all()
-
-#        import psycogreen.gevent
-#        psycogreen.gevent.patch_psycopg()
 
     def test_concurrency(self):
         orig_url = os.environ["PROM_POSTGRES_URL"]
-        os.environ["PROM_POSTGRES_URL"] += '?pool_maxconn=4&pool_class=prom.gevent.ConnectionPool'
+        os.environ["PROM_POSTGRES_URL"] += '?async=1&pool_maxconn=3&pool_class=prom.gevent.ConnectionPool'
         i = self.get_interface()
-        def run(q):
-            i.query(q)
-
         start = time.time()
         for _ in range(4):
             gevent.spawn(i.query, 'select pg_sleep(1)')
-            #gevent.spawn(run, 'select pg_sleep(1)')
 
         gevent.wait()
         stop = time.time()
         elapsed = stop - start
-        pout.v(elapsed)
+        self.assertTrue(elapsed >= 2.0 and elapsed < 3.0)
 
         os.environ["PROM_POSTGRES_URL"] = orig_url
 
+    def test_monkey_patch(self):
+        i = self.get_interface()
+        prom.interface.set_interface(i, "foo")
+        i = self.get_interface()
+        prom.interface.set_interface(i, "bar")
 
+        prom.gevent.patch_all()
+
+        for n in ['foo', 'bar']:
+            i = prom.interface.get_interface(n)
+            start = time.time()
+            for _ in range(4):
+                gevent.spawn(i.query, 'select pg_sleep(1)')
+
+            gevent.wait()
+            stop = time.time()
+            elapsed = stop - start
+            self.assertTrue(elapsed >= 1.0 and elapsed < 2.0)
 
 # not sure I'm a huge fan of this solution to remove common parent from testing queue
 # http://stackoverflow.com/questions/1323455/python-unit-test-with-base-and-sub-class

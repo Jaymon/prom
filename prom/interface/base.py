@@ -11,13 +11,8 @@ from ..exception import InterfaceError
 logger = logging.getLogger(__name__)
 
 
-class Interface(object):
-
-    connected = False
-    """true if a connection has been established, false otherwise"""
-
-    connection_config = None
-    """a config.Connection() instance"""
+class Connection(object):
+    """holds common methods that all raw connections should have"""
 
     transaction_count = 0
     """
@@ -29,8 +24,94 @@ class Interface(object):
     transaction_fail will set this back to 0 and rollback the transaction
     """
 
-    connection_count = 0
-    """counts how many times with connection() has been called to keep track of nesting"""
+    def in_transaction(self):
+        """return true if currently in a transaction"""
+        return self.transaction_count > 0
+
+    def transaction_start(self):
+        """
+        start a transaction
+
+        this will increment transaction semaphore and pass it to _transaction_start()
+        """
+        self.transaction_count += 1
+        if self.transaction_count == 1:
+            self._transaction_start()
+        else:
+            self._transaction_started()
+
+        return self.transaction_count
+
+    def _transaction_start(self): pass
+
+    def _transaction_started(self): pass
+
+    def transaction_stop(self):
+        """stop/commit a transaction if ready"""
+        if self.transaction_count > 0:
+            if self.transaction_count == 1:
+                self._transaction_stop()
+
+            self.transaction_count -= 1
+
+        return self.transaction_count
+
+    def _transaction_stop(self): pass
+
+    def transaction_fail(self):
+        """
+        rollback a transaction if currently in one
+
+        e -- Exception() -- if passed in, bubble up the exception by re-raising it
+        """
+        if self.transaction_count > 0:
+            if self.transaction_count == 1:
+                self._transaction_fail()
+            else:
+                self._transaction_failing()
+
+            self.transaction_count -= 1
+
+    def _transaction_fail(self): pass
+
+    def _transaction_failing(self): pass
+
+
+class SQLConnection(Connection):
+    def _transaction_start(self):
+        cur = self.cursor()
+        cur.execute("BEGIN")
+
+    def _transaction_started(self):
+        cur = self.cursor()
+        # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
+        cur.execute("SAVEPOINT prom{}".format(id(self)))
+
+    def _transaction_stop(self):
+        """
+        http://initd.org/psycopg/docs/usage.html#transactions-control
+        https://news.ycombinator.com/item?id=4269241
+        """
+        cur = self.cursor()
+        cur.execute("COMMIT")
+
+    def _transaction_fail(self):
+        cur = self.cursor()
+        cur.execute("ROLLBACK")
+
+    def _transaction_failing(self):
+        cur = self.cursor()
+        # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
+        cur.execute("ROLLBACK TO SAVEPOINT prom{}".format(id(self)))
+
+
+class Interface(object):
+
+    connected = False
+    """true if a connection has been established, false otherwise"""
+
+    connection_config = None
+    """a config.Connection() instance"""
 
     def __init__(self, connection_config=None):
         self.connection_config = connection_config
@@ -62,31 +143,29 @@ class Interface(object):
 
     def _connect(self, connection_config): raise NotImplementedError()
 
-    def bind_connection(self): pass
-
-    def free_connection(self): pass
+    def free_connection(self, connection): pass
 
     def get_connection(self): raise NotImplementedError()
 
     @contextmanager
-    def connection(self, connection=None):
+    def connection(self, connection=None, **kwargs):
         try:
-            if not connection:
-                connection = self.get_connection()
+            if connection:
+                yield connection
 
-            if not self.connection_count:
-                self.bind_connection()
-            self.connection_count += 1
+            else:
+                try:
+                    connection = self.get_connection()
+                    yield connection
 
-            yield self
+                except:
+                    raise
+
+                finally:
+                    self.free_connection(connection)
 
         except Exception as e:
             self.raise_error(e)
-
-        finally:
-            self.connection_count -= 1
-            if not self.connection_count:
-                self.free_connection()
 
     def close(self):
         """close an open connection"""
@@ -108,15 +187,15 @@ class Interface(object):
         *query_args -- if the query_str is a formatting string, pass the values in this
         **query_options -- any query options can be passed in by using key=val syntax
         """
-        pout.h()
-        with self.connection():
+        with self.connection(**query_options) as connection:
+            query_options['connection'] = connection
             return self._query(query_str, query_args, **query_options)
 
-    def _query(self, query_str, query_args=None, query_options=None):
+    def _query(self, query_str, query_args=None, **query_options):
         raise NotImplementedError()
 
     @contextmanager
-    def transaction(self):
+    def transaction(self, connection=None, **kwargs):
         """
         a simple context manager useful for when you want to wrap a bunch of db calls in a transaction
         http://docs.python.org/2/library/contextlib.html
@@ -127,124 +206,72 @@ class Interface(object):
                 # do a bunch of calls
             # those db calls will be committed by this line
         """
-        with self.connection():
-            self.transaction_start()
+        with self.connection(connection) as connection:
+            connection.transaction_start()
             try:
-                yield self
-                self.transaction_stop()
-            except Exception, e:
-                self.transaction_fail(e)
+                yield connection
+                connection.transaction_stop()
 
-    def in_transaction(self):
-        """return true if currently in a transaction"""
-        return self.transaction_count > 0
+            except Exception as e:
+                connection.transaction_fail()
+                self.raise_error(e)
 
-    def transaction_start(self):
-        """
-        start a transaction
-
-        this will increment transaction semaphore and pass it to _transaction_start()
-        """
-        self.transaction_count += 1
-        if self.transaction_count == 1:
-            self.log("Transaction started")
-        else:
-            self.log("Transaction incremented {}", self.transaction_count)
-
-        self._transaction_start(self.transaction_count)
-        return self.transaction_count
-
-    def _transaction_start(self, count):
-        """count = 1 is the first call, count = 2 is the second transaction call"""
-        pass
-
-    def transaction_stop(self):
-        """stop/commit a transaction if ready"""
-        if self.transaction_count > 0:
-            if self.transaction_count == 1:
-                self.log("Transaction stopped")
-            else:
-                self.log("Transaction decremented {}", self.transaction_count)
-
-            self._transaction_stop(self.transaction_count)
-            self.transaction_count -= 1
-
-        return self.transaction_count
-
-    def _transaction_stop(self, count):
-        """count = 1 is the last time this will be called for current set of transactions"""
-        pass
-
-    def transaction_fail(self, e=None):
-        """
-        rollback a transaction if currently in one
-
-        e -- Exception() -- if passed in, bubble up the exception by re-raising it
-        """
-        if self.in_transaction():
-            self.log("Transaction fail")
-            self._transaction_fail(self.transaction_count, e)
-            self.transaction_count -= 1
-
-        if e:
-            self.raise_error(e)
-
-        else:
-            return True
-
-    def _transaction_fail(self, count, e=None):
-        pass
-
-    def set_table(self, schema):
+    def set_table(self, schema, **kwargs):
         """
         add the table to the db
 
         schema -- Schema() -- contains all the information about the table
         """
-        with self.connection():
-            if self.has_table(schema.table): return True
+        with self.connection(**kwargs) as connection:
+            kwargs['connection'] = connection
+            if self.has_table(schema.table, **kwargs): return True
 
-            with self.transaction():
-                self._set_table(schema)
+            with self.transaction(**kwargs):
+                self._set_table(schema, **kwargs)
 
                 for index_name, index_d in schema.indexes.iteritems():
+                    index_d['connection'] = connection
                     self.set_index(schema, **index_d)
 
 
-    def _set_table(self, schema): raise NotImplementedError()
+    def _set_table(self, schema, **kwargs): raise NotImplementedError()
 
-    def has_table(self, table_name):
+    def has_table(self, table_name, **kwargs):
         """
         check to see if a table is in the db
 
         table_name -- string -- the table to check
         return -- boolean -- True if the table exists, false otherwise
         """
-        tables = self.get_tables(table_name)
-        return len(tables) > 0
+        with self.connection(kwargs.get('connection', None)) as connection:
+            kwargs['connection'] = connection
+            tables = self.get_tables(table_name, **kwargs)
+            return len(tables) > 0
 
-    def get_tables(self, table_name=""):
+    def get_tables(self, table_name="", **kwargs):
         """
         get all the tables of the currently connected db
 
         table_name -- string -- if you would like to filter the tables list to only include matches with this name
         return -- list -- a list of table names
         """
-        with self.connection():
-            return self._get_tables(table_name)
+        with self.connection(**kwargs) as connection:
+            kwargs['connection'] = connection
+            return self._get_tables(table_name, **kwargs)
 
-    def _get_tables(self, table_name): raise NotImplementedError()
+    def _get_tables(self, table_name, **kwargs): raise NotImplementedError()
 
-    def delete_table(self, schema):
+    def delete_table(self, schema, **kwargs):
         """
         remove a table matching schema from the db
 
         schema -- Schema()
         """
-        with self.connection():
-            if not self.has_table(schema.table): return True
-            with self.transaction():
-                self._delete_table(schema)
+        with self.connection(**kwargs) as connection:
+            kwargs['connection'] = connection
+            if not self.has_table(schema.table, **kwargs): return True
+            with self.transaction(**kwargs):
+                self._delete_table(schema, **kwargs)
 
         return True
 
@@ -261,12 +288,13 @@ class Interface(object):
         if not kwargs.get('disable_protection', False):
             raise ValueError('In order to delete all the tables, pass in disable_protection=True')
 
-        with self.connection():
+        with self.connection(**kwargs) as connection:
+            kwargs['connection'] = connection
             self._delete_tables(**kwargs)
 
     def _delete_tables(self, **kwargs): raise NotImplementedError()
 
-    def get_indexes(self, schema):
+    def get_indexes(self, schema, **kwargs):
         """
         get all the indexes
 
@@ -274,10 +302,11 @@ class Interface(object):
 
         return -- dict -- the indexes in {indexname: fields} format
         """
-        with self.connection():
-            return self._get_indexes(schema)
+        with self.connection(**kwargs) as connection:
+            kwargs['connection'] = connection
+            return self._get_indexes(schema, **kwargs)
 
-    def _get_indexes(self, schema): raise NotImplementedError()
+    def _get_indexes(self, schema, **kwargs): raise NotImplementedError()
 
     def set_index(self, schema, name, fields, **index_options):
         """
@@ -288,7 +317,8 @@ class Interface(object):
         fields -- array -- the fields the index should be on
         **index_options -- dict -- any index options that might be useful to create the index
         """
-        with self.transaction():
+        with self.transaction(**index_options) as connection:
+            index_options['connection'] = connection
             self._set_index(schema, name, fields, **index_options)
 
         return True
@@ -317,7 +347,7 @@ class Interface(object):
 
         return d
 
-    def insert(self, schema, d):
+    def insert(self, schema, d, **kwargs):
         """
         Persist d into the db
 
@@ -329,26 +359,27 @@ class Interface(object):
         d = self.prepare_dict(schema, d, is_insert=True)
         r = 0
 
-        with self.connection():
+        with self.connection(**kwargs) as connection:
+            kwargs['connection'] = connection
             try:
-                with self.transaction():
-                    r = self._insert(schema, d)
+                with self.transaction(**kwargs):
+                    r = self._insert(schema, d, **kwargs)
 
             except Exception as e:
                 exc_info = sys.exc_info()
-                if self.handle_error(schema, e):
-                    r = self._insert(schema, d)
+                if self.handle_error(schema, e, **kwargs):
+                    r = self._insert(schema, d, **kwargs)
                 else:
                     self.raise_error(e, exc_info)
 
         if r: d[schema._id] = r
         return d
 
-    def _insert(self, schema, d):
+    def _insert(self, schema, d, **kwargs):
         """return -- id -- the _id value"""
         raise NotImplementedError()
 
-    def update(self, schema, query):
+    def update(self, schema, query, **kwargs):
         """
         Persist the query.fields into the db that match query.fields_where
 
@@ -360,23 +391,24 @@ class Interface(object):
         d = query.fields
         d = self.prepare_dict(schema, d, is_insert=False)
 
-        with self.connection():
+        with self.connection(**kwargs) as connection:
+            kwargs['connection'] = connection
             try:
-                with self.transaction():
-                    r = self._update(schema, query, d)
+                with self.transaction(**kwargs):
+                    r = self._update(schema, query, d, **kwargs)
 
             except Exception as e:
                 exc_info = sys.exc_info()
-                if self.handle_error(schema, e):
-                    r = self._update(schema, query, d)
+                if self.handle_error(schema, e, **kwargs):
+                    r = self._update(schema, query, d, **kwargs)
                 else:
                     self.raise_error(e, exc_info)
 
         return d
 
-    def _update(self, schema, query, d): raise NotImplementedError()
+    def _update(self, schema, query, d, **kwargs): raise NotImplementedError()
 
-    def set(self, schema, query):
+    def set(self, schema, query, **kwargs):
         """
         set d into the db, this is just a convenience method that will call either insert
         or update depending on if query has a where clause
@@ -386,12 +418,12 @@ class Interface(object):
         return -- dict -- the dict inserted into the db
         """
         if query.fields_where:
-            d = self.update(schema, query)
+            d = self.update(schema, query, **kwargs)
 
         else:
             # insert
             d = query.fields
-            d = self.insert(schema, d)
+            d = self.insert(schema, d, **kwargs)
 
         return d
 
@@ -403,14 +435,15 @@ class Interface(object):
         if not query: query = Query()
 
         ret = None
-        with self.connection():
+        with self.connection(**kwargs) as connection:
+            kwargs['connection'] = connection
             try:
-                if self.in_transaction():
+                if connection.in_transaction():
                     # we wrap SELECT queries in a transaction if we are in a transaction because
                     # it could cause data loss if it failed by causing the db to discard
                     # anything in the current transaction if the query isn't wrapped,
                     # go ahead, ask me how I know this
-                    with self.transaction():
+                    with self.transaction(**kwargs):
                         ret = callback(schema, query, *args, **kwargs)
 
                 else:
@@ -418,7 +451,7 @@ class Interface(object):
 
             except Exception as e:
                 exc_info = sys.exc_info()
-                if self.handle_error(schema, e):
+                if self.handle_error(schema, e, **kwargs):
                     ret = callback(schema, query, *args, **kwargs)
                 else:
                     self.raise_error(e, exc_info)
@@ -426,7 +459,7 @@ class Interface(object):
 
         return ret
 
-    def get_one(self, schema, query=None):
+    def get_one(self, schema, query=None, **kwargs):
         """
         get one row from the db matching filters set in query
 
@@ -435,13 +468,13 @@ class Interface(object):
 
         return -- dict -- the matching row
         """
-        ret = self._get_query(self._get_one, schema, query)
+        ret = self._get_query(self._get_one, schema, query, **kwargs)
         if not ret: ret = {}
         return ret
 
-    def _get_one(self, schema, query): raise NotImplementedError()
+    def _get_one(self, schema, query, **kwargs): raise NotImplementedError()
 
-    def get(self, schema, query=None):
+    def get(self, schema, query=None, **kwargs):
         """
         get matching rows from the db matching filters set in query
 
@@ -450,30 +483,31 @@ class Interface(object):
 
         return -- list -- a list of matching dicts
         """
-        ret = self._get_query(self._get, schema, query)
+        ret = self._get_query(self._get, schema, query, **kwargs)
         if not ret: ret = []
         return ret
 
-    def _get(self, schema, query): raise NotImplementedError()
+    def _get(self, schema, query, **kwargs): raise NotImplementedError()
 
-    def count(self, schema, query=None):
-        ret = self._get_query(self._count, schema, query)
+    def count(self, schema, query=None, **kwargs):
+        ret = self._get_query(self._count, schema, query, **kwargs)
         return int(ret)
 
-    def _count(self, schema, query): raise NotImplementedError()
+    def _count(self, schema, query, **kwargs): raise NotImplementedError()
 
-    def delete(self, schema, query):
+    def delete(self, schema, query, **kwargs):
         if not query or not query.fields_where:
             raise ValueError('aborting delete because there is no where clause')
 
-        with self.transaction():
-            ret = self._get_query(self._delete, schema, query)
+        with self.transaction(**kwargs) as connection:
+            kwargs['connection'] = connection
+            ret = self._get_query(self._delete, schema, query, **kwargs)
 
         return ret
 
-    def _delete(self, schema, query): raise NotImplementedError()
+    def _delete(self, schema, query, **kwargs): raise NotImplementedError()
 
-    def handle_error(self, schema, e):
+    def handle_error(self, schema, e, **kwargs):
         """
         try and handle the error, return False if the error can't be handled
 
@@ -519,20 +553,21 @@ class SQLInterface(Interface):
         raise NotImplemented("this property should be set in any children class")
 
     def _delete_tables(self, **kwargs):
-        for table_name in self.get_tables():
-            with self.transaction():
-                self._delete_table(table_name)
+        for table_name in self.get_tables(**kwargs):
+            with self.transaction(**kwargs) as connection:
+                kwargs['connection'] = connection
+                self._delete_table(table_name, **kwargs)
 
         return True
 
-    def _delete(self, schema, query):
+    def _delete(self, schema, query, **kwargs):
         where_query_str, query_args = self.get_SQL(schema, query, only_where_clause=True)
         query_str = []
         query_str.append('DELETE FROM')
         query_str.append('  {}'.format(schema))
         query_str.append(where_query_str)
         query_str = os.linesep.join(query_str)
-        ret = self.query(query_str, *query_args, count_result=True)
+        ret = self.query(query_str, *query_args, count_result=True, **kwargs)
         return ret
 
     def _query(self, query_str, query_args=None, **query_options):
@@ -544,60 +579,39 @@ class SQLInterface(Interface):
         """
         ret = True
         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
-        connection = self.get_connection()
-        cur = connection.cursor()
-        ignore_result = query_options.get('ignore_result', False)
-        count_result = query_options.get('count_result', False)
-        one_result = query_options.get('fetchone', False)
-        cur_result = query_options.get('cursor_result', False)
+        connection = query_options.get('connection', None)
+        with self.connection(query_options.get('connection', None)) as connection:
+            cur = connection.cursor()
+            ignore_result = query_options.get('ignore_result', False)
+            count_result = query_options.get('count_result', False)
+            one_result = query_options.get('fetchone', False)
+            cur_result = query_options.get('cursor_result', False)
 
-        try:
-            if not query_args:
-                self.log(query_str)
-                cur.execute(query_str)
+            try:
+                if not query_args:
+                    self.log(query_str)
+                    cur.execute(query_str)
 
-            else:
-                self.log("{}{}{}", query_str, os.linesep, query_args)
-                cur.execute(query_str, query_args)
+                else:
+                    self.log("{}{}{}", query_str, os.linesep, query_args)
+                    cur.execute(query_str, query_args)
 
-            if cur_result:
-                ret = cur
+                if cur_result:
+                    ret = cur
 
-            elif not ignore_result:
-                    if one_result:
-                        ret = cur.fetchone()
-                    elif count_result:
-                        ret = cur.rowcount
-                    else:
-                        ret = cur.fetchall()
+                elif not ignore_result:
+                        if one_result:
+                            ret = cur.fetchone()
+                        elif count_result:
+                            ret = cur.rowcount
+                        else:
+                            ret = cur.fetchall()
 
-        except Exception as e:
-            self.log(e)
-            raise
+            except Exception as e:
+                self.log(e)
+                raise
 
-        return ret
-
-    def _transaction_start(self, count):
-        if count == 1:
-            self.query("BEGIN", ignore_result=True)
-        else:
-            # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-            self.query("SAVEPOINT prom", ignore_result=True)
-
-    def _transaction_stop(self, count):
-        """
-        http://initd.org/psycopg/docs/usage.html#transactions-control
-        https://news.ycombinator.com/item?id=4269241
-        """
-        if count == 1:
-            self.query("COMMIT", ignore_result=True)
-
-    def _transaction_fail(self, count, e=None):
-        if count == 1:
-            self.query("ROLLBACK", ignore_result=True)
-        else:
-            # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-            self.query("ROLLBACK TO SAVEPOINT prom", ignore_result=True)
+            return ret
 
     def _normalize_date_SQL(self, field_name, field_kwargs):
         raise NotImplemented()
@@ -754,48 +768,50 @@ class SQLInterface(Interface):
         query_str = os.linesep.join(query_str)
         return query_str, query_args
 
-    def handle_error(self, schema, e):
-        connection = self.get_connection()
+    def handle_error(self, schema, e, **kwargs):
+        connection = kwargs.get('connection', None)
         if not connection: return False
 
         ret = False
         if connection.closed == 0:
-            self.transaction_stop()
+            connection.transaction_stop()
             if isinstance(e, InterfaceError):
-                ret = self._handle_error(schema, e.e)
+                ret = self._handle_error(schema, e.e, **kwargs)
 
             else:
-                ret = self._handle_error(schema, e)
+                ret = self._handle_error(schema, e, **kwargs)
 
         else:
+            # we are unsure of the state of everything since this connection has
+            # closed, go ahead and close out this interface and allow this query
+            # to fail, but subsequent queries should succeed
             self.close()
-            ret = self.connect()
-            if ret:
-                self.bind_connection()
+            ret = True
 
         return ret
 
-    def _handle_error(self, schema, e): raise NotImplemented()
+    def _handle_error(self, schema, e, **kwargs): raise NotImplemented()
 
-    def _set_all_tables(self, schema):
+    def _set_all_tables(self, schema, **kwargs):
         """
         You can run into a problem when you are trying to set a table and it has a 
         foreign key to a table that doesn't exist, so this method will go through 
         all fk refs and make sure the tables exist
         """
-        with self.transaction():
+        with self.transaction(**kwargs) as connection:
+            kwargs['connection'] = connection
             # go through and make sure all foreign key referenced tables exist
             for field_name, field_val in schema.fields.iteritems():
                 s = field_val.ref_schema
                 if s:
-                    self._set_all_tables(s)
+                    self._set_all_tables(s, **kwargs)
 
             # now that we know all fk tables exist, create this table
-            self.set_table(schema)
+            self.set_table(schema, **kwargs)
 
         return True
 
-    def _update(self, schema, query, d):
+    def _update(self, schema, query, d, **kwargs):
         where_query_str, where_query_args = self.get_SQL(schema, query, only_where_clause=True)
         pk_name = schema.pk
 
@@ -814,22 +830,22 @@ class SQLInterface(Interface):
         )
         query_args.extend(where_query_args)
 
-        return self.query(query_str, *query_args, ignore_result=True)
+        return self.query(query_str, *query_args, ignore_result=True, **kwargs)
 
-    def _get_one(self, schema, query):
+    def _get_one(self, schema, query, **kwargs):
         # compensate for getting one with an offset
         if query.has_bounds() and not query.has_limit():
             query.set_limit(1)
         query_str, query_args = self.get_SQL(schema, query)
-        return self.query(query_str, *query_args, fetchone=True)
+        return self.query(query_str, *query_args, fetchone=True, **kwargs)
 
-    def _get(self, schema, query):
+    def _get(self, schema, query, **kwargs):
         query_str, query_args = self.get_SQL(schema, query)
-        return self.query(query_str, *query_args)
+        return self.query(query_str, *query_args, **kwargs)
 
-    def _count(self, schema, query):
+    def _count(self, schema, query, **kwargs):
         query_str, query_args = self.get_SQL(schema, query, count_query=True)
-        ret = self.query(query_str, *query_args)
+        ret = self.query(query_str, *query_args, **kwargs)
         if ret:
             ret = int(ret[0]['ct'])
         else:
@@ -837,13 +853,13 @@ class SQLInterface(Interface):
 
         return ret
 
-    def _set_all_fields(self, schema):
+    def _set_all_fields(self, schema, **kwargs):
         """
         this will add fields that don't exist in the table if they can be set to NULL,
         the reason they have to be NULL is adding fields to Postgres that can be NULL
         is really light, but if they have a default value, then it can be costly
         """
-        current_fields = self._get_fields(schema)
+        current_fields = self._get_fields(schema, **kwargs)
         for field_name, field_options in schema.fields.iteritems():
             if field_name not in current_fields:
                 if field_options.get('required', False):
@@ -856,7 +872,7 @@ class SQLInterface(Interface):
                     query_str.append('ADD COLUMN')
                     query_str.append('  {}'.format(self.get_field_SQL(field_name, field_options)))
                     query_str = os.linesep.join(query_str)
-                    self.query(query_str, ignore_result=True)
+                    self.query(query_str, ignore_result=True, **kwargs)
 
         return True
 

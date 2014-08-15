@@ -29,7 +29,7 @@ import datetime
 import sqlite3
 
 # first party
-from .base import SQLInterface
+from .base import SQLInterface, SQLConnection
 
 
 class SQLiteRowDict(sqlite3.Row):
@@ -39,7 +39,7 @@ class SQLiteRowDict(sqlite3.Row):
         return r
 
 
-class SQLiteConnection(sqlite3.Connection):
+class SQLiteConnection(sqlite3.Connection, SQLConnection):
     """
     Thin wrapper around the default connection to make sure it has a similar interface
     to Postgres' connection instance so the common code can all be the same in the
@@ -145,7 +145,7 @@ class SQLite(SQLInterface):
         self._connection.close()
         self._connection = None
 
-    def _get_tables(self, table_name):
+    def _get_tables(self, table_name, **kwargs):
         query_str = 'SELECT tbl_name FROM sqlite_master WHERE type = ?'
         query_args = ['table']
 
@@ -153,7 +153,7 @@ class SQLite(SQLInterface):
             query_str += ' AND name = ?'
             query_args.append(str(table_name))
 
-        ret = self._query(query_str, query_args)
+        ret = self._query(query_str, query_args, **kwargs)
         return [r['tbl_name'] for r in ret]
 
     def get_field_SQL(self, field_name, field_options):
@@ -227,7 +227,7 @@ class SQLite(SQLInterface):
 
         return '{} {}'.format(field_name, field_type)
 
-    def _set_table(self, schema):
+    def _set_table(self, schema, **kwargs):
         """
         http://sqlite.org/lang_createtable.html
         """
@@ -241,7 +241,7 @@ class SQLite(SQLInterface):
         query_str.append(",{}".format(os.linesep).join(query_fields))
         query_str.append(')')
         query_str = os.linesep.join(query_str)
-        ret = self._query(query_str, ignore_result=True)
+        ret = self._query(query_str, ignore_result=True, **kwargs)
 
     def _set_index(self, schema, name, fields, **index_options):
         """
@@ -255,26 +255,26 @@ class SQLite(SQLInterface):
             ', '.join(fields)
         )
 
-        return self._query(query_str, ignore_result=True)
+        return self._query(query_str, ignore_result=True, **index_options)
 
-    def _get_indexes(self, schema):
+    def _get_indexes(self, schema, **kwargs):
         """return all the indexes for the given schema"""
         # http://www.sqlite.org/pragma.html#schema
         # http://www.mail-archive.com/sqlite-users@sqlite.org/msg22055.html
         # http://stackoverflow.com/questions/604939/
         ret = {}
-        rs = self._query('PRAGMA index_list({})'.format(schema))
+        rs = self._query('PRAGMA index_list({})'.format(schema), **kwargs)
         if rs:
             for r in rs:
                 iname = r['name']
                 ret.setdefault(iname, [])
-                indexes = self._query('PRAGMA index_info({})'.format(r['name']))
+                indexes = self._query('PRAGMA index_info({})'.format(r['name']), **kwargs)
                 for idict in indexes:
                     ret[iname].append(idict['name'])
 
         return ret
 
-    def _insert(self, schema, d):
+    def _insert(self, schema, d, **kwargs):
         """
         http://www.sqlite.org/lang_insert.html
         """
@@ -294,37 +294,37 @@ class SQLite(SQLInterface):
             ', '.join(field_formats)
         )
 
-        ret = self._query(query_str, query_vals, cursor_result=True)
+        ret = self._query(query_str, query_vals, cursor_result=True, **kwargs)
         # http://stackoverflow.com/questions/6242756/
         # could also do _query('SELECT last_insert_rowid()')
         return ret.lastrowid
 
-    def _delete_table(self, schema):
+    def _delete_table(self, schema, **kwargs):
         query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
-        ret = self._query(query_str, ignore_result=True)
+        ret = self._query(query_str, ignore_result=True, **kwargs)
 
-    def _handle_error(self, schema, e):
+    def _handle_error(self, schema, e, **kwargs):
         ret = False
         if isinstance(e, sqlite3.OperationalError):
             e_msg = str(e)
             if schema.table in e_msg:
                 if "no such table" in e_msg:
-                    ret = self._set_all_tables(schema)
+                    ret = self._set_all_tables(schema, **kwargs)
 
                 elif "column" in e_msg:
                     # "table yscrmiklbgdtx has no column named che"
                     try:
-                        ret = self._set_all_fields(schema)
+                        ret = self._set_all_fields(schema, **kwargs)
                     except ValueError, e:
                         ret = False
 
         return ret
 
-    def _get_fields(self, schema):
+    def _get_fields(self, schema, **kwargs):
         """return all the fields for the given schema"""
         ret = []
         query_str = 'PRAGMA table_info({})'.format(schema)
-        fields = self._query(query_str)
+        fields = self._query(query_str, **kwargs)
         return set((d['name'] for d in fields))
 
     def _normalize_date_SQL(self, field_name, field_kwargs):

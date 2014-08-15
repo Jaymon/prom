@@ -328,6 +328,7 @@ Hopefully you get the idea from the above code.
 
 the `get` and `all` query methods return a `prom.query.Iterator` instance. This instance has a useful attribute `has_more` that will be true if there are more rows in the db that match the query.
 
+
 ## Multiple db interfaces or connections
 
 It's easy to have one set of `prom.Orm` children use one connection and another set use a different connection, the fragment part of a Prom dsn url sets the name:
@@ -346,15 +347,18 @@ class Orm2(prom.Orm):
 
 Now, any class that extends `Orm1` will use `connection_1` and any orm that extends `Orm2` will use `connection_2`.
 
+
 ## Using for the first time
 
-Prom takes the approach that you don't want to be hassled with installation while developing, so when it tries to do something and sees that the table doesn't exist, it will use your defined `prom.Schema` for your `prom.Orm` child and create a table for you, that way you don't have to remember to run a script or craft some custom db query to add your tables, Prom takes care of that for you automatically.
+Prom takes the approach that you don't want to be hassled with table installation while developing, so when it tries to do something and sees that the table doesn't exist, it will use your defined `prom.Schema` for your `prom.Orm` child and create a table for you, that way you don't have to remember to run a script or craft some custom db query to add your tables, Prom takes care of that for you automatically.
 
 If you want to install the tables manually, you can create a script or something and use the `install()` method:
 
     SomeOrm.install()
 
+
 ## Schema class
+
 
 ### The Field class
 
@@ -377,6 +381,7 @@ The `field_options` are any other settings for the fields, some possible values:
   * `min_size` -- The minimum size of the field (can only be used with a corresponding `max_size` value)
   * `unique` -- set to True if this field value should be unique among all the fields in the db.
   * `ignore_case` -- set to True if indexes on this field should ignore case
+
 
 ### Foreign Keys
 
@@ -402,6 +407,14 @@ s2 = prom.Schema(
     s1_id=prom.Field(int, weak_ref=s1)
 )
 ```
+
+
+### Gevent Green Threads
+
+Green threads can only be used with Postgres and Gevent, and you'll need to monkey patch:
+
+    import prom.gevent
+    prom.gevent.patch_all()
 
 
 ## Other things
@@ -430,10 +443,15 @@ While Prom will most likely work on other versions, these are the versions we ar
 
 ## Installation
 
-Prom currently requires psycopg2 since it only works with Postgres right now:
+If you want to use Prom with Postgres, you need psycopg2:
 
     $ apt-get install libpq-dev python-dev
     $ pip install psycopg
+
+If you want to use Prom with gevent, you'll need gevent and psycogreen:
+
+    $ pip install gevent
+    $ pip install psycogreen
 
 Then you can also use pip to install Prom:
 

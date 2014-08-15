@@ -16,14 +16,13 @@ import psycopg2.extras
 import psycopg2.extensions
 
 # first party
-from .base import SQLInterface
+from .base import SQLInterface, SQLConnection
 from ..utils import get_objects
 
 
-class Connection(psycopg2.extensions.connection):
+class Connection(psycopg2.extensions.connection, SQLConnection):
     """
     http://initd.org/psycopg/docs/advanced.html
-
     http://initd.org/psycopg/docs/extensions.html#psycopg2.extensions.connection
     """
 
@@ -61,6 +60,7 @@ class PostgreSQL(SQLInterface):
             'pool_class',
             'psycopg2.pool.SimpleConnectionPool'
         )
+        async = int(connection_config.options.get('async', 0))
 
         _, pool_class = get_objects(pool_class_name)
 
@@ -77,22 +77,29 @@ class PostgreSQL(SQLInterface):
             connection_factory=Connection,
         )
 
-    def bind_connection(self):
-        self._connection = self.connection_pool.getconn()
-        self.log("binding to connection {}", id(self._connection))
+        # hack for sync backwards compatibility with transactions
+        if not async:
+            self._connection = self.connection_pool.getconn()
 
-    def free_connection(self):
-        self.log("freeing connection {}", id(self._connection))
-        self.connection_pool.putconn(self._connection)
-        self._connection = None
+    def free_connection(self, connection):
+        if self._connection: return
+        self.log("freeing connection {}", id(connection))
+        self.connection_pool.putconn(connection)
 
     def get_connection(self):
-        return self._connection
+        if not self.connected: self.connect()
+        if self._connection: return self._connection
+        connection = self.connection_pool.getconn()
+        self.log("returning connection {}", id(connection))
+        return connection
 
     def _close(self):
         self.connection_pool.closeall()
+        if self._connection:
+            self._connection.close()
+            self._connection = None
 
-    def _get_tables(self, table_name):
+    def _get_tables(self, table_name, **kwargs):
         query_str = 'SELECT tablename FROM pg_tables WHERE tableowner = %s'
         query_args = [self.connection_config.username]
 
@@ -100,11 +107,11 @@ class PostgreSQL(SQLInterface):
             query_str += ' AND tablename = %s'
             query_args.append(str(table_name))
 
-        ret = self.query(query_str, *query_args)
+        ret = self.query(query_str, *query_args, **kwargs)
         # http://www.postgresql.org/message-id/CA+mi_8Y6UXtAmYKKBZAHBoY7F6giuT5WfE0wi3hR44XXYDsXzg@mail.gmail.com
         return [r['tablename'] for r in ret]
 
-    def _set_table(self, schema):
+    def _set_table(self, schema, **kwargs):
         """
         http://www.postgresql.org/docs/9.1/static/sql-createtable.html
         http://www.postgresql.org/docs/8.1/static/datatype.html
@@ -120,13 +127,13 @@ class PostgreSQL(SQLInterface):
         query_str.append(",{}".format(os.linesep).join(query_fields))
         query_str.append(')')
         query_str = os.linesep.join(query_str)
-        ret = self.query(query_str, ignore_result=True)
+        ret = self.query(query_str, ignore_result=True, **kwargs)
 
-    def _delete_table(self, schema):
+    def _delete_table(self, schema, **kwargs):
         query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(str(schema))
-        ret = self.query(query_str, ignore_result=True)
+        ret = self.query(query_str, ignore_result=True, **kwargs)
 
-    def _get_fields(self, schema):
+    def _get_fields(self, schema, **kwargs):
         """return all the fields for the given schema"""
         ret = []
         query_str = []
@@ -141,10 +148,10 @@ class PostgreSQL(SQLInterface):
         #query_str.append('ORDER BY')
         #query_str.append('  attname')
         query_str = os.linesep.join(query_str)
-        fields = self.query(query_str, schema.table)
+        fields = self.query(query_str, schema.table, **kwargs)
         return set((d['attname'] for d in fields))
 
-    def _get_indexes(self, schema):
+    def _get_indexes(self, schema, **kwargs):
         """return all the indexes for the given schema"""
         ret = {}
         query_str = []
@@ -160,7 +167,7 @@ class PostgreSQL(SQLInterface):
         query_str.append('  tbl.relname, i.relname')
         query_str = os.linesep.join(query_str)
 
-        indexes = self.query(query_str, 'r', schema.table)
+        indexes = self.query(query_str, 'r', schema.table, **kwargs)
 
         # massage the data into more readable {index_name: fields} format
         for idict in indexes:
@@ -195,9 +202,9 @@ class PostgreSQL(SQLInterface):
             ', '.join(index_fields)
         )
 
-        return self.query(query_str, ignore_result=True)
+        return self.query(query_str, ignore_result=True, **index_options)
 
-    def _insert(self, schema, d):
+    def _insert(self, schema, d, **kwargs):
 
         # get the primary key
         pk_name = schema.pk
@@ -217,7 +224,7 @@ class PostgreSQL(SQLInterface):
             pk_name
         )
 
-        ret = self.query(query_str, *query_vals)
+        ret = self.query(query_str, *query_vals, **kwargs)
         return ret[0][pk_name]
 
     def _normalize_field_SQL(self, schema, field_name):
@@ -350,7 +357,7 @@ class PostgreSQL(SQLInterface):
 
         return '{} {}'.format(field_name, field_type)
 
-    def _handle_error(self, schema, e):
+    def _handle_error(self, schema, e, **kwargs):
         ret = False
         if isinstance(e, psycopg2.ProgrammingError):
             e_msg = str(e)
@@ -358,12 +365,12 @@ class PostgreSQL(SQLInterface):
                 # psycopg2.ProgrammingError - column "name" of relation "table_name" does not exist
                 if "column" in e_msg:
                     try:
-                        ret = self._set_all_fields(schema)
+                        ret = self._set_all_fields(schema, **kwargs)
                     except ValueError as e:
                         ret = False
 
                 else:
-                    ret = self._set_all_tables(schema)
+                    ret = self._set_all_tables(schema, **kwargs)
 
         return ret
 

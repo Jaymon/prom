@@ -7,12 +7,18 @@ from psycopg2 import extensions, OperationalError, connect
 from psycopg2.pool import AbstractConnectionPool, PoolError
 
 from .interface import get_interfaces
+from .interface.postgres import PostgreSQL
 
-def patch_all():
+def patch_all(maxconn=10, **kwargs):
     psycogreen.gevent.patch_psycopg()
 
-    for interface in get_interfaces():
-        pout.v(interface)
+    kwargs.setdefault('pool_maxconn', maxconn)
+    kwargs.setdefault('pool_class', 'prom.gevent.ConnectionPool')
+    kwargs.setdefault('async', True)
+    for name, interface in get_interfaces().iteritems():
+        if isinstance(interface, PostgreSQL):
+            interface.close()
+            interface.connection_config.options.update(kwargs)
 
 
 class ConnectionPool(AbstractConnectionPool):
@@ -31,27 +37,31 @@ class ConnectionPool(AbstractConnectionPool):
         self._pool = Queue()
 
         for i in range(self.minconn):
-            self._connect()
+            connection = self._connect()
+            self.putconn(connection)
 
     def _connect(self, key=None):
-        conn = psycopg2.connect(*self._args, **self._kwargs)
         self.size += 1
-        if key is None:
-            self.putconn(conn)
+        try:
+            # I think connect() causes a WAIT, so we need to increment size before
+            # we call connect() in order to actually make it increment
+            conn = psycopg2.connect(*self._args, **self._kwargs)
+
+        except:
+            self.size -= 1
+            raise
 
         return conn
 
     def getconn(self, key=None):
         if self.closed: raise PoolError("connection pool is closed")
         pool = self._pool
-        pout.v(self.size, self.maxconn, pool.qsize())
         if self.size >= self.maxconn or pool.qsize():
             conn = pool.get()
-            pout.v(pool.qsize())
 
         else:
             try:
-                conn = self._connect(1)
+                conn = self._connect()
 
             except:
                 raise
