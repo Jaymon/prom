@@ -257,7 +257,7 @@ query.get(10, 1) # get 10 results for page 1 (offset 0)
 query.get(10, 2) # get 10 results for page 2 (offset 10)
 ```
 
-They can be changed together:
+They can be chained together:
 
 ```python
 # SELECT * from table_name WHERE foo=10 AND bar='value 2' ORDER BY che DESC LIMIT 5
