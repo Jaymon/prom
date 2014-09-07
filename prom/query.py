@@ -34,14 +34,20 @@ class Iterator(object):
         query -- Query -- the query instance that produced this iterator
         """
         self.results = results
+        self.filter = None
         self.orm = orm
         self.has_more = has_more
-        self.query = copy.deepcopy(query)
+        self.query = query.copy()
         self._values = False
         self.reset()
 
     def reset(self):
-        self.iresults = (self._get_result(x) for x in self.results)
+        #self.iresults = (self._get_result(d) for d in self.results)
+        self.iresults = self.create_generator()
+
+    def _filtered(self, o):
+        """run orm o through the filter, if True then orm o should not be included"""
+        return self.filter(o) if self.filter else False
 
     def next(self):
         return self.iresults.next()
@@ -76,16 +82,34 @@ class Iterator(object):
 
     def count(self):
         """list interface compatibility"""
-        return len(self.results)
+        r = 0
+        if self.filter:
+            # HACK -- maybe figure out how to do this better?
+            r = len(list(self.create_generator()))
+        else:
+            r = len(self.results)
+        return r
+        #return len(self.results)
 
     def __getitem__(self, k):
         k = int(k)
-        return self._get_result(self.results[k])
+        o = self._get_result(self.results[k])
+        while self._filtered(o):
+            k += 1
+            o = self._get_result(self.results[k])
+
+        return o
+        #return self._get_result(self.results[k])
 
     def pop(self, k=-1):
         """list interface compatibility"""
         k = int(k)
-        return self._get_result(self.results.pop(k))
+        o = self._get_result(self.results.pop(k))
+        while self._filtered(o):
+            o = self._get_result(self.results.pop(k))
+
+        return o
+        #return self._get_result(self.results.pop(k))
 
     def reverse(self):
         """list interface compatibility"""
@@ -109,6 +133,11 @@ class Iterator(object):
         """
         field_name = self.orm.schema.field_name(k)
         return (getattr(r, field_name, None) for r in self)
+
+    def create_generator(self):
+        """put all the pieces together to build a generator of the results"""
+        inormalize = (self._get_result(d) for d in self.results)
+        return (o for o in inormalize if not self._filtered(o))
 
     def _get_result(self, d):
         r = None
@@ -153,7 +182,7 @@ class AllIterator(Iterator):
 
         else:
             # k is not in here, so let's just grab it
-            q = copy.deepcopy(self.query)
+            q = self.query.copy()
             orm = q.set_offset(k).get_one()
             if orm:
                 v = self._get_result(orm.fields)
@@ -162,11 +191,11 @@ class AllIterator(Iterator):
 
         return v
 
-    def __len__(self):
+    def count(self):
         ret = 0
         if self.results.has_more:
             # we need to do a count query
-            q = copy.deepcopy(self.query)
+            q = self.query.copy()
             q.set_limit(0).set_offset(0)
             ret = q.count()
         else:
@@ -208,6 +237,7 @@ class AllIterator(Iterator):
     def values(self):
         self.results = self.results.values()
         return super(AllIterator, self).values()
+
 
 class Query(object):
     """
@@ -269,7 +299,7 @@ class Query(object):
         return q
 
     def __iter__(self):
-        return self.get()
+        return self.all()
 
     def copy(self):
         """nice handy wrapper around the deepcopy"""

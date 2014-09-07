@@ -154,8 +154,7 @@ class Orm(object):
         **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
         """
         # NOTE -- you cannot use populate here because populate changes modified fields
-        fields = cls._normalize_dict(fields, fields_kwargs)
-        instance = cls(**fields)
+        instance = cls(fields, **field_kwargs)
         instance.set()
         return instance
 
@@ -168,8 +167,7 @@ class Orm(object):
         fields -- dict -- field_name keys, with their respective values
         **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
         """
-        fields = cls._normalize_dict(fields, fields_kwargs)
-        instance = cls(**fields)
+        instance = cls(fields, **fields_kwargs)
         instance.reset_modified()
         return instance
 
