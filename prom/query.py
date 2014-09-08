@@ -16,6 +16,8 @@ class Iterator(object):
 
     fields --
         has_more -- boolean -- True if there are more results in the db, false otherwise
+        ifilter -- callback -- an iterator filter, all yielded rows will be passed
+            through this callback and skipped if ifilter(row) returns True
 
     examples --
         # iterate through all the primary keys of some orm
@@ -34,7 +36,7 @@ class Iterator(object):
         query -- Query -- the query instance that produced this iterator
         """
         self.results = results
-        self.filter = None
+        self.ifilter = None
         self.orm = orm
         self.has_more = has_more
         self.query = query.copy()
@@ -43,11 +45,13 @@ class Iterator(object):
 
     def reset(self):
         #self.iresults = (self._get_result(d) for d in self.results)
-        self.iresults = self.create_generator()
+        #self.iresults = self.create_generator()
+        inormalize = (self._get_result(d) for d in self.results)
+        self.iresults = (o for o in inormalize if not self._filtered(o))
 
     def _filtered(self, o):
         """run orm o through the filter, if True then orm o should not be included"""
-        return self.filter(o) if self.filter else False
+        return self.ifilter(o) if self.ifilter else False
 
     def next(self):
         return self.iresults.next()
@@ -82,34 +86,16 @@ class Iterator(object):
 
     def count(self):
         """list interface compatibility"""
-        r = 0
-        if self.filter:
-            # HACK -- maybe figure out how to do this better?
-            r = len(list(self.create_generator()))
-        else:
-            r = len(self.results)
-        return r
-        #return len(self.results)
+        return len(self.results)
 
     def __getitem__(self, k):
         k = int(k)
-        o = self._get_result(self.results[k])
-        while self._filtered(o):
-            k += 1
-            o = self._get_result(self.results[k])
-
-        return o
-        #return self._get_result(self.results[k])
+        return self._get_result(self.results[k])
 
     def pop(self, k=-1):
         """list interface compatibility"""
         k = int(k)
-        o = self._get_result(self.results.pop(k))
-        while self._filtered(o):
-            o = self._get_result(self.results.pop(k))
-
-        return o
-        #return self._get_result(self.results.pop(k))
+        return self._get_result(self.results.pop(k))
 
     def reverse(self):
         """list interface compatibility"""
@@ -160,6 +146,8 @@ class AllIterator(Iterator):
     chunk of results until there are no more results of the passed in Query(), so you
     can just iterate through every row of the db without worrying about pulling too
     many rows at one time
+
+    NOTE -- pop() may have unexpected results
     """
     def __init__(self, query):
         limit, offset, _ = query.get_bounds()
@@ -213,6 +201,9 @@ class AllIterator(Iterator):
 
             self.offset += self.chunk_limit
             self._set_results()
+
+#    def next(self):
+#        raise NotImplementedError()
 
     def _set_results(self):
         self.results = self.query.set_offset(self.offset).get(self.chunk_limit)
@@ -299,7 +290,12 @@ class Query(object):
         return q
 
     def __iter__(self):
-        return self.all()
+        #return self.all()
+        #return self.get()
+        # NOTE -- for some reason I need to call AllIterator.__iter__() explicitely
+        # because it would call AllIterator.next() even though AllIterator.__iter__
+        # returns a generator, not sure what's up
+        return self.get() if self.has_limit() else self.all().__iter__()
 
     def copy(self):
         """nice handy wrapper around the deepcopy"""

@@ -3,6 +3,7 @@ import os
 import datetime
 import logging
 from contextlib import contextmanager
+import exceptions
 
 # first party
 from ..query import Query
@@ -542,7 +543,10 @@ class Interface(object):
         if not exc_info:
             exc_info = sys.exc_info()
         if not isinstance(e, InterfaceError):
-            e = InterfaceError(e, exc_info)
+            # allow python's built in errors to filter up through
+            # https://docs.python.org/2/library/exceptions.html
+            if not hasattr(exceptions, e.__class__.__name__):
+                e = InterfaceError(e, exc_info)
         raise e.__class__, e, exc_info[2]
 
 

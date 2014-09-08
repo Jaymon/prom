@@ -974,6 +974,16 @@ class BaseTestInterface(TestCase):
         rows = i.query('SELECT 1')
         self.assertGreater(len(rows), 0)
 
+    def test_transaction_error(self):
+        i = self.get_interface()
+        with self.assertRaises(StopIteration):
+            with i.transaction():
+                raise StopIteration()
+
+#        with self.assertRaises(RuntimeError):
+#            with i.transaction():
+#                raise RuntimeError()
+
     def test_set_table(self):
         i = self.get_interface()
         s = get_schema()
@@ -1839,7 +1849,7 @@ class BaseTestInterface(TestCase):
         d = i.get_one(s, q)
         self.assertGreater(len(d), 0)
 
-        with self.assertRaises(prom.InterfaceError):
+        with self.assertRaises(RuntimeError):
             with i.transaction() as connection:
                 _id = insert(i, s, 1, connection=connection)[0]
                 raise RuntimeError("this should fail")
@@ -2027,7 +2037,7 @@ class InterfacePostgresTest(BaseTestInterface):
             'foo': 1,
             'bar': 'v1',
         })
-        with self.assertRaises(prom.InterfaceError):
+        with self.assertRaises(AttributeError):
             rd = i.set(s, q)
 
 
@@ -2037,6 +2047,18 @@ class IteratorTest(TestCase):
         insert(q.orm.interface, q.orm.schema, count)
         i = q.get(limit, page)
         return i
+
+    def test_ifilter(self):
+        count = 3
+        _q = get_query()
+        insert(_q.orm.interface, _q.orm.schema, count)
+        q = _q.copy()
+
+        l = q.get()
+        self.assertEqual(3, len(list(l)))
+
+        l.ifilter = lambda o: o.pk == 1
+        self.assertEqual(2, len(list(l)))
 
     def test_list_compatibility(self):
         count = 3

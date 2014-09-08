@@ -154,7 +154,7 @@ class Orm(object):
         **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
         """
         # NOTE -- you cannot use populate here because populate changes modified fields
-        instance = cls(fields, **field_kwargs)
+        instance = cls(fields, **fields_kwargs)
         instance.set()
         return instance
 
@@ -269,9 +269,9 @@ class Orm(object):
     def modify(self, fields=None, **fields_kwargs):
         """update the fields of this instance with the values in dict fields"""
         fields = self._normalize_dict(fields, fields_kwargs)
-        schema_fields = set(self.schema.fields.iterkeys())
+        schema_fields = set(self.schema.fields.keys())
 
-        for field_name, field_val in fields.iteritems():
+        for field_name, field_val in fields.items():
             in_schema = field_name in schema_fields
             if in_schema:
                 setattr(self, field_name, field_val)
@@ -362,13 +362,14 @@ class Orm(object):
     @classmethod
     def _normalize_dict(cls, fields, fields_kwargs):
         """lot's of methods take a dict or kwargs, this combines those"""
-        if not fields:
-            fields = {}
+        ret = {}
+        if fields:
+            ret.update(fields)
 
         if fields_kwargs:
-            fields.update(fields_kwargs)
+            ret.update(fields_kwargs)
 
-        return fields
+        return ret
 
     @classmethod
     def install(cls):
