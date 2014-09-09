@@ -179,7 +179,8 @@ class Orm(object):
         if in_schema:
             self.modified_fields.add(field_name)
 
-        self.__dict__[field_name] = field_val
+        #self.__dict__[field_name] = field_val
+        super(Orm, self).__setattr__(field_name, field_val)
 
     def __int__(self):
         return int(self.pk)
