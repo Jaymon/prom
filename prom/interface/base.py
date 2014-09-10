@@ -227,13 +227,19 @@ class Interface(object):
             kwargs['connection'] = connection
             if self.has_table(schema.table, **kwargs): return True
 
-            with self.transaction(**kwargs):
-                self._set_table(schema, **kwargs)
+            try:
+                with self.transaction(**kwargs):
+                    self._set_table(schema, **kwargs)
 
-                for index_name, index_d in schema.indexes.iteritems():
-                    index_d['connection'] = connection
-                    self.set_index(schema, **index_d)
+                    for index_name, index_d in schema.indexes.iteritems():
+                        index_d['connection'] = connection
+                        self.set_index(schema, **index_d)
 
+            except InterfaceError:
+                # check to see if this table now exists, it might have been created
+                # in another thread
+                if not self.has_table(schema, **kwargs):
+                    raise
 
     def _set_table(self, schema, **kwargs): raise NotImplementedError()
 

@@ -2652,9 +2652,14 @@ class InterfacePostgresGeventTest(InterfacePostgresTest):
 
         prom.gevent.patch_all()
 
-    def test_concurrency(self):
+    def get_interface(self):
         orig_url = os.environ["PROM_POSTGRES_URL"]
         os.environ["PROM_POSTGRES_URL"] += '?async=1&pool_maxconn=3&pool_class=prom.gevent.ConnectionPool'
+        i = super(InterfacePostgresGeventTest, self).get_interface()
+        os.environ["PROM_POSTGRES_URL"] = orig_url
+        return i
+
+    def test_concurrency(self):
         i = self.get_interface()
         start = time.time()
         for _ in range(4):
@@ -2665,26 +2670,40 @@ class InterfacePostgresGeventTest(InterfacePostgresTest):
         elapsed = stop - start
         self.assertTrue(elapsed >= 2.0 and elapsed < 3.0)
 
-        os.environ["PROM_POSTGRES_URL"] = orig_url
+#    def test_monkey_patch(self):
+#        i = self.get_interface()
+#        prom.interface.set_interface(i, "foo")
+#        i = self.get_interface()
+#        prom.interface.set_interface(i, "bar")
+#
+#        for n in ['foo', 'bar']:
+#            i = prom.interface.get_interface(n)
+#            start = time.time()
+#            for _ in range(4):
+#                gevent.spawn(i.query, 'select pg_sleep(1)')
+#
+#            gevent.wait()
+#            stop = time.time()
+#            elapsed = stop - start
+#            self.assertTrue(elapsed >= 1.0 and elapsed < 2.0)
 
-    def test_monkey_patch(self):
+    def test_concurrent_error_recovery(self):
+        """when recovering from an error in a green thread environment one thread
+        could have added the table while the other thread was asleep, this will
+        test to make sure two threads failing at the same time will both recover
+        correctly"""
         i = self.get_interface()
-        prom.interface.set_interface(i, "foo")
-        i = self.get_interface()
-        prom.interface.set_interface(i, "bar")
+        s = get_schema()
+        #i.set_table(s)
+        for x in range(1, 3):
+            gevent.spawn(i.insert, s, {'foo': x, 'bar': str(x)})
 
-        prom.gevent.patch_all()
+        gevent.wait()
 
-        for n in ['foo', 'bar']:
-            i = prom.interface.get_interface(n)
-            start = time.time()
-            for _ in range(4):
-                gevent.spawn(i.query, 'select pg_sleep(1)')
+        q = query.Query()
+        r = list(i.get(s, q))
+        self.assertEqual(2, len(r))
 
-            gevent.wait()
-            stop = time.time()
-            elapsed = stop - start
-            self.assertTrue(elapsed >= 1.0 and elapsed < 2.0)
 
 # not sure I'm a huge fan of this solution to remove common parent from testing queue
 # http://stackoverflow.com/questions/1323455/python-unit-test-with-base-and-sub-class
