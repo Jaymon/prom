@@ -82,6 +82,7 @@ class PostgreSQL(SQLInterface):
             self._connection = self.connection_pool.getconn()
 
     def free_connection(self, connection):
+        if not self.connected: return
         if self._connection: return
         self.log("freeing connection {}", id(connection))
         self.connection_pool.putconn(connection)
@@ -98,6 +99,7 @@ class PostgreSQL(SQLInterface):
         if self._connection:
             self._connection.close()
             self._connection = None
+            self.connection_pool = None
 
     def _get_tables(self, table_name, **kwargs):
         query_str = 'SELECT tablename FROM pg_tables WHERE tableowner = %s'

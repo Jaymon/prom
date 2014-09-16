@@ -1900,10 +1900,14 @@ class InterfaceSQLiteTest(BaseTestInterface):
 
 
 class InterfacePostgresTest(BaseTestInterface):
-    def get_interface(self):
+    def create_interface(self):
         config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
-        i = PostgreSQL()
-        i.connect(config)
+        i = PostgreSQL(config)
+        return i
+
+    def get_interface(self):
+        i = self.create_interface()
+        i.connect()
         assert i.connected
         return i
 
@@ -1944,12 +1948,29 @@ class InterfacePostgresTest(BaseTestInterface):
         with self.assertRaises(prom.InterfaceError):
             q = query.Query()
             q.is__id(_id)
+            pout.b(5)
             d = i.get_one(s, q)
 
         q = query.Query()
         q.is__id(_id)
         d = i.get_one(s, q)
         self.assertGreater(len(d), 0)
+
+    def test_no_connection(self):
+        """this will make sure prom handles it gracefully if there is no connection available ever"""
+        exit_code = subprocess.check_call("sudo /etc/init.d/postgresql stop", shell=True)
+        time.sleep(1)
+
+        try:
+            i = self.create_interface()
+            s = get_schema()
+            q = query.Query()
+            with self.assertRaises(prom.InterfaceError):
+                i.get(s, q)
+
+        finally:
+            exit_code = subprocess.check_call("sudo /etc/init.d/postgresql start", shell=True)
+            time.sleep(1)
 
     def test__normalize_val_SQL(self):
         i = self.get_interface()
@@ -2037,7 +2058,7 @@ class InterfacePostgresTest(BaseTestInterface):
             'foo': 1,
             'bar': 'v1',
         })
-        with self.assertRaises(AttributeError):
+        with self.assertRaises(prom.InterfaceError):
             rd = i.set(s, q)
 
 
@@ -2652,11 +2673,14 @@ class InterfacePostgresGeventTest(InterfacePostgresTest):
 
         prom.gevent.patch_all()
 
-    def get_interface(self):
+    def create_interface(self):
         orig_url = os.environ["PROM_POSTGRES_URL"]
         os.environ["PROM_POSTGRES_URL"] += '?async=1&pool_maxconn=3&pool_class=prom.gevent.ConnectionPool'
-        i = super(InterfacePostgresGeventTest, self).get_interface()
-        os.environ["PROM_POSTGRES_URL"] = orig_url
+        try:
+            i = super(InterfacePostgresGeventTest, self).create_interface()
+        finally:
+            os.environ["PROM_POSTGRES_URL"] = orig_url
+
         return i
 
     def test_concurrency(self):

@@ -155,12 +155,13 @@ class Interface(object):
                 yield connection
 
             else:
+                # note to future self, this is out of try/finally because if
+                # connection fails to be created then free_connection() will fail
+                # which would then cover up the real error, so don't think to 
+                # yourself you can move it back into try/finally
+                connection = self.get_connection()
                 try:
-                    connection = self.get_connection()
                     yield connection
-
-                except:
-                    raise
 
                 finally:
                     self.free_connection(connection)
