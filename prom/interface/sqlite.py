@@ -39,7 +39,7 @@ class SQLiteRowDict(sqlite3.Row):
         return r
 
 
-class SQLiteConnection(sqlite3.Connection, SQLConnection):
+class SQLiteConnection(SQLConnection, sqlite3.Connection):
     """
     Thin wrapper around the default connection to make sure it has a similar interface
     to Postgres' connection instance so the common code can all be the same in the
@@ -139,6 +139,7 @@ class SQLite(SQLInterface):
         self._query('PRAGMA foreign_keys = ON', ignore_result=True);
 
     def get_connection(self):
+        if not self.connected: self.connect()
         return self._connection
 
     def _close(self):

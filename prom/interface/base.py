@@ -8,8 +8,7 @@ import exceptions
 # first party
 from ..query import Query
 from ..exception import InterfaceError
-from ..utils import Attempts
-from ..decorators import retry
+from ..decorators import reconnecting
 
 
 logger = logging.getLogger(__name__)
@@ -137,12 +136,12 @@ class Interface(object):
 
         if connection_config: self.connection_config = connection_config
 
-        self.connected = False
+        self.connected = True
         try:
             self._connect(self.connection_config)
-            self.connected = True
 
         except Exception as e:
+            self.connected = False
             self.raise_error(e)
 
         self.log("Connected {}", self.connection_config.interface_name)
@@ -360,7 +359,7 @@ class Interface(object):
 
         return d
 
-    @retry(count=5, backoff=1)
+    @reconnecting()
     def insert(self, schema, d, **kwargs):
         """
         Persist d into the db
@@ -393,7 +392,7 @@ class Interface(object):
         """return -- id -- the _id value"""
         raise NotImplementedError()
 
-    @retry(count=5, backoff=1)
+    @reconnecting()
     def update(self, schema, query, **kwargs):
         """
         Persist the query.fields into the db that match query.fields_where
@@ -442,7 +441,7 @@ class Interface(object):
 
         return d
 
-    @retry(count=5, backoff=1)
+    @reconnecting()
     def _get_query(self, callback, schema, query=None, *args, **kwargs):
         """this is just a common wrapper around all the get queries since they are
         all really similar in how they execute"""

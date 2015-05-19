@@ -1,5 +1,67 @@
 import time
 from functools import wraps
+import logging
+
+from .exception import InterfaceError
+
+
+logger = logging.getLogger(__name__)
+
+
+def reconnecting(count=None, backoff=None):
+
+    # we get trixxy here so we can manipulate these values in the wrapped function,
+    # this is one of the first times I wish we were on Python 3
+    # http://stackoverflow.com/a/9264845/5006
+    reconn_params = {
+        "count": count,
+        "backoff": backoff
+    }
+
+    def retry_decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+
+            count = reconn_params["count"]
+            backoff = reconn_params["backoff"]
+
+            if count is None:
+                count = self.connection_config.options.get('reconnect_attempts', 3)
+
+            if backoff is None:
+                backoff = self.connection_config.options.get('reconnect_backoff', 1.0)
+
+            count = int(count)
+            backoff = float(backoff)
+
+            for attempt in range(1, count + 1):
+                try:
+                    backoff_seconds = float(attempt - 1) * backoff
+                    if backoff_seconds:
+                        logger.debug("sleeping {} seconds before attempt {}".format(backoff_seconds, attempt))
+                    time.sleep(backoff_seconds)
+
+                    return func(self, *args, **kwargs)
+
+                except InterfaceError as e:
+                #except Exception as e:
+                    e_msg = str(e.e)
+                    #if "connection" in e_msg.lower():
+                    # TODO -- this gets us by SQLite and Postgres, but might not
+                    # work in the future, so this needs to be a tad more robust
+                    if "closed" in e_msg.lower():
+                        if attempt == count:
+                            logger.debug("all {} attempts failed".format(count))
+                            raise
+                        else:
+                            logger.debug("attempt {}/{} failed, retrying".format(attempt, count))
+
+                    else:
+                        raise
+
+        return wrapper
+
+    return retry_decorator
 
 
 def retry(count, backoff=0):
@@ -7,15 +69,20 @@ def retry(count, backoff=0):
         @wraps(func)
         def wrapper(*args, **kwargs):
             for attempt in range(0, count):
-                pout.b("attempt {}".format(attempt))
                 try:
-                    time.sleep(attempt * backoff)
+                    backoff_seconds = attempt * backoff
+                    if backoff_seconds:
+                        logger.debug("sleeping {} seconds before next attempt".format(backoff_seconds))
+                    time.sleep(backoff_seconds)
+
                     return func(*args, **kwargs)
 
                 except Exception:
-                    pout.v("attempt is handling failure {}".format(attempt))
                     if attempt == (count - 1):
+                        logger.debug("all {} attempts failed".format(count))
                         raise
+                    else:
+                        logger.debug("attempt {}/{} failed, retrying".format(attempt, count))
 
         return wrapper
 

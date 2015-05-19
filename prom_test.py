@@ -25,7 +25,6 @@ from prom.interface.postgres import PostgreSQL
 from prom.interface.sqlite import SQLite
 import prom
 import prom.interface
-from prom.utils import get_subclasses
 
 
 # configure root logger
@@ -1905,9 +1904,31 @@ class BaseTestInterface(TestCase):
 class InterfaceSQLiteTest(BaseTestInterface):
     def create_interface(self):
         config = DsnConnection(os.environ["PROM_SQLITE_URL"])
-        i = PostgreSQL(config)
+        i = SQLite(config)
         return i
 
+    def test_db_disconnect(self):
+        """make sure interface can recover if the db disconnects mid script execution,
+        SQLite is a bit different than postgres which is why this method is completely
+        original"""
+        i, s = self.get_table()
+        _id = insert(i, s, 1)[0]
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertGreater(len(d), 0)
+
+        i._connection.close()
+
+        _id = insert(i, s, 1)[0]
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertGreater(len(d), 0)
+
+    def test_no_connection(self):
+        """noop, this doesn't really apply to SQLite"""
+        pass
 
 class InterfacePostgresTest(BaseTestInterface):
     def create_interface(self):
@@ -1948,11 +1969,6 @@ class InterfacePostgresTest(BaseTestInterface):
 
         exit_code = subprocess.check_call("sudo /etc/init.d/postgresql restart", shell=True)
         time.sleep(1)
-
-        with self.assertRaises(prom.InterfaceError):
-            q = query.Query()
-            q.is__id(_id)
-            d = i.get_one(s, q)
 
         q = query.Query()
         q.is__id(_id)
@@ -2081,6 +2097,23 @@ class InterfacePGBouncerTest(InterfacePostgresTest):
         i = PostgreSQL(config)
         return i
 
+    def test_no_connection(self):
+        """this will make sure prom handles it gracefully if there is no connection
+        available ever. We have to wrap this for pgbouncer because PGBouncer can
+        hold the connections if there is no db waiting for the db to come back up
+        for all sorts of timeouts, and it's just easier to reset pg boucner than
+        configure it for aggressive test timeouts.
+        """
+        subprocess.check_call("sudo stop pgbouncer", shell=True)
+        time.sleep(1)
+
+        try:
+            super(InterfacePGBouncerTest, self).test_no_connection()
+
+        finally:
+            subprocess.check_call("sudo start pgbouncer", shell=True)
+            time.sleep(1)
+
     @skipIf(not has_spiped(), "No Spiped installed")
     def test_dropped_pipe(self):
         """handle a secured pipe like spiped or stunnel restarting while there were
@@ -2100,16 +2133,13 @@ class InterfacePGBouncerTest(InterfacePostgresTest):
         exit_code = subprocess.check_call("sudo restart spiped-pg-server", shell=True)
         time.sleep(1)
 
-        pout.b(5)
         q = query.Query()
         q.is__id(_id)
         d = i.get_one(s, q)
-        return
+        self.assertGreater(len(d), 0)
 
-        with self.assertRaises(prom.InterfaceError):
-            q = query.Query()
-            q.is__id(_id)
-            d = i.get_one(s, q)
+        exit_code = subprocess.check_call("sudo restart spiped-pg-client", shell=True)
+        time.sleep(1)
 
         q = query.Query()
         q.is__id(_id)
@@ -2721,7 +2751,8 @@ class QueryTest(TestCase):
 
 
 @skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")
-class InterfacePostgresGeventTest(InterfacePostgresTest):
+class XInterfacePostgresGeventTest(InterfacePostgresTest):
+    """this class has an X to start so that it will run last when all tests are run"""
     @classmethod
     def setUpClass(cls):
         import gevent.monkey
@@ -2734,7 +2765,7 @@ class InterfacePostgresGeventTest(InterfacePostgresTest):
         orig_url = os.environ["PROM_POSTGRES_URL"]
         os.environ["PROM_POSTGRES_URL"] += '?async=1&pool_maxconn=3&pool_class=prom.gevent.ConnectionPool'
         try:
-            i = super(InterfacePostgresGeventTest, self).create_interface()
+            i = super(XInterfacePostgresGeventTest, self).create_interface()
         finally:
             os.environ["PROM_POSTGRES_URL"] = orig_url
 
@@ -2784,43 +2815,6 @@ class InterfacePostgresGeventTest(InterfacePostgresTest):
         q = query.Query()
         r = list(i.get(s, q))
         self.assertEqual(2, len(r))
-
-
-class UtilsTest(TestCase):
-    def test_get_orm_objects(self):
-        testdata.create_modules({
-            "ormobjects.foo": "\n".join([
-                "import prom",
-                "class Foo(prom.Orm):",
-                "    schema=prom.Schema(",
-                "        'ormobjects_foo',",
-                "        bar=prom.Field(int)",
-                "    )",
-                ""
-            ]),
-            "ormobjects.bar": "\n".join([
-                "import prom",
-                "class Bar(prom.Orm):",
-                "    schema=prom.Schema(",
-                "        'ormobjects_bar',",
-                "        foo=prom.Field(int)",
-                "    )",
-                ""
-            ]),
-            "ormobjects.bar.che": "\n".join([
-                "import prom",
-                "class Che(prom.Orm):",
-                "    schema=prom.Schema(",
-                "        'ormobjects_che',",
-                "        baz=prom.Field(int)",
-                "    )",
-                ""
-            ])
-        })
-
-        s = set(['ormobjects_foo', 'ormobjects_bar', 'ormobjects_che'])
-        orms = get_subclasses("ormobjects", Orm)
-        self.assertEqual(s, set([o.schema.table for o in orms]))
 
 
 # not sure I'm a huge fan of this solution to remove common parent from testing queue
