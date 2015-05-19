@@ -8,6 +8,9 @@ import exceptions
 # first party
 from ..query import Query
 from ..exception import InterfaceError
+from ..utils import Attempts
+from ..decorators import retry
+
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +20,7 @@ class Connection(object):
 
     transaction_count = 0
     """
-    counting semaphore, greater than 0 if in a transaction, 0 if no current current transaction.
+    counting semaphore, greater than 0 if in a transaction, 0 if no current transaction.
 
     This will be incremented everytime transaction_start() is called, and decremented
     everytime transaction_stop() is called.
@@ -77,6 +80,10 @@ class Connection(object):
 
     def _transaction_failing(self): pass
 
+#     def cursor(self, *args, **kwargs):
+#         pout.v("in transaction? {}".format(self.in_transaction()))
+#         return super(Connection, self).cursor(*args, **kwargs)
+
 
 class SQLConnection(Connection):
     def _transaction_start(self):
@@ -131,7 +138,6 @@ class Interface(object):
         if connection_config: self.connection_config = connection_config
 
         self.connected = False
-        self.transaction_count = 0
         try:
             self._connect(self.connection_config)
             self.connected = True
@@ -175,7 +181,6 @@ class Interface(object):
 
         self._close()
         self.connected = False
-        self.transaction_count = 0
         self.log("Closed Connection {}", self.connection_config.interface_name)
         return True
 
@@ -355,6 +360,7 @@ class Interface(object):
 
         return d
 
+    @retry(count=5, backoff=1)
     def insert(self, schema, d, **kwargs):
         """
         Persist d into the db
@@ -387,6 +393,7 @@ class Interface(object):
         """return -- id -- the _id value"""
         raise NotImplementedError()
 
+    @retry(count=5, backoff=1)
     def update(self, schema, query, **kwargs):
         """
         Persist the query.fields into the db that match query.fields_where
@@ -435,11 +442,10 @@ class Interface(object):
 
         return d
 
+    @retry(count=5, backoff=1)
     def _get_query(self, callback, schema, query=None, *args, **kwargs):
-        """
-        this is just a common wrapper around all the get queries since they are
-        all really similar in how they execute
-        """
+        """this is just a common wrapper around all the get queries since they are
+        all really similar in how they execute"""
         if not query: query = Query()
 
         ret = None
@@ -463,7 +469,6 @@ class Interface(object):
                     ret = callback(schema, query, *args, **kwargs)
                 else:
                     self.raise_error(e, exc_info)
-
 
         return ret
 
@@ -591,7 +596,7 @@ class SQLInterface(Interface):
         ret = True
         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
         connection = query_options.get('connection', None)
-        with self.connection(query_options.get('connection', None)) as connection:
+        with self.connection(connection) as connection:
             cur = connection.cursor()
             ignore_result = query_options.get('ignore_result', False)
             count_result = query_options.get('count_result', False)
@@ -784,7 +789,7 @@ class SQLInterface(Interface):
         if not connection: return False
 
         ret = False
-        if connection.closed == 0:
+        if connection.closed == 0: # connection is open
             connection.transaction_stop()
             if isinstance(e, InterfaceError):
                 ret = self._handle_error(schema, e.e, **kwargs)

@@ -28,6 +28,7 @@ setup(
     author_email='jay@marcyes.com',
     url='http://github.com/firstopinion/{}'.format(name),
     packages=[name, '{}.interface'.format(name)],
+    tests_require=['testdata', 'gevent'],
     license="MIT",
     classifiers=[ # https://pypi.python.org/pypi?:action=list_classifiers
         'Development Status :: 4 - Beta',

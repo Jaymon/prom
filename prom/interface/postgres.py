@@ -20,12 +20,12 @@ from .base import SQLInterface, SQLConnection
 from ..utils import get_objects
 
 
-class Connection(psycopg2.extensions.connection, SQLConnection):
+#class Connection(psycopg2.extensions.connection, SQLConnection):
+class Connection(SQLConnection, psycopg2.extensions.connection):
     """
     http://initd.org/psycopg/docs/advanced.html
     http://initd.org/psycopg/docs/extensions.html#psycopg2.extensions.connection
     """
-
     def __init__(self, *args, **kwargs):
         super(Connection, self).__init__(*args, **kwargs)
 
@@ -83,13 +83,17 @@ class PostgreSQL(SQLInterface):
 
     def free_connection(self, connection):
         if not self.connected: return
-        if self._connection: return
+        if self._connection:
+            self.log("using sync connection")
+            return
         self.log("freeing connection {}", id(connection))
         self.connection_pool.putconn(connection)
 
     def get_connection(self):
         if not self.connected: self.connect()
-        if self._connection: return self._connection
+        if self._connection:
+            self.log("returning sync connection")
+            return self._connection
         connection = self.connection_pool.getconn()
         self.log("returning connection {}", id(connection))
         return connection

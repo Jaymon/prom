@@ -1,3 +1,26 @@
+import time
+from functools import wraps
+
+
+def retry(count, backoff=0):
+    def retry_decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(0, count):
+                pout.b("attempt {}".format(attempt))
+                try:
+                    time.sleep(attempt * backoff)
+                    return func(*args, **kwargs)
+
+                except Exception:
+                    pout.v("attempt is handling failure {}".format(attempt))
+                    if attempt == (count - 1):
+                        raise
+
+        return wrapper
+
+    return retry_decorator
+
 
 class classproperty(property):
     """

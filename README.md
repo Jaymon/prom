@@ -6,6 +6,8 @@ Lovingly crafted for [First Opinion](http://firstopinionapp.com).
 
 Prom tries to be as easy as possible on the developer so they don't need to constantly reference the documentation to get anything done.
 
+Prom has been used in both single threaded and multi-threaded environments, including environments using Greenthreads.
+
 
 ## 1 Minute Getting Started with SQLite
 

@@ -1,4 +1,4 @@
-from unittest import TestCase
+from unittest import TestCase, skipIf
 import os
 import sys
 import random
@@ -11,9 +11,13 @@ import subprocess
 import pickle
 
 import testdata
-import gevent
 
-import prom.gevent
+# needed to test prom with greenthreads
+try:
+    import gevent
+except ImportError as e:
+    gevent = None
+
 from prom import query
 from prom.model import Orm
 from prom.config import Schema, Connection, DsnConnection, Field
@@ -21,6 +25,8 @@ from prom.interface.postgres import PostgreSQL
 from prom.interface.sqlite import SQLite
 import prom
 import prom.interface
+from prom.utils import get_subclasses
+
 
 # configure root logger
 logger = logging.getLogger()
@@ -940,6 +946,15 @@ class ConfigFieldTest(TestCase):
 
 
 class BaseTestInterface(TestCase):
+    def create_interface(self):
+        raise NotImplementedError()
+
+    def get_interface(self):
+        i = self.create_interface()
+        i.connect()
+        assert i.connected
+        return i
+
     def get_query(self):
         i, s = self.get_table()
         Torm.schema = s
@@ -956,9 +971,6 @@ class BaseTestInterface(TestCase):
         s = get_schema(table_name)
         i.set_table(s)
         return i, s
-
-    def get_interface(self):
-        raise NotImplementedError()
 
     def test_connect(self):
         i = self.get_interface()
@@ -1891,11 +1903,9 @@ class BaseTestInterface(TestCase):
 
 
 class InterfaceSQLiteTest(BaseTestInterface):
-    def get_interface(self):
+    def create_interface(self):
         config = DsnConnection(os.environ["PROM_SQLITE_URL"])
-        i = SQLite()
-        i.connect(config)
-        assert i.connected
+        i = PostgreSQL(config)
         return i
 
 
@@ -1903,12 +1913,6 @@ class InterfacePostgresTest(BaseTestInterface):
     def create_interface(self):
         config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
         i = PostgreSQL(config)
-        return i
-
-    def get_interface(self):
-        i = self.create_interface()
-        i.connect()
-        assert i.connected
         return i
 
     def test_set_table_postgres(self):
@@ -1948,7 +1952,6 @@ class InterfacePostgresTest(BaseTestInterface):
         with self.assertRaises(prom.InterfaceError):
             q = query.Query()
             q.is__id(_id)
-            pout.b(5)
             d = i.get_one(s, q)
 
         q = query.Query()
@@ -2060,6 +2063,58 @@ class InterfacePostgresTest(BaseTestInterface):
         })
         with self.assertRaises(prom.InterfaceError):
             rd = i.set(s, q)
+
+
+def has_spiped():
+    ret = False
+    try:
+        c = subprocess.check_call("which spiped", shell=True)
+        ret = True
+    except CalledProcessError:
+        ret = False
+    return ret
+
+
+class InterfacePGBouncerTest(InterfacePostgresTest):
+    def create_interface(self):
+        config = DsnConnection(os.environ["PROM_PGBOUNCER_URL"])
+        i = PostgreSQL(config)
+        return i
+
+    @skipIf(not has_spiped(), "No Spiped installed")
+    def test_dropped_pipe(self):
+        """handle a secured pipe like spiped or stunnel restarting while there were
+        active connections
+
+        NOTE -- currently this is very specific to our environment, this test will most
+        likely always be skipped unless you're testing on our Vagrant box
+        """
+        # TODO -- make this more reproducible outside of our environment
+        i, s = self.get_table()
+        _id = insert(i, s, 1)[0]
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertGreater(len(d), 0)
+
+        exit_code = subprocess.check_call("sudo restart spiped-pg-server", shell=True)
+        time.sleep(1)
+
+        pout.b(5)
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        return
+
+        with self.assertRaises(prom.InterfaceError):
+            q = query.Query()
+            q.is__id(_id)
+            d = i.get_one(s, q)
+
+        q = query.Query()
+        q.is__id(_id)
+        d = i.get_one(s, q)
+        self.assertGreater(len(d), 0)
 
 
 class IteratorTest(TestCase):
@@ -2665,12 +2720,14 @@ class QueryTest(TestCase):
         self.assertEqual(last_pk, t.pk)
 
 
+@skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")
 class InterfacePostgresGeventTest(InterfacePostgresTest):
     @classmethod
     def setUpClass(cls):
         import gevent.monkey
         gevent.monkey.patch_all()
 
+        import prom.gevent
         prom.gevent.patch_all()
 
     def create_interface(self):
@@ -2727,6 +2784,43 @@ class InterfacePostgresGeventTest(InterfacePostgresTest):
         q = query.Query()
         r = list(i.get(s, q))
         self.assertEqual(2, len(r))
+
+
+class UtilsTest(TestCase):
+    def test_get_orm_objects(self):
+        testdata.create_modules({
+            "ormobjects.foo": "\n".join([
+                "import prom",
+                "class Foo(prom.Orm):",
+                "    schema=prom.Schema(",
+                "        'ormobjects_foo',",
+                "        bar=prom.Field(int)",
+                "    )",
+                ""
+            ]),
+            "ormobjects.bar": "\n".join([
+                "import prom",
+                "class Bar(prom.Orm):",
+                "    schema=prom.Schema(",
+                "        'ormobjects_bar',",
+                "        foo=prom.Field(int)",
+                "    )",
+                ""
+            ]),
+            "ormobjects.bar.che": "\n".join([
+                "import prom",
+                "class Che(prom.Orm):",
+                "    schema=prom.Schema(",
+                "        'ormobjects_che',",
+                "        baz=prom.Field(int)",
+                "    )",
+                ""
+            ])
+        })
+
+        s = set(['ormobjects_foo', 'ormobjects_bar', 'ormobjects_che'])
+        orms = get_subclasses("ormobjects", Orm)
+        self.assertEqual(s, set([o.schema.table for o in orms]))
 
 
 # not sure I'm a huge fan of this solution to remove common parent from testing queue

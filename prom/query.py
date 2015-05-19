@@ -679,5 +679,5 @@ class Query(object):
         if not self.can_get: return self.default_val
         i = self.orm.interface
         s = self.orm.schema
-        return getattr(i, method_name)(s, self)
+        return getattr(i, method_name)(s, self) # i.method_name(schema, query)
 
