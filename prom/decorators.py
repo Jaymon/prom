@@ -9,7 +9,18 @@ logger = logging.getLogger(__name__)
 
 
 def reconnecting(count=None, backoff=None):
+    """this is a very specific decorator meant to be used on Interface classes.
+    It will attempt to reconnect if the connection is closed and run the same 
+    method again.
 
+    TODO -- I think this will have issues with transactions using passed in
+    connections, ie, you pass in a transacting connection to the insert() method
+    and that connection gets dropped, this will reconnect but the transaction will
+    be hosed.
+
+    count -- integer -- how many attempts to run the method, defaults to 3
+    backoff -- float -- how long to sleep on failure, defaults to 1.0
+    """
     # we get trixxy here so we can manipulate these values in the wrapped function,
     # this is one of the first times I wish we were on Python 3
     # http://stackoverflow.com/a/9264845/5006
@@ -38,15 +49,16 @@ def reconnecting(count=None, backoff=None):
                 try:
                     backoff_seconds = float(attempt - 1) * backoff
                     if backoff_seconds:
-                        logger.debug("sleeping {} seconds before attempt {}".format(backoff_seconds, attempt))
+                        logger.debug("sleeping {} seconds before attempt {}".format(
+                            backoff_seconds,
+                            attempt
+                        ))
                     time.sleep(backoff_seconds)
 
                     return func(self, *args, **kwargs)
 
                 except InterfaceError as e:
-                #except Exception as e:
                     e_msg = str(e.e)
-                    #if "connection" in e_msg.lower():
                     # TODO -- this gets us by SQLite and Postgres, but might not
                     # work in the future, so this needs to be a tad more robust
                     if "closed" in e_msg.lower():
@@ -54,35 +66,13 @@ def reconnecting(count=None, backoff=None):
                             logger.debug("all {} attempts failed".format(count))
                             raise
                         else:
-                            logger.debug("attempt {}/{} failed, retrying".format(attempt, count))
+                            logger.debug("attempt {}/{} failed, retrying".format(
+                                attempt,
+                                count
+                            ))
 
                     else:
                         raise
-
-        return wrapper
-
-    return retry_decorator
-
-
-def retry(count, backoff=0):
-    def retry_decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            for attempt in range(0, count):
-                try:
-                    backoff_seconds = attempt * backoff
-                    if backoff_seconds:
-                        logger.debug("sleeping {} seconds before next attempt".format(backoff_seconds))
-                    time.sleep(backoff_seconds)
-
-                    return func(*args, **kwargs)
-
-                except Exception:
-                    if attempt == (count - 1):
-                        logger.debug("all {} attempts failed".format(count))
-                        raise
-                    else:
-                        logger.debug("attempt {}/{} failed, retrying".format(attempt, count))
 
         return wrapper
 
