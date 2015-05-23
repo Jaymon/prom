@@ -350,6 +350,28 @@ class Orm2(prom.Orm):
 Now, any class that extends `Orm1` will use `connection_1` and any orm that extends `Orm2` will use `connection_2`.
 
 
+## Green threads
+
+Prom can use green threads of the gevent module, so before you can use Prom greenthreads you need to install some modules:
+
+    $ pip install "gevent==1.0.1"
+    $ pip install "psycogreen==1.0"
+
+Then you can setup Prom like this:
+
+```python
+import gevent.monkey
+gevent.monkey.patch_all()
+
+import prom.gevent
+prom.gevent.patch_all()
+```
+
+Now you can use Prom in the same way you always have. If you would like to configure the threads and stuff, you can pass in some configuration options using the dsn, the three parameters are *async*, *pool_maxconn*, *pool_minconn*, and *pool_class*. The only one you'll really care about is *pool_maxconn* which sets how many connections should be created.
+
+All the options will be automatically set when `prom.gevent.patch_all()` is called.
+
+
 ## Using for the first time
 
 Prom takes the approach that you don't want to be hassled with table installation while developing, so when it tries to do something and sees that the table doesn't exist, it will use your defined `prom.Schema` for your `prom.Orm` child and create a table for you, that way you don't have to remember to run a script or craft some custom db query to add your tables, Prom takes care of that for you automatically.

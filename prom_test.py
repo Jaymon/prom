@@ -2816,6 +2816,14 @@ class XInterfacePostgresGeventTest(InterfacePostgresTest):
         r = list(i.get(s, q))
         self.assertEqual(2, len(r))
 
+    def test_table_recovery(self):
+        i = self.get_interface()
+        s = get_schema()
+
+        q = query.Query()
+        l = i.get(s, q)
+        self.assertEqual([], l)
+
 
 # not sure I'm a huge fan of this solution to remove common parent from testing queue
 # http://stackoverflow.com/questions/1323455/python-unit-test-with-base-and-sub-class

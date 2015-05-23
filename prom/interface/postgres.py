@@ -64,6 +64,7 @@ class PostgreSQL(SQLInterface):
 
         _, pool_class = get_objects(pool_class_name)
 
+        self.log("connecting using pool class {}".format(pool_class_name))
         self.connection_pool = pool_class(
             minconn,
             maxconn,
@@ -84,18 +85,18 @@ class PostgreSQL(SQLInterface):
     def free_connection(self, connection):
         if not self.connected: return
         if self._connection:
-            self.log("using sync connection")
+            self.log("freeing sync connection")
             return
-        self.log("freeing connection {}", id(connection))
+        self.log("freeing async connection {}", id(connection))
         self.connection_pool.putconn(connection)
 
     def get_connection(self):
         if not self.connected: self.connect()
         if self._connection:
-            self.log("returning sync connection")
+            self.log("getting sync connection")
             return self._connection
         connection = self.connection_pool.getconn()
-        self.log("returning connection {}", id(connection))
+        self.log("getting async connection {}", id(connection))
         return connection
 
     def _close(self):

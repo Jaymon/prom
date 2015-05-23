@@ -15,7 +15,7 @@ def patch_all(maxconn=10, **kwargs):
     kwargs.setdefault('pool_maxconn', maxconn)
     kwargs.setdefault('pool_class', 'prom.gevent.ConnectionPool')
     kwargs.setdefault('async', True)
-    for name, interface in get_interfaces().iteritems():
+    for name, interface in get_interfaces().items():
         if isinstance(interface, PostgreSQL):
             interface.close()
             interface.connection_config.options.update(kwargs)
