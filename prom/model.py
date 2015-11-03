@@ -177,9 +177,8 @@ class Orm(object):
         return {k:getattr(self, k, None) for k in self.schema.fields}
 
     def __init__(self, fields=None, **fields_kwargs):
-        fields = self._normalize_dict(fields, fields_kwargs)
         self.reset_modified()
-        self.modify(fields)
+        self.hydrate(fields, fields_kwargs)
 
     @classmethod
     def create(cls, fields=None, **fields_kwargs):
@@ -189,9 +188,9 @@ class Orm(object):
         fields -- dict -- field_name keys, with their respective values
         **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
         """
-        # NOTE -- you cannot use populate here because populate changes modified fields
+        # NOTE -- you cannot use populate here because populate alters modified fields
         instance = cls(fields, **fields_kwargs)
-        instance.set()
+        instance.save()
         return instance
 
     @classmethod
@@ -208,14 +207,12 @@ class Orm(object):
         return instance
 
     def __setattr__(self, field_name, field_val):
-        s = self.schema
-        in_schema = field_name in s.fields
-        if field_val is not None:
-            field_val = self._normalize_field(field_name, field_val)
-        if in_schema:
+        if field_name in self.schema.fields
+            if field_val is not None:
+                field_val = self._normalize_field(field_name, field_val)
+
             self.modified_fields.add(field_name)
 
-        #self.__dict__[field_name] = field_val
         super(Orm, self).__setattr__(field_name, field_val)
 
     def __int__(self):
@@ -307,25 +304,10 @@ class Orm(object):
     def modify(self, fields=None, **fields_kwargs):
         """update the fields of this instance with the values in dict fields"""
         fields = self._normalize_dict(fields, fields_kwargs)
-        schema_fields = set(self.schema.fields.keys())
-
         for field_name, field_val in fields.items():
-            in_schema = field_name in schema_fields
+            in_schema = field_name in self.schema.fields
             if in_schema:
                 setattr(self, field_name, field_val)
-                schema_fields.discard(field_name)
-
-            else:
-                # fields that aren't in the schema just get normalized but ignored
-                # in this method
-                if field_val is not None:
-                    fv = self._normalize_field(field_name, field_val)
-
-        # pick up any stragglers and set them to None:
-        for field_name in schema_fields:
-            if not hasattr(self, field_name) and not field_name.startswith('_'):
-                setattr(self, field_name, None)
-                self.modified_fields.discard(field_name)
 
     def is_modified(self):
         """true if a field has been changed from its original value, false otherwise"""
@@ -340,6 +322,25 @@ class Orm(object):
         clear all the passed in fields from the modified list
         """
         self.modified_fields = set()
+
+    def hydrate(self, fields=None, **fields_kwargs):
+        """figure out what value to give every field in the Orm's schema, this means
+        that if a field is missing from the passed in fields dict, it will be set
+        to None for this instance, if you just want to deal with fields that you
+        passed in manipulating this instance, use .modify()"""
+        fields = self._normalize_dict(fields, fields_kwargs)
+        schema_fields = set(self.schema.fields.keys())
+        for field_name, field_val in fields.items():
+            in_schema = field_name in self.schema.fields
+            if in_schema:
+                setattr(self, field_name, field_val)
+                schema_fields.discard(field_name)
+
+        # pick up any stragglers and set them to None:
+        for field_name in schema_fields:
+            if not field_name.startswith('_'):
+                setattr(self, field_name, None)
+                self.modified_fields.discard(field_name)
 
     def jsonable(self, *args, **options):
         """
