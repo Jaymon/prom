@@ -9,6 +9,84 @@ from . import decorators
 from .interface import get_interface
 
 
+class MetaOrm(type):
+    def __getattr__(self, name):
+        r = None
+        if name == 'query_class':
+            r = self.query_class = self.find_query_class()
+
+        elif name == 'query':
+            r = self.create_query()
+
+        elif name == 'interface':
+            r = self.interface = self.get_interface()
+
+        else:
+            raise AttributeError(name)
+
+        return r
+
+    def get_interface(self):
+        """
+        return an Interface instance that can be used to access the db
+
+        this will do the work required to find the interface instance, and then set this
+        property to that interface instance, so all subsequent calls to this property
+        will return the Interface() directly without running this method again
+
+        return -- Interface() -- the interface instance this Orm will use
+        """
+        i = get_interface(self.connection_name)
+        return i
+
+    def find_query_class(self):
+        """
+        return the Query class this class will use to create Query instances to actually query the db
+
+        To be as magical and helpful as possible, this will start at the child class and look
+        for a ChildClassNameQuery defined in the same module, it will then move down through
+        each parent class looking for a matching <ParentClassName>Query class defined in the 
+        same module as the parent class. If you want to short circuit the auto-finding, you 
+        can just set the query_class in the child class
+
+        example -- set the Query class manually
+
+            class Foo(Orm):
+                query_class = module.Query
+
+        like .interface, this is cached
+
+        return -- Query -- the query class, not an instance, but the actaul class object, Query if
+            a custom one isn't found
+        """
+        query_class = Query
+        parents = inspect.getmro(self)
+        for parent in parents:
+            parent_module_name = parent.__module__
+            parent_class_name = '{}Query'.format(parent.__name__)
+            if parent_module_name in sys.modules:
+                parent_class = getattr(sys.modules[parent_module_name], parent_class_name, None)
+                if parent_class:
+                    query_class = parent_class
+                    break
+
+        self.query_class = query_class
+        return query_class
+
+    def create_query(self):
+        """
+        return a new Query instance ready to make a db call using the child class
+
+        example -- fluid interface
+
+            results = Orm.query.is_foo('value').desc_bar().get()
+
+        return -- Query() -- every time this is called a new query instance is created using cls.query_class
+        """
+        query_class = self.query_class
+        return query_class(orm=self)
+
+
 class Orm(object):
     """
     this is the parent class of any model Orm class you want to create that can access the db
@@ -45,53 +123,20 @@ class Orm(object):
     schema = None
     """the Schema() instance that this class will derive all its db info from"""
 
-    @decorators.cachedclassproperty
+    query_class = Query
+    """the class this Orm will use to create Query instances to query the db"""
+
+    iterator_class = None
+    """the class this Orm will use for iterating through results returned from db"""
+
+    @decorators.classproperty
     def interface(cls):
         """
         return an Interface instance that can be used to access the db
 
-        this will do the work required to find the interface instance, and then set this
-        property to that interface instance, so all subsequent calls to this property
-        will return the Interface() directly without running this method again
-
         return -- Interface() -- the interface instance this Orm will use
         """
-        i = get_interface(cls.connection_name)
-        return i
-
-    @decorators.cachedclassproperty
-    def query_class(cls):
-        """
-        return the Query class this class will use to create Query instances to actually query the db
-
-        To be as magical and helpful as possible, this will start at the child class and look
-        for a ChildClassNameQuery defined in the same module, it will then move down through
-        each parent class looking for a matching <ParentClassName>Query class defined in the 
-        same module as the parent class. If you want to short circuit the auto-finding, you 
-        can just set the query_class in the child class
-
-        example -- set the Query class manually
-
-            class Foo(Orm):
-                query_class = module.Query
-
-        like .interface, this is cached
-
-        return -- Query -- the query class, not an instance, but the actaul class object, Query if
-            a custom one isn't found
-        """
-        query_class = Query
-        parents = inspect.getmro(cls)
-        for parent in parents:
-            parent_module_name = parent.__module__
-            parent_class_name = '{}Query'.format(parent.__name__)
-            if parent_module_name in sys.modules:
-                parent_class = getattr(sys.modules[parent_module_name], parent_class_name, None)
-                if parent_class:
-                    query_class = parent_class
-                    break
-
-        return query_class
+        return get_interface(cls.connection_name)
 
     @decorators.classproperty
     def query(cls):
@@ -99,21 +144,12 @@ class Orm(object):
         return a new Query instance ready to make a db call using the child class
 
         example -- fluid interface
-
             results = Orm.query.is_foo('value').desc_bar().get()
 
         return -- Query() -- every time this is called a new query instance is created using cls.query_class
         """
         query_class = cls.query_class
         return query_class(orm=cls)
-
-    @classmethod
-    def query_ref(cls, *args, **kwargs):
-        """
-        this is a pass through to Query.ref(), check out docs for that to know
-        what to pass
-        """
-        return cls.query.ref(*args, **kwargs)
 
     @property
     def pk(self):
@@ -189,7 +225,7 @@ class Orm(object):
         """persist the field values of this orm"""
         fields = self.get_modified()
 
-        for field_name in self.schema.required_fields.iterkeys():
+        for field_name in self.schema.required_fields.keys():
             if field_name not in fields:
                 raise KeyError("Missing required field {}".format(field_name))
 
@@ -216,7 +252,8 @@ class Orm(object):
         self.reset_modified()
         return True
 
-    def set(self):
+    def set(self): return self.save()
+    def save(self):
         """
         persist the fields in this object into the db, this will update if _id is set, otherwise
         it will insert

@@ -293,11 +293,7 @@ class OrmTest(TestCase):
         self.assertEqual(_id, int(t))
 
     def test_query_class(self):
-        """
-        I just wanted to make sure you can set the query class and it is picked up
-        correctly, also, defining a class in a function is a special case that I wanted
-        to see how it was handled
-        """
+        """make sure you can set the query class and it is picked up correctly"""
         class QueryClassTormQuery(query.Query):
             pass
 
@@ -307,77 +303,64 @@ class OrmTest(TestCase):
 
         self.assertEqual(QueryClassTorm.query_class, QueryClassTormQuery)
         self.assertEqual(Torm.query_class, query.Query)
-        self.assertEqual(Torm2.query_class, Torm2Query)
 
-    def test_query_ref(self):
-        t1 = get_orm_class()
-        t2 = get_orm_class()
-        t2.schema.che = Field(int, ref=t1)
-        orm_classpath = "{}.{}".format(t1.__module__, t1.__name__)
-        q = t2.query_ref(orm_classpath)
-        self.assertEqual([], q.fields_where)
+    def test_property_autodiscover(self):
+        testdata.create_module("fooq", "\n".join([
+            "import prom",
+            "",
+            "class FooQuery(prom.Query):",
+            "    pass",
+            "",
+            "class Foo(prom.Orm):",
+            "    schema = prom.Schema('foo')",
+            "    query_class = FooQuery",
+            "",
+            "class BarQuery(prom.Query):",
+            "    pass",
+            "",
+            "class Bar(Foo):",
+            "    schema = prom.Schema('bar')",
+            "    query_class = BarQuery",
+            "    pass",
+            "",
+            "class CheQuery(prom.Query):",
+            "    pass",
+        ]))
 
-        q = t2.query_ref(orm_classpath, 1)
-        self.assertEqual('che', q.fields_where[0][1])
-        self.assertEqual(1, q.fields_where[0][2])
+        import fooq
 
-    def test_query_ref_2(self):
-        testdata.create_modules({
-            "qr2.foo": "\n".join([
-                "import prom",
-                "class Foo(prom.Orm):",
-                "    schema = prom.Schema(",
-                "        'qr2_foo',",
-                "        foo=prom.Field(int, True),",
-                "        bar=prom.Field(str, True),",
-                "    )",
-                ""
-                "class Bar(prom.Orm):",
-                "    schema = prom.Schema(",
-                "        'qr2_Bar',",
-                "        foo=prom.Field(int, True),",
-                "        bar=prom.Field(str, True),",
-                "        che=prom.Field(int, ref=Foo)",
-                "    )",
-                ""
-            ])
-        })
+        # first try with the instance calling first
+        f = fooq.Foo()
+        self.assertEqual(f.query_class, fooq.Foo.query_class)
 
-        from qr2.foo import Foo as t1, Bar as t2
+        f = fooq.Foo()
+        self.assertEqual(f.query.__class__.__name__, fooq.Foo.query.__class__.__name__)
 
-        ti1 = t1.create(foo=11, bar='11')
-        ti12 = t1.create(foo=12, bar='12')
+        f = fooq.Foo()
+        self.assertEqual(f.interface, fooq.Foo.interface)
 
-        ti2 = t2.create(foo=21, bar='21', che=ti1.pk)
-        ti22 = t2.create(foo=22, bar='22', che=ti12.pk)
+        # now try with the class calling first
+        b = fooq.Bar()
+        self.assertEqual(fooq.Bar.query_class, b.query_class)
 
-        orm_classpath = "{}.{}".format(t2.__module__, t2.__name__)
+        b = fooq.Bar()
+        self.assertEqual(fooq.Bar.query.__class__.__name__, b.query.__class__.__name__)
 
-        l = list(ti1.query_ref(orm_classpath, ti12.pk).select_foo().values())
-        self.assertEqual(22, l[0])
+        b = fooq.Bar()
+        self.assertEqual(fooq.Bar.interface, b.interface)
 
-        l = list(ti1.query_ref(orm_classpath, ti1.pk).select_foo().all().values())
-        self.assertEqual(21, l[0])
-
-        l = list(ti1.query_ref(orm_classpath, ti1.pk).select_foo().get().values())
-        self.assertEqual(21, l[0])
-
-        l = list(ti1.query_ref(orm_classpath, ti1.pk).select_foo().values())
-        self.assertEqual(21, l[0])
-
-        l = list(ti1.query_ref(orm_classpath).select_foo().all().values())
-        self.assertEqual(2, len(l))
+        # now make sure we can manipulate it
+        fooq.Foo.query_class = fooq.CheQuery
+        f = fooq.Foo()
+        self.assertEqual(fooq.CheQuery, f.query_class)
+        self.assertEqual(fooq.CheQuery, fooq.Foo.query_class)
+        self.assertEqual(fooq.CheQuery, f.query.__class__)
+        self.assertEqual(fooq.CheQuery, fooq.Foo.query.__class__)
 
     def test_interface(self):
         i = Torm.interface
         self.assertFalse(i is None)
 
-        i = Torm2.interface
-        self.assertFalse(i is None)
-
-        # even though connection name has changed, interface was cached, so there shouldn't
-        # be a problem, (I think this should be expected behavior, how often would this really happen?)
-        Torm2.connection_name = "blkasdfjksdafjdkfklsd"
         i = Torm2.interface
         self.assertFalse(i is None)
 
@@ -2325,6 +2308,68 @@ class IteratorTest(TestCase):
 
 
 class QueryTest(TestCase):
+    def test_query_ref(self):
+        t1 = get_orm_class()
+        t2 = get_orm_class()
+        t2.schema.che = Field(int, ref=t1)
+        orm_classpath = "{}.{}".format(t1.__module__, t1.__name__)
+        q = t2.query.ref(orm_classpath)
+        self.assertEqual([], q.fields_where)
+
+        q = t2.query.ref(orm_classpath, 1)
+        self.assertEqual('che', q.fields_where[0][1])
+        self.assertEqual(1, q.fields_where[0][2])
+
+    def test_query_ref_2(self):
+        i = get_interface()
+        prom.set_interface(i)
+
+        testdata.create_modules({
+            "qr2.foo": "\n".join([
+                "import prom",
+                "class Foo(prom.Orm):",
+                "    schema = prom.Schema(",
+                "        'qr2_foo',",
+                "        foo=prom.Field(int, True),",
+                "        bar=prom.Field(str, True),",
+                "    )",
+                ""
+                "class Bar(prom.Orm):",
+                "    schema = prom.Schema(",
+                "        'qr2_Bar',",
+                "        foo=prom.Field(int, True),",
+                "        bar=prom.Field(str, True),",
+                "        che=prom.Field(int, ref=Foo)",
+                "    )",
+                ""
+            ])
+        })
+
+        from qr2.foo import Foo as t1, Bar as t2
+
+        ti1 = t1.create(foo=11, bar='11')
+        ti12 = t1.create(foo=12, bar='12')
+
+        ti2 = t2.create(foo=21, bar='21', che=ti1.pk)
+        ti22 = t2.create(foo=22, bar='22', che=ti12.pk)
+
+        orm_classpath = "{}.{}".format(t2.__module__, t2.__name__)
+
+        l = list(ti1.query.ref(orm_classpath, ti12.pk).select_foo().values())
+        self.assertEqual(22, l[0])
+
+        l = list(ti1.query.ref(orm_classpath, ti1.pk).select_foo().all().values())
+        self.assertEqual(21, l[0])
+
+        l = list(ti1.query.ref(orm_classpath, ti1.pk).select_foo().get().values())
+        self.assertEqual(21, l[0])
+
+        l = list(ti1.query.ref(orm_classpath, ti1.pk).select_foo().values())
+        self.assertEqual(21, l[0])
+
+        l = list(ti1.query.ref(orm_classpath).select_foo().all().values())
+        self.assertEqual(2, len(l))
+
     def test_null_iterator(self):
         """you can now pass empty lists to in and nin and not have them throw an
         error, instead they return an empty iterator"""

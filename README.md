@@ -166,6 +166,7 @@ import prom
 
 and Prom will take care of parsing the dsn url(s) and creating the connection(s) automatically.
 
+
 ## The Query class
 
 You can access the query, or table, instance for each `prom.Orm` child you create by calling its `.query` class property:
@@ -176,33 +177,26 @@ print User.query # prom.Query
 
 Through the power of magic, everytime you call this property, a new `prom.Query` instance will be created.
 
+
 ### Customize the Query class
 
-By default, Prom will look for a `<name>Query` class in the same module as your `prom.Orm` child, so, continuing the User example from above, if you wanted to make a custom `UserQuery` class:
+You can also extend the default `prom.Query` class and let your `prom.Orm` child know about it
 
 ```python
 # app.models (app/models.py)
 
-class UserQuery(prom.Query):
-    def get_by_emails(self, *emails):
-        """get all users with matching emails, ordered by last updated first"""
-        return self.in_email(*emails).desc_updated().get()
-```
+class DemoQuery(prom.Query):
+    def get_by_foo(self, *foos):
+        """get all demos with matching foos, ordered by last updated first"""
+        return self.in_foo(*foos).desc_updated().get()
 
-Now, we can further use the power of magic:
-
-```python
-print User.query # app.models.UserQuery
-```
-
-And boom, we were able to customize our queries by just adding a class. If you want to explicitely set the class your `prom.Orm` child should use (eg, you want all your models to use `random.module.CustomQuery` which wouldn't be auto-discovered by prom), you can set the `query_class` class property to whatever you want:
-
-```python
 class DemoOrm(prom.Orm):
-    query_class = random.module.CustomQuery
+    query_class = DemoQuery
+
 ```
 
-and then every instance of `DemoOrm` (or child that derives from it) will forever use `random.module.CustomQuery`.
+Notice the `query_class` class property on the `DemoOrm` class. Now every instance of `DemoOrm` (or child that derives from it) will forever use `DemoQuery`.
+
 
 ### Using the Query class
 
@@ -223,8 +217,7 @@ or, if you have the name in the field as a string:
 so, we could also select on `foo` this way:
 
 ```python
-name = 'foo'
-query.is_field(name, 5)
+query.is_field('foo', 5)
 ```
 
 The different WHERE commands:

@@ -1,5 +1,6 @@
 # stdlib
 import os
+import logging
 
 # first party
 from .config import DsnConnection, Schema, Field
@@ -12,6 +13,11 @@ from .exception import InterfaceError, Error
 
 
 __version__ = '0.9.67'
+
+
+# get rid of "No handler found" warnings (cribbed from requests)
+logging.getLogger(__name__).addHandler(logging.NullHandler())
+
 
 def configure_environ(dsn_env_name='PROM_DSN'):
     """

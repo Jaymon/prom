@@ -101,6 +101,7 @@ class classproperty(property):
     def __get__(self, instance, cls):
         return self.fget(cls)
 
+
 class cachedclassproperty(classproperty):
     """
     a memoized class property, it will do the calculation the first time and set the property
@@ -126,6 +127,7 @@ class cachedclassproperty(classproperty):
     def __get__(self, instance, cls):
         v = self.fget(cls)
         # http://stackoverflow.com/questions/432786/how-can-i-assign-a-new-class-attribute-via-dict-in-python
+        pout.v(cls, self.fget.__name__, v)
         setattr(cls, self.fget.__name__, v)
         return v
 
