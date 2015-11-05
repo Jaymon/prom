@@ -885,24 +885,50 @@ class ConfigConnectionTest(TestCase):
 
 
 class ConfigFieldTest(TestCase):
+
+    def test_decorator(self):
+
+        class FieldDecTest(object):
+            table_name = "field_dec"
+
+            @prom.Field(int)
+            def foo(self, val):
+                return int(val) + 10
+
+            bar = prom.Field(str)
+
+        pout.v(FieldDecTest.foo)
+        instance = FieldDecTest()
+        pout.v(instance.foo)
+
+        pout.v(Schema.get_instance(FieldDecTest))
+        return
+
+        f2 = prom.Field(str)
+        pout.b("foo class set")
+        FieldDecTest.foo = f2
+        pout.b("foo instance set")
+        instance.foo = f2
+
+        b2 = prom.Field(str)
+        pout.b("bar instance set")
+        instance.bar = b2
+
+
     def test_string_ref(self):
         testdata.create_modules({
             "stringref.foo": "\n".join([
                 "import prom",
                 "class Foo(prom.Orm):",
-                "    schema=prom.Schema(",
-                "        'stringref_foo',",
-                "        bar_id=prom.Field(int, ref='stringref.bar.Bar')",
-                "    )",
+                "    interface = None",
+                "    bar_id = prom.Field('stringref.bar.Bar')",
                 ""
             ]),
             "stringref.bar": "\n".join([
                 "import prom",
                 "class Bar(prom.Orm):",
-                "    schema=prom.Schema(",
-                "        'stringref_foo',",
-                "        foo_id=prom.Field(int, ref='stringref.foo.Foo')",
-                "    )",
+                "    interface = None",
+                "    foo_id = prom.Field('stringref.foo.Foo')",
                 ""
             ])
         })
@@ -910,21 +936,22 @@ class ConfigFieldTest(TestCase):
         from stringref.foo import Foo
         from stringref.bar import Bar
 
+        pout.v(Foo.schema.fields['bar_id']["field"].type)
+
         self.assertTrue(isinstance(Foo.schema.fields['bar_id'].ref_schema, prom.Schema))
         self.assertTrue(isinstance(Bar.schema.fields['foo_id'].ref_schema, prom.Schema))
 
-    def test___new__(self):
+    def test___init__(self):
         f = prom.Field(str, True)
-        self.assertTrue(f[1])
-        self.assertTrue(issubclass(f[0], str))
-        self.assertTrue(isinstance(f, tuple))
+        self.assertTrue(f.required)
+        self.assertTrue(issubclass(f.type, str))
 
         with self.assertRaises(TypeError):
             f = prom.Field()
 
         f = prom.Field(int, max_length=100)
-        self.assertTrue(issubclass(f[0], int))
-        self.assertEqual(f[2]['max_length'], 100)
+        self.assertTrue(issubclass(f.type, int))
+        self.assertEqual(f.options['max_length'], 100)
 
 
 class BaseTestInterface(TestCase):
