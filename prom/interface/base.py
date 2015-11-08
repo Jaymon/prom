@@ -236,9 +236,14 @@ class Interface(object):
                 with self.transaction(**kwargs):
                     self._set_table(schema, **kwargs)
 
-                    for index_name, index_d in schema.indexes.iteritems():
-                        index_d['connection'] = connection
-                        self.set_index(schema, **index_d)
+                    for index_name, index in schema.indexes.items():
+                        self.set_index(
+                            schema,
+                            name=index.name,
+                            fields=index.fields,
+                            connection=connection,
+                            **index.options
+                        )
 
             except InterfaceError:
                 # check to see if this table now exists, it might have been created
@@ -348,8 +353,8 @@ class Interface(object):
         # TODO -- should this be moved to somewhere else? Not sure it is appropriate here
         # update the times
         now = datetime.datetime.utcnow()
-        field_created = schema._created
-        field_updated = schema._updated
+        field_created = schema._created.name
+        field_updated = schema._updated.name
         if is_insert:
             if field_created not in d:
                 d[field_created] = now
@@ -385,7 +390,7 @@ class Interface(object):
                 else:
                     self.raise_error(e, exc_info)
 
-        if r: d[schema._id] = r
+        if r: d[schema._id.name] = r
         return d
 
     def _insert(self, schema, d, **kwargs):
@@ -565,7 +570,10 @@ class SQLInterface(Interface):
     """Generic base class for all SQL derived interfaces"""
     @property
     def val_placeholder(self):
-        raise NotImplemented("this property should be set in any children class")
+        raise NotImplementedError("this property should be set in any children class")
+
+#     def get_field_SQL(self):
+#         raise NotImplementedError()
 
     def _delete_tables(self, **kwargs):
         for table_name in self.get_tables(**kwargs):
@@ -642,7 +650,7 @@ class SQLInterface(Interface):
 
         if field_kwargs:
             f = schema.fields[field_name]
-            if issubclass(f['type'], (datetime.datetime, datetime.date)):
+            if issubclass(f.type, (datetime.datetime, datetime.date)):
                 format_strs = self._normalize_date_SQL(field_name, field_kwargs)
                 for fname, fvstr, fargs in format_strs:
                     if format_str:
@@ -670,7 +678,7 @@ class SQLInterface(Interface):
             symbol = symbol_map['symbol']
             # kwargs take precedence because None is a perfectly valid field_val
             f = schema.fields[field_name]
-            if issubclass(f['type'], (datetime.datetime, datetime.date)):
+            if issubclass(f.type, (datetime.datetime, datetime.date)):
                 format_strs = self._normalize_date_SQL(field_name, field_kwargs)
                 for fname, fvstr, farg in format_strs:
                     if format_str:
@@ -816,8 +824,8 @@ class SQLInterface(Interface):
         with self.transaction(**kwargs) as connection:
             kwargs['connection'] = connection
             # go through and make sure all foreign key referenced tables exist
-            for field_name, field_val in schema.fields.iteritems():
-                s = field_val.ref_schema
+            for field_name, field_val in schema.fields.items():
+                s = field_val.schema
                 if s:
                     self._set_all_tables(s, **kwargs)
 
@@ -828,13 +836,13 @@ class SQLInterface(Interface):
 
     def _update(self, schema, query, d, **kwargs):
         where_query_str, where_query_args = self.get_SQL(schema, query, only_where_clause=True)
-        pk_name = schema.pk
+        pk_name = schema.pk.name
 
         query_str = 'UPDATE {} SET {} {}'
         query_args = []
 
         field_str = []
-        for field_name, field_val in d.iteritems():
+        for field_name, field_val in d.items():
             field_str.append('{} = {}'.format(field_name, self.val_placeholder))
             query_args.append(field_val)
 
@@ -875,9 +883,9 @@ class SQLInterface(Interface):
         is really light, but if they have a default value, then it can be costly
         """
         current_fields = self._get_fields(schema, **kwargs)
-        for field_name, field_options in schema.fields.iteritems():
+        for field_name, field in schema.fields.items():
             if field_name not in current_fields:
-                if field_options.get('required', False):
+                if field.required:
                     raise ValueError('Cannot safely add {} on the fly because it is required'.format(field_name))
 
                 else:
@@ -885,7 +893,7 @@ class SQLInterface(Interface):
                     query_str.append('ALTER TABLE')
                     query_str.append('  {}'.format(schema))
                     query_str.append('ADD COLUMN')
-                    query_str.append('  {}'.format(self.get_field_SQL(field_name, field_options)))
+                    query_str.append('  {}'.format(self.get_field_SQL(field_name, field)))
                     query_str = os.linesep.join(query_str)
                     self.query(query_str, ignore_result=True, **kwargs)
 

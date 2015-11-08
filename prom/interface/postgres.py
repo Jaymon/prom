@@ -128,8 +128,8 @@ class PostgreSQL(SQLInterface):
         query_str.append("CREATE TABLE {} (".format(schema.table))
 
         query_fields = []
-        for field_name, field_options in schema.fields.iteritems():
-            query_fields.append('  {}'.format(self.get_field_SQL(field_name, field_options)))
+        for field_name, field in schema.fields.items():
+            query_fields.append('  {}'.format(self.get_field_SQL(field_name, field)))
 
         query_str.append(",{}".format(os.linesep).join(query_fields))
         query_str.append(')')
@@ -195,9 +195,9 @@ class PostgreSQL(SQLInterface):
         """
         index_fields = []
         for field_name in fields:
-            field_options = schema.fields[field_name]
-            if issubclass(field_options['type'], types.StringTypes):
-                if field_options.get('ignore_case', False):
+            field = schema.fields[field_name]
+            if issubclass(field.type, types.StringTypes):
+                if field.options.get('ignore_case', False):
                     field_name = 'UPPER({})'.format(field_name)
             index_fields.append(field_name)
 
@@ -214,12 +214,12 @@ class PostgreSQL(SQLInterface):
     def _insert(self, schema, d, **kwargs):
 
         # get the primary key
-        pk_name = schema.pk
+        pk_name = schema.pk.name
 
         field_formats = []
         field_names = []
         query_vals = []
-        for field_name, field_val in d.iteritems():
+        for field_name, field_val in d.items():
             field_names.append(field_name)
             field_formats.append('%s')
             query_vals.append(field_val)
@@ -239,7 +239,7 @@ class PostgreSQL(SQLInterface):
         format_val_str = self.val_placeholder
 
         # postgres specific for getting around case sensitivity:
-        if schema.fields[field_name].get('ignore_case', False):
+        if schema.fields[field_name].options.get('ignore_case', False):
             format_field_name = 'UPPER({})'.format(field_name)
             format_val_str = 'UPPER({})'.format(self.val_placeholder)
 
@@ -281,86 +281,87 @@ class PostgreSQL(SQLInterface):
             'week': 'EXTRACT(WEEK FROM {})',
         }
 
-        for k, v in field_kwargs.iteritems():
+        for k, v in field_kwargs.items():
             fstrs.append([k_opts[k].format(field_name), self.val_placeholder, v])
 
         return fstrs
 
-    def get_field_SQL(self, field_name, field_options):
+    def get_field_SQL(self, field_name, field):
         """
         returns the SQL for a given field with full type information
 
         field_name -- string -- the field's name
-        field_options -- dict -- the set options for the field
+        fields -- Field() -- the info for the field
 
         return -- string -- the field type (eg, foo BOOL NOT NULL)
         """
         field_type = ""
 
-        if field_options.get('pk', False):
+        if field.options.get('pk', False):
             field_type = 'BIGSERIAL PRIMARY KEY'
 
         else:
-            if issubclass(field_options['type'], bool):
+            if issubclass(field.type, bool):
                 field_type = 'BOOL'
 
-            elif issubclass(field_options['type'], int):
+            elif issubclass(field.type, int):
                 size = 2147483647
-                if 'size' in field_options:
-                    size = field_options['size']
-                elif 'max_size' in field_options:
-                    size = field_options['max_size']
+                if 'size' in field.options:
+                    size = field.options['size']
+                elif 'max_size' in field.options:
+                    size = field.options['max_size']
 
                 if size < 32767:
                     field_type = 'SMALLINT'
                 else:
-                    if 'ref' in field_options or 'weak_ref' in field_options:
+                    if field.is_ref():
                         field_type = 'BIGINT'
                     else:
                         field_type = 'INTEGER'
 
-            elif issubclass(field_options['type'], long):
+            elif issubclass(field.type, long):
                 field_type = 'BIGINT'
 
-            elif issubclass(field_options['type'], types.StringTypes):
-                if 'size' in field_options:
-                    field_type = 'CHAR({})'.format(field_options['size'])
-                elif 'max_size' in field_options:
-                    field_type = 'VARCHAR({})'.format(field_options['max_size'])
+            elif issubclass(field.type, types.StringTypes):
+                if 'size' in field.options:
+                    field_type = 'CHAR({})'.format(field.options['size'])
+                elif 'max_size' in field.options:
+                    field_type = 'VARCHAR({})'.format(field.options['max_size'])
                 else:
                     field_type = 'TEXT'
 
-            elif issubclass(field_options['type'], datetime.datetime):
+            elif issubclass(field.type, datetime.datetime):
                 # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
                 field_type = 'TIMESTAMP WITHOUT TIME ZONE'
 
-            elif issubclass(field_options['type'], datetime.date):
+            elif issubclass(field.type, datetime.date):
                 field_type = 'DATE'
 
-            elif issubclass(field_options['type'], float):
+            elif issubclass(field.type, float):
                 field_type = 'REAL'
-                size = field_options.get('size', field_options.get('max_size', 0))
+                size = field.options.get('size', field.options.get('max_size', 0))
                 if size > 6:
                     field_type = 'DOUBLE PRECISION'
 
-            elif issubclass(field_options['type'], decimal.Decimal):
+            elif issubclass(field.type, decimal.Decimal):
                 field_type = 'NUMERIC'
 
             else:
-                raise ValueError('unknown python type: {}'.format(field_options['type'].__name__))
+                raise ValueError('unknown python type: {}'.format(field.type.__name__))
 
-            if field_options.get('required', False):
+            if field.required:
                 field_type += ' NOT NULL'
             else:
                 field_type += ' NULL'
 
-            if 'ref' in field_options: # strong ref, it deletes on fk row removal
-                ref_s = field_options.ref_schema
-                field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s.table, ref_s.pk)
+            if field.is_ref():
+                if field.required: # strong ref, it deletes on fk row removal
+                    ref_s = field.schema
+                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s.table, ref_s.pk.name)
 
-            elif 'weak_ref' in field_options: # weak ref, it sets column to null on fk row removal
-                ref_s = field_options.ref_schema
-                field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s.table, ref_s.pk)
+                else: # weak ref, it sets column to null on fk row removal
+                    ref_s = field.schema
+                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s.table, ref_s.pk.name)
 
         return '{} {}'.format(field_name, field_type)
 

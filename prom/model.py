@@ -51,7 +51,10 @@ class Orm(object):
 
     @decorators.classproperty
     def table_name(cls):
-        return cls.__name__.lower()
+        return u"{}_{}".format(
+            cls.__module__.lower().replace(".", "_"),
+            cls.__name__.lower()
+        )
 
     @decorators.classproperty
     def schema(cls):
@@ -83,17 +86,17 @@ class Orm(object):
     @property
     def pk(self):
         """wrapper method to return the primary key, None if the primary key is not set"""
-        return getattr(self, self.schema.pk, None)
+        return getattr(self, self.schema.pk.name, None)
 
     @property
     def created(self):
         """wrapper property method to return the created timestamp"""
-        return getattr(self, self.schema._created, None)
+        return getattr(self, self.schema._created.name, None)
 
     @property
     def updated(self):
         """wrapper property method to return the updated timestamp"""
-        return getattr(self, self.schema._updated, None)
+        return getattr(self, self.schema._updated.name, None)
 
     @property
     def fields(self):
@@ -107,7 +110,7 @@ class Orm(object):
 
     def __init__(self, fields=None, **fields_kwargs):
         self.reset_modified()
-        self.hydrate(fields, fields_kwargs)
+        self.hydrate(fields, **fields_kwargs)
 
     @classmethod
     def create(cls, fields=None, **fields_kwargs):
@@ -138,7 +141,9 @@ class Orm(object):
     def __setattr__(self, field_name, field_val):
         if field_name in self.schema.fields:
             if field_val is not None:
-                field_val = self._normalize_field(field_name, field_val)
+                fnorm = self.schema.fields[field_name].fnormalize
+                if fnorm:
+                    field_val = fnorm(field_name, field_val)
 
             self.modified_fields.add(field_name)
 
@@ -167,7 +172,7 @@ class Orm(object):
         fields = self.get_modified()
 
         q = self.query
-        _id_name = self.schema.pk
+        _id_name = self.schema.pk.name
         _id = self.pk
         if _id:
             q.is_field(_id_name, _id)
@@ -188,7 +193,7 @@ class Orm(object):
         """
         ret = False
 
-        _id_name = self.schema.pk
+        _id_name = self.schema.pk.name
         # we will only use the primary key if it hasn't been modified
         _id = None
         if _id_name not in self.modified_fields:
@@ -206,7 +211,7 @@ class Orm(object):
         ret = False
         q = self.query
         _id = self.pk
-        _id_name = self.schema.pk
+        _id_name = self.schema.pk.name
         if _id:
             self.query.is_field(_id_name, _id).delete()
             # get rid of _id
@@ -230,14 +235,6 @@ class Orm(object):
 
         return fields
 
-    def modify(self, fields=None, **fields_kwargs):
-        """update the fields of this instance with the values in dict fields"""
-        fields = utils.make_dict(fields, fields_kwargs)
-        for field_name, field_val in fields.items():
-            in_schema = field_name in self.schema.fields
-            if in_schema:
-                setattr(self, field_name, field_val)
-
     def is_modified(self):
         """true if a field has been changed from its original value, false otherwise"""
         return len(self.modified_fields) > 0
@@ -252,24 +249,32 @@ class Orm(object):
         """
         self.modified_fields = set()
 
+    def modify(self, fields=None, **fields_kwargs):
+        """update the fields of this instance with the values in dict fields"""
+        modified_fields = set()
+        fields = utils.make_dict(fields, fields_kwargs)
+        for field_name, field_val in fields.items():
+            in_schema = field_name in self.schema.fields
+            if in_schema:
+                setattr(self, field_name, field_val)
+                modified_fields.add(field_name)
+
+        return modified_fields
+
     def hydrate(self, fields=None, **fields_kwargs):
         """figure out what value to give every field in the Orm's schema, this means
         that if a field is missing from the passed in fields dict, it will be set
         to None for this instance, if you just want to deal with fields that you
         passed in manipulating this instance, use .modify()"""
-        fields = utils.make_dict(fields, fields_kwargs)
-        schema_fields = set(self.schema.fields.keys())
-        for field_name, field_val in fields.items():
-            in_schema = field_name in self.schema.fields
-            if in_schema:
-                setattr(self, field_name, field_val)
-                schema_fields.discard(field_name)
+        modified_fields = self.modify(fields, **fields_kwargs)
 
         # pick up any stragglers and set them to None:
-        for field_name in schema_fields:
-            if not field_name.startswith('_'):
+        for field_name in self.schema.fields.keys():
+            if field_name not in modified_fields:
                 setattr(self, field_name, None)
                 self.modified_fields.discard(field_name)
+
+        return modified_fields
 
     def jsonable(self, *args, **options):
         """
@@ -296,7 +301,7 @@ class Orm(object):
 
             return r
 
-        for field_name, field_info in self.schema.normal_fields.iteritems():
+        for field_name, field in self.schema.normal_fields.items():
             try:
                 d[field_name] = getattr(self, field_name, None)
                 if d[field_name]:
@@ -306,26 +311,12 @@ class Orm(object):
                         d[field_name] = str(d[field_name])
 
                 else:
-                    d[field_name] = default_field_type(field_info['type'])
+                    d[field_name] = default_field_type(field.type)
 
             except AttributeError:
-                d[field_name] = default_field_type(field_info['type'])
+                d[field_name] = default_field_type(field.type)
 
         return d
-
-    def _normalize_field(self, field_name, field_val):
-        """
-        you can override this to modify/check certain values as they are modified
-
-        NOTE -- this will not be called with a None value, a None value is assumed
-        to be NULL and that you don't have to do any normalizing, so it gets set
-        directly
-
-        field_name -- string -- the field's name
-        field_val -- mixed -- the field's value
-        return -- mixed -- the field_val, with any changes
-        """
-        return field_val
 
     @classmethod
     def install(cls):

@@ -20,7 +20,7 @@ except ImportError as e:
 
 from prom import query
 from prom.model import Orm
-from prom.config import Schema, Connection, DsnConnection, Field
+from prom.config import Schema, Connection, DsnConnection, Field, Index
 from prom.interface.postgres import PostgreSQL
 from prom.interface.sqlite import SQLite
 import prom
@@ -96,9 +96,9 @@ def get_schema(table_name=None):
 
     s = Schema(
         table_name,
-        foo=(int, True),
-        bar=(str, True),
-        index_ifoobar=("foo", "bar")
+        foo=Field(int, True),
+        bar=Field(str, True),
+        ifoobar=Index("foo", "bar")
     )
 
     return s
@@ -117,7 +117,7 @@ def insert(interface, schema, count, **kwargs):
     """
     _ids = []
 
-    for i in xrange(1, count + 1):
+    for i in range(1, count + 1):
         q = query.Query()
         q.set_fields({
             'foo': i,
@@ -127,8 +127,8 @@ def insert(interface, schema, count, **kwargs):
 
         assert 'foo' in d
         assert 'bar' in d
-        assert schema._id in d
-        _ids.append(d[schema._id])
+        assert schema._id.name in d
+        _ids.append(d[schema._id.name])
 
     return _ids
 
@@ -187,9 +187,9 @@ class OrmTest(TestCase):
         table_name = get_table_name()
         Torm.schema = Schema(
             table_name,
-            foo=(int, True),
-            bar=(str, True),
-            che=(str, False),
+            foo=Field(int, True),
+            bar=Field(str, True),
+            che=Field(str, False),
         )
 
         t = Torm.create(foo=1, bar="blah")
@@ -198,53 +198,16 @@ class OrmTest(TestCase):
         self.assertEqual("blah", d['bar'])
         self.assertEqual("", d['che'])
 
-    def test__normalize_field(self):
-        table_name = get_table_name()
-        class TNF(Torm):
-            field_names = set()
-            schema = Schema(
-                table_name,
-                foo=(int, True),
-                bar=(str, True),
-                che=(str, False),
-            )
-
-            def _normalize_field(self, field_name, field_val):
-                self.field_names.add(field_name)
-
-                if field_name == 'random_1':
-                    self.random_2 = True
-
-                return super(TNF, self)._normalize_field(field_name, field_val)
-
-        t = TNF()
-
-        t.random_val = 'foo'
-        self.assertTrue('random_val' in t.field_names)
-
-        t.random_1 = True
-        self.assertTrue(t.random_1)
-        self.assertTrue(t.random_2)
-
-        t = TNF(random_1=True)
-        with self.assertRaises(AttributeError):
-            t.random_1
-        self.assertTrue(t.random_2)
-
     def test_modify(self):
-        table_name = get_table_name()
-        class TM(Torm):
-            schema = Schema(
-                table_name,
-                bar=(str, True),
-                che=(str, False),
-            )
+        class TM(prom.Orm):
+            table_name = get_table_name()
 
-            def _normalize_field(self, field_name, field_val):
-                if field_name == 'che':
-                    if not field_val.startswith('boom'):
-                        raise ValueError("what the heck?")
+            bar=Field(str, True)
 
+            @Field(str, False)
+            def che(self, field_val):
+                if not field_val.startswith('boom'):
+                    raise ValueError("what the heck?")
                 return field_val
 
         t = TM(bar='bam')
@@ -254,6 +217,10 @@ class OrmTest(TestCase):
 
         t = TM(che='boom')
 
+        self.assertIsNone(t.pk)
+        self.assertIsNone(t._created)
+        self.assertIsNone(t._updated)
+
     def test_unicode(self):
         """
         Jarid was having encoding issues, so I'm finally making sure prom only ever
@@ -262,10 +229,10 @@ class OrmTest(TestCase):
         table_name = get_table_name()
         Torm.schema = Schema(
             table_name,
-            foo=(unicode, True),
-            bar=(str, True),
-            che=(str, False),
-            baz=(int, False),
+            foo=Field(unicode, True),
+            bar=Field(str, True),
+            che=Field(str, False),
+            baz=Field(int, False),
         )
 
         t = Torm.create(
@@ -385,10 +352,10 @@ class OrmTest(TestCase):
         t = Torm(foo=1, bar="value 1", this_is_ignored="as it should be")
         self.assertEqual(1, t.foo)
         self.assertEqual("value 1", t.bar)
-        self.assertFalse(hasattr(t, '_id'))
+        self.assertIsNone(t.pk)
         self.assertTrue(t.is_modified())
         t.set()
-        self.assertTrue(hasattr(t, '_id'))
+        self.assertIsNotNone(t.pk)
         self.assertFalse(t.is_modified())
 
         t.foo = 2
@@ -441,8 +408,8 @@ class OrmTest(TestCase):
             self.assertTrue(f in d)
 
         # just make sure changing the dict doesn't mess up the Orm instance
-        d[t.schema.pk] = d[t.schema.pk] + 1
-        self.assertNotEqual(d[t.schema.pk], t.pk)
+        d["_id"] = d["_id"] + 1
+        self.assertNotEqual(d["_id"], t.pk)
 
     def test_pickling(self):
         t = Torm(foo=10000, bar="value10000")
@@ -529,18 +496,16 @@ class ConfigSchemaTest(TestCase):
         s = Schema("foo")
         self.assertTrue(isinstance(s.fields, dict))
         self.assertTrue(isinstance(s.indexes, dict))
-        s.foo = int, True
 
         s2 = Schema("bar")
         self.assertTrue(isinstance(s.fields, dict))
         self.assertTrue(isinstance(s.indexes, dict))
-        s2.foo = str, True
 
         s = Schema(
             "foo",
-            bar=(int,),
-            che=(str, True),
-            index_barche=("bar", "che")
+            bar=Field(int),
+            che=Field(str, True),
+            barche=Index("bar", "che")
         )
         self.assertTrue("bar" in s.fields)
         self.assertTrue("che" in s.fields)
@@ -552,9 +517,8 @@ class ConfigSchemaTest(TestCase):
         with self.assertRaises(AttributeError):
             s.foo
 
-        s.foo = int, True
-
-        self.assertEqual("foo", s.foo)
+        s.set_field("foo", Field(int, True))
+        self.assertTrue(isinstance(s.foo, Field))
 
     def test_set_field(self):
         s = Schema("foo")
@@ -566,94 +530,35 @@ class ConfigSchemaTest(TestCase):
             s.set_field("foo", "bogus")
 
         s.set_field("foo", prom.Field(int))
-        self.assertEqual({'name': "foo", 'type': int, 'required': False, 'unique': False}, s.fields["foo"])
-
         with self.assertRaises(ValueError):
             s.set_field("foo", int)
 
-        s.set_field("bar", prom.Field(int, True))
-        self.assertEqual({'name': "bar", 'type': int, 'required': True, 'unique': False}, s.fields["bar"])
-
-        s.set_field("che", prom.Field(int, True, size=10))
-        self.assertEqual({'name': "che", 'type': int, 'required': True, "size": 10, 'unique': False}, s.fields["che"])
-
-        with self.assertRaises(ValueError):
-            s.set_field("baz", prom.Field(int, True, min_size=10))
-
-        s = Schema("foo")
-        s.set_field("foo", prom.Field(int, size=10, max_size=50))
-        self.assertEqual({'name': "foo", 'type': int, 'required': False, "size": 10, 'unique': False}, s.fields["foo"])
-
-        s = Schema("foo")
-        s.set_field("foo", prom.Field(int, min_size=10, max_size=50))
-        self.assertEqual(
-            {'name': "foo", 'type': int, 'required': False, "min_size": 10, "max_size": 50, 'unique': False},
-            s.fields["foo"]
-        )
-        self.assertFalse("foo" in s.indexes)
-
         s = Schema("foo")
         s.set_field("foo", prom.Field(int, unique=True))
-        self.assertEqual({'name': "foo", 'type': int, 'required': False, 'unique': True}, s.fields["foo"])
-        self.assertEqual({'name': "foo", 'fields': ["foo"], 'unique': True}, s.indexes["foo"])
+        self.assertTrue("foo" in s.fields)
+        self.assertTrue("foo" in s.indexes)
 
         s = Schema("foo")
         s.set_field("foo", prom.Field(int, ignore_case=True))
-        self.assertEqual({'name': "foo", 'type': int, 'required': False, 'ignore_case': True, 'unique': False}, s.fields["foo"])
-
-    def test___setattr__field(self):
-        s = Schema("foo")
-        s.bar = int, True
-        self.assertEqual({'name': "bar", 'type': int, 'required': True, 'unique': False}, s.fields["bar"])
-
-        s.che = int
-        self.assertEqual({'name': "che", 'type': int, 'required': False, 'unique': False}, s.fields["che"])
-
-        s.foobar = int,
-        self.assertEqual({'name': "foobar", 'type': int, 'required': False, 'unique': False}, s.fields["foobar"])
-
-        s.baz = int, True, {"size": 10}
-        self.assertEqual({'name': "baz", 'type': int, 'required': True, "size": 10, 'unique': False}, s.fields["baz"])
-
-        with self.assertRaises(ValueError):
-            s.che = str,
+        self.assertTrue(s.foo.options["ignore_case"])
 
     def test_set_index(self):
         s = Schema("foo")
-        s.bar = int, True
-        s.che = str
+        s.set_field("bar", Field(int, True))
+        s.set_field("che", Field(str))
 
         with self.assertRaises(ValueError):
-            s.set_index("foo", [])
+            s.set_index("foo", Index())
 
-        s.set_index("", [s.bar, s.che])
-        self.assertEqual({'name': "bar_che", 'fields': ["bar", "che"], 'unique': False}, s.indexes["bar_che"])
         with self.assertRaises(ValueError):
-            s.set_index("bar_che", ["che", "bar"])
+            s.set_index("", Index("bar", "che"))
 
-        s.set_index("testing", [s.che], unique=True)
-        self.assertEqual({'name': "testing", 'fields': ["che"], 'unique': True}, s.indexes["testing"])
+        s.set_index("bar_che", Index("che", "bar"))
+        with self.assertRaises(ValueError):
+            s.set_index("bar_che", Index("che", "bar"))
 
-    def test___setattr__index(self):
-        s = Schema("foo")
-        s.foo = int,
-        s.bar = int, True
-        s.che = str
-
-        s.index = s.bar, s.che
-        self.assertEqual({'name': "bar_che", 'fields': ["bar", "che"], 'unique': False}, s.indexes["bar_che"])
-
-        s.index_chebar = s.che, s.bar
-        self.assertEqual({'name': "chebar", 'fields': ["che", "bar"], 'unique': False}, s.indexes["chebar"])
-
-        s.index_test = s.che
-        self.assertEqual({'name': "test", 'fields': ["che"], 'unique': False}, s.indexes["test"])
-
-        s.index_test_2 = s.bar,
-        self.assertEqual({'name': "test_2", 'fields': ["bar"], 'unique': False}, s.indexes["test_2"])
-
-        s.unique_test3 = s.foo,
-        self.assertEqual({'name': "test3", 'fields': ["foo"], 'unique': True}, s.indexes["test3"])
+        s.set_index("testing", Index("che", unique=True))
+        self.assertTrue(s.indexes["testing"].unique)
 
     def test_primary_key(self):
         s = Schema("foo")
@@ -889,31 +794,30 @@ class ConfigFieldTest(TestCase):
     def test_decorator(self):
 
         class FieldDecTest(object):
-            table_name = "field_dec"
-
             @prom.Field(int)
             def foo(self, val):
                 return int(val) + 10
 
             bar = prom.Field(str)
 
-        pout.v(FieldDecTest.foo)
-        instance = FieldDecTest()
-        pout.v(instance.foo)
+        self.assertTrue(FieldDecTest.foo.fnormalize)
 
-        pout.v(Schema.get_instance(FieldDecTest))
-        return
+    def test_ref(self):
+        testdata.create_module("ref", "\n".join([
+                "import prom",
+                "class Foo(prom.Orm):",
+                "    che = prom.Field(str)",
+                "",
+                "class Bar(prom.Orm):",
+                "    foo_id = prom.Field(Foo)",
+                ""
+            ])
+        )
 
-        f2 = prom.Field(str)
-        pout.b("foo class set")
-        FieldDecTest.foo = f2
-        pout.b("foo instance set")
-        instance.foo = f2
+        from ref import Foo, Bar
 
-        b2 = prom.Field(str)
-        pout.b("bar instance set")
-        instance.bar = b2
-
+        self.assertTrue(isinstance(Bar.schema.fields['foo_id'].schema, prom.Schema))
+        self.assertTrue(issubclass(Bar.schema.fields['foo_id'].type, long))
 
     def test_string_ref(self):
         testdata.create_modules({
@@ -936,10 +840,10 @@ class ConfigFieldTest(TestCase):
         from stringref.foo import Foo
         from stringref.bar import Bar
 
-        pout.v(Foo.schema.fields['bar_id']["field"].type)
-
-        self.assertTrue(isinstance(Foo.schema.fields['bar_id'].ref_schema, prom.Schema))
-        self.assertTrue(isinstance(Bar.schema.fields['foo_id'].ref_schema, prom.Schema))
+        self.assertTrue(isinstance(Foo.schema.fields['bar_id'].schema, prom.Schema))
+        self.assertTrue(issubclass(Foo.schema.fields['bar_id'].type, long))
+        self.assertTrue(isinstance(Bar.schema.fields['foo_id'].schema, prom.Schema))
+        self.assertTrue(issubclass(Bar.schema.fields['foo_id'].type, long))
 
     def test___init__(self):
         f = prom.Field(str, True)
@@ -1026,9 +930,9 @@ class BaseTestInterface(TestCase):
         # make sure known indexes are there
         indexes = i.get_indexes(s)
         count = 0
-        for known_index_name, known_index_d in s.indexes.iteritems():
-            for index_name, index_fields in indexes.iteritems():
-                if known_index_d['fields'] == index_fields:
+        for known_index_name, known_index in s.indexes.items():
+            for index_name, index_fields in indexes.items():
+                if known_index.fields == index_fields:
                     count += 1
 
         self.assertEqual(len(s.indexes), count)
@@ -1040,14 +944,14 @@ class BaseTestInterface(TestCase):
 
         s = prom.Schema(
             get_table_name(),
-            one=(bool, True),
-            two=(int, True, dict(size=50)),
-            three=(decimal.Decimal,),
-            four=(float, True, dict(size=10)),
-            six=(long, True,),
-            seven=(int, False, dict(ref=s_ref)),
-            eight=(datetime.datetime,),
-            nine=(datetime.date,),
+            one=Field(bool, True),
+            two=Field(int, True, size=50),
+            three=Field(decimal.Decimal),
+            four=Field(float, True, size=10),
+            six=Field(long, True,),
+            seven=Field(int, False, ref=s_ref),
+            eight=Field(datetime.datetime),
+            nine=Field(datetime.date),
         )
         r = i.set_table(s)
         d = {
@@ -1062,7 +966,7 @@ class BaseTestInterface(TestCase):
         }
         o = i.insert(s, d)
         q = query.Query()
-        q.is__id(o[s.pk])
+        q.is__id(o[s.pk.name])
         odb = i.get_one(s, q)
         #d['five'] = 1.98765
         for k, v in d.iteritems():
@@ -1121,7 +1025,7 @@ class BaseTestInterface(TestCase):
         }
 
         rd = i.insert(s, d)
-        self.assertGreater(rd[s._id], 0)
+        self.assertGreater(rd[s._id.name], 0)
 
     def test_set_insert(self):
         """test just the insert portion of set"""
@@ -1134,7 +1038,7 @@ class BaseTestInterface(TestCase):
         })
 
         rd = i.set(s, q)
-        self.assertGreater(rd[s._id], 0)
+        self.assertGreater(rd[s._id.name], 0)
 
     def test_get_sql(self):
         i = self.get_interface()
@@ -1174,7 +1078,7 @@ class BaseTestInterface(TestCase):
             q = query.Query()
             q.is__id(_id)
             d = i.get_one(s, q)
-            self.assertEqual(d[s._id], _id)
+            self.assertEqual(d[s._id.name], _id)
 
         q = query.Query()
         q.is__id(12334342)
@@ -1238,13 +1142,13 @@ class BaseTestInterface(TestCase):
         l = i.get(s, q)
         self.assertEqual(len(_ids), len(l))
         for d in l:
-            self.assertTrue(d[s._id] in _ids)
+            self.assertTrue(d[s._id.name] in _ids)
 
         q.set_limit(2)
         l = i.get(s, q)
         self.assertEqual(2, len(l))
         for d in l:
-            self.assertTrue(d[s._id] in _ids)
+            self.assertTrue(d[s._id.name] in _ids)
 
     def test_get_no_where(self):
         """test get with no where clause"""
@@ -1267,7 +1171,7 @@ class BaseTestInterface(TestCase):
             q.set_page(p)
             l = i.get(s, q)
             for d in l:
-                self.assertTrue(d[s._id] in _ids)
+                self.assertTrue(d[s._id.name] in _ids)
 
             count += len(l)
 
@@ -1331,14 +1235,14 @@ class BaseTestInterface(TestCase):
         }
 
         rd = i.insert(s, d)
-        self.assertGreater(rd[s._id], 0)
+        self.assertGreater(rd[s._id.name], 0)
 
         d = {
             'foo': 2,
             'bar': 'value 2',
         }
         q.set_fields(d)
-        q.is_field(s._id, rd[s._id])
+        q.is_field(s._id.name, rd[s._id.name])
 
         ud = i.update(s, q)
 
@@ -1347,11 +1251,11 @@ class BaseTestInterface(TestCase):
 
         # let's pull it out and make sure it persisted
         q = query.Query()
-        q.is__id(rd[s._id])
+        q.is__id(rd[s._id.name])
         gd = i.get_one(s, q)
         self.assertEqual(ud['foo'], gd['foo'])
         self.assertEqual(ud['bar'], gd['bar'])
-        self.assertEqual(rd[s._id], gd[s._id])
+        self.assertEqual(rd[s._id.name], gd[s._id.name])
 
     def test_ref(self):
         i = self.get_interface()
@@ -1360,21 +1264,21 @@ class BaseTestInterface(TestCase):
 
         s_1 = Schema(
             table_name_1,
-            foo=(int, True)
+            foo=Field(int, True)
         )
         s_2 = Schema(
             table_name_2,
-            s_pk=(int, True, dict(ref=s_1)),
+            s_pk=Field(s_1, True),
         )
 
         i.set_table(s_1)
         i.set_table(s_2)
 
         d1 = i.insert(s_1, {'foo': 1})
-        pk1 = d1[s_1.pk]
+        pk1 = d1[s_1.pk.name]
 
         d2 = i.insert(s_2, {'s_pk': pk1})
-        pk2 = d2[s_2.pk]
+        pk2 = d2[s_2.pk.name]
 
         q2 = query.Query()
         q2.is__id(pk2)
@@ -1396,21 +1300,21 @@ class BaseTestInterface(TestCase):
 
         s_1 = Schema(
             table_name_1,
-            foo=(int, True)
+            foo=Field(int, True)
         )
         s_2 = Schema(
             table_name_2,
-            s_pk=(int, False, dict(weak_ref=s_1)),
+            s_pk=Field(s_1, False),
         )
 
         i.set_table(s_1)
         i.set_table(s_2)
 
         d1 = i.insert(s_1, {'foo': 1})
-        pk1 = d1[s_1.pk]
+        pk1 = d1[s_1.pk.name]
 
         d2 = i.insert(s_2, {'s_pk': pk1})
-        pk2 = d2[s_2.pk]
+        pk2 = d2[s_2.pk.name]
         q2 = query.Query()
         q2.is__id(pk2)
         # make sure it exists and is visible
@@ -1432,12 +1336,12 @@ class BaseTestInterface(TestCase):
 
         s_1 = Schema(
             table_name_1,
-            foo=(int, True)
+            foo=Field(int, True)
         )
         s_2 = Schema(
             table_name_2,
-            bar=(int, True),
-            s_pk=(int, True, dict(ref=s_1)),
+            bar=Field(int, True),
+            s_pk=Field(s_1),
         )
 
         q2 = query.Query()
@@ -1455,7 +1359,7 @@ class BaseTestInterface(TestCase):
 
     def test__set_all_fields(self):
         i, s = self.get_table()
-        s.che = str, True
+        s.set_field("che", Field(str, True))
         q = query.Query()
         q.set_fields({
             'foo': 1,
@@ -1473,7 +1377,7 @@ class BaseTestInterface(TestCase):
 
     def test_handle_error_column(self):
         i, s = self.get_table()
-        s.che = str, True
+        s.set_field("che", Field(str, True))
         q = query.Query()
         q.set_fields({
             'foo': 1,
@@ -1485,7 +1389,7 @@ class BaseTestInterface(TestCase):
             rd = i.set(s, q)
 
         s = get_schema(table_name=s.table)
-        s.che = str, False
+        s.set_field("che", Field(str, False))
         rd = i.set(s, q)
         self.assertTrue('che' in rd)
 
@@ -1527,12 +1431,12 @@ class BaseTestInterface(TestCase):
 
         s1 = Schema(
             table_name_1,
-            foo=(int, True)
+            foo=Field(int, True)
         )
         s2 = Schema(
             table_name_2,
-            bar=(int, True),
-            s_pk=(int, True, dict(ref=s1)),
+            bar=Field(int, True),
+            s_pk=Field(s1),
         )
 
         with i.transaction() as connection:
@@ -1563,14 +1467,14 @@ class BaseTestInterface(TestCase):
 
         s1 = Schema(
             table_name_1,
-            foo=(int, True)
+            foo=Field(int, True)
         )
         i.set_table(s1)
 
         s2 = Schema(
             table_name_2,
-            bar=(int, True),
-            s_pk=(int, True, dict(ref=s1)),
+            bar=Field(int, True),
+            s_pk=Field(s1),
         )
 
         with i.transaction() as connection:
@@ -1601,15 +1505,15 @@ class BaseTestInterface(TestCase):
 
         s1 = Schema(
             table_name_1,
-            foo=(int, True)
+            foo=Field(int, True)
         )
         i.set_table(s1)
 
         s2 = Schema(
             table_name_2,
-            bar=(int, True),
-            s_pk=(int, True, dict(ref=s1)),
-            s_pk2=(int, True, dict(ref=s1)),
+            bar=Field(int, True),
+            s_pk=Field(s1),
+            s_pk2=Field(s1),
         )
 
         q1 = query.Query()
@@ -1644,23 +1548,23 @@ class BaseTestInterface(TestCase):
         # these 2 tables exist before the transaction starts
         s1 = Schema(
             table_name_1,
-            foo=(int, True)
+            foo=Field(int, True)
         )
         i.set_table(s1)
 
         s2 = Schema(
             table_name_2,
-            bar=(int, True),
-            s_pk=(int, True, dict(ref=s1)),
-            s_pk2=(int, True, dict(ref=s1)),
+            bar=Field(int, True),
+            s_pk=Field(s1),
+            s_pk2=Field(s1),
         )
         i.set_table(s2)
 
         # this is the table that will be created in the transaction
         s3 = Schema(
             table_name_3,
-            che=(int, True),
-            s_pk=(int, True, dict(ref=s1)),
+            che=Field(int, True),
+            s_pk=Field(s1),
         )
 
         q1 = query.Query()
@@ -1699,14 +1603,14 @@ class BaseTestInterface(TestCase):
         # these 2 tables exist before the transaction starts
         s1 = Schema(
             table_name_1,
-            foo=(int, True)
+            foo=Field(int, True)
         )
         i.set_table(s1)
 
         s2 = Schema(
             table_name_2,
-            bar=(int, True),
-            s_pk=(int, True, dict(ref=s1)),
+            bar=Field(int, True),
+            s_pk=Field(int, True, ref=s1),
         )
         i.set_table(s2)
 
@@ -1736,7 +1640,7 @@ class BaseTestInterface(TestCase):
     def test_unique(self):
         i = get_interface()
         s = get_schema()
-        s.should_be_unique = int, True, dict(unique=True)
+        s.set_field("should_be_unique", Field(int, True, unique=True))
         i.set_table(s)
 
         d = i.insert(s, {'foo': 1, 'bar': 'v1', 'should_be_unique': 1})
@@ -1748,9 +1652,9 @@ class BaseTestInterface(TestCase):
         i = self.get_interface()
         s = Schema(
             get_table_name(),
-            foo=(str, True, dict(ignore_case=True)),
-            bar=(str, True),
-            index_foo=('foo', 'bar'),
+            foo=Field(str, True, ignore_case=True),
+            bar=Field(str, True),
+            index_foo=Index('foo', 'bar'),
         )
         i.set_table(s)
 
@@ -1887,8 +1791,8 @@ class BaseTestInterface(TestCase):
         i = self.get_interface()
         s = Schema(
             get_table_name(),
-            foo=(datetime.datetime, True),
-            index_foo=('foo'),
+            foo=Field(datetime.datetime, True),
+            index_foo=Index('foo'),
         )
         i.set_table(s)
 
@@ -1951,9 +1855,9 @@ class InterfacePostgresTest(BaseTestInterface):
         i = self.get_interface()
         s = prom.Schema(
             get_table_name(),
-            four=(float, True, dict(size=10)),
-            five=(float, True,),
-            six=(long, True,),
+            four=Field(float, True, size=10),
+            five=Field(float, True),
+            six=Field(long, True),
         )
         r = i.set_table(s)
         d = {
@@ -1963,7 +1867,7 @@ class InterfacePostgresTest(BaseTestInterface):
         }
         o = i.insert(s, d)
         q = query.Query()
-        q.is__id(o[s.pk])
+        q.is__id(o[s.pk.name])
         odb = i.get_one(s, q)
         for k, v in d.iteritems():
             self.assertEqual(v, odb[k])
@@ -2289,7 +2193,7 @@ class IteratorTest(TestCase):
     def test___getitem__(self):
         count = 5
         i = self.get_iterator(count)
-        for x in xrange(count):
+        for x in range(count):
             self.assertEqual(i[x].pk, i.results[x]['_id'])
 
         with self.assertRaises(IndexError):
@@ -2306,7 +2210,7 @@ class IteratorTest(TestCase):
         rs = list(i.foo)
         self.assertEqual(count, len(rs))
 
-        with self.assertRaises(KeyError):
+        with self.assertRaises(AttributeError):
             i.kadfjkadfjkhjkgfkjfkjk_bogus_field
 
     def test_pk(self):
@@ -2338,7 +2242,7 @@ class QueryTest(TestCase):
     def test_query_ref(self):
         t1 = get_orm_class()
         t2 = get_orm_class()
-        t2.schema.che = Field(int, ref=t1)
+        t2.schema.set_field("che", Field(t1, True))
         orm_classpath = "{}.{}".format(t1.__module__, t1.__name__)
         q = t2.query.ref(orm_classpath)
         self.assertEqual([], q.fields_where)
@@ -2366,7 +2270,7 @@ class QueryTest(TestCase):
                 "        'qr2_Bar',",
                 "        foo=prom.Field(int, True),",
                 "        bar=prom.Field(str, True),",
-                "        che=prom.Field(int, ref=Foo)",
+                "        che=prom.Field(Foo, True)",
                 "    )",
                 ""
             ])
@@ -2449,13 +2353,13 @@ class QueryTest(TestCase):
         q.set_pk()
 
         for where_tuple in q.fields_where:
-            self.assertEqual(where_tuple[1], tclass.schema.pk)
+            self.assertEqual(where_tuple[1], "_id")
 
         for sort_tuple in q.fields_sort:
-            self.assertEqual(sort_tuple[1], tclass.schema.pk)
+            self.assertEqual(sort_tuple[1], "_id")
 
         for set_tuple in q.fields_set:
-            self.assertEqual(set_tuple[0], tclass.schema.pk)
+            self.assertEqual(set_tuple[0], "_id")
 
         #self.assertEqual(q.fields_where[0][1], tclass.schema.pk)
 

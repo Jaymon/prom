@@ -281,8 +281,8 @@ class Query(object):
         q = orm_class.query
         if cls_pk:
             ref_s = orm_class.schema
-            for fn, f in ref_s.fields.iteritems():
-                cls_ref_s = f.ref_schema
+            for fn, f in ref_s.fields.items():
+                cls_ref_s = f.schema
                 if cls_ref_s and self.orm.schema == cls_ref_s:
                         q.is_field(fn, cls_pk)
                         break
@@ -612,12 +612,12 @@ class Query(object):
 
     def get_pks(self, field_vals):
         """convenience method for running in__id([...]).get() since this is so common"""
-        field_name = self.orm.schema.pk
+        field_name = self.orm.schema.pk.name
         return self.in_field(field_name, field_vals).get()
 
     def get_pk(self, field_val):
         """convenience method for running is_pk(_id).get_one() since this is so common"""
-        field_name = self.orm.schema.pk
+        field_name = self.orm.schema.pk.name
         return self.is_field(field_name, field_val).get_one()
 
     def first(self):

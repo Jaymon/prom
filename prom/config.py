@@ -171,20 +171,6 @@ class Schema(object):
     """dict -- all the indexes this schema will have"""
 
     @property
-    def pk(self):
-        """return the primary key of the table schema"""
-        ret = None
-        for field_name, field_options in self.fields.items():
-            if field_options.get('pk', False):
-                ret = field_name
-                break
-
-        if not ret:
-            raise AttributeError("no primary key in schema")
-
-        return ret
-
-    @property
     def normal_fields(self):
         """fields that aren't magic (eg, aren't _id, _created, _updated)"""
         return {f:v for f, v in self.fields.items() if not f.startswith('_')}
@@ -192,7 +178,7 @@ class Schema(object):
     @property
     def required_fields(self):
         """The normal required fields (eg, no magic fields like _id are included)"""
-        return {f:v for f, v in self.normal_fields.items() if v['required']}
+        return {f:v for f, v in self.normal_fields.items() if v.required}
 
     @property
     def magic_fields(self):
@@ -214,7 +200,7 @@ class Schema(object):
 
         return cls.instances[table_name]
 
-    def __init__(self, table, **fields):
+    def __init__(self, table, **fields_or_indexes):
         """
         create an instance
 
@@ -240,11 +226,11 @@ class Schema(object):
         self.set_field("_created", Field(datetime.datetime, True))
         self.set_field("_updated", Field(datetime.datetime, True))
 
-        self.set_index("updated", Index(self._updated))
-        self.set_index("created", Index(self._created))
+        self.set_index("updated", Index("_updated"))
+        self.set_index("created", Index("_created"))
 
-        for field_name, field_val in fields.items():
-            setattr(self, field_name, field_val)
+        for name, val in fields_or_indexes.items():
+            self.set(name, val)
 
     def __str__(self):
         return self.table
@@ -259,45 +245,33 @@ class Schema(object):
         else:
             raise TypeError("not a Field or Index instance")
 
-
     def __getattr__(self, name):
         """
-        this is mainly here to enable fluid defining of indexes using class attributes
-
-        example -- 
-            self.set_field("foo", Field(int, True))
-            self.index_foo = s.foo # s.foo seems more fluid to me than "foo" :P
+        return the Field instance for the given name
 
         return -- string -- the string value of the attribute name, eg, self.foo returns "foo"
         """
-        if not name in self.fields:
-            raise AttributeError("{} is not a valid field name".format(name))
+        if name in self.fields:
+            return self.fields[name]
 
-        return self.fields[name]['name']
+        else:
+            if name == u"pk":
+                for field_name, field in self.fields.items():
+                    if field.options.get('pk', False):
+                        return field
+
+            raise AttributeError("No {} field in schema {}".format(name, self.table))
 
     def set_field(self, field_name, field):
         if not field_name: raise ValueError("field_name is empty")
         if field_name in self.fields: raise ValueError("{} already exists and cannot be changed".format(field_name))
         if not isinstance(field, Field): raise ValueError("{} is not a Field instance".format(type(field)))
 
-        d = FieldOptions(
-            name=field_name,
-            type=field.type,
-            required=field.required,
-            field=field
-        )
-#        d = {
-#            'name': field_name,
-#            'type': field[0],
-#            'required': field[1]
-#        }
-
+        field.name = field_name
         if field.options['unique']:
             self.set_index(field_name, Index(field_name, unique=True))
 
-        d.update(field.options)
-        self.fields[field_name] = d
-
+        self.fields[field_name] = field
         return self
 
     def set_index(self, index_name, index):
@@ -308,27 +282,18 @@ class Schema(object):
         but you can use this if you want to get closer to the bare metal
 
         index_name -- string -- the name of the index
-        index_fields -- list -- the string field_names this index will index on, fields have to be already added
-            to this schema index
-        **options -- dict --
-            unique -- boolean -- True if the index should be unique, false otherwise
+        index -- Index() -- an Index instance
         """
         if not index_name:
             raise ValueError("index_name must have a value")
         if index_name in self.indexes:
             raise ValueError("index_name {} has already been defined on {}".format(
-                index_name, str(self.indexes[index_name]['fields'])
+                index_name, str(self.indexes[index_name].fields)
             ))
         if not isinstance(index, Index): raise ValueError("{} is not an Index instance".format(type(index)))
 
-        self.indexes[index_name] = {
-            'name': index_name,
-            'fields': index.fields,
-            'unique': False,
-            'index': index
-        }
-        self.indexes[index_name].update(index.options)
-
+        index.name = index_name
+        self.indexes[index_name] = index
         return self
 
     def field_name(self, k):
@@ -338,11 +303,7 @@ class Schema(object):
         most of the time, the field_name of k will just be k, but this makes special
         allowance for k's like "pk" which will return _id
         """
-        if k == u'pk': k = self.pk
-        if k not in self.fields:
-            raise KeyError(u"key {} is not in the {} schema".format(k, self.table))
-
-        return k
+        return self.__getattr__(k).name
 
 
 class Index(object):
@@ -358,8 +319,10 @@ class Index(object):
         if not fields:
             raise ValueError("fields list is empty")
 
+        self.name = ""
         self.fields = map(str, fields)
         self.options = options
+        self.unique = options.get("unique", False)
 
 
 class Field(object):
@@ -369,7 +332,7 @@ class Field(object):
         """return the schema instance if this is reference to another table"""
         if not hasattr(self, "_schema"):
             ret = None
-            o = self.type
+            o = self._type
             if isinstance(o, types.TypeType):
                 ret = getattr(o, "schema", None)
 
@@ -386,12 +349,12 @@ class Field(object):
 
     @property
     def type(self):
-        if not isinstance(self._type, types.TypeType):
+        ret = self._type
+        if not isinstance(ret, types.TypeType) or hasattr(ret, "schema"):
             s = self.schema
+            ret = s.pk.type
 
-
-            raise ValueError("field_type is not a valid python built-in type: str, int, float, ...")
-
+        return ret
 
     def __init__(self, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
@@ -436,10 +399,17 @@ class Field(object):
         field_options.setdefault("unique", False)
         field_options.update(d)
 
+        self.name = ""
         self._type = field_type
         self.required = field_required
+        self.fnormalize = field_options.pop("fnormalize", None)
         self.options = field_options
-        self.normalize = None
+
+    def is_ref(self):
+        return bool(self.schema)
+
+    def is_weakref(self):
+        return not self.required and self.is_ref()
 
     def __get__(self, instance, klass):
         #pout.v("__get__")
@@ -447,31 +417,15 @@ class Field(object):
         return self
 
     def __set__(self, instance, val):
-        pout.v("__set__", self.name, instance, val)
-        return instance.__setattr__(self.name, val)
+        #pout.v("__set__", self.name, instance, val)
+        instance.__dict__[self.name] = val
 
     def __delete__(self, instance):
         #pout.v("__delete__")
         #return self
-        return instance.__delattr__(self.name)
+        del instance.__dict__[self.name]
 
-    def __call__(self, func):
-        self.normalize = func
-        #pout.v(self.name, self.normalize)
+    def __call__(self, fnormalize):
+        self.fnormalize = fnormalize
         return self
-
-
-# DEPRECATED -- 11-4-2015 -- get rid of this class
-class FieldOptions(dict):
-    """
-    Holds the options dict for the fields
-
-    This came about because of circular dependencies when using string refs, I needed
-    a way to delay actually figuring out what schema we were referencing until the
-    absolute last possible moment, and this was the simplest way I could do it while
-    keeping backwards compatibility high
-    """
-    @property
-    def ref_schema(self):
-        return self["field"].schema
 
