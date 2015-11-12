@@ -2051,17 +2051,37 @@ class IteratorTest(BaseTestCase):
         i = q.get(limit, page)
         return i
 
+    def test_custom(self):
+        """make sure setting a custom Iterator class works normally and wrapped
+        by an AllIterator()"""
+        count = 3
+        orm_class = get_orm_class()
+        insert(orm_class.interface, orm_class.schema, count)
+
+        self.assertEqual(count, len(list(orm_class.query.get())))
+
+        class CustomIterator(query.Iterator):
+            def _filtered(self, o):
+                return not o.pk == 1
+        orm_class.iterator_class = CustomIterator
+
+
+        self.assertEqual(count - 1, len(list(orm_class.query.get())))
+        self.assertEqual(count - 1, len(list(orm_class.query.set_limit(1).all())))
+
     def test_ifilter(self):
         count = 3
         _q = get_query()
         insert(_q.orm.interface, _q.orm.schema, count)
-        q = _q.copy()
 
-        l = q.get()
+        l = _q.copy().get()
         self.assertEqual(3, len(list(l)))
 
-        l.ifilter = lambda o: o.pk == 1
-        self.assertEqual(2, len(list(l)))
+        l = _q.copy().get()
+        def ifilter(o): return o.pk == 1
+        l.ifilter = ifilter
+        l2 = _q.copy().get()
+        self.assertEqual(len(filter(ifilter, l2)), len(list(l)))
 
     def test_list_compatibility(self):
         count = 3

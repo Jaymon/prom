@@ -4,7 +4,7 @@ import sys
 import datetime
 
 # first party
-from .query import Query
+from .query import Query, Iterator
 from . import decorators, utils
 from .interface import get_interface
 from .config import Schema, Field, Index
@@ -45,7 +45,7 @@ class Orm(object):
     query_class = Query
     """the class this Orm will use to create Query instances to query the db"""
 
-    iterator_class = None
+    iterator_class = Iterator
     """the class this Orm will use for iterating through results returned from db"""
 
     _id = Field(long, True, pk=True)

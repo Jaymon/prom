@@ -35,9 +35,6 @@ class Connection(object):
     options = None
     """any other db options, these can be interface implementation specific"""
 
-    #debug = False
-    """true to turn on debugging for this connection"""
-
     @property
     def host(self):
         """the db host"""
@@ -223,13 +220,6 @@ class Schema(object):
         self.indexes = {}
         self.table = str(table)
 
-#         self.set_field("_id", Field(long, True, pk=True))
-#         self.set_field("_created", Field(datetime.datetime, True))
-#         self.set_field("_updated", Field(datetime.datetime, True))
-# 
-#         self.set_index("updated", Index("_updated"))
-#         self.set_index("created", Index("_created"))
-
         for name, val in fields_or_indexes.items():
             self.set(name, val)
 
@@ -308,6 +298,8 @@ class Schema(object):
 
 
 class Index(object):
+    """Each index on the table is configured using this class"""
+
     def __init__(self, *fields, **options):
         """
         initialize an index
@@ -327,6 +319,7 @@ class Index(object):
 
 
 class Field(object):
+    """Each column in the database is configured using this class"""
 
     @property
     def schema(self):
@@ -374,9 +367,6 @@ class Field(object):
             ignore_case -- boolean -- True to ignore case if this field is used in indexes
         **field_options_kwargs -- will be combined with field_options
         """
-#         if not isinstance(field_type, types.TypeType):
-#             raise ValueError("field_type is not a valid python built-in type: str, int, float, ...")
-
         d = {}
         field_options = utils.make_dict(field_options, field_options_kwargs)
 
@@ -413,24 +403,6 @@ class Field(object):
     def is_ref(self):
         """return true if this field foreign key references the primary key of another orm"""
         return bool(self.schema)
-
-#     def is_weakref(self):
-#         return not self.required and self.is_ref()
-# 
-#     def __get__(self, instance, klass):
-#         #pout.v("__get__")
-#         #return klass.__getattr__(self.name)
-#         return instance.__dict__[self.name]
-#         #return self
-# 
-#     def __set__(self, instance, val):
-#         #pout.v("__set__", self.name, instance, val)
-#         instance.__dict__[self.name] = val
-# 
-#     def __delete__(self, instance):
-#         #pout.v("__delete__")
-#         #return self
-#         del instance.__dict__[self.name]
 
     def __call__(self, fnormalize):
         self.fnormalize = fnormalize

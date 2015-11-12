@@ -36,7 +36,7 @@ class Iterator(object):
         query -- Query -- the query instance that produced this iterator
         """
         self.results = results
-        self.ifilter = None
+        self.ifilter = None # https://docs.python.org/2/library/itertools.html#itertools.ifilter
         self.orm = orm
         self.has_more = has_more
         self.query = query.copy()
@@ -47,11 +47,7 @@ class Iterator(object):
         #self.iresults = (self._get_result(d) for d in self.results)
         #self.iresults = self.create_generator()
         inormalize = (self._get_result(d) for d in self.results)
-        self.iresults = (o for o in inormalize if not self._filtered(o))
-
-    def _filtered(self, o):
-        """run orm o through the filter, if True then orm o should not be included"""
-        return self.ifilter(o) if self.ifilter else False
+        self.iresults = (o for o in inormalize if self._filtered(o))
 
     def next(self):
         return self.iresults.next()
@@ -139,6 +135,10 @@ class Iterator(object):
 
         return r
 
+    def _filtered(self, o):
+        """run orm o through the filter, if True then orm o should be included"""
+        return self.ifilter(o) if self.ifilter else True
+
 
 class AllIterator(Iterator):
     """
@@ -201,9 +201,6 @@ class AllIterator(Iterator):
 
             self.offset += self.chunk_limit
             self._set_results()
-
-#    def next(self):
-#        raise NotImplementedError()
 
     def _set_results(self):
         self.results = self.query.set_offset(self.offset).get(self.chunk_limit)
@@ -561,7 +558,8 @@ class Query(object):
                 has_more = True
                 results.pop(limit)
 
-        return Iterator(results, orm=self.orm, has_more=has_more, query=self)
+        iterator_class = self.orm.iterator_class if self.orm else Iterator
+        return iterator_class(results, orm=self.orm, has_more=has_more, query=self)
 
     def all(self):
         """
