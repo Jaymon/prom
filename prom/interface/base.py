@@ -343,27 +343,6 @@ class Interface(object):
     def _set_index(self, schema, name, fields, **index_options):
         raise NotImplementedError()
 
-    def prepare_dict(self, schema, d, is_insert):
-        """
-        prepare the dict for insert/update
-
-        is_insert -- boolean -- True if insert, False if update
-        return -- dict -- the same dict, but now prepared
-        """
-        # TODO -- should this be moved to somewhere else? Not sure it is appropriate here
-        # update the times
-        now = datetime.datetime.utcnow()
-        field_created = schema._created.name
-        field_updated = schema._updated.name
-        if is_insert:
-            if field_created not in d:
-                d[field_created] = now
-
-        if field_updated not in d:
-            d[field_updated] = now
-
-        return d
-
     @reconnecting()
     def insert(self, schema, d, **kwargs):
         """
@@ -372,9 +351,8 @@ class Interface(object):
         schema -- Schema()
         d -- dict -- the values to persist
 
-        return -- dict -- the dict that was inserted into the db
+        return -- int -- the primary key of the row just inserted
         """
-        d = self.prepare_dict(schema, d, is_insert=True)
         r = 0
 
         with self.connection(**kwargs) as connection:
@@ -390,8 +368,7 @@ class Interface(object):
                 else:
                     self.raise_error(e, exc_info)
 
-        if r: d[schema._id.name] = r
-        return d
+        return r
 
     def _insert(self, schema, d, **kwargs):
         """return -- id -- the _id value"""
@@ -405,46 +382,45 @@ class Interface(object):
         schema -- Schema()
         query -- Query() -- will be used to create the where clause
 
-        return -- dict -- the dict that was inserted into the db
+        return -- int -- how many rows where updated
         """
-        d = query.fields
-        d = self.prepare_dict(schema, d, is_insert=False)
+        fields = query.fields
 
         with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
             try:
                 with self.transaction(**kwargs):
-                    r = self._update(schema, query, d, **kwargs)
+                    r = self._update(schema, query, fields, **kwargs)
 
             except Exception as e:
                 exc_info = sys.exc_info()
                 if self.handle_error(schema, e, **kwargs):
-                    r = self._update(schema, query, d, **kwargs)
+                    r = self._update(schema, query, fields, **kwargs)
                 else:
                     self.raise_error(e, exc_info)
 
-        return d
+        return r
 
     def _update(self, schema, query, d, **kwargs): raise NotImplementedError()
 
-    def set(self, schema, query, **kwargs):
-        """
-        set d into the db, this is just a convenience method that will call either insert
-        or update depending on if query has a where clause
-
-        schema -- Schema()
-        query -- Query() -- set a where clause to perform an update, insert otherwise
-        return -- dict -- the dict inserted into the db
-        """
-        if query.fields_where:
-            d = self.update(schema, query, **kwargs)
-
-        else:
-            # insert
-            d = query.fields
-            d = self.insert(schema, d, **kwargs)
-
-        return d
+#     def set(self, schema, query, **kwargs): return self.save(schema, query, **kwargs)
+#     def save(self, schema, query, **kwargs):
+#         """
+#         set d into the db, this is just a convenience method that will call either insert
+#         or update depending on if query has a where clause
+# 
+#         schema -- Schema()
+#         query -- Query() -- set a where clause to perform an update, insert otherwise
+#         return -- boolean -- True if the save was successful, False if it wasn't
+#         """
+#         if query.fields_where:
+#             d = self.update(schema, query, **kwargs)
+# 
+#         else:
+#             # insert
+#             r = self.insert(schema, query.fields, **kwargs)
+# 
+#         return True if r else False
 
     @reconnecting()
     def _get_query(self, callback, schema, query=None, *args, **kwargs):
@@ -836,8 +812,6 @@ class SQLInterface(Interface):
 
     def _update(self, schema, query, d, **kwargs):
         where_query_str, where_query_args = self.get_SQL(schema, query, only_where_clause=True)
-        pk_name = schema.pk.name
-
         query_str = 'UPDATE {} SET {} {}'
         query_args = []
 
@@ -853,7 +827,7 @@ class SQLInterface(Interface):
         )
         query_args.extend(where_query_args)
 
-        return self.query(query_str, *query_args, ignore_result=True, **kwargs)
+        return self.query(query_str, *query_args, count_result=True, **kwargs)
 
     def _get_one(self, schema, query, **kwargs):
         # compensate for getting one with an offset

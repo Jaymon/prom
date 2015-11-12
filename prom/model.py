@@ -7,14 +7,12 @@ import datetime
 from .query import Query
 from . import decorators, utils
 from .interface import get_interface
-from .config import Schema
+from .config import Schema, Field, Index
 
 
 class Orm(object):
     """
     this is the parent class of any model Orm class you want to create that can access the db
-
-    NOTE -- you must set the schema class as a class property (not an instance property)
 
     example -- create a user class
 
@@ -22,14 +20,15 @@ class Orm(object):
 
         class User(prom.Orm):
 
-            schema = prom.Schema(
-                "user_table_name",
-                username=(str, True),
-                password=(str, True)
-                email=(str, True)
-                unique_user=('username') # set a unique index on user
-                index_email=('email') # set a normal index on email
-            )
+            table_name = "user_table_name"
+
+            username = prom.Field(str, True, unique=True) # set a unique index on user
+
+            password = prom.Field(str, True)
+
+            email = prom.Field(str, True)
+
+            index_email = prom.Index('email') # set a normal index on email
 
         # create a user
         u = User(username='foo', password='awesome_and_secure_pw_hash', email='foo@bar.com')
@@ -48,6 +47,16 @@ class Orm(object):
 
     iterator_class = None
     """the class this Orm will use for iterating through results returned from db"""
+
+    _id = Field(long, True, pk=True)
+
+    _created = Field(datetime.datetime, True)
+
+    _updated = Field(datetime.datetime, True)
+
+    index_created = Index("_created")
+
+    index_updated = Index("_updated")
 
     @decorators.classproperty
     def table_name(cls):
@@ -138,50 +147,79 @@ class Orm(object):
         instance.reset_modified()
         return instance
 
-    def __setattr__(self, field_name, field_val):
-        if field_name in self.schema.fields:
-            if field_val is not None:
-                fnorm = self.schema.fields[field_name].fnormalize
-                if fnorm:
-                    field_val = fnorm(field_name, field_val)
+    @classmethod
+    def get_insert_fields(cls, fields=None, **fields_kwargs):
+        fields = cls.get_update_fields(fields, **fields_kwargs)
+        schema = cls.schema
+        now = datetime.datetime.utcnow()
+        try:
+            field_created = schema._created.name
+            if field_created not in fields:
+                fields[field_created] = now
 
-            self.modified_fields.add(field_name)
+        except AttributeError: pass
 
-        super(Orm, self).__setattr__(field_name, field_val)
+        return fields
 
-    def __int__(self):
-        return int(self.pk)
+    @classmethod
+    def get_update_fields(cls, fields=None, **fields_kwargs):
+        fields = utils.make_dict(fields, fields_kwargs)
+        schema = cls.schema
+        now = datetime.datetime.utcnow()
+        try:
+            field_updated = schema._updated.name
+            if field_updated not in fields:
+                fields[field_updated] = now
+
+        except AttributeError: pass
+
+        return fields
 
     def insert(self):
         """persist the field values of this orm"""
-        fields = self.get_modified()
+        ret = True
+        fields = self.get_insert_fields(self.get_modified())
 
-        for field_name in self.schema.required_fields.keys():
+        schema = self.schema
+        for field_name in schema.required_fields.keys():
             if field_name not in fields:
                 raise KeyError("Missing required field {}".format(field_name))
 
         q = self.query
         q.set_fields(fields)
-        fields = q.set()
-        self.modify(fields)
-        self.reset_modified()
-        return True
+        pk = q.insert()
+        if pk:
+            fields[schema.pk.name] = pk
+            self.modify(fields)
+            self.reset_modified()
+
+        else:
+            ret = False
+
+        return ret
 
     def update(self):
         """re-persist the updated field values of this orm that has a primary key"""
-        fields = self.get_modified()
+        ret = True
+        fields = self.get_update_fields(self.get_modified())
 
         q = self.query
-        _id_name = self.schema.pk.name
-        _id = self.pk
-        if _id:
-            q.is_field(_id_name, _id)
-
         q.set_fields(fields)
-        fields = q.set()
-        self.modify(fields)
-        self.reset_modified()
-        return True
+
+        pk = self.pk
+        if pk:
+            q.is_field(self.schema.pk.name, pk)
+
+        else:
+            raise ValueError("You cannot update without a primary key")
+
+        if q.update():
+            self.modify(fields)
+            self.reset_modified()
+        else:
+            ret = False
+
+        return ret
 
     def set(self): return self.save()
     def save(self):
@@ -193,13 +231,12 @@ class Orm(object):
         """
         ret = False
 
-        _id_name = self.schema.pk.name
         # we will only use the primary key if it hasn't been modified
-        _id = None
-        if _id_name not in self.modified_fields:
-            _id = self.pk
+        pk = None
+        if self.schema.pk.name not in self.modified_fields:
+            pk = self.pk
 
-        if _id:
+        if pk:
             ret = self.update()
         else:
             ret = self.insert()
@@ -207,20 +244,19 @@ class Orm(object):
         return ret
 
     def delete(self):
-        """delete the object from the db if _id is set"""
+        """delete the object from the db if pk is set"""
         ret = False
         q = self.query
-        _id = self.pk
-        _id_name = self.schema.pk.name
-        if _id:
-            self.query.is_field(_id_name, _id).delete()
-            # get rid of _id
-            delattr(self, _id_name)
+        pk = self.pk
+        if pk:
+            pk_name = self.schema.pk.name
+            self.query.is_field(pk_name, pk).delete()
+            setattr(self, pk_name, None)
 
             # mark all the fields that still exist as modified
             self.reset_modified()
             for field_name in self.schema.fields:
-                if hasattr(self, field_name):
+                if getattr(self, field_name, None) != None:
                     self.modified_fields.add(field_name)
 
             ret = True
@@ -275,6 +311,19 @@ class Orm(object):
                 self.modified_fields.discard(field_name)
 
         return modified_fields
+
+    def __setattr__(self, field_name, field_val):
+        if (field_val is not None) and (field_name in self.schema.fields):
+            fnorm = self.schema.fields[field_name].fnormalize
+            if fnorm:
+                field_val = fnorm(self, field_val)
+
+            self.modified_fields.add(field_name)
+
+        super(Orm, self).__setattr__(field_name, field_val)
+
+    def __int__(self):
+        return int(self.pk)
 
     def jsonable(self, *args, **options):
         """

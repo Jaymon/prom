@@ -45,21 +45,27 @@ def setUpModule():
     """
     i = get_interface()
     i.delete_tables(disable_protection=True)
+    prom.set_interface(i)
 
 
 def get_orm_class(table_name=None):
-    i, s = get_table(table_name=table_name)
-    t = Torm
-    t.schema = s
-    t.interface = i
-    return t
+    tn = get_table_name(table_name)
+    class Torm(Orm):
+        table_name = tn
+        interface = get_interface()
+        foo = Field(int, True)
+        bar = Field(str, True)
+        ifoobar = Index("foo", "bar")
+
+    #Torm.table_name = table_name
+    #Torm.interface = get_interface()
+    #del Torm.__dict__["schema"]
+    return Torm
 
 
-def get_orm(table_name=None):
-    i, s = get_table(table_name=table_name)
-    t = Torm()
-    t.schema = s
-    t.interface = i
+def get_orm(table_name=None, **fields):
+    orm_class = get_orm_class(table_name)
+    t = orm_class(**fields)
     return t
 
 
@@ -73,8 +79,9 @@ def get_interface():
     return i
 
 
-def get_table_name():
+def get_table_name(table_name=None):
     """return a random table name"""
+    if table_name: return table_name
     return "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
 
 
@@ -90,113 +97,141 @@ def get_table(table_name=None):
     return i, s
 
 
-def get_schema(table_name=None):
-    if not table_name:
-        table_name = get_table_name()
+def get_schema(table_name=None, **fields_or_indexes):
+    if not fields_or_indexes:
+        fields_or_indexes.setdefault("foo", Field(int, True))
+        fields_or_indexes.setdefault("bar", Field(str, True))
+        fields_or_indexes.setdefault("ifoobar", Index("foo", "bar"))
+
+    fields_or_indexes.setdefault("_id", Field(long, True, pk=True))
 
     s = Schema(
-        table_name,
-        foo=Field(int, True),
-        bar=Field(str, True),
-        ifoobar=Index("foo", "bar")
+        get_table_name(table_name),
+        **fields_or_indexes
     )
 
     return s
 
 
 def get_query():
-    i, s = get_table()
-    Torm.schema = s
-    Torm.interface = i
-    return query.Query(Torm)
+    orm_class = get_orm_class()
+    return orm_class.query
 
 
 def insert(interface, schema, count, **kwargs):
     """
     insert count rows into schema using interface
     """
-    _ids = []
+    pks = []
+    fields = {}
 
     for i in range(1, count + 1):
-        q = query.Query()
-        q.set_fields({
-            'foo': i,
-            'bar': 'value {}'.format(i)
-        })
-        d = interface.set(schema, q, **kwargs)
+        for k, v in schema.fields.items():
+            if v.is_pk(): continue
 
-        assert 'foo' in d
-        assert 'bar' in d
-        assert schema._id.name in d
-        _ids.append(d[schema._id.name])
+            if issubclass(v.type, basestring):
+                fields[k] = testdata.get_words()
 
-    return _ids
+            elif issubclass(v.type, (int, long)):
+                fields[k] = i
+
+            elif issubclass(v.type, datetime.datetime):
+                fields[k] = testdata.get_past_datetime()
+
+            elif issubclass(v.type, float):
+                fields[k] = testdata.get_float()
+
+            elif issubclass(v.type, bool):
+                fields[k] = True if random.randint(0, 1) == 1 else False
+            else:
+                raise ValueError("{}".format(v.type))
+
+        pk = interface.insert(schema, fields, **kwargs)
+
+        assert pk > 0
+        pks.append(pk)
+
+    return pks
+
 
 class Torm(Orm):
-    pass
+    foo = Field(int, True)
+    bar = Field(str, True)
+    ifoobar = Index("foo", "bar")
 
-class Torm2Query(query.Query):
-    pass
-class Torm2(Orm):
-    pass
 
-class OrmTest(TestCase):
-
+class BaseTestCase(TestCase):
     def setUp(self):
-        i, s = get_table()
-        Torm.schema = s
+        """make sure there is a default interface"""
+        i = get_interface()
         prom.set_interface(i)
-        prom.set_interface(i, "torm2")
 
-        Torm2.schema = s
-        Torm2.connection_name = "torm2"
+
+class OrmTest(BaseTestCase):
+
+#     def setUp(self):
+#         i, s = get_table()
+#         #Torm.schema = s
+#         Torm.table_name = 
+#         prom.set_interface(i)
+
+    def test_creation(self):
+
+        class COrm(Orm):
+            foo = Field(int)
+            bar = Field(str)
+
+        s = COrm.schema
+        self.assertTrue(s.foo)
+        self.assertTrue(s.bar)
+        self.assertTrue(s.pk)
+        self.assertTrue(s._created)
+        self.assertTrue(s._updated)
 
     def test_none(self):
-        s = Schema(
-            get_table_name(),
+        orm_class = get_orm_class()
+        orm_class.schema = get_schema(
+            orm_class.table_name,
             foo=Field(int),
             bar=Field(str),
+            _created=Field(datetime.datetime, True)
         )
-        Torm.schema = s
 
-        t1 = Torm()
-        t2 = Torm(foo=None, bar=None)
+        t1 = orm_class()
+        t2 = orm_class(foo=None, bar=None)
         self.assertEqual(t1.fields, t2.fields)
 
-        t1.set()
-        t2.set()
+        t1.save()
+        t2.save()
 
-        t11 = Torm.query.get_pk(t1.pk)
-        t22 = Torm.query.get_pk(t2.pk)
+        t11 = orm_class.query.get_pk(t1.pk)
+        t22 = orm_class.query.get_pk(t2.pk)
         ff = lambda orm: orm.schema.normal_fields
         self.assertEqual(ff(t11), ff(t22))
         self.assertEqual(ff(t1), ff(t11))
         self.assertEqual(ff(t2), ff(t22))
 
-        t3 = Torm(foo=1)
+        t3 = orm_class(foo=1)
         self.assertEqual(1, t3.foo)
         self.assertEqual(None, t3.bar)
         t3.set()
         self.assertEqual(1, t3.foo)
         self.assertEqual(None, t3.bar)
-        t3 = Torm.query.get_pk(t3.pk)
+        t3 = orm_class.query.get_pk(t3.pk)
         self.assertEqual(1, t3.foo)
         self.assertEqual(None, t3.bar)
 
     def test_jsonable(self):
-        table_name = get_table_name()
-        Torm.schema = Schema(
-            table_name,
-            foo=Field(int, True),
-            bar=Field(str, True),
-            che=Field(str, False),
-        )
-
-        t = Torm.create(foo=1, bar="blah")
+        orm_class = get_orm_class()
+        t = orm_class.populate(foo=1, bar="blah")
         d = t.jsonable()
         self.assertEqual(1, d['foo'])
         self.assertEqual("blah", d['bar'])
-        self.assertEqual("", d['che'])
+
+        t = orm_class.populate(foo=1)
+        d = t.jsonable()
+        self.assertEqual(1, d['foo'])
+        self.assertEqual("", d['bar'])
 
     def test_modify(self):
         class TM(prom.Orm):
@@ -226,23 +261,24 @@ class OrmTest(TestCase):
         Jarid was having encoding issues, so I'm finally making sure prom only ever
         returns unicode strings
         """
+        orm_class = get_orm_class()
         table_name = get_table_name()
-        Torm.schema = Schema(
-            table_name,
+        orm_class.schema = get_schema(
+            get_table_name(),
             foo=Field(unicode, True),
             bar=Field(str, True),
             che=Field(str, False),
             baz=Field(int, False),
         )
 
-        t = Torm.create(
+        t = orm_class.create(
             foo=testdata.get_unicode_name(),
             bar=testdata.get_unicode_words(),
             che=testdata.get_unicode_words().encode('utf-8'),
             baz=testdata.get_int(1, 100000)
         )
 
-        t2 = Torm.query.get_pk(t.pk)
+        t2 = orm_class.query.get_pk(t.pk)
 
         self.assertEqual(t.foo, t2.foo)
         self.assertEqual(t.bar, t2.bar)
@@ -250,14 +286,16 @@ class OrmTest(TestCase):
         self.assertTrue(isinstance(t.baz, int))
 
     def test_query(self):
-        _ids = insert(Torm.interface, Torm.schema, 5)
-        lc = Torm.query.in__id(_ids).count()
-        self.assertEqual(len(_ids), lc)
+        orm_class = get_orm_class()
+        pks = insert(orm_class.interface, orm_class.schema, 5)
+        lc = orm_class.query.in_pk(pks).count()
+        self.assertEqual(len(pks), lc)
 
     def test___int__(self):
-        _id = insert(Torm.interface, Torm.schema, 1)[0]
-        t = Torm.query.get_pk(_id)
-        self.assertEqual(_id, int(t))
+        orm_class = get_orm_class()
+        pk = insert(orm_class.interface, orm_class.schema, 1)[0]
+        t = orm_class.query.get_pk(pk)
+        self.assertEqual(pk, int(t))
 
     def test_query_class(self):
         """make sure you can set the query class and it is picked up correctly"""
@@ -328,7 +366,10 @@ class OrmTest(TestCase):
         i = Torm.interface
         self.assertFalse(i is None)
 
-        i = Torm2.interface
+        class TormInterface2Orm(Orm):
+            pass
+
+        i = TormInterface2Orm.interface
         self.assertFalse(i is None)
 
         # now let's make sure a different orm with a bad connection name gets flagged
@@ -344,45 +385,45 @@ class OrmTest(TestCase):
         self.assertTrue('foo' in t.modified_fields)
         self.assertEqual(1, t.foo)
 
-    def test_set(self):
+    def test_save(self):
         t = Torm()
         with self.assertRaises(KeyError):
-            t.set()
+            t.save()
 
         t = Torm(foo=1, bar="value 1", this_is_ignored="as it should be")
         self.assertEqual(1, t.foo)
         self.assertEqual("value 1", t.bar)
         self.assertIsNone(t.pk)
         self.assertTrue(t.is_modified())
-        t.set()
+        t.save()
         self.assertIsNotNone(t.pk)
         self.assertFalse(t.is_modified())
 
         t.foo = 2
         t.bar = "value 2"
         self.assertTrue(t.is_modified())
-        t.set()
+        t.save()
         self.assertEqual(2, t.foo)
         self.assertEqual("value 2", t.bar)
 
         # set should only update timestamps and stuff without changing unmodified values
         self.assertFalse(t.is_modified())
-        r = t.set()
+        r = t.save()
         self.assertTrue(r)
 
         # make sure it persisted
         t.interface.close()
-        t2 = Torm.query.is__id(t._id).get_one()
+        t2 = Torm.query.is_pk(t.pk).get_one()
         self.assertFalse(t2.is_modified())
         self.assertEqual(2, t2.foo)
         self.assertEqual("value 2", t2.bar)
         self.assertEqual(t.fields, t2.fields)
 
     def test_delete(self):
-        t = Torm(foo=1, bar="value 1")
+        t = get_orm(foo=1, bar="value 1")
         r = t.delete()
         self.assertFalse(r)
-        t.set()
+        t.save()
         self.assertTrue(t.pk)
         _id = t.pk
 
@@ -392,7 +433,7 @@ class OrmTest(TestCase):
 
         # make sure it persists
         t.interface.close()
-        t2 = Torm.query.get_pk(_id)
+        t2 = t.query.get_pk(_id)
         self.assertEqual(None, t2)
 
     def test_create(self):
@@ -432,7 +473,7 @@ class OrmTest(TestCase):
         self.assertEqual(t3.fields, t2.fields)
 
 
-class PromTest(TestCase):
+class PromTest(BaseTestCase):
 
     def setUp(self):
         prom.interface.interfaces = {}
@@ -486,8 +527,7 @@ class PromTest(TestCase):
         f.query.get_one()
         # we succeeded if no error was raised
 
-class ConfigSchemaTest(TestCase):
-
+class ConfigSchemaTest(BaseTestCase):
     def test___init__(self):
         """
         I had set the class .fields and .indexes attributes to {} instead of None, so you
@@ -561,13 +601,11 @@ class ConfigSchemaTest(TestCase):
         self.assertTrue(s.indexes["testing"].unique)
 
     def test_primary_key(self):
-        s = Schema("foo")
-        s.bar = int, False
-
+        s = get_schema()
         self.assertEqual(s._id, s.pk)
 
 
-class ConfigDsnConnectionTest(TestCase):
+class ConfigDsnConnectionTest(BaseTestCase):
 
     def test_environ(self):
         os.environ['PROM_DSN'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i0"
@@ -746,7 +784,7 @@ class ConfigDsnConnectionTest(TestCase):
                self.assertEqual(val, getattr(c, attr))
 
 
-class ConfigConnectionTest(TestCase):
+class ConfigConnectionTest(BaseTestCase):
     def test___init__(self):
 
         c = Connection(
@@ -789,7 +827,7 @@ class ConfigConnectionTest(TestCase):
         self.assertEqual(43, p.port)
 
 
-class ConfigFieldTest(TestCase):
+class ConfigFieldTest(BaseTestCase):
 
     def test_decorator(self):
 
@@ -858,21 +896,19 @@ class ConfigFieldTest(TestCase):
         self.assertEqual(f.options['max_length'], 100)
 
 
-class BaseTestInterface(TestCase):
+class BaseTestInterface(BaseTestCase):
     def create_interface(self):
         raise NotImplementedError()
 
     def get_interface(self):
         i = self.create_interface()
         i.connect()
-        assert i.connected
+        self.assertTrue(i.connected)
         return i
 
     def get_query(self):
-        i, s = self.get_table()
-        Torm.schema = s
-        Torm.interface = i
-        return query.Query(Torm)
+        orm_class = get_orm_class()
+        return orm_class.query
 
     def get_table(self, table_name=None):
         """
@@ -895,7 +931,7 @@ class BaseTestInterface(TestCase):
         self.assertFalse(i.connected)
 
     def test_query(self):
-        i = get_interface()
+        i = self.get_interface()
         rows = i.query('SELECT 1')
         self.assertGreater(len(rows), 0)
 
@@ -944,6 +980,7 @@ class BaseTestInterface(TestCase):
 
         s = prom.Schema(
             get_table_name(),
+            _id=Field(int, pk=True),
             one=Field(bool, True),
             two=Field(int, True, size=50),
             three=Field(decimal.Decimal),
@@ -964,12 +1001,12 @@ class BaseTestInterface(TestCase):
             'eight': datetime.datetime(2005, 7, 14, 12, 30),
             'nine': datetime.date(2005, 9, 14),
         }
-        o = i.insert(s, d)
+        pk = i.insert(s, d)
         q = query.Query()
-        q.is__id(o[s.pk.name])
+        q.is__id(pk)
         odb = i.get_one(s, q)
         #d['five'] = 1.98765
-        for k, v in d.iteritems():
+        for k, v in d.items():
             self.assertEqual(v, odb[k])
 
     def test_get_tables(self):
@@ -1024,22 +1061,22 @@ class BaseTestInterface(TestCase):
             'bar': 'this is the value',
         }
 
-        rd = i.insert(s, d)
-        self.assertGreater(rd[s._id.name], 0)
+        pk = i.insert(s, d)
+        self.assertGreater(pk, 0)
 
-    def test_set_insert(self):
-        """test just the insert portion of set"""
-        i, s = self.get_table()
-        q = query.Query()
-
-        q.set_fields({
-            'foo': 1,
-            'bar': 'this is the value',
-        })
-
-        rd = i.set(s, q)
-        self.assertGreater(rd[s._id.name], 0)
-
+#     def test_set_insert(self):
+#         """test just the insert portion of set"""
+#         i, s = self.get_table()
+#         q = query.Query()
+# 
+#         q.set_fields({
+#             'foo': 1,
+#             'bar': 'this is the value',
+#         })
+# 
+#         rd = i.set(s, q)
+#         self.assertTrue(rd[s._id.name], 0)
+# 
     def test_get_sql(self):
         i = self.get_interface()
         s = get_schema()
@@ -1093,25 +1130,25 @@ class BaseTestInterface(TestCase):
             'foo': 1,
             'bar': 'v1',
         })
-        rd = i.set(s, q)
+        pk = i.insert(s, q.fields)
 
         q = query.Query()
         q.set_fields({
             'foo': 2,
             'bar': 'v2',
         })
-        rd2 = i.set(s, q)
+        pk2 = i.insert(s, q.fields)
 
         q = query.Query()
         q.desc__id().set_offset(1)
         d = i.get_one(s, q)
-        self.assertEqual(d['_id'], rd['_id'])
+        self.assertEqual(d['_id'], pk)
 
         # just make sure to get expected result if no offset
         q = query.Query()
         q.desc__id()
         d = i.get_one(s, q)
-        self.assertEqual(d['_id'], rd2['_id'])
+        self.assertEqual(d['_id'], pk2)
 
         q = query.Query()
         q.desc__id().set_offset(2)
@@ -1121,12 +1158,12 @@ class BaseTestInterface(TestCase):
         q = query.Query()
         q.desc__id().set_offset(1).set_limit(5)
         d = i.get_one(s, q)
-        self.assertEqual(d['_id'], rd['_id'])
+        self.assertEqual(d['_id'], pk)
 
         q = query.Query()
         q.desc__id().set_page(2)
         d = i.get_one(s, q)
-        self.assertEqual(d['_id'], rd['_id'])
+        self.assertEqual(d['_id'], pk)
 
         q = query.Query()
         q.desc__id().set_page(2).set_limit(5)
@@ -1234,28 +1271,25 @@ class BaseTestInterface(TestCase):
             'bar': 'value 1',
         }
 
-        rd = i.insert(s, d)
-        self.assertGreater(rd[s._id.name], 0)
+        pk = i.insert(s, d)
+        self.assertGreater(pk, 0)
 
         d = {
             'foo': 2,
             'bar': 'value 2',
         }
         q.set_fields(d)
-        q.is_field(s._id.name, rd[s._id.name])
+        q.is__id(pk)
 
-        ud = i.update(s, q)
-
-        self.assertEqual(ud['foo'], d['foo'])
-        self.assertEqual(ud['bar'], d['bar'])
+        row_count = i.update(s, q)
 
         # let's pull it out and make sure it persisted
         q = query.Query()
-        q.is__id(rd[s._id.name])
+        q.is__id(pk)
         gd = i.get_one(s, q)
-        self.assertEqual(ud['foo'], gd['foo'])
-        self.assertEqual(ud['bar'], gd['bar'])
-        self.assertEqual(rd[s._id.name], gd[s._id.name])
+        self.assertEqual(d['foo'], gd['foo'])
+        self.assertEqual(d['bar'], gd['bar'])
+        self.assertEqual(pk, gd["_id"])
 
     def test_ref(self):
         i = self.get_interface()
@@ -1264,21 +1298,21 @@ class BaseTestInterface(TestCase):
 
         s_1 = Schema(
             table_name_1,
+            _id=Field(int, pk=True),
             foo=Field(int, True)
         )
         s_2 = Schema(
             table_name_2,
+            _id=Field(int, pk=True),
             s_pk=Field(s_1, True),
         )
 
         i.set_table(s_1)
         i.set_table(s_2)
 
-        d1 = i.insert(s_1, {'foo': 1})
-        pk1 = d1[s_1.pk.name]
+        pk1 = i.insert(s_1, {'foo': 1})
 
-        d2 = i.insert(s_2, {'s_pk': pk1})
-        pk2 = d2[s_2.pk.name]
+        pk2 = i.insert(s_2, {'s_pk': pk1})
 
         q2 = query.Query()
         q2.is__id(pk2)
@@ -1300,21 +1334,21 @@ class BaseTestInterface(TestCase):
 
         s_1 = Schema(
             table_name_1,
+            _id=Field(int, pk=True),
             foo=Field(int, True)
         )
         s_2 = Schema(
             table_name_2,
+            _id=Field(int, pk=True),
             s_pk=Field(s_1, False),
         )
 
         i.set_table(s_1)
         i.set_table(s_2)
 
-        d1 = i.insert(s_1, {'foo': 1})
-        pk1 = d1[s_1.pk.name]
+        pk1 = i.insert(s_1, {'foo': 1})
 
-        d2 = i.insert(s_2, {'s_pk': pk1})
-        pk2 = d2[s_2.pk.name]
+        pk2 = i.insert(s_2, {'s_pk': pk1})
         q2 = query.Query()
         q2.is__id(pk2)
         # make sure it exists and is visible
@@ -1336,10 +1370,12 @@ class BaseTestInterface(TestCase):
 
         s_1 = Schema(
             table_name_1,
+            _id=Field(int, pk=True),
             foo=Field(int, True)
         )
         s_2 = Schema(
             table_name_2,
+            _id=Field(int, pk=True),
             bar=Field(int, True),
             s_pk=Field(s_1),
         )
@@ -1353,7 +1389,7 @@ class BaseTestInterface(TestCase):
 
     def test__get_fields(self):
         i, s = self.get_table()
-        fields = set([u'_created', u'_id', u'_updated', u'bar', u'foo'])
+        fields = set([u'_id', u'bar', u'foo'])
         ret_fields = i._get_fields(s)
         self.assertEqual(fields, ret_fields)
 
@@ -1377,51 +1413,41 @@ class BaseTestInterface(TestCase):
 
     def test_handle_error_column(self):
         i, s = self.get_table()
-        s.set_field("che", Field(str, True))
-        q = query.Query()
-        q.set_fields({
+        s.set_field("che", Field(str, True)) # it's required
+        fields = {
             'foo': 1,
             'bar': 'v1',
             'che': "this field will cause the query to fail",
-        })
+        }
 
         with self.assertRaises(prom.InterfaceError):
-            rd = i.set(s, q)
+            rd = i.insert(s, fields)
 
         s = get_schema(table_name=s.table)
-        s.set_field("che", Field(str, False))
-        rd = i.set(s, q)
-        self.assertTrue('che' in rd)
+        s.set_field("che", Field(str, False)) # not required so error recovery can fire
+        pk = i.insert(s, fields)
+        self.assertLess(0, pk)
 
     def test_null_values(self):
         i = self.get_interface()
-        table_name = get_table_name()
-
         s = Schema(
-            table_name,
+            get_table_name(),
+            _id=Field(int, pk=True),
             foo=Field(int, False),
             bar=Field(int, False),
         )
 
         # add one with non NULL foo
-        q = query.Query()
-        q.set_bar(1).set_foo(2)
-        d1 = i.set(s, q)
+        pk1 = i.insert(s, {"bar": 1, "foo": 2})
 
         # and one with NULL foo
-        q = query.Query()
-        q.set_bar(1)
-        d2 = i.set(s, q)
+        pk2 = i.insert(s, {"bar": 1})
 
-        q = query.Query()
-        q.is_bar(1).is_foo(None)
-        r = i.get_one(s, q)
-        self.assertEqual(d2['_id'], r['_id'])
+        r = i.get_one(s, query.Query().is_bar(1).is_foo(None))
+        self.assertEqual(pk2, r['_id'])
 
-        q = query.Query()
-        q.is_bar(1).not_foo(None)
-        r = i.get_one(s, q)
-        self.assertEqual(d1['_id'], r['_id'])
+        r = i.get_one(s, query.Query().is_bar(1).not_foo(None))
+        self.assertEqual(pk1, r['_id'])
 
     def test_transaction_nested_fail_1(self):
         """make sure 2 new tables in a wrapped transaction work as expected"""
@@ -1431,71 +1457,55 @@ class BaseTestInterface(TestCase):
 
         s1 = Schema(
             table_name_1,
+            _id=Field(int, pk=True),
             foo=Field(int, True)
         )
         s2 = Schema(
             table_name_2,
+            _id=Field(int, pk=True),
             bar=Field(int, True),
             s_pk=Field(s1),
         )
 
         with i.transaction() as connection:
-            q1 = query.Query()
-            q1.set_foo(1)
-            d1 = i.set(s1, q1, connection=connection)
-
-            q2 = query.Query()
-            q2.set_bar(2).set_s_pk(d1['_id'])
-            d2 = i.set(s2, q2, connection=connection)
+            pk1 = i.insert(s1, {"foo": 1}, connection=connection)
+            pk2 = i.insert(s2, {"bar": 2, "s_pk": pk1}, connection=connection)
 
         q1 = query.Query()
-        q1.is__id(d1['_id'])
+        q1.is__id(pk1)
         r1 = i.get_one(s1, q1)
-        self.assertEqual(r1['_id'], d1['_id'])
+        self.assertEqual(pk1, r1['_id'])
 
         q2 = query.Query()
-        q2.is__id(d2['_id'])
+        q2.is__id(pk2)
         r2 = i.get_one(s2, q2)
-        self.assertEqual(r2['_id'], d2['_id'])
-        self.assertEqual(r2['s_pk'], d1['_id'])
+        self.assertEqual(pk2, r2['_id'])
+        self.assertEqual(pk1, r2['s_pk'])
 
     def test_transaction_nested_fail_2(self):
         """make sure 2 tables where the first one already exists works in a nested transaction"""
         i = self.get_interface()
-        table_name_1 = "{}_1".format(get_table_name())
-        table_name_2 = "{}_2".format(get_table_name())
 
-        s1 = Schema(
-            table_name_1,
+        s1 = get_schema(
             foo=Field(int, True)
         )
         i.set_table(s1)
 
-        s2 = Schema(
-            table_name_2,
+        s2 = get_schema(
             bar=Field(int, True),
-            s_pk=Field(s1),
+            s_pk=Field(s1, True),
         )
 
         with i.transaction() as connection:
-            q1 = query.Query()
-            q1.set_foo(1)
-            d1 = i.set(s1, q1, connection=connection)
+            pk1 = i.insert(s1, {"foo": 1}, connection=connection)
+            pk2 = i.insert(s2, {"bar": 2, "s_pk": pk1}, connection=connection)
 
-            q2 = query.Query()
-            q2.set_bar(2).set_s_pk(d1['_id'])
-            d2 = i.set(s2, q2, connection=connection)
+        r1 = i.get_one(s1, query.Query().is__id(pk1))
+        self.assertEqual(pk1, r1['_id'])
 
-        q1 = query.Query()
-        q1.is__id(d1['_id'])
-        r1 = i.get_one(s1, q1)
-        self.assertEqual(r1['_id'], d1['_id'])
-
-        q2 = query.Query()
-        q2.is__id(d2['_id'])
-        r2 = i.get_one(s2, q2)
-        self.assertEqual(r2['_id'], d2['_id'])
-        self.assertEqual(r2['s_pk'], d1['_id'])
+        r2 = i.get_one(s2, query.Query().is__id(pk1))
+        self.assertEqual(pk2, r2['_id'])
+        self.assertEqual(r2['s_pk'], pk1)
 
     def test_transaction_nested_fail_3(self):
         """make sure 2 tables where the first one already exists works, and second one has 2 refs"""
@@ -1503,86 +1513,61 @@ class BaseTestInterface(TestCase):
         table_name_1 = "{}_1".format(get_table_name())
         table_name_2 = "{}_2".format(get_table_name())
 
-        s1 = Schema(
-            table_name_1,
+        s1 = get_schema(
             foo=Field(int, True)
         )
         i.set_table(s1)
 
-        s2 = Schema(
-            table_name_2,
+        s2 = get_schema(
             bar=Field(int, True),
-            s_pk=Field(s1),
-            s_pk2=Field(s1),
+            s_pk=Field(s1, True),
+            s_pk2=Field(s1, True),
         )
 
-        q1 = query.Query()
-        q1.set_foo(1)
-        d1 = i.set(s1, q1)
-        q1 = query.Query()
-        q1.set_foo(1)
-        d2 = i.set(s1, q1)
+        pk1 = i.insert(s1, {"foo": 1})
+        pk2 = i.insert(s1, {"foo": 1})
+        pk3 = i.insert(s2, {"bar": 2, "s_pk": pk1, "s_pk2": pk2})
 
-        q2 = query.Query()
-        q2.set_bar(2).set_s_pk(d1['_id']).set_s_pk2(d2['_id'])
-        d2 = i.set(s2, q2)
+        r1 = i.get_one(s1, query.Query().is__id(pk1))
+        self.assertEqual(r1['_id'], pk1)
 
-        q1 = query.Query()
-        q1.is__id(d1['_id'])
-        r1 = i.get_one(s1, q1)
-        self.assertEqual(r1['_id'], d1['_id'])
-
-        q2 = query.Query()
-        q2.is__id(d2['_id'])
-        r2 = i.get_one(s2, q2)
-        self.assertEqual(r2['_id'], d2['_id'])
-        self.assertEqual(r2['s_pk'], d1['_id'])
+        r2 = i.get_one(s2, query.Query().is__id(pk3))
+        self.assertEqual(r2['_id'], pk3)
+        self.assertEqual(r2['s_pk'], pk1)
+        self.assertEqual(r2['s_pk2'], pk2)
 
     def test_transaction_nested_fail_4(self):
         """ran into a bug where this reared its head and data was lost"""
         i = self.get_interface()
-        table_name_1 = "{}_1".format(get_table_name())
-        table_name_2 = "{}_2".format(get_table_name())
-        table_name_3 = "{}_3".format(get_table_name())
 
         # these 2 tables exist before the transaction starts
-        s1 = Schema(
-            table_name_1,
+        s1 = get_schema(
             foo=Field(int, True)
         )
         i.set_table(s1)
 
-        s2 = Schema(
-            table_name_2,
+        s2 = get_schema(
             bar=Field(int, True),
-            s_pk=Field(s1),
-            s_pk2=Field(s1),
+            s_pk=Field(s1, True),
+            s_pk2=Field(s1, True),
         )
         i.set_table(s2)
 
         # this is the table that will be created in the transaction
-        s3 = Schema(
-            table_name_3,
+        s3 = get_schema(
             che=Field(int, True),
-            s_pk=Field(s1),
+            s_pk=Field(s1, True),
         )
 
-        q1 = query.Query()
-        q1.set_foo(1)
-        d1 = i.set(s1, q1)
-
-        q1 = query.Query()
-        q1.set_foo(12)
-        d12 = i.set(s1, q1)
+        pk1 = i.insert(s1, {"foo": 1})
+        pk12 = i.insert(s1, {"foo": 12})
 
         self.assertEqual(0, i.count(s2, query.Query()))
 
         with i.transaction() as connection:
 
             # create something and put in table 2
-            q2 = query.Query()
-            q2.set_bar(2).set_s_pk(d1['_id']).set_s_pk2(d12['_id'])
-            d2 = i.set(s2, q2, connection=connection)
+            pk2 = i.insert(s2, {"bar": 2, "s_pk": pk1, "s_pk2": pk12}, connection=connection)
 
             # now this should cause the stuff to fail
             # it fails on the select because a new transaction isn't started, so 
@@ -1590,8 +1575,8 @@ class BaseTestInterface(TestCase):
             # been a mod query (eg, insert) it would not have failed, this is fixed
             # by wrapping selects in a transaction if an active transaction is found
             q3 = query.Query()
-            q3.is_s_pk(d1['_id'])
-            d3 = i.get(s3, q3, connection=connection)
+            q3.is_s_pk(pk1)
+            pk3 = i.get(s3, q3, connection=connection)
 
         self.assertEqual(1, i.count(s2, query.Query()))
 
@@ -1603,39 +1588,35 @@ class BaseTestInterface(TestCase):
         # these 2 tables exist before the transaction starts
         s1 = Schema(
             table_name_1,
+            _id=Field(int, pk=True),
             foo=Field(int, True)
         )
         i.set_table(s1)
 
         s2 = Schema(
             table_name_2,
+            _id=Field(int, pk=True),
             bar=Field(int, True),
             s_pk=Field(int, True, ref=s1),
         )
         i.set_table(s2)
 
-
-        d1 = {}
-        d2 = {}
+        pk1 = 0
+        pk2 = 0
 
         try:
             with i.transaction() as connection:
-                q1 = query.Query()
-                q1.set_foo(1)
-                d1 = i.set(s1, q1, connection=connection)
+                pk1 = i.insert(s1, {"foo": 1}, connection=connection)
 
                 with i.transaction(connection):
-                    q2 = query.Query()
-                    q2.set_bar(2).set_s_pk(d1['_id'])
-                    d2 = i.set(s2, q2, connection=connection)
-
+                    pk2 = i.set(s2, {"bar": 2, "s_pk": pk1}, connection=connection)
                     raise RuntimeError("testing")
 
         except Exception, e:
             pass
 
-        self.assertEqual(0, i.count(s1, query.Query().is__id(d1['_id'])))
-        self.assertEqual(0, i.count(s2, query.Query().is__id(d2['_id'])))
+        self.assertEqual(0, i.count(s1, query.Query().is__id(pk1)))
+        self.assertEqual(0, i.count(s2, query.Query().is__id(pk2)))
 
     def test_unique(self):
         i = get_interface()
@@ -1652,6 +1633,7 @@ class BaseTestInterface(TestCase):
         i = self.get_interface()
         s = Schema(
             get_table_name(),
+            _id=Field(int, pk=True),
             foo=Field(str, True, ignore_case=True),
             bar=Field(str, True),
             index_foo=Index('foo', 'bar'),
@@ -1792,22 +1774,23 @@ class BaseTestInterface(TestCase):
         s = Schema(
             get_table_name(),
             foo=Field(datetime.datetime, True),
+            _id=Field(int, True, pk=True),
             index_foo=Index('foo'),
         )
         i.set_table(s)
 
-        d20 = i.insert(s, {'foo': datetime.datetime(2014, 4, 20)})
-        d21 = i.insert(s, {'foo': datetime.datetime(2014, 4, 21)})
+        pk20 = i.insert(s, {'foo': datetime.datetime(2014, 4, 20)})
+        pk21 = i.insert(s, {'foo': datetime.datetime(2014, 4, 21)})
 
         q = query.Query()
         q.is_foo(day=20)
         d = i.get_one(s, q)
-        self.assertEqual(d['_id'], d20['_id'])
+        self.assertEqual(d['_id'], pk20)
 
         q = query.Query()
         q.is_foo(day=21, month=4)
         d = i.get_one(s, q)
-        self.assertEqual(d['_id'], d21['_id'])
+        self.assertEqual(d['_id'], pk21)
 
         q = query.Query()
         q.is_foo(day=21, month=3)
@@ -1855,6 +1838,7 @@ class InterfacePostgresTest(BaseTestInterface):
         i = self.get_interface()
         s = prom.Schema(
             get_table_name(),
+            _id=Field(int, pk=True),
             four=Field(float, True, size=10),
             five=Field(float, True),
             six=Field(long, True),
@@ -1865,9 +1849,9 @@ class InterfacePostgresTest(BaseTestInterface):
             'five': 1.98765,
             'six': 4000000000,
         }
-        o = i.insert(s, d)
+        pk = i.insert(s, d)
         q = query.Query()
-        q.is__id(o[s.pk.name])
+        q.is__id(pk)
         odb = i.get_one(s, q)
         for k, v in d.iteritems():
             self.assertEqual(v, odb[k])
@@ -1986,13 +1970,12 @@ class InterfacePostgresTest(BaseTestInterface):
         config = i.connection_config
         config.database = 'this_is_a_bogus_db_name'
         i = PostgreSQL(config)
-        q = query.Query()
-        q.set_fields({
+        fields = {
             'foo': 1,
             'bar': 'v1',
-        })
+        }
         with self.assertRaises(prom.InterfaceError):
-            rd = i.set(s, q)
+            rd = i.insert(s, fields)
 
 
 def has_spiped():
@@ -2061,7 +2044,7 @@ class InterfacePGBouncerTest(InterfacePostgresTest):
         self.assertGreater(len(d), 0)
 
 
-class IteratorTest(TestCase):
+class IteratorTest(BaseTestCase):
     def get_iterator(self, count=5, limit=5, page=0):
         q = get_query()
         insert(q.orm.interface, q.orm.schema, count)
@@ -2149,31 +2132,27 @@ class IteratorTest(TestCase):
 
     def test_values(self):
         count = 5
-        q = get_query()
-        insert(q.orm.interface, q.orm.schema, count)
-        q.set_bar()
-        g = q.get().values()
+        _q = get_query()
+        insert(_q.orm.interface, _q.orm.schema, count)
+
+        g = _q.copy().select_bar().get().values()
         icount = 0
-        for i, v in enumerate(g, 1):
-            self.assertEqual(u"value {}".format(i), v)
+        for v in g:
+            self.assertTrue(isinstance(v, basestring))
             icount += 1
         self.assertEqual(count, icount)
 
-        q.fields_set = []
-        q.set_bar().set_foo()
-        g = q.get().values()
+        g = _q.copy().select_bar().select_foo().get().values()
         icount = 0
-        for i, v in enumerate(g, 1):
+        for v in g:
             icount += 1
-            self.assertEqual(u"value {}".format(i), v[0])
-            self.assertEqual(i, v[1])
+            self.assertTrue(isinstance(v[0], basestring))
+            self.assertTrue(isinstance(v[1], int))
         self.assertEqual(count, icount)
 
-        q.fields_set = []
-        i = q.get()
+        i = _q.copy().get()
         with self.assertRaises(ValueError):
             g = i.values()
-            for v in g: pass
 
     def test___iter__(self):
         count = 5
@@ -2186,7 +2165,7 @@ class IteratorTest(TestCase):
 
         rcount = 0
         for t in i:
-            self.assertTrue(isinstance(t, Torm))
+            self.assertTrue(isinstance(t, Orm))
             rcount += 1
         self.assertEqual(count, rcount)
 
@@ -2238,45 +2217,27 @@ class IteratorTest(TestCase):
         self.assertFalse(i.has_more)
 
 
-class QueryTest(TestCase):
+class QueryTest(BaseTestCase):
     def test_query_ref(self):
-        t1 = get_orm_class()
-        t2 = get_orm_class()
-        t2.schema.set_field("che", Field(t1, True))
-        orm_classpath = "{}.{}".format(t1.__module__, t1.__name__)
-        q = t2.query.ref(orm_classpath)
-        self.assertEqual([], q.fields_where)
-
-        q = t2.query.ref(orm_classpath, 1)
-        self.assertEqual('che', q.fields_where[0][1])
-        self.assertEqual(1, q.fields_where[0][2])
-
-    def test_query_ref_2(self):
-        i = get_interface()
-        prom.set_interface(i)
-
         testdata.create_modules({
-            "qr2.foo": "\n".join([
+            "qr2": "\n".join([
                 "import prom",
+                "",
                 "class Foo(prom.Orm):",
-                "    schema = prom.Schema(",
-                "        'qr2_foo',",
-                "        foo=prom.Field(int, True),",
-                "        bar=prom.Field(str, True),",
-                "    )",
+                "    table_name = 'qr2_foo'",
+                "    foo=prom.Field(int, True)",
+                "    bar=prom.Field(str, True)",
                 ""
                 "class Bar(prom.Orm):",
-                "    schema = prom.Schema(",
-                "        'qr2_Bar',",
-                "        foo=prom.Field(int, True),",
-                "        bar=prom.Field(str, True),",
-                "        che=prom.Field(Foo, True)",
-                "    )",
+                "    table_name = 'qr2_bar'",
+                "    foo=prom.Field(int, True)",
+                "    bar=prom.Field(str, True)",
+                "    che=prom.Field(Foo, True)",
                 ""
             ])
         })
 
-        from qr2.foo import Foo as t1, Bar as t2
+        from qr2 import Foo as t1, Bar as t2
 
         ti1 = t1.create(foo=11, bar='11')
         ti12 = t1.create(foo=12, bar='12')
@@ -2324,14 +2285,18 @@ class QueryTest(TestCase):
         r = q.get()
         self.assertFalse(r)
 
-        insert(q.orm.interface, q.orm.schema, 1)
+        pk = insert(q.orm.interface, q.orm.schema, 1)[0]
+
+        # get the ojbect out so we can use it to query
+        o = _q.copy().get_pk(pk)
+        dt = o._created
+        day = int(dt.strftime('%d'))
 
         q = _q.copy()
-        q.is__created(day=int(datetime.datetime.utcnow().strftime('%d')))
+        q.is__created(day=day)
         r = q.get()
         self.assertEqual(1, len(r))
 
-        day = int(datetime.datetime.utcnow().strftime('%d'))
 
         q = _q.copy()
         q.in__created(day=day)
@@ -2382,44 +2347,40 @@ class QueryTest(TestCase):
         self.assertEqual(list(res.pk), pks)
 
     def test_value(self):
-        q = get_query()
-        q.set_foo()
-        v = q.value()
-        self.assertEqual(None, v)
-        count = 2
-        insert(q.orm.interface, q.orm.schema, count)
-        v = q.value()
-        self.assertEqual(1, v)
+        _q = get_query()
 
-        q.set_bar()
-        v = q.value()
-        self.assertEqual(1, v[0])
-        self.assertEqual(u"value 1", v[1])
+        v = _q.copy().select_foo().value()
+        self.assertEqual(None, v)
+
+        count = 2
+        pks = insert(_q.orm.interface, _q.orm.schema, count)
+        o = _q.copy().get_pk(pks[0])
+
+        v = _q.copy().select_foo().value()
+        self.assertEqual(o.foo, v)
+
+        v = _q.copy().select_foo().select_bar().value()
+        self.assertEqual(o.foo, v[0])
+        self.assertEqual(o.bar, v[1])
 
     def test_values(self):
+        _q = get_query()
+
         count = 2
-        q = get_query()
-        q.set_foo()
-        insert(q.orm.interface, q.orm.schema, count)
+        pks = insert(_q.orm.interface, _q.orm.schema, count)
 
-        icount = 0
-        for i, v in enumerate(q.values(), 1):
-            icount += 1
-            self.assertEqual(i, v)
-        self.assertEqual(count, icount)
+        vals = _q.copy().select_foo().values()
+        self.assertEqual(count, len(vals))
+        for v in vals:
+            self.assertTrue(isinstance(v, int))
 
-        q.set_bar()
-        icount = 0
-        for i, v in enumerate(q.values(), 1):
-            icount += 1
-            self.assertEqual(i, v[0])
-            self.assertEqual(u"value {}".format(i), v[1])
-        self.assertEqual(count, icount)
+        vals = _q.copy().select_foo().select_bar().values()
+        self.assertEqual(count, len(vals))
+        for v in vals:
+            self.assertTrue(isinstance(v, list))
 
-        icount = 0
-        for v in q.values(limit=1):
-            icount += 1
-        self.assertEqual(1, icount)
+        vals = _q.copy().select_foo().values(limit=1)
+        self.assertEqual(1, len(vals))
 
     def test_pk(self):
         q = get_query()
@@ -2657,17 +2618,39 @@ class QueryTest(TestCase):
         q.set_limit(-10)
         self.assertEqual((0, 0, 0), q.get_bounds())
 
-    def test_set(self):
+    def test_insert_and_update(self):
         i, s = get_table()
-        class TestSetTorm(Orm):
+        class IUTorm(Orm):
             interface = i
             schema = s
 
-        q = query.Query(orm=TestSetTorm)
-        d = q.set_fields(foo=1, bar="value 1").set()
-        for field_name in ['_id', 'foo', 'bar']:
-            self.assertTrue(field_name in d)
-            self.assertTrue(d[field_name])
+        q = query.Query(orm=IUTorm)
+        pk = q.set_fields(IUTorm.get_insert_fields(foo=1, bar="value 1")).insert()
+        self.assertLess(0, pk)
+
+        row_count = q.set_fields(foo=2, bar="value 2").is_pk(pk).update()
+        self.assertEqual(1, row_count)
+
+        o = query.Query(orm=IUTorm).get_pk(pk)
+        self.assertEqual(2, o.foo)
+        self.assertEqual("value 2", o.bar)
+
+    def test_update_bubble_up(self):
+        """
+        https://github.com/firstopinion/prom/issues/11
+        """
+        orm = get_orm()
+        orm.schema.set_field("che", Field(str, False))
+        orm.foo = 1
+        orm.bar = "bar 1"
+        orm.che = None
+        orm.save()
+
+        ret = orm.query.set_foo(2).set_bar("bar 2").not_che(None).update()
+        self.assertEqual(0, ret)
+
+        ret = orm.query.set_foo(2).set_bar("bar 2").is_che(None).update()
+        self.assertEqual(1, ret)
 
     def test_delete(self):
         tclass = get_orm_class()

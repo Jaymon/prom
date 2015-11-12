@@ -259,6 +259,12 @@ class Query(object):
         self.bounds = {}
         self.args = args
         self.kwargs = kwargs
+        # the idea here is to set this to False if there is a condition that will
+        # automatically cause the query to fail but not necessarily be an error, 
+        # the best example is the IN (...) queries, if you do self.in_foo([]).get()
+        # that will fail because the list was empty, but a value error shouldn't
+        # be raised because a common case is: self.if_foo(Bar.query.is_che(True).pks).get()
+        # which should result in an empty set if there are no rows where che = TRUE
         self.can_get = True
 
     def ref(self, orm_classpath, cls_pk=None):
@@ -280,12 +286,11 @@ class Query(object):
         orm_module, orm_class = get_objects(orm_classpath)
         q = orm_class.query
         if cls_pk:
-            ref_s = orm_class.schema
-            for fn, f in ref_s.fields.items():
+            for fn, f in orm_class.schema.fields.items():
                 cls_ref_s = f.schema
                 if cls_ref_s and self.orm.schema == cls_ref_s:
-                        q.is_field(fn, cls_pk)
-                        break
+                    q.is_field(fn, cls_pk)
+                    break
 
         return q
 
@@ -329,7 +334,7 @@ class Query(object):
                 fields = list(fields[0]) + list(fields)[1:]
 
         for field_name in fields:
-            self.set_field(field_name)
+            self.select_field(field_name)
 
     def set_field(self, field_name, field_val=None):
         """
@@ -483,7 +488,11 @@ class Query(object):
         return callback
 
     def _split_method(self, method_name):
-        command, field_name = method_name.split(u"_", 1)
+        try:
+            command, field_name = method_name.split(u"_", 1)
+        except ValueError:
+            raise ValueError("invalid command_method: {}".format(method_name))
+
         if self.orm: field_name = self.orm.schema.field_name(field_name)
 
         return command, field_name
@@ -648,10 +657,14 @@ class Query(object):
         v = self.get_one()
         return True if v else False
 
-    def set(self):
-        """persist the .fields using .fields_where (if available)"""
-        self.default_val = None
-        return self._query('set')
+    def insert(self):
+        """persist the .fields"""
+        self.default_val = 0
+        return self.orm.interface.insert(self.orm.schema, self.fields)
+
+    def update(self):
+        """persist the .fields using .fields_where"""
+        return self._query('update')
 
     def delete(self):
         """remove fields matching the where criteria"""

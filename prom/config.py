@@ -192,9 +192,10 @@ class Schema(object):
             s = cls(table_name)
             #properties = inspect.getmembers(orm_class, lambda x: isinstance(x, (Field, Index)))
             #for k, v in properties:
-            for k, v in vars(orm_class).items():
-                if isinstance(v, (Field, Index)):
-                    s.set(k, v)
+            for klass in inspect.getmro(orm_class)[:-1]:
+                for k, v in vars(klass).items():
+                    if isinstance(v, (Field, Index)):
+                        s.set(k, v)
 
             cls.instances[table_name] = s
 
@@ -208,26 +209,26 @@ class Schema(object):
 
         example --
 
-            self.schema = Schema(
+            schema = Schema(
                 "table_name"
-                field1=(int, True),
-                field2=(str,),
-                index_fields=("field1", "field2")
+                field1=Field(int, True),
+                field2=Field(str),
+                index_fields=Index("field1", "field2")
             )
 
         table -- string -- the table name
-        **fields -- a dict of field name or index keys with tuple values, see __getattr__ for more details
+        **fields_or_indexes -- a dict of field name or index keys with tuple values, see __getattr__ for more details
         """
         self.fields = {}
         self.indexes = {}
         self.table = str(table)
 
-        self.set_field("_id", Field(long, True, pk=True))
-        self.set_field("_created", Field(datetime.datetime, True))
-        self.set_field("_updated", Field(datetime.datetime, True))
-
-        self.set_index("updated", Index("_updated"))
-        self.set_index("created", Index("_created"))
+#         self.set_field("_id", Field(long, True, pk=True))
+#         self.set_field("_created", Field(datetime.datetime, True))
+#         self.set_field("_updated", Field(datetime.datetime, True))
+# 
+#         self.set_index("updated", Index("_updated"))
+#         self.set_index("created", Index("_created"))
 
         for name, val in fields_or_indexes.items():
             self.set(name, val)
@@ -405,25 +406,31 @@ class Field(object):
         self.fnormalize = field_options.pop("fnormalize", None)
         self.options = field_options
 
+    def is_pk(self):
+        """return True if this field is a primary key"""
+        return self.options.get("pk", False)
+
     def is_ref(self):
+        """return true if this field foreign key references the primary key of another orm"""
         return bool(self.schema)
 
-    def is_weakref(self):
-        return not self.required and self.is_ref()
-
-    def __get__(self, instance, klass):
-        #pout.v("__get__")
-        #return klass.__getattr__(self.name)
-        return self
-
-    def __set__(self, instance, val):
-        #pout.v("__set__", self.name, instance, val)
-        instance.__dict__[self.name] = val
-
-    def __delete__(self, instance):
-        #pout.v("__delete__")
-        #return self
-        del instance.__dict__[self.name]
+#     def is_weakref(self):
+#         return not self.required and self.is_ref()
+# 
+#     def __get__(self, instance, klass):
+#         #pout.v("__get__")
+#         #return klass.__getattr__(self.name)
+#         return instance.__dict__[self.name]
+#         #return self
+# 
+#     def __set__(self, instance, val):
+#         #pout.v("__set__", self.name, instance, val)
+#         instance.__dict__[self.name] = val
+# 
+#     def __delete__(self, instance):
+#         #pout.v("__delete__")
+#         #return self
+#         del instance.__dict__[self.name]
 
     def __call__(self, fnormalize):
         self.fnormalize = fnormalize

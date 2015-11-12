@@ -32,7 +32,7 @@ def make_dict(fields, fields_kwargs):
     those into one super dict with kwargs taking precedence, this does that
 
     fields -- dict -- a passed in dict
-    fields_kwargs -- dict -- usually a **kwargs dict
+    fields_kwargs -- dict -- usually a **kwargs dict from another function
 
     return -- dict -- a merged fields and fields_kwargs
     """
