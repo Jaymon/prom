@@ -1,10 +1,8 @@
 # Prom
 
-A lightweight orm for PostgreSQL or SQLite.
+An opinionated lightweight orm for PostgreSQL or SQLite.
 
 Lovingly crafted for [First Opinion](http://firstopinionapp.com).
-
-Prom tries to be as easy as possible on the developer so they don't need to constantly reference the documentation to get anything done.
 
 Prom has been used in both single threaded and multi-threaded environments, including environments using Greenthreads.
 
@@ -29,10 +27,8 @@ Create a prom Orm:
 >>> import prom
 >>>
 >>> class Foo(prom.Orm):
-...     schema = prom.Schema(
-...         "foo_table_name",
-...         bar=prom.Field(int, True)
-...     )
+...     table_name = "foo_table_name"
+...     bar = prom.Field(int, True)
 ...
 >>>
 ```
@@ -40,7 +36,7 @@ Create a prom Orm:
 Now go wild and create some `Foo` objects:
 
 ```python
->>> for x in xrange(10):
+>>> for x in range(10):
 ...     f = Foo.create(bar=x)
 ...
 >>>
@@ -69,7 +65,7 @@ Update them:
 ```python
 >>> for f in Foo.query:
 ...     f.bar += 100
-...     f.set()
+...     f.save()
 ...
 >>>
 ```
@@ -85,6 +81,7 @@ and get rid of them:
 
 Congratulations, you have now created, retrieved, updated, and deleted from your database.
 
+
 -------------------------------------------------------------------------------
 
 ## Example -- Create a User class
@@ -93,18 +90,19 @@ Here is how you would define a new Orm class:
 
 ```python
 # app.models (app/models.py)
-import prom
+from prom import Orm, Field, Index
 
-class User(prom.Orm):
+class User(Orm):
 
-    schema = prom.Schema(
-        "user_table_name", # the db table name
-        username=prom.Field(str, True), # string field (required)
-        password=prom.Field(str, True), # string field (required)
-        email=prom.Field(str), # string field (not required)
-        unique_user=('username',) # set a unique index on username field
-        index_email=('email',) # set a normal index on email field
-    )
+    table_name = "user_table_name"
+
+    username = Field(str, True, unique=True), # string field (required) with a unique index
+
+    password = Field(str, True), # string field (required)
+
+    email = Field(str), # string field (not required)
+
+    index_email = Index('email') # set a normal index on email field
 ```
 
 You can specify the connection using a prom dsn url:
@@ -126,7 +124,7 @@ prom.configure("prom.interface.postgres.PostgreSQL://testuser:testpw@localhost/t
 
 # create a user
 u = User(username='foo', password='awesome_and_secure_pw_hash', email='foo@bar.com')
-u.set()
+u.save()
 
 # query for our new user
 u = User.query.is_username('foo').get_one()
@@ -137,15 +135,16 @@ u2 = User.query.get_pk(u.pk)
 print u.username # foo
 
 # let's add a bunch more users:
-for x in xrange(10):
+for x in range(10):
     username = "foo{}".format(x)
     ut = User(username=username, password="...", email="{}@bar.com".format(username))
-    ut.set()
+    ut.save()
 
 # now let's iterate through all our new users:
 for u in User.query.get():
     print u.username
 ```
+
 
 ## Environment Configuration
 
@@ -245,7 +244,7 @@ rows = query.select_foo().in_foo(foos).asc_foo(foos).values()
 print rows # [3, 5, 2, 1]
 ```
 
-And you can also set limit and page in the get query:
+And you can also set limit and page:
 
 ```python
 query.get(10, 1) # get 10 results for page 1 (offset 0)
@@ -290,7 +289,7 @@ The `prom.Query` has a couple helpful query methods to make grabbing rows easy:
   * raw -- `raw(query_str, *query_args, **query_options)` -- run a raw query
   * all -- `all()` -- return an iterator that can move through every row in the db matching query
   * count -- `count()` -- return an integer of how many rows match the query
-    
+
 **NOTE**, Doing custom queries using `raw` would be the only way to do join queries.
 
 
@@ -303,11 +302,11 @@ import datetime
 
 class Foo(prom.Orm):
 
-    schema = prom.Schema(
-        "foo_table",
-        dt=prom.Field(datetime.datetime)
-        index_dt=('dt',)
-    )
+    table_name = "foo_table"
+
+    dt = prom.Field(datetime.datetime)
+
+    index_dt = prom.Index('dt')
 
 # get all the foos that have the 7th of every month
 r = q.is_dt(day=7).all() # SELECT * FROM foo_table WHERE EXTRACT(DAY FROM dt) = 7
@@ -322,6 +321,16 @@ Hopefully you get the idea from the above code.
 ### The Iterator class
 
 the `get` and `all` query methods return a `prom.query.Iterator` instance. This instance has a useful attribute `has_more` that will be true if there are more rows in the db that match the query.
+
+Similar to the Query class, you can customize the Iterator class by setting the `iterator_class` class variable:
+
+```python
+class DemoIterator(prom.Iterator):
+    pass
+
+class DemoOrm(prom.Orm):
+    iterator_class = DemoIterator
+```
 
 
 ## Multiple db interfaces or connections
@@ -343,9 +352,90 @@ class Orm2(prom.Orm):
 Now, any class that extends `Orm1` will use `connection_1` and any orm that extends `Orm2` will use `connection_2`.
 
 
-## Green threads
+## Schema class
 
-Prom can use green threads of the gevent module, so before you can use Prom greenthreads you need to install some modules:
+
+### The Field class
+
+You can create fields in your schema using the `Field` class, the field has a signature like this:
+
+```python
+Field(field_type, field_required, **field_options)
+```
+
+The `field_type` is the python type (eg, `str` or `int` or `datetime`) you want the field to be.
+
+The `field_required` is a boolean, it is true if the field needs to have a value, false if it doesn't need to be in the db.
+
+The `field_options` are any other settings for the fields, some possible values:
+
+  * `size` -- the size of the field (for a `str` this would be the number of characters in the string)
+  * `max_size` -- The max size of the field (for a `str`, the maximum number of characters, for an `int`, the biggest number you're expecting)
+  * `min_size` -- The minimum size of the field (can only be used with a corresponding `max_size` value)
+  * `unique` -- set to True if this field value should be unique among all the fields in the db.
+  * `ignore_case` -- set to True if indexes on this field should ignore case
+
+
+### Foreign Keys
+
+You can have a field reference the primary key of another field:
+
+```python
+from prom import Orm, Field
+
+class Orm1(Orm):
+    table_name = "table_1"
+
+    foo = Field(int)
+
+
+class Orm2(Orm):
+    table_name = "table_2"
+
+    orm1_id=prom.Field(Orm1, True) # strong reference
+
+    orm1_id_2=prom.Field(Orm1, False) # weak reference
+```
+
+Passing in an Orm class as the type of the field will create a foreign key reference to that Orm. If the field is required, then it will be a strong reference that deletes the row from `Orm2` if the row from `s1` is deleted, if the field is not required, then it is a weak reference, which will set the column to `NULL` in the db if the row from `Orm1` is deleted.
+
+
+## Versions
+
+While Prom will most likely work on other versions, these are the versions we are running it on (just for references):
+
+
+### Python
+
+    $ python --version
+    Python 2.7.3
+
+
+### Postgres
+
+    $ psql --version
+    psql (PostgreSQL) 9.1.9
+
+
+## Installation
+
+
+### Postgres
+
+If you want to use Prom with Postgres, you need psycopg2:
+
+    $ apt-get install libpq-dev python-dev
+    $ pip install psycopg
+
+
+### Green threads
+
+If you want to use Prom with gevent, you'll need gevent and psycogreen:
+
+    $ pip install gevent
+    $ pip install psycogreen
+
+These are the versions we're using:
 
     $ pip install "gevent==1.0.1"
     $ pip install "psycogreen==1.0"
@@ -365,131 +455,23 @@ Now you can use Prom in the same way you always have. If you would like to confi
 All the options will be automatically set when `prom.gevent.patch_all()` is called.
 
 
-## Using for the first time
+### Prom
 
-Prom takes the approach that you don't want to be hassled with table installation while developing, so when it tries to do something and sees that the table doesn't exist, it will use your defined `prom.Schema` for your `prom.Orm` child and create a table for you, that way you don't have to remember to run a script or craft some custom db query to add your tables, Prom takes care of that for you automatically.
+Prom installs using pip:
+
+    $ pip install prom
+
+
+### Using for the first time
+
+Prom takes the approach that you don't want to be hassled with table installation while developing, so when it tries to do something and sees that the table doesn't yet exist, it will use your defined fields for your `prom.Orm` child and create a table for you, that way you don't have to remember to run a script or craft some custom db query to add your tables, Prom takes care of that for you automatically.
 
 If you want to install the tables manually, you can create a script or something and use the `install()` method:
 
     SomeOrm.install()
 
 
-## Schema class
-
-
-### The Field class
-
-You can create fields in your schema using the `Field` class, the field has a signature like this:
-
-```python
-Field(field_type, field_required, **field_options)
-```
-
-The `field_type` is the python type (eg, `str` or `int` or `datetime`) you want the field to be.
-
-The `field_required` is a boolean, it is true if the field needs to have a value, false if it doesn't need to be in the db.
-
-The `field_options` are any other settings for the fields, some possible values:
-
-  * `ref` -- a Foreign key strong reference to another schema
-  * `weak_ref` -- a Foreign key weak reference to another schema
-  * `size` -- the size of the field (for a `str` this would be the number of characters in the string)
-  * `max_size` -- The max size of the field (for a `str`, the maximum number of characters, for an `int`, the biggest number you're expecting)
-  * `min_size` -- The minimum size of the field (can only be used with a corresponding `max_size` value)
-  * `unique` -- set to True if this field value should be unique among all the fields in the db.
-  * `ignore_case` -- set to True if indexes on this field should ignore case
-
-
-### Foreign Keys
-
-You can have a field reference the primary key of another field:
-
-```python
-s1 = prom.Schema(
-    "table_1",
-    foo=prom.Field(int)
-)
-
-s2 = prom.Schema(
-    "table_2",
-    s1_id=prom.Field(int, True, ref=s1)
-)
-```
-
-the `ref` option creates a strong reference, which will delete the row from `s2` if the row from `s1` is deleted, if you would rather have the `s1_id` just set to None you can use the `weak_ref` option:
-
-```python
-s2 = prom.Schema(
-    "table_2",
-    s1_id=prom.Field(int, weak_ref=s1)
-)
-```
-
-
-### Gevent Green Threads
-
-Green threads can only be used with Postgres and Gevent, and you'll need to monkey patch:
-
-    import prom.gevent
-    prom.gevent.patch_all()
-
-
-## Other things
-
-Prom has a very similar interface to [Mingo](https://github.com/Jaymon/Mingo).
-
-I built Prom because I didn't feel like Python had a good "get out of your way" relational db orm that wasn't tied to some giant framework or that didn't try to be all things to all people, or that didn't suck.
-
-Prom is really super beta right now, built for [First Opinion](http://firstopinion.co/).
-
-Prom assumes you want to do certain things, and so it tries to make those things really easy to do, while assuming you don't want to do things like `JOIN` queries, so those are harder to do.
-
-## Versions
-
-While Prom will most likely work on other versions, these are the versions we are running it on (just for references):
-
-### Python
-
-    $ python --version
-    Python 2.7.3
-
-### Postgres
-
-    $ psql --version
-    psql (PostgreSQL) 9.1.9
-
-## Installation
-
-If you want to use Prom with Postgres, you need psycopg2:
-
-    $ apt-get install libpq-dev python-dev
-    $ pip install psycopg
-
-If you want to use Prom with gevent, you'll need gevent and psycogreen:
-
-    $ pip install gevent
-    $ pip install psycogreen
-
-Then you can also use pip to install Prom:
-
-    $ pip install prom
-
 ## License
 
 MIT
-
-## Todo
-
-### Schema installation queries
-
-You could do something like this:
-
-    s = prom.Schema(
-      "table_name"
-      field_name=(int, required_bool, options_dict),
-      "CREATE INDEX foo ON table_name USING BTREE (field_name)",
-      "INSERT INTO table_name (field_name) VALUES ('some value)"
-    )
-
-That way you can do crazy indexes and maybe add an admin user or something. I don't know if I Like the syntax, but it's the best I've come up with to allow things like creating statement indexes on the month and day of a timestamp index for example.
 

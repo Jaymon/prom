@@ -3,7 +3,7 @@ import os
 import logging
 
 # first party
-from .config import DsnConnection, Schema, Field
+from .config import DsnConnection, Schema, Field, Index
 from .query import Query
 from . import decorators
 from .model import Orm
