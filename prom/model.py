@@ -313,10 +313,11 @@ class Orm(object):
         return modified_fields
 
     def __setattr__(self, field_name, field_val):
-        if (field_val is not None) and (field_name in self.schema.fields):
-            fnorm = self.schema.fields[field_name].fnormalize
-            if fnorm:
-                field_val = fnorm(self, field_val)
+        if field_name in self.schema.fields:
+            if field_val is not None:
+                fnorm = self.schema.fields[field_name].fnormalize
+                if fnorm:
+                    field_val = fnorm(self, field_val)
 
             self.modified_fields.add(field_name)
 

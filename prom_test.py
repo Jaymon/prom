@@ -168,12 +168,29 @@ class BaseTestCase(TestCase):
 
 
 class OrmTest(BaseTestCase):
+    def test___setattr__(self):
+        class SAOrm(Orm):
+            table_name = "saorm_table"
+            foo = Field(int)
+            bar = Field(str)
 
-#     def setUp(self):
-#         i, s = get_table()
-#         #Torm.schema = s
-#         Torm.table_name = 
-#         prom.set_interface(i)
+        o = SAOrm()
+        o.foo = 1
+        o.bar = "1"
+        self.assertTrue(o.modified_fields)
+
+        o.save()
+        self.assertFalse(o.modified_fields)
+
+        o.foo = 2
+        self.assertTrue(o.modified_fields)
+
+        o.save()
+        self.assertFalse(o.modified_fields)
+
+        o.foo = None
+        o.bar = None
+        self.assertEqual(2, len(o.modified_fields))
 
     def test_creation(self):
 
