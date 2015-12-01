@@ -168,6 +168,31 @@ class BaseTestCase(TestCase):
 
 
 class OrmTest(BaseTestCase):
+    def test___delattr__(self):
+        class DAOrm(Orm):
+            table_name = "daorm_table"
+            foo = Field(int)
+            bar = Field(str)
+
+        o = DAOrm()
+        o.foo = 1
+        o.bar = "1"
+        self.assertEqual(1, o.foo)
+        self.assertEqual("1", o.bar)
+
+        del o.foo
+        self.assertEqual(None, o.foo)
+
+        del o.bar
+        self.assertEqual(None, o.bar)
+
+        o.che = "yay"
+        self.assertEqual("yay", o.che)
+
+        del o.che
+        with self.assertRaises(AttributeError):
+            o.che
+
     def test___setattr__(self):
         class SAOrm(Orm):
             table_name = "saorm_table"

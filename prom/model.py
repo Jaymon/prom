@@ -323,6 +323,13 @@ class Orm(object):
 
         super(Orm, self).__setattr__(field_name, field_val)
 
+    def __delattr__(self, field_name):
+        if field_name in self.schema.fields:
+            setattr(self, field_name, None)
+
+        else:
+            super(Orm, self).__delattr__(field_name)
+
     def __int__(self):
         return int(self.pk)
 
