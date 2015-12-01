@@ -20,7 +20,7 @@ except ImportError as e:
 
 from prom import query
 from prom.model import Orm
-from prom.config import Schema, Connection, DsnConnection, Field, Index
+from prom.config import Schema, Connection, DsnConnection, Field, Index, FieldProperty
 from prom.interface.postgres import PostgreSQL
 from prom.interface.sqlite import SQLite
 import prom
@@ -168,6 +168,34 @@ class BaseTestCase(TestCase):
 
 
 class OrmTest(BaseTestCase):
+    def test_field_override(self):
+        class FOParentOrm(Orm):
+            table_name = "foorm_table"
+            foo = Field(int)
+
+        class FOOrm(FOParentOrm):
+            @property
+            def foo(self):
+                return self.__dict__.get("_foo", None)
+
+            @foo.setter
+            def foo(self, v):
+                self._foo = v
+
+            @foo.deleter
+            def foo(self):
+                del self._foo
+
+        o = FOOrm.create(foo=1)
+        self.assertEqual(1, o.foo)
+
+        o.foo = 2
+        self.assertTrue("foo" in o.modified_fields)
+
+        o.save()
+        o2 = o.query.get_pk(o.pk)
+        self.assertEqual(2, o.foo)
+
     def test___delattr__(self):
         class DAOrm(Orm):
             table_name = "daorm_table"
@@ -870,6 +898,21 @@ class ConfigConnectionTest(BaseTestCase):
 
 
 class ConfigFieldTest(BaseTestCase):
+
+    def test_property(self):
+        class FieldPropertyOrm(prom.Orm):
+            foo = prom.Field(int)
+
+            foo.property.setter
+            def foo(self, val):
+                return int(val) + 10
+
+        o = FieldPropertyOrm()
+        o.foo = 1
+        pout.v(o.foo)
+        #pout.v(FieldPropertyTest.foo)
+        #self.assertTrue(FieldPropertyTest.foo)
+
 
     def test_decorator(self):
 

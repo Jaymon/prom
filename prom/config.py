@@ -318,7 +318,50 @@ class Index(object):
         self.unique = options.get("unique", False)
 
 
-class Field(object):
+
+class FieldProperty(property):
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
+
+        f = None
+
+        if fget:
+            if not f:
+                f = fget
+        else:
+            fget = self.default_get
+
+        if fset:
+            if not f:
+                f = fset
+        else:
+            fset = self.default_set
+
+        if fdel:
+            if not f:
+                f = fdel
+        else:
+            fdel = self.default_del
+
+        super(FieldProperty, self).__init__(fget, fset, fdel, doc)
+
+        self.val = None
+
+        if f:
+            self.name = f.__name__
+            if not self.__doc__:
+                self.__doc__ = f.__doc__
+
+    def default_get(self, instance):
+        return self.val
+
+    def default_set(self, instance, val):
+        self.val = val
+
+    def default_del(self, instance):
+        self.val = None
+
+
+class Field(property):
     """Each column in the database is configured using this class"""
 
     @property
@@ -349,6 +392,15 @@ class Field(object):
             ret = s.pk.type
 
         return ret
+
+    @property
+    def property(self):
+        return FieldProperty()
+
+        if not hasattr(self, "_property"):
+            self._property = FieldProperty()
+
+        return self._property
 
     def __init__(self, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
