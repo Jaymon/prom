@@ -28,7 +28,7 @@ Create a prom Orm:
 >>>
 >>> class Foo(prom.Orm):
 ...     table_name = "foo_table_name"
-...     bar = prom.Field(int, True)
+...     bar = prom.Field(int)
 ...
 >>>
 ```
