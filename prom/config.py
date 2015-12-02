@@ -319,46 +319,46 @@ class Index(object):
 
 
 
-class FieldProperty(property):
-    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
-
-        f = None
-
-        if fget:
-            if not f:
-                f = fget
-        else:
-            fget = self.default_get
-
-        if fset:
-            if not f:
-                f = fset
-        else:
-            fset = self.default_set
-
-        if fdel:
-            if not f:
-                f = fdel
-        else:
-            fdel = self.default_del
-
-        super(FieldProperty, self).__init__(fget, fset, fdel, doc)
-
-        self.val = None
-
-        if f:
-            self.name = f.__name__
-            if not self.__doc__:
-                self.__doc__ = f.__doc__
-
-    def default_get(self, instance):
-        return self.val
-
-    def default_set(self, instance, val):
-        self.val = val
-
-    def default_del(self, instance):
-        self.val = None
+# class FieldProperty(property):
+#     def __init__(self, fget=None, fset=None, fdel=None, doc=None):
+# 
+#         f = None
+# 
+#         if fget:
+#             if not f:
+#                 f = fget
+#         else:
+#             fget = self.default_get
+# 
+#         if fset:
+#             if not f:
+#                 f = fset
+#         else:
+#             fset = self.default_set
+# 
+#         if fdel:
+#             if not f:
+#                 f = fdel
+#         else:
+#             fdel = self.default_del
+# 
+#         super(FieldProperty, self).__init__(fget, fset, fdel, doc)
+# 
+#         self.val = None
+# 
+#         if f:
+#             self.name = f.__name__
+#             if not self.__doc__:
+#                 self.__doc__ = f.__doc__
+# 
+#     def default_get(self, instance):
+#         return self.val
+# 
+#     def default_set(self, instance, val):
+#         self.val = val
+# 
+#     def default_del(self, instance):
+#         self.val = None
 
 
 class Field(property):
@@ -393,14 +393,14 @@ class Field(property):
 
         return ret
 
-    @property
-    def property(self):
-        return FieldProperty()
-
-        if not hasattr(self, "_property"):
-            self._property = FieldProperty()
-
-        return self._property
+#     @property
+#     def property(self):
+#         return FieldProperty()
+# 
+#         if not hasattr(self, "_property"):
+#             self._property = FieldProperty()
+# 
+#         return self._property
 
     def __init__(self, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
@@ -442,11 +442,18 @@ class Field(property):
         field_options.setdefault("unique", False)
         field_options.update(d)
 
-        self.name = ""
+        self.val = field_options.pop("val", None)
+        fget = field_options.pop("fget", self.default_get)
+        fset = field_options.pop("fset", self.default_set)
+        fdel = field_options.pop("fdel", self.default_del)
+
+        self.name = field_options.pop("name", "")
         self._type = field_type
         self.required = field_required
         self.fnormalize = field_options.pop("fnormalize", None)
         self.options = field_options
+
+        super(Field, self).__init__(fget, fset, fdel)
 
     def is_pk(self):
         """return True if this field is a primary key"""
@@ -456,7 +463,51 @@ class Field(property):
         """return true if this field foreign key references the primary key of another orm"""
         return bool(self.schema)
 
-    def __call__(self, fnormalize):
-        self.fnormalize = fnormalize
-        return self
+    def default_get(self, instance):
+        pout.v(self)
+        return self.val
+
+    def default_set(self, instance, val):
+        return val
+
+    def default_del(self, instance):
+        self.val = None
+
+    def getter(self, fget):
+        return type(self)(
+            self._type,
+            self.required,
+            fget=fget,
+            fset=self.fset,
+            fdel=self.fdel,
+            val=self.val,
+            **self.options
+        )
+
+    def setter(self, fset):
+        return type(self)(
+            self._type,
+            self.required,
+            fget=self.fget,
+            fset=fset,
+            fdel=self.fdel,
+            val=self.val,
+            **self.options
+        )
+
+    def deleter(self, fdel):
+        return type(self)(
+            self._type,
+            self.required,
+            fget=self.fget,
+            fset=self.fset,
+            fdel=fdel,
+            val=self.val,
+            **self.options
+        )
+
+    def __set__(self, instance, val):
+        val = self.fset(instance, val)
+        self._val = val
+        pout.v(self)
 

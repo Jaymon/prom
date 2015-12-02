@@ -20,7 +20,7 @@ except ImportError as e:
 
 from prom import query
 from prom.model import Orm
-from prom.config import Schema, Connection, DsnConnection, Field, Index, FieldProperty
+from prom.config import Schema, Connection, DsnConnection, Field, Index
 from prom.interface.postgres import PostgreSQL
 from prom.interface.sqlite import SQLite
 import prom
@@ -903,12 +903,13 @@ class ConfigFieldTest(BaseTestCase):
         class FieldPropertyOrm(prom.Orm):
             foo = prom.Field(int)
 
-            foo.property.setter
+            @foo.setter
             def foo(self, val):
-                return int(val) + 10
+                return int(val) + 10 if (val is not None) else val
 
         o = FieldPropertyOrm()
         o.foo = 1
+        o.foo = 2
         pout.v(o.foo)
         #pout.v(FieldPropertyTest.foo)
         #self.assertTrue(FieldPropertyTest.foo)
