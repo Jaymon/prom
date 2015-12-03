@@ -192,6 +192,8 @@ class DemoQuery(prom.Query):
 class DemoOrm(prom.Orm):
     query_class = DemoQuery
 
+
+DemoOrm.query.get_by_foo(1, 2, 3) # this now works
 ```
 
 Notice the `query_class` class property on the `DemoOrm` class. Now every instance of `DemoOrm` (or child that derives from it) will forever use `DemoQuery`.

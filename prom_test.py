@@ -168,25 +168,12 @@ class BaseTestCase(TestCase):
 
 
 class OrmTest(BaseTestCase):
-    def test_field_override(self):
+    def test_field_lifecycle(self):
         class FOParentOrm(Orm):
             table_name = "foorm_table"
             foo = Field(int)
 
-        class FOOrm(FOParentOrm):
-            @property
-            def foo(self):
-                return self.__dict__.get("_foo", None)
-
-            @foo.setter
-            def foo(self, v):
-                self._foo = v
-
-            @foo.deleter
-            def foo(self):
-                del self._foo
-
-        o = FOOrm.create(foo=1)
+        o = FOParentOrm.create(foo=1)
         self.assertEqual(1, o.foo)
 
         o.foo = 2
@@ -195,6 +182,10 @@ class OrmTest(BaseTestCase):
         o.save()
         o2 = o.query.get_pk(o.pk)
         self.assertEqual(2, o.foo)
+
+        del o.foo
+        self.assertEqual(None, o.foo)
+        self.assertTrue("foo" in o.modified_fields)
 
     def test___delattr__(self):
         class DAOrm(Orm):
@@ -307,10 +298,13 @@ class OrmTest(BaseTestCase):
         class TM(prom.Orm):
             table_name = get_table_name()
 
-            bar=Field(str, True)
+            bar = Field(str, True)
 
-            @Field(str, False)
+            che = Field(str, False)
+
+            @che.setter
             def che(self, field_val):
+                if field_val is None: return field_val
                 if not field_val.startswith('boom'):
                     raise ValueError("what the heck?")
                 return field_val
@@ -903,28 +897,37 @@ class ConfigFieldTest(BaseTestCase):
         class FieldPropertyOrm(prom.Orm):
             foo = prom.Field(int)
 
+            @foo.getter
+            def foo(self, val):
+                return val
+
             @foo.setter
             def foo(self, val):
                 return int(val) + 10 if (val is not None) else val
 
         o = FieldPropertyOrm()
+
         o.foo = 1
+        self.assertEqual(11, o.foo)
+
         o.foo = 2
-        pout.v(o.foo)
-        #pout.v(FieldPropertyTest.foo)
-        #self.assertTrue(FieldPropertyTest.foo)
+        self.assertEqual(12, o.foo)
 
+        o.foo = None
+        self.assertEqual(None, o.foo)
 
-    def test_decorator(self):
-
-        class FieldDecTest(object):
-            @prom.Field(int)
-            def foo(self, val):
-                return int(val) + 10
-
-            bar = prom.Field(str)
-
-        self.assertTrue(FieldDecTest.foo.fnormalize)
+#     def test_decorator(self):
+# 
+#         class FieldDecTest(object):
+#             foo = prom.Field(int)
+# 
+#             @foo.setter
+#             def foo(self, val):
+#                 return int(val) + 10
+# 
+#             bar = prom.Field(str)
+# 
+#         self.assertTrue(FieldDecTest.foo.fnormalize)
 
     def test_ref(self):
         testdata.create_module("ref", "\n".join([

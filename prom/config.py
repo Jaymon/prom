@@ -361,7 +361,7 @@ class Index(object):
 #         self.val = None
 
 
-class Field(property):
+class Field(object):
     """Each column in the database is configured using this class"""
 
     @property
@@ -392,15 +392,6 @@ class Field(property):
             ret = s.pk.type
 
         return ret
-
-#     @property
-#     def property(self):
-#         return FieldProperty()
-# 
-#         if not hasattr(self, "_property"):
-#             self._property = FieldProperty()
-# 
-#         return self._property
 
     def __init__(self, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
@@ -442,18 +433,15 @@ class Field(property):
         field_options.setdefault("unique", False)
         field_options.update(d)
 
-        self.val = field_options.pop("val", None)
-        fget = field_options.pop("fget", self.default_get)
-        fset = field_options.pop("fset", self.default_set)
-        fdel = field_options.pop("fdel", self.default_del)
+        self.fget = field_options.pop("fget", self.default_get)
+        self.fset = field_options.pop("fset", self.default_set)
+        self.fdel = field_options.pop("fdel", self.default_del)
 
         self.name = field_options.pop("name", "")
+        self.instance_field_name = str(id(self))
         self._type = field_type
         self.required = field_required
-        self.fnormalize = field_options.pop("fnormalize", None)
         self.options = field_options
-
-        super(Field, self).__init__(fget, fset, fdel)
 
     def is_pk(self):
         """return True if this field is a primary key"""
@@ -463,51 +451,52 @@ class Field(property):
         """return true if this field foreign key references the primary key of another orm"""
         return bool(self.schema)
 
-    def default_get(self, instance):
-        pout.v(self)
-        return self.val
+    def default_get(self, instance, val):
+        return val
 
     def default_set(self, instance, val):
         return val
 
     def default_del(self, instance):
-        self.val = None
+        self.__set__(instance, None)
 
     def getter(self, fget):
-        return type(self)(
-            self._type,
-            self.required,
-            fget=fget,
-            fset=self.fset,
-            fdel=self.fdel,
-            val=self.val,
-            **self.options
-        )
+        """decorator for setting field's fget function"""
+        self.fget = fget
+        return self
 
     def setter(self, fset):
-        return type(self)(
-            self._type,
-            self.required,
-            fget=self.fget,
-            fset=fset,
-            fdel=self.fdel,
-            val=self.val,
-            **self.options
-        )
+        """decorator for setting field's fset function"""
+        self.fset = fset
+        return self
 
     def deleter(self, fdel):
-        return type(self)(
-            self._type,
-            self.required,
-            fget=self.fget,
-            fset=self.fset,
-            fdel=fdel,
-            val=self.val,
-            **self.options
-        )
+        """decorator for setting field's fdel function"""
+        self.fdel = fdel
+        return self
+
+    def __get__(self, instance, classtype=None):
+        """This is the wrapper that will actually be called when the field is
+        fetched from the instance, this is a little different than Python's built-in
+        @property getter because it will pull the value from a shadow variable in
+        the instance and then call fget"""
+        if instance is None:
+            return self
+
+        val = instance.__dict__[self.instance_field_name]
+        return self.fget(instance, val)
 
     def __set__(self, instance, val):
+        """this is the wrapper that will actually be called when the field is
+        set on the instance, your fset method must return the value you want set,
+        this is different than Python's built-in @property setter because the
+        method *NEEDS* to return something"""
         val = self.fset(instance, val)
-        self._val = val
-        pout.v(self)
+        instance.__dict__[self.instance_field_name] = val
+
+    def __delete__(self, instance):
+        """the wrapper for when the field is deleted, for the most part the default
+        fdel will almost never be messed with, this works exactly like Python's
+        built-in @property deleter"""
+        self.fdel(instance)
 
