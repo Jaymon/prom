@@ -168,6 +168,22 @@ class BaseTestCase(TestCase):
 
 
 class OrmTest(BaseTestCase):
+    def test_field_getattr(self):
+        class FOFieldGAOrm(Orm):
+            table_name = "fofgaorm_table"
+            foo = Field(int)
+            @foo.setter
+            def foo(self, val):
+                return getattr(self, "bar", 10)
+
+            bar = Field(int)
+            @bar.setter
+            def bar(self, val):
+                return getattr(self, "foo", 10)
+
+        # this test passes if it doesn't raise an exception
+        o = FOFieldGAOrm()
+
     def test_field_lifecycle(self):
         class FOParentOrm(Orm):
             table_name = "foorm_table"

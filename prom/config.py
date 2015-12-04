@@ -438,6 +438,7 @@ class Field(object):
         self.fdel = field_options.pop("fdel", self.default_del)
 
         self.name = field_options.pop("name", "")
+        # this creates a numeric dict key that can't be accessed as an attribute
         self.instance_field_name = str(id(self))
         self._type = field_type
         self.required = field_required
@@ -483,7 +484,11 @@ class Field(object):
         if instance is None:
             return self
 
-        val = instance.__dict__[self.instance_field_name]
+        try:
+            val = instance.__dict__[self.instance_field_name]
+        except KeyError as e:
+            raise AttributeError(str(e))
+
         return self.fget(instance, val)
 
     def __set__(self, instance, val):
