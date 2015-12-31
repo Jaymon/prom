@@ -433,9 +433,13 @@ class Field(object):
         field_options.setdefault("unique", False)
         field_options.update(d)
 
-        self.fget = field_options.pop("fget", self.default_get)
-        self.fset = field_options.pop("fset", self.default_set)
-        self.fdel = field_options.pop("fdel", self.default_del)
+        self.fget = field_options.pop("fget", self.default_fget)
+        self.fset = field_options.pop("fset", self.default_fset)
+        self.fdel = field_options.pop("fdel", self.default_fdel)
+
+
+        self.iset = field_options.pop("iset", self.default_iset)
+
 
         self.name = field_options.pop("name", "")
         # this creates a numeric dict key that can't be accessed as an attribute
@@ -452,34 +456,45 @@ class Field(object):
         """return true if this field foreign key references the primary key of another orm"""
         return bool(self.schema)
 
-    def default_get(self, instance, val):
+    def default_fget(self, instance, val):
         return val
 
-    def default_set(self, instance, val):
+    def default_fset(self, instance, val):
         return val
 
-    def default_del(self, instance):
-        self.__set__(instance, None)
+    def default_fdel(self, instance):
+        return None
 
-    def getter(self, fget):
+    def fgetter(self, fget):
         """decorator for setting field's fget function"""
         self.fget = fget
         return self
 
-    def setter(self, fset):
+    def fsetter(self, fset):
         """decorator for setting field's fset function"""
         self.fset = fset
         return self
 
-    def deleter(self, fdel):
+    def fdeleter(self, fdel):
         """decorator for setting field's fdel function"""
         self.fdel = fdel
         return self
 
+
+
+    def default_iset(self, classtype, val, is_update, is_modified):
+        return val
+
+    def isetter(self, iset):
+        self.iset = iset
+        return self
+
+
+
     def __get__(self, instance, classtype=None):
         """This is the wrapper that will actually be called when the field is
         fetched from the instance, this is a little different than Python's built-in
-        @property getter because it will pull the value from a shadow variable in
+        @property fget method because it will pull the value from a shadow variable in
         the instance and then call fget"""
         if instance is None:
             return self
@@ -487,7 +502,8 @@ class Field(object):
         try:
             val = instance.__dict__[self.instance_field_name]
         except KeyError as e:
-            raise AttributeError(str(e))
+            #raise AttributeError(str(e))
+            val = None
 
         return self.fget(instance, val)
 
@@ -495,13 +511,14 @@ class Field(object):
         """this is the wrapper that will actually be called when the field is
         set on the instance, your fset method must return the value you want set,
         this is different than Python's built-in @property setter because the
-        method *NEEDS* to return something"""
+        fset method *NEEDS* to return something"""
         val = self.fset(instance, val)
         instance.__dict__[self.instance_field_name] = val
 
     def __delete__(self, instance):
         """the wrapper for when the field is deleted, for the most part the default
-        fdel will almost never be messed with, this works exactly like Python's
-        built-in @property deleter"""
-        self.fdel(instance)
+        fdel will almost never be messed with, this is different than Python's built-in
+        @property deleter because the fdel method *NEEDS* to return something"""
+        val = self.fdel(instance)
+        self.__set__(instance, val)
 

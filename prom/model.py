@@ -49,13 +49,22 @@ class Orm(object):
     """the class this Orm will use for iterating through results returned from db"""
 
     _id = Field(long, True, pk=True)
-
     _created = Field(datetime.datetime, True)
-
     _updated = Field(datetime.datetime, True)
 
-    index_created = Index("_created")
+    @_created.isetter
+    def _created(cls, val, is_update, is_modified):
+        if not is_modified and not is_update:
+            val = datetime.datetime.utcnow()
+        return val
 
+    @_updated.isetter
+    def _updated(cls, val, is_update, is_modified):
+        if not is_modified:
+            val = datetime.datetime.utcnow()
+        return val
+
+    index_created = Index("_created")
     index_updated = Index("_updated")
 
     @decorators.classproperty
@@ -158,6 +167,8 @@ class Orm(object):
             SomeOrm.query.set_fields(SomeOrm.get_insert_fields(foo=1)).insert()
         """
         fields = cls.get_update_fields(fields, **fields_kwargs)
+        return fields
+
         schema = cls.schema
         now = datetime.datetime.utcnow()
         try:
@@ -176,6 +187,8 @@ class Orm(object):
         see -- get_insert_fields()
         """
         fields = utils.make_dict(fields, fields_kwargs)
+        return fields
+
         schema = cls.schema
         now = datetime.datetime.utcnow()
         try:

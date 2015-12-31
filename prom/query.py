@@ -655,9 +655,64 @@ class Query(object):
         v = self.get_one()
         return True if v else False
 
+    def _get_interface_fields(self, is_update):
+        orm = self.orm
+        schema = orm.schema
+        fields = self.fields
+        for k, field in schema.fields.items():
+            is_modified = k in fields
+            v = field.iset(
+                orm,
+                insert_fields[k] if is_modified else None,
+                is_update=is_update,
+                is_modified=is_modified
+            )
+            if is_modified or (v is not None):
+                fields[k] = v
+
+        return fields
+
     def insert(self):
         """persist the .fields"""
         self.default_val = 0
+        return self.orm.interface.insert(
+            self.orm.schema,
+            self._get_interface_fields(is_update=False)
+        )
+
+        orm = self.orm
+        schema = orm.schema
+        insert_fields = self.fields
+        is_update = False
+        for k, field in schema.fields.items():
+            pout.v(k)
+            is_modified = k in insert_fields
+            v = field.iset(
+                orm,
+                insert_fields[k] if is_modified else None,
+                is_update=is_update,
+                is_modified=is_modified
+            )
+            if is_modified or (v is not None):
+                insert_fields[k] = v
+
+        pout.v(insert_fields)
+        return orm.interface.insert(schema, insert_fields)
+
+#             if v is None:
+#                 if is_modified:
+#                     insert_fields[k] = v
+#             else:
+#                 insert_fields[k] = v
+
+#         for k in self.fields:
+#             self.fields[k] = self.orm.schema.fields[k].iset(
+#                 self.orm,
+#                 self.fields[k],
+#                 True,
+#                 False
+#             )
+
         return self.orm.interface.insert(self.orm.schema, self.fields)
 
     def update(self):

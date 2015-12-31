@@ -168,16 +168,31 @@ class BaseTestCase(TestCase):
 
 
 class OrmTest(BaseTestCase):
+    def test_field_iset(self):
+        """make sure a field with an iget method will be called at the correct time"""
+        class FOFieldISetOrm(Orm):
+            table_name = "FOFieldISetOrm_table"
+            foo = Field(int)
+            @foo.isetter
+            def foo(cls, val, is_update, is_modified):
+                pout.v(cls, val, is_update, is_modified)
+                return val
+
+
+        #o = FOFieldISetOrm(foo=1)
+        o = FOFieldISetOrm()
+        o.insert()
+
     def test_field_getattr(self):
         class FOFieldGAOrm(Orm):
             table_name = "fofgaorm_table"
             foo = Field(int)
-            @foo.setter
+            @foo.fsetter
             def foo(self, val):
                 return getattr(self, "bar", 10)
 
             bar = Field(int)
-            @bar.setter
+            @bar.fsetter
             def bar(self, val):
                 return getattr(self, "foo", 10)
 
@@ -318,7 +333,7 @@ class OrmTest(BaseTestCase):
 
             che = Field(str, False)
 
-            @che.setter
+            @che.fsetter
             def che(self, field_val):
                 if field_val is None: return field_val
                 if not field_val.startswith('boom'):
@@ -913,11 +928,11 @@ class ConfigFieldTest(BaseTestCase):
         class FieldPropertyOrm(prom.Orm):
             foo = prom.Field(int)
 
-            @foo.getter
+            @foo.fgetter
             def foo(self, val):
                 return val
 
-            @foo.setter
+            @foo.fsetter
             def foo(self, val):
                 return int(val) + 10 if (val is not None) else val
 
@@ -931,19 +946,6 @@ class ConfigFieldTest(BaseTestCase):
 
         o.foo = None
         self.assertEqual(None, o.foo)
-
-#     def test_decorator(self):
-# 
-#         class FieldDecTest(object):
-#             foo = prom.Field(int)
-# 
-#             @foo.setter
-#             def foo(self, val):
-#                 return int(val) + 10
-# 
-#             bar = prom.Field(str)
-# 
-#         self.assertTrue(FieldDecTest.foo.fnormalize)
 
     def test_ref(self):
         testdata.create_module("ref", "\n".join([
