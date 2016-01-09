@@ -128,7 +128,8 @@ class Orm(object):
 
     def __init__(self, fields=None, **fields_kwargs):
         self.reset_modified()
-        self.hydrate(fields, **fields_kwargs)
+        self.modify(fields, **fields_kwargs)
+        #self.hydrate(fields, **fields_kwargs)
 
     @classmethod
     def create(cls, fields=None, **fields_kwargs):
@@ -152,9 +153,47 @@ class Orm(object):
         fields -- dict -- field_name keys, with their respective values
         **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
         """
-        instance = cls(fields, **fields_kwargs)
+        fields = utils.make_dict(fields, fields_kwargs)
+        for k, field in cls.schema.fields.items():
+            fields[k] = field.iget(
+                cls,
+                fields.get(k, None)
+            )
+
+        instance = cls(fields)
         instance.reset_modified()
         return instance
+
+    @classmethod
+    def depart(cls, fields, is_update):
+        """
+        return a dict of fields that is ready to be persisted into the db
+
+        fields -- dict -- the raw fields that haven't been processed with any
+            schema iset functions yet
+        is_update -- boolean -- True if getting fields for an update query, False
+            if for an insert query
+
+        return -- dict -- the fields all ran through iset functions
+        """
+        schema = cls.schema
+        for k, field in schema.fields.items():
+            is_modified = k in fields
+            v = field.iset(
+                cls,
+                fields[k] if is_modified else None,
+                is_update=is_update,
+                is_modified=is_modified
+            )
+            if is_modified or (v is not None):
+                fields[k] = v
+
+        if not is_update:
+            for field_name in schema.required_fields.keys():
+                if field_name not in fields:
+                    raise KeyError("Missing required field {}".format(field_name))
+
+        return fields
 
     @classmethod
     def get_insert_fields(cls, fields=None, **fields_kwargs):
@@ -203,17 +242,13 @@ class Orm(object):
     def insert(self):
         """persist the field values of this orm"""
         ret = True
-        fields = self.get_insert_fields(self.get_modified())
 
         schema = self.schema
-        for field_name in schema.required_fields.keys():
-            if field_name not in fields:
-                raise KeyError("Missing required field {}".format(field_name))
-
         q = self.query
-        q.set_fields(fields)
+        q.set_fields(self.get_modified())
         pk = q.insert()
         if pk:
+            fields = q.fields
             fields[schema.pk.name] = pk
             self.modify(fields)
             self.reset_modified()
@@ -226,10 +261,8 @@ class Orm(object):
     def update(self):
         """re-persist the updated field values of this orm that has a primary key"""
         ret = True
-        fields = self.get_update_fields(self.get_modified())
-
         q = self.query
-        q.set_fields(fields)
+        q.set_fields(self.get_modified())
 
         pk = self.pk
         if pk:
@@ -239,8 +272,9 @@ class Orm(object):
             raise ValueError("You cannot update without a primary key")
 
         if q.update():
-            self.modify(fields)
+            self.modify(q.fields)
             self.reset_modified()
+
         else:
             ret = False
 
@@ -325,20 +359,20 @@ class Orm(object):
 
         return modified_fields
 
-    def hydrate(self, fields=None, **fields_kwargs):
-        """figure out what value to give every field in the Orm's schema, this means
-        that if a field is missing from the passed in fields dict, it will be set
-        to None for this instance, if you just want to deal with fields that you
-        passed in manipulating this instance, use .modify()"""
-        modified_fields = self.modify(fields, **fields_kwargs)
-
-        # pick up any stragglers and set them to None:
-        for field_name in self.schema.fields.keys():
-            if field_name not in modified_fields:
-                setattr(self, field_name, None)
-                self.modified_fields.discard(field_name)
-
-        return modified_fields
+#     def hydrate(self, fields=None, **fields_kwargs):
+#         """figure out what value to give every field in the Orm's schema, this means
+#         that if a field is missing from the passed in fields dict, it will be set
+#         to None for this instance, if you just want to deal with fields that you
+#         passed in manipulating this instance, use .modify()"""
+#         modified_fields = self.modify(fields, **fields_kwargs)
+# 
+#         # pick up any stragglers and set them to None:
+#         for field_name in self.schema.fields.keys():
+#             if field_name not in modified_fields:
+#                 setattr(self, field_name, None)
+#                 self.modified_fields.discard(field_name)
+# 
+#         return modified_fields
 
     def __setattr__(self, field_name, field_val):
         if field_name in self.schema.fields:

@@ -276,7 +276,7 @@ class SQLite(SQLInterface):
 
         return ret
 
-    def _insert(self, schema, d, **kwargs):
+    def _insert(self, schema, fields, **kwargs):
         """
         http://www.sqlite.org/lang_insert.html
         """
@@ -285,7 +285,7 @@ class SQLite(SQLInterface):
         field_formats = []
         field_names = []
         query_vals = []
-        for field_name, field_val in d.items():
+        for field_name, field_val in fields.items():
             field_names.append(field_name)
             field_formats.append(self.val_placeholder)
             query_vals.append(field_val)

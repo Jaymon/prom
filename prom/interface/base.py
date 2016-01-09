@@ -344,12 +344,12 @@ class Interface(object):
         raise NotImplementedError()
 
     @reconnecting()
-    def insert(self, schema, d, **kwargs):
+    def insert(self, schema, fields, **kwargs):
         """
         Persist d into the db
 
         schema -- Schema()
-        d -- dict -- the values to persist
+        fields -- dict -- the values to persist
 
         return -- int -- the primary key of the row just inserted
         """
@@ -359,68 +359,46 @@ class Interface(object):
             kwargs['connection'] = connection
             try:
                 with self.transaction(**kwargs):
-                    r = self._insert(schema, d, **kwargs)
+                    r = self._insert(schema, fields, **kwargs)
 
             except Exception as e:
                 exc_info = sys.exc_info()
                 if self.handle_error(schema, e, **kwargs):
-                    r = self._insert(schema, d, **kwargs)
+                    r = self._insert(schema, fields, **kwargs)
                 else:
                     self.raise_error(e, exc_info)
 
         return r
 
-    def _insert(self, schema, d, **kwargs):
-        """return -- id -- the _id value"""
-        raise NotImplementedError()
+    def _insert(self, schema, fields, **kwargs): raise NotImplementedError()
 
     @reconnecting()
-    def update(self, schema, query, **kwargs):
+    def update(self, schema, fields, query, **kwargs):
         """
         Persist the query.fields into the db that match query.fields_where
 
         schema -- Schema()
+        fields -- dict -- the values to persist
         query -- Query() -- will be used to create the where clause
 
         return -- int -- how many rows where updated
         """
-        fields = query.fields
-
         with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
             try:
                 with self.transaction(**kwargs):
-                    r = self._update(schema, query, fields, **kwargs)
+                    r = self._update(schema, fields, query, **kwargs)
 
             except Exception as e:
                 exc_info = sys.exc_info()
                 if self.handle_error(schema, e, **kwargs):
-                    r = self._update(schema, query, fields, **kwargs)
+                    r = self._update(schema, fields, query, **kwargs)
                 else:
                     self.raise_error(e, exc_info)
 
         return r
 
-    def _update(self, schema, query, d, **kwargs): raise NotImplementedError()
-
-#     def set(self, schema, query, **kwargs): return self.save(schema, query, **kwargs)
-#     def save(self, schema, query, **kwargs):
-#         """
-#         set d into the db, this is just a convenience method that will call either insert
-#         or update depending on if query has a where clause
-# 
-#         schema -- Schema()
-#         query -- Query() -- set a where clause to perform an update, insert otherwise
-#         return -- boolean -- True if the save was successful, False if it wasn't
-#         """
-#         if query.fields_where:
-#             d = self.update(schema, query, **kwargs)
-# 
-#         else:
-#             # insert
-#             r = self.insert(schema, query.fields, **kwargs)
-# 
-#         return True if r else False
+    def _update(self, schema, fields, query, **kwargs): raise NotImplementedError()
 
     @reconnecting()
     def _get_query(self, callback, schema, query=None, *args, **kwargs):
@@ -810,13 +788,13 @@ class SQLInterface(Interface):
 
         return True
 
-    def _update(self, schema, query, d, **kwargs):
+    def _update(self, schema, fields, query, **kwargs):
         where_query_str, where_query_args = self.get_SQL(schema, query, only_where_clause=True)
         query_str = 'UPDATE {} SET {} {}'
         query_args = []
 
         field_str = []
-        for field_name, field_val in d.items():
+        for field_name, field_val in fields.items():
             field_str.append('{} = {}'.format(field_name, self.val_placeholder))
             query_args.append(field_val)
 

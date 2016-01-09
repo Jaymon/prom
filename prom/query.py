@@ -4,7 +4,7 @@ Classes and stuff that handle querying the interface for a passed in Orm class
 import types
 import copy
 
-from .utils import make_list, get_objects
+from .utils import make_list, get_objects, make_dict
 
 
 class Iterator(object):
@@ -353,15 +353,13 @@ class Query(object):
                 self.set_field(field_name)
 
         elif fields_kwargs:
-            if not fields: fields = {}
-            if fields_kwargs:
-                fields.update(fields_kwargs)
-                for field_name, field_val in fields.iteritems():
-                    self.set_field(field_name, field_val)
+            fields = make_dict(fields, fields_kwargs)
+            for field_name, field_val in fields.items():
+                self.set_field(field_name, field_val)
 
         else:
             if isinstance(fields, (types.DictType, types.DictProxyType)):
-                for field_name, field_val in fields.iteritems():
+                for field_name, field_val in fields.items():
                     self.set_field(field_name, field_val)
 
             else:
@@ -655,49 +653,51 @@ class Query(object):
         v = self.get_one()
         return True if v else False
 
-    def _get_interface_fields(self, is_update):
-        orm = self.orm
-        schema = orm.schema
-        fields = self.fields
-        for k, field in schema.fields.items():
-            is_modified = k in fields
-            v = field.iset(
-                orm,
-                insert_fields[k] if is_modified else None,
-                is_update=is_update,
-                is_modified=is_modified
-            )
-            if is_modified or (v is not None):
-                fields[k] = v
-
-        return fields
-
+#     def _get_interface_fields(self, is_update):
+#         orm = self.orm
+#         schema = orm.schema
+#         fields = self.fields
+#         for k, field in schema.fields.items():
+#             is_modified = k in fields
+#             v = field.iset(
+#                 orm,
+#                 fields[k] if is_modified else None,
+#                 is_update=is_update,
+#                 is_modified=is_modified
+#             )
+#             if is_modified or (v is not None):
+#                 fields[k] = v
+# 
+#         return fields
+# 
     def insert(self):
         """persist the .fields"""
         self.default_val = 0
+        fields = self.orm.depart(self.fields, is_update=False)
+        self.set_fields(fields)
         return self.orm.interface.insert(
             self.orm.schema,
-            self._get_interface_fields(is_update=False)
+            fields
         )
 
-        orm = self.orm
-        schema = orm.schema
-        insert_fields = self.fields
-        is_update = False
-        for k, field in schema.fields.items():
-            pout.v(k)
-            is_modified = k in insert_fields
-            v = field.iset(
-                orm,
-                insert_fields[k] if is_modified else None,
-                is_update=is_update,
-                is_modified=is_modified
-            )
-            if is_modified or (v is not None):
-                insert_fields[k] = v
-
-        pout.v(insert_fields)
-        return orm.interface.insert(schema, insert_fields)
+#         orm = self.orm
+#         schema = orm.schema
+#         insert_fields = self.fields
+#         is_update = False
+#         for k, field in schema.fields.items():
+#             pout.v(k)
+#             is_modified = k in insert_fields
+#             v = field.iset(
+#                 orm,
+#                 insert_fields[k] if is_modified else None,
+#                 is_update=is_update,
+#                 is_modified=is_modified
+#             )
+#             if is_modified or (v is not None):
+#                 insert_fields[k] = v
+# 
+#         pout.v(insert_fields)
+#         return orm.interface.insert(schema, insert_fields)
 
 #             if v is None:
 #                 if is_modified:
@@ -717,7 +717,15 @@ class Query(object):
 
     def update(self):
         """persist the .fields using .fields_where"""
-        return self._query('update')
+        self.default_val = 0
+        fields = self.orm.depart(self.fields, is_update=True)
+        self.set_fields(fields)
+        return self.orm.interface.update(
+            self.orm.schema,
+            fields,
+            self
+        )
+        #return self._query('update')
 
     def delete(self):
         """remove fields matching the where criteria"""

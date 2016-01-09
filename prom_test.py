@@ -169,19 +169,39 @@ class BaseTestCase(TestCase):
 
 class OrmTest(BaseTestCase):
     def test_field_iset(self):
-        """make sure a field with an iget method will be called at the correct time"""
+        """make sure a field with an iset method will be called at the correct time"""
         class FOFieldISetOrm(Orm):
             table_name = "FOFieldISetOrm_table"
             foo = Field(int)
             @foo.isetter
             def foo(cls, val, is_update, is_modified):
-                pout.v(cls, val, is_update, is_modified)
+                val = 100 if is_update else 10
                 return val
-
 
         #o = FOFieldISetOrm(foo=1)
         o = FOFieldISetOrm()
         o.insert()
+        self.assertEqual(10, o.foo)
+
+        o.foo = 20
+        o.update()
+        self.assertEqual(100, o.foo)
+
+    def test_field_iget(self):
+        """make sure a field with an iget method will be called at the correct time"""
+        class FOFieldIGetOrm(Orm):
+            table_name = "FOFieldIGetOrm_table"
+            foo = Field(int)
+            @foo.igetter
+            def foo(cls, val):
+                return 1000
+
+        o = FOFieldIGetOrm()
+        o.foo = 20
+        o.insert()
+
+        o2 = o.query.get_pk(o.pk)
+        self.assertEqual(1000, o2.foo)
 
     def test_field_getattr(self):
         class FOFieldGAOrm(Orm):
@@ -282,12 +302,8 @@ class OrmTest(BaseTestCase):
 
     def test_none(self):
         orm_class = get_orm_class()
-        orm_class.schema = get_schema(
-            orm_class.table_name,
-            foo=Field(int),
-            bar=Field(str),
-            _created=Field(datetime.datetime, True)
-        )
+        orm_class.foo.required = False
+        orm_class.bar.required = False
 
         t1 = orm_class()
         t2 = orm_class(foo=None, bar=None)
@@ -1388,7 +1404,7 @@ class BaseTestInterface(BaseTestCase):
         q.set_fields(d)
         q.is__id(pk)
 
-        row_count = i.update(s, q)
+        row_count = i.update(s, d, q)
 
         # let's pull it out and make sure it persisted
         q = query.Query()

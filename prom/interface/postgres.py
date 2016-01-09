@@ -211,7 +211,7 @@ class PostgreSQL(SQLInterface):
 
         return self.query(query_str, ignore_result=True, **index_options)
 
-    def _insert(self, schema, d, **kwargs):
+    def _insert(self, schema, fields, **kwargs):
 
         # get the primary key
         pk_name = schema.pk.name
@@ -219,7 +219,7 @@ class PostgreSQL(SQLInterface):
         field_formats = []
         field_names = []
         query_vals = []
-        for field_name, field_val in d.items():
+        for field_name, field_val in fields.items():
             field_names.append(field_name)
             field_formats.append('%s')
             query_vals.append(field_val)

@@ -439,6 +439,7 @@ class Field(object):
 
 
         self.iset = field_options.pop("iset", self.default_iset)
+        self.iget = field_options.pop("iget", self.default_iget)
 
 
         self.name = field_options.pop("name", "")
@@ -480,8 +481,6 @@ class Field(object):
         self.fdel = fdel
         return self
 
-
-
     def default_iset(self, classtype, val, is_update, is_modified):
         return val
 
@@ -489,7 +488,12 @@ class Field(object):
         self.iset = iset
         return self
 
+    def default_iget(self, classtype, val):
+        return val
 
+    def igetter(self, iget):
+        self.iget = iget
+        return self
 
     def __get__(self, instance, classtype=None):
         """This is the wrapper that will actually be called when the field is
