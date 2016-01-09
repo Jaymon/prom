@@ -19,13 +19,10 @@ class Orm(object):
         import prom
 
         class User(prom.Orm):
-
             table_name = "user_table_name"
 
             username = prom.Field(str, True, unique=True) # set a unique index on user
-
             password = prom.Field(str, True)
-
             email = prom.Field(str, True)
 
             index_email = prom.Index('email') # set a normal index on email
@@ -358,21 +355,6 @@ class Orm(object):
                 modified_fields.add(field_name)
 
         return modified_fields
-
-#     def hydrate(self, fields=None, **fields_kwargs):
-#         """figure out what value to give every field in the Orm's schema, this means
-#         that if a field is missing from the passed in fields dict, it will be set
-#         to None for this instance, if you just want to deal with fields that you
-#         passed in manipulating this instance, use .modify()"""
-#         modified_fields = self.modify(fields, **fields_kwargs)
-# 
-#         # pick up any stragglers and set them to None:
-#         for field_name in self.schema.fields.keys():
-#             if field_name not in modified_fields:
-#                 setattr(self, field_name, None)
-#                 self.modified_fields.discard(field_name)
-# 
-#         return modified_fields
 
     def __setattr__(self, field_name, field_val):
         if field_name in self.schema.fields:
