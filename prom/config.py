@@ -187,12 +187,13 @@ class Schema(object):
         table_name = orm_class.table_name
         if table_name not in cls.instances:
             s = cls(table_name)
-            #properties = inspect.getmembers(orm_class, lambda x: isinstance(x, (Field, Index)))
-            #for k, v in properties:
+            seen_properties = set()
             for klass in inspect.getmro(orm_class)[:-1]:
                 for k, v in vars(klass).items():
-                    if isinstance(v, (Field, Index)):
-                        s.set(k, v)
+                    if k not in seen_properties:
+                        if isinstance(v, (Field, Index)):
+                            s.set(k, v)
+                        seen_properties.add(k)
 
             cls.instances[table_name] = s
 

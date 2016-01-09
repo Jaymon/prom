@@ -39,6 +39,9 @@ logger.addHandler(log_handler)
 os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.SQLite://:memory:')
 
 
+stdnull = open(os.devnull, 'w') # used to suppress subprocess calls
+
+
 def setUpModule():
     """
     http://docs.python.org/2/library/unittest.html#setupmodule-and-teardownmodule
@@ -168,6 +171,16 @@ class BaseTestCase(TestCase):
 
 
 class OrmTest(BaseTestCase):
+    def test_overrides(self):
+        class FOIndexOverride(Orm):
+            table_name = "FOIndexOverride_table"
+            _created = None
+            index_created = None
+
+        s = FOIndexOverride.schema
+        self.assertFalse("index_created" in s.indexes)
+        self.assertFalse("_created" in s.fields)
+
     def test_field_iset(self):
         """make sure a field with an iset method will be called at the correct time"""
         class FOFieldISetOrm(Orm):
@@ -1988,7 +2001,7 @@ class InterfacePostgresTest(BaseTestInterface):
         d = i.get_one(s, q)
         self.assertGreater(len(d), 0)
 
-        exit_code = subprocess.check_call("sudo /etc/init.d/postgresql restart", shell=True)
+        exit_code = subprocess.check_call("sudo /etc/init.d/postgresql restart", shell=True, stdout=stdnull)
         time.sleep(1)
 
         q = query.Query()
@@ -1998,7 +2011,7 @@ class InterfacePostgresTest(BaseTestInterface):
 
     def test_no_connection(self):
         """this will make sure prom handles it gracefully if there is no connection available ever"""
-        exit_code = subprocess.check_call("sudo /etc/init.d/postgresql stop", shell=True)
+        exit_code = subprocess.check_call("sudo /etc/init.d/postgresql stop", shell=True, stdout=stdnull)
         time.sleep(1)
 
         try:
@@ -2009,7 +2022,7 @@ class InterfacePostgresTest(BaseTestInterface):
                 i.get(s, q)
 
         finally:
-            exit_code = subprocess.check_call("sudo /etc/init.d/postgresql start", shell=True)
+            exit_code = subprocess.check_call("sudo /etc/init.d/postgresql start", shell=True, stdout=stdnull)
             time.sleep(1)
 
     def test__normalize_val_SQL(self):
@@ -2104,9 +2117,9 @@ class InterfacePostgresTest(BaseTestInterface):
 def has_spiped():
     ret = False
     try:
-        c = subprocess.check_call("which spiped", shell=True)
+        c = subprocess.check_call("which spiped", shell=True, stdout=stdnull)
         ret = True
-    except CalledProcessError:
+    except subprocess.CalledProcessError:
         ret = False
     return ret
 
@@ -2124,14 +2137,14 @@ class InterfacePGBouncerTest(InterfacePostgresTest):
         for all sorts of timeouts, and it's just easier to reset pg boucner than
         configure it for aggressive test timeouts.
         """
-        subprocess.check_call("sudo stop pgbouncer", shell=True)
+        subprocess.check_call("sudo stop pgbouncer", shell=True, stdout=stdnull)
         time.sleep(1)
 
         try:
             super(InterfacePGBouncerTest, self).test_no_connection()
 
         finally:
-            subprocess.check_call("sudo start pgbouncer", shell=True)
+            subprocess.check_call("sudo start pgbouncer", shell=True, stdout=stdnull)
             time.sleep(1)
 
     @skipIf(not has_spiped(), "No Spiped installed")
@@ -2150,7 +2163,7 @@ class InterfacePGBouncerTest(InterfacePostgresTest):
         d = i.get_one(s, q)
         self.assertGreater(len(d), 0)
 
-        exit_code = subprocess.check_call("sudo restart spiped-pg-server", shell=True)
+        exit_code = subprocess.check_call("sudo restart spiped-pg-server", shell=True, stdout=stdnull)
         time.sleep(1)
 
         q = query.Query()
@@ -2158,7 +2171,7 @@ class InterfacePGBouncerTest(InterfacePostgresTest):
         d = i.get_one(s, q)
         self.assertGreater(len(d), 0)
 
-        exit_code = subprocess.check_call("sudo restart spiped-pg-client", shell=True)
+        exit_code = subprocess.check_call("sudo restart spiped-pg-client", shell=True, stdout=stdnull)
         time.sleep(1)
 
         q = query.Query()
