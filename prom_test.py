@@ -2775,21 +2775,24 @@ class QueryTest(BaseTestCase):
         self.assertEqual((0, 0, 0), q.get_bounds())
 
     def test_insert_and_update(self):
-        i, s = get_table()
-        class IUTorm(Orm):
-            interface = i
-            schema = s
 
+        IUTorm = get_orm_class()
         q = query.Query(orm=IUTorm)
-        pk = q.set_fields(IUTorm.get_insert_fields(foo=1, bar="value 1")).insert()
+        pk = q.copy().set_fields(foo=1, bar="value 1").insert()
+        o = q.copy().get_pk(pk)
         self.assertLess(0, pk)
+        self.assertTrue(o._created)
+        self.assertTrue(o._updated)
 
-        row_count = q.set_fields(foo=2, bar="value 2").is_pk(pk).update()
+        row_count = q.copy().set_fields(foo=2, bar="value 2").is_pk(pk).update()
         self.assertEqual(1, row_count)
 
-        o = query.Query(orm=IUTorm).get_pk(pk)
-        self.assertEqual(2, o.foo)
-        self.assertEqual("value 2", o.bar)
+        #time.sleep(0.1)
+        o2 = q.copy().get_pk(pk)
+        self.assertEqual(2, o2.foo)
+        self.assertEqual("value 2", o2.bar)
+        self.assertEqual(o._created, o2._created)
+        self.assertNotEqual(o._updated, o2._updated)
 
     def test_update_bubble_up(self):
         """

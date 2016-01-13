@@ -192,50 +192,6 @@ class Orm(object):
 
         return fields
 
-    @classmethod
-    def get_insert_fields(cls, fields=None, **fields_kwargs):
-        """this will return a list of fields for the given model that are suitable
-        to be inserted into the db
-
-        this is a classmethod so it can be used to get everything ready for raw
-        insert/update queries like...
-
-            SomeOrm.query.set_fields(SomeOrm.get_insert_fields(foo=1)).insert()
-        """
-        fields = cls.get_update_fields(fields, **fields_kwargs)
-        return fields
-
-        schema = cls.schema
-        now = datetime.datetime.utcnow()
-        try:
-            field_created = schema._created.name
-            if field_created not in fields:
-                fields[field_created] = now
-
-        except AttributeError: pass
-
-        return fields
-
-    @classmethod
-    def get_update_fields(cls, fields=None, **fields_kwargs):
-        """Will get all the fields ready for an update query
-
-        see -- get_insert_fields()
-        """
-        fields = utils.make_dict(fields, fields_kwargs)
-        return fields
-
-        schema = cls.schema
-        now = datetime.datetime.utcnow()
-        try:
-            field_updated = schema._updated.name
-            if field_updated not in fields:
-                fields[field_updated] = now
-
-        except AttributeError: pass
-
-        return fields
-
     def insert(self):
         """persist the field values of this orm"""
         ret = True
