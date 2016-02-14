@@ -9,7 +9,6 @@ import os
 import types
 import decimal
 import datetime
-import logging
 
 # third party
 import psycopg2
@@ -21,15 +20,11 @@ from .base import SQLInterface, SQLConnection
 from ..utils import get_objects
 
 
-logger = logging.getLogger(__name__)
-
-
-class LoggingCursor(psycopg2.extras.RealDictCursor):
-    def execute(self, sql, args=None):
-        logger = logging.getLogger('sql_debug')
-        logger.debug(self.mogrify(sql, args))
-        super(LoggingCursor, self).execute(sql, args)
-        #psycopg2.extensions.cursor.execute(self, sql, args)
+# class LoggingCursor(psycopg2.extras.RealDictCursor):
+#     def execute(self, sql, args=None):
+#         logger.debug(self.mogrify(sql, args))
+#         super(LoggingCursor, self).execute(sql, args)
+#         #psycopg2.extensions.cursor.execute(self, sql, args)
 
 
 #class Connection(psycopg2.extensions.connection, SQLConnection):
@@ -89,8 +84,8 @@ class PostgreSQL(SQLInterface):
             password=password,
             host=host,
             port=port,
-            #cursor_factory=psycopg2.extras.RealDictCursor,
-            cursor_factory=LoggingCursor,
+            cursor_factory=psycopg2.extras.RealDictCursor,
+            #cursor_factory=LoggingCursor,
             connection_factory=Connection,
         )
 

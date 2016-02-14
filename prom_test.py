@@ -597,8 +597,10 @@ class OrmTest(BaseTestCase):
         self.assertEqual(t3.fields, t2.fields)
 
     def test_transaction(self):
-        """we've noticed some strange transaction behavior and this test helped
-        track it down and fix it"""
+        """with transaction context managers weren't working correctly when the
+        second insert would fail, the first insert was still going through, this
+        test helped me reproduce, diagnose, and fix the problem"""
+        # CRUD
         class TransTorm1(Orm):
             table_name = "trans_torm_1"
             foo = Field(str, True)
@@ -620,9 +622,10 @@ class OrmTest(BaseTestCase):
             bar = Field(str, True, max_size=10)
             tt1_id = Field(TransTorm1, True)
 
-
         TransTorm1.install()
         TransTorm2.install()
+
+        # actual test starts here
 
         self.assertEqual(0, TransTorm1.query.count())
 
@@ -1751,22 +1754,6 @@ class BaseTestInterface(BaseTestCase):
             pk3 = i.get(s3, q3, connection=connection)
 
         self.assertEqual(1, i.count(s2, query.Query()))
-
-
-#     def test_transation_nested_fail_5(self):
-#         # these 2 tables exist before the transaction starts
-#         s1 = get_schema(
-#             foo=Field(int, True)
-#         )
-#         i.set_table(s1)
-# 
-#         s2 = get_schema(
-#             bar=Field(int, True),
-#             s_pk=Field(s1, True),
-#         )
-#         i.set_table(s2)
-# 
-
 
     def test_transaction_context(self):
         i = self.get_interface()

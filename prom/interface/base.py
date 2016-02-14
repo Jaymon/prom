@@ -584,11 +584,11 @@ class SQLInterface(Interface):
 
             try:
                 if not query_args:
-                    #self.log(query_str)
+                    self.log(query_str)
                     cur.execute(query_str)
 
                 else:
-                    #self.log("{}{}{}", query_str, os.linesep, query_args)
+                    self.log("{}{}{}", query_str, os.linesep, query_args)
                     cur.execute(query_str, query_args)
 
                 if cur_result:
