@@ -49,7 +49,7 @@ class Connection(object):
             #uid = id(self)
 
         self.transaction_count += 1
-        logger.info("{}. Start transaction {}".format(self.transaction_count, name))
+        logger.debug("{}. Start transaction {}".format(self.transaction_count, name))
         if self.transaction_count == 1:
             self._transaction_start()
         else:
@@ -64,7 +64,7 @@ class Connection(object):
     def transaction_stop(self):
         """stop/commit a transaction if ready"""
         if self.transaction_count > 0:
-            logger.info("{}. Stop transaction".format(self.transaction_count))
+            logger.debug("{}. Stop transaction".format(self.transaction_count))
             if self.transaction_count == 1:
                 self._transaction_stop()
 
@@ -84,7 +84,7 @@ class Connection(object):
             raise ValueError("Transaction name cannot be empty")
 
         if self.transaction_count > 0:
-            logger.info("{}. Failing transaction {}".format(self.transaction_count, name))
+            logger.debug("{}. Failing transaction {}".format(self.transaction_count, name))
             if self.transaction_count == 1:
                 self._transaction_fail()
             else:
