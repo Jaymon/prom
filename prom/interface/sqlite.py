@@ -24,6 +24,7 @@ import os
 import types
 import decimal
 import datetime
+import logging
 
 # third party
 import sqlite3
@@ -32,11 +33,20 @@ import sqlite3
 from .base import SQLInterface, SQLConnection
 
 
+logger = logging.getLogger(__name__)
+
+
 class SQLiteRowDict(sqlite3.Row):
     def get(self, k, default_val=None):
         r = default_val
         r = self[str(k)]
         return r
+
+
+class LoggingCursor(sqlite3.Cursor):
+    def execute(self, sql, args=None):
+        #logger.debug(self.mogrify(sql, args))
+        super(LoggingCursor, self).execute(sql, args)
 
 
 class SQLiteConnection(SQLConnection, sqlite3.Connection):
@@ -53,6 +63,11 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
         r = super(SQLiteConnection, self).close(*args, **kwargs)
         self.closed = 1
         return r
+
+    def cursor(self, cursor_class=None):
+        if not cursor_class:
+            cursor_class = LoggingCursor
+        return super(SQLiteConnection, self).cursor(cursor_class)
 
 
 class BooleanType(object):

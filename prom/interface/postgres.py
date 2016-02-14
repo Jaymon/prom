@@ -9,6 +9,7 @@ import os
 import types
 import decimal
 import datetime
+import logging
 
 # third party
 import psycopg2
@@ -20,8 +21,20 @@ from .base import SQLInterface, SQLConnection
 from ..utils import get_objects
 
 
+logger = logging.getLogger(__name__)
+
+
+class LoggingCursor(psycopg2.extras.RealDictCursor):
+    def execute(self, sql, args=None):
+        logger = logging.getLogger('sql_debug')
+        logger.debug(self.mogrify(sql, args))
+        super(LoggingCursor, self).execute(sql, args)
+        #psycopg2.extensions.cursor.execute(self, sql, args)
+
+
 #class Connection(psycopg2.extensions.connection, SQLConnection):
 class Connection(SQLConnection, psycopg2.extensions.connection):
+#class Connection(SQLConnection, psycopg2.extras.LoggingConnection):
     """
     http://initd.org/psycopg/docs/advanced.html
     http://initd.org/psycopg/docs/extensions.html#psycopg2.extensions.connection
@@ -36,6 +49,8 @@ class Connection(SQLConnection, psycopg2.extensions.connection):
         # http://initd.org/psycopg/docs/usage.html#unicode-handling
         psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, self)
         psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, self)
+
+        #self.initialize(logger)
 
 
 class PostgreSQL(SQLInterface):
@@ -74,9 +89,11 @@ class PostgreSQL(SQLInterface):
             password=password,
             host=host,
             port=port,
-            cursor_factory=psycopg2.extras.RealDictCursor,
+            #cursor_factory=psycopg2.extras.RealDictCursor,
+            cursor_factory=LoggingCursor,
             connection_factory=Connection,
         )
+
 
         # hack for sync backwards compatibility with transactions
         if not async:

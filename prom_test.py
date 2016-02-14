@@ -596,6 +596,42 @@ class OrmTest(BaseTestCase):
         t3 = Torm.query.get_pk(t2.pk)
         self.assertEqual(t3.fields, t2.fields)
 
+    def test_transaction(self):
+        """we've noticed some strange transaction behavior and this test helped
+        track it down and fix it"""
+        class TransTorm1(Orm):
+            table_name = "trans_torm_1"
+            foo = Field(str, True)
+
+            @classmethod
+            def creation(cls, d):
+                """create a customer user"""
+                with cls.interface.transaction():
+                    d['foo'] = "foo"
+                    tt = cls.create(**d)
+
+                    d['tt1_id'] = tt.pk
+                    m = TransTorm2.create(**d)
+
+                return tt
+
+        class TransTorm2(Orm):
+            table_name = "trans_torm_2"
+            bar = Field(str, True, max_size=10)
+            tt1_id = Field(TransTorm1, True)
+
+
+        TransTorm1.install()
+        TransTorm2.install()
+
+        self.assertEqual(0, TransTorm1.query.count())
+
+        d = {"bar": testdata.get_ascii(32)}
+        with self.assertRaises(prom.InterfaceError):
+            tt = TransTorm1.creation(d)
+
+        self.assertEqual(0, TransTorm1.query.count())
+
 
 class PromTest(BaseTestCase):
 
@@ -1715,6 +1751,22 @@ class BaseTestInterface(BaseTestCase):
             pk3 = i.get(s3, q3, connection=connection)
 
         self.assertEqual(1, i.count(s2, query.Query()))
+
+
+#     def test_transation_nested_fail_5(self):
+#         # these 2 tables exist before the transaction starts
+#         s1 = get_schema(
+#             foo=Field(int, True)
+#         )
+#         i.set_table(s1)
+# 
+#         s2 = get_schema(
+#             bar=Field(int, True),
+#             s_pk=Field(s1, True),
+#         )
+#         i.set_table(s2)
+# 
+
 
     def test_transaction_context(self):
         i = self.get_interface()

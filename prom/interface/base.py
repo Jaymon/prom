@@ -4,6 +4,7 @@ import datetime
 import logging
 from contextlib import contextmanager
 import exceptions
+import uuid as uuidgen
 
 # first party
 from ..query import Query
@@ -27,31 +28,43 @@ class Connection(object):
     transaction_fail will set this back to 0 and rollback the transaction
     """
 
+    def transaction_name(self):
+        """generate a random transaction name for use in start_transaction() and
+        fail_transaction()"""
+        name = uuidgen.uuid4()
+        return "p{}".format(str(name.hex))
+
     def in_transaction(self):
         """return true if currently in a transaction"""
         return self.transaction_count > 0
 
-    def transaction_start(self):
+    def transaction_start(self, name):
         """
         start a transaction
 
         this will increment transaction semaphore and pass it to _transaction_start()
         """
+        if not name:
+            raise ValueError("Transaction name cannot be empty")
+            #uid = id(self)
+
         self.transaction_count += 1
+        logger.info("{}. Start transaction {}".format(self.transaction_count, name))
         if self.transaction_count == 1:
             self._transaction_start()
         else:
-            self._transaction_started()
+            self._transaction_started(name)
 
         return self.transaction_count
 
     def _transaction_start(self): pass
 
-    def _transaction_started(self): pass
+    def _transaction_started(self, name): pass
 
     def transaction_stop(self):
         """stop/commit a transaction if ready"""
         if self.transaction_count > 0:
+            logger.info("{}. Stop transaction".format(self.transaction_count))
             if self.transaction_count == 1:
                 self._transaction_stop()
 
@@ -61,23 +74,27 @@ class Connection(object):
 
     def _transaction_stop(self): pass
 
-    def transaction_fail(self):
+    def transaction_fail(self, name):
         """
         rollback a transaction if currently in one
 
         e -- Exception() -- if passed in, bubble up the exception by re-raising it
         """
+        if not name:
+            raise ValueError("Transaction name cannot be empty")
+
         if self.transaction_count > 0:
+            logger.info("{}. Failing transaction {}".format(self.transaction_count, name))
             if self.transaction_count == 1:
                 self._transaction_fail()
             else:
-                self._transaction_failing()
+                self._transaction_failing(name)
 
             self.transaction_count -= 1
 
     def _transaction_fail(self): pass
 
-    def _transaction_failing(self): pass
+    def _transaction_failing(self, name): pass
 
 #     def cursor(self, *args, **kwargs):
 #         pout.v("in transaction? {}".format(self.in_transaction()))
@@ -89,10 +106,10 @@ class SQLConnection(Connection):
         cur = self.cursor()
         cur.execute("BEGIN")
 
-    def _transaction_started(self):
+    def _transaction_started(self, name):
         cur = self.cursor()
         # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-        cur.execute("SAVEPOINT prom{}".format(id(self)))
+        cur.execute("SAVEPOINT {}".format(name))
 
     def _transaction_stop(self):
         """
@@ -106,10 +123,10 @@ class SQLConnection(Connection):
         cur = self.cursor()
         cur.execute("ROLLBACK")
 
-    def _transaction_failing(self):
+    def _transaction_failing(self, name):
         cur = self.cursor()
         # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-        cur.execute("ROLLBACK TO SAVEPOINT prom{}".format(id(self)))
+        cur.execute("ROLLBACK TO SAVEPOINT {}".format(name))
 
 
 class Interface(object):
@@ -213,13 +230,14 @@ class Interface(object):
             # those db calls will be committed by this line
         """
         with self.connection(connection) as connection:
-            connection.transaction_start()
+            name = connection.transaction_name()
+            connection.transaction_start(name)
             try:
                 yield connection
                 connection.transaction_stop()
 
             except Exception as e:
-                connection.transaction_fail()
+                connection.transaction_fail(name)
                 self.raise_error(e)
 
     def set_table(self, schema, **kwargs):
@@ -566,11 +584,11 @@ class SQLInterface(Interface):
 
             try:
                 if not query_args:
-                    self.log(query_str)
+                    #self.log(query_str)
                     cur.execute(query_str)
 
                 else:
-                    self.log("{}{}{}", query_str, os.linesep, query_args)
+                    #self.log("{}{}{}", query_str, os.linesep, query_args)
                     cur.execute(query_str, query_args)
 
                 if cur_result:
@@ -751,7 +769,7 @@ class SQLInterface(Interface):
 
         ret = False
         if connection.closed == 0: # connection is open
-            connection.transaction_stop()
+            #connection.transaction_stop()
             if isinstance(e, InterfaceError):
                 ret = self._handle_error(schema, e.e, **kwargs)
 
