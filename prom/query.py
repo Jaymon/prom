@@ -2,9 +2,10 @@
 Classes and stuff that handle querying the interface for a passed in Orm class
 """
 import types
+import datetime
 import copy
 
-from .utils import make_list, get_objects, make_dict
+from .utils import make_list, get_objects, make_dict, make_hash
 
 
 class Iterator(object):
@@ -486,7 +487,7 @@ class Query(object):
         try:
             command, field_name = method_name.split(u"_", 1)
         except ValueError:
-            raise ValueError("invalid command_method: {}".format(method_name))
+            raise AttributeError("invalid command_method: {}".format(method_name))
 
         if self.orm: field_name = self.orm.schema.field_name(field_name)
 
@@ -704,4 +705,68 @@ class Query(object):
         i = self.orm.interface
         s = self.orm.schema
         return getattr(i, method_name)(s, self) # i.method_name(schema, query)
+
+
+class CacheQuery(Query):
+    """a standard query caching skeleton class with the idea that it would be expanded
+    upon on a per project or per model basis"""
+
+    cache_ttl = 3600
+    """how long you should cache results for cacheable queries"""
+
+    def cache_invalidate(self, method_name):
+        cached = getattr(self, "cached", {})
+        cached.clear()
+
+    def cache_key(self, method_name):
+        """decides if this query is cacheable, returns a key if it is, otherwise empty"""
+        key = make_hash(method_name, self.fields_set, self.fields_where, self.fields_sort)
+        return key
+
+    def cache_set(self, key, result):
+        cached = getattr(self, "cached", {})
+        now = datetime.datetime.utcnow()
+        cached[key] = {
+            "datetime": now,
+            "result": result
+        }
+
+    def cache_get(self, key):
+        result = None
+        cache_hit = False
+        cached = getattr(self, "cached", {})
+        now = datetime.datetime.utcnow()
+        if key in cached:
+            td = now - cached[key]["datetime"]
+            if td.total_seconds() < self.cached_ttl:
+                cache_hit = True
+                result = cached[key]["result"]
+
+        return result, cache_hit
+
+    def _query(self, method_name):
+        cache_hit = False
+        cache_key = self.cache_key(method_name)
+        if cache_key:
+            result, cache_hit = self.cache_get(cache_key)
+
+        if not cache_hit:
+            result = super(CacheQuery, self)._query(method_name)
+            if cache_key:
+                self.cache_set(cache_key, result)
+
+        self.cache_hit = cache_hit
+        return result
+
+    def update(self):
+        ret = super(CachedQuery, self).update()
+        if ret:
+            self.invalidate("update")
+        return ret
+
+    def delete(self):
+        ret = super(CachedQuery, self).delete()
+        if ret:
+            self.invalidate("delete")
+        return ret
 

@@ -2907,6 +2907,17 @@ class QueryTest(BaseTestCase):
         self.assertEqual(last_pk, t.pk)
 
 
+class CacheQueryTest(QueryTest):
+    def test_cache_get_pk(self):
+        tclass = get_orm_class()
+        tclass.query_class = query.CacheQuery
+        pk_1 = insert(tclass.interface, tclass.schema, 1)[0]
+        t = tclass.query.select_foo().get_pk(pk_1)
+
+
+        pk_2 = insert(tclass.interface, tclass.schema, 1)[0]
+
+
 @skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")
 class XInterfacePostgresGeventTest(InterfacePostgresTest):
     """this class has an X to start so that it will run last when all tests are run"""
