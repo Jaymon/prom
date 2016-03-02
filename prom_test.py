@@ -2720,7 +2720,7 @@ class QueryTest(BaseTestCase):
             r = q._split_method(t[0])
             self.assertEqual(t[1], r)
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(AttributeError):
             q._split_method("testing")
 
     def test___getattr__(self):

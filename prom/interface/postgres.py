@@ -16,7 +16,7 @@ import psycopg2.extras
 import psycopg2.extensions
 
 # first party
-from .base import SQLInterface, SQLConnection
+from .base.sql import SQLInterface, SQLConnection
 from ..utils import get_objects
 
 

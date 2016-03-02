@@ -29,7 +29,7 @@ import datetime
 import sqlite3
 
 # first party
-from .base import SQLInterface, SQLConnection
+from .base.sql import SQLInterface, SQLConnection
 
 
 class SQLiteRowDict(sqlite3.Row):
