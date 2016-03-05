@@ -2778,40 +2778,40 @@ class QueryTest(BaseTestCase):
         with self.assertRaises(ValueError):
             q.sort_field("foo", 0)
 
-    def test_bounds_methods(self):
-        q = query.Query("foo")
-        q.set_limit(10)
-        self.assertEqual((10, 0, 11), q.get_bounds())
-
-        q.set_page(1)
-        self.assertEqual((10, 0, 11), q.get_bounds())
-
-        q.set_offset(15)
-        self.assertEqual((10, 15, 11), q.get_bounds())
-
-        q.set_page(2)
-        self.assertEqual((10, 10, 11), q.get_bounds())
-
-        q.set_page(3)
-        self.assertEqual((10, 20, 11), q.get_bounds())
-
-        q.set_page(0)
-        self.assertEqual((10, 0, 11), q.get_bounds())
-
-        q.set_page(-10)
-        self.assertEqual((10, 0, 11), q.get_bounds())
-
-        q.set_offset(0)
-        self.assertEqual((10, 0, 11), q.get_bounds())
-
-        q.set_offset(-10)
-        self.assertEqual((10, 0, 11), q.get_bounds())
-
-        q.set_limit(0)
-        self.assertEqual((0, 0, 0), q.get_bounds())
-
-        q.set_limit(-10)
-        self.assertEqual((0, 0, 0), q.get_bounds())
+#     def test_bounds_methods(self):
+#         q = query.Query("foo")
+#         q.set_limit(10)
+#         self.assertEqual((10, 0, 11), q.get_bounds())
+# 
+#         q.set_page(1)
+#         self.assertEqual((10, 0, 11), q.get_bounds())
+# 
+#         q.set_offset(15)
+#         self.assertEqual((10, 15, 11), q.get_bounds())
+# 
+#         q.set_page(2)
+#         self.assertEqual((10, 10, 11), q.get_bounds())
+# 
+#         q.set_page(3)
+#         self.assertEqual((10, 20, 11), q.get_bounds())
+# 
+#         q.set_page(0)
+#         self.assertEqual((10, 0, 11), q.get_bounds())
+# 
+#         q.set_page(-10)
+#         self.assertEqual((10, 0, 11), q.get_bounds())
+# 
+#         q.set_offset(0)
+#         self.assertEqual((10, 0, 11), q.get_bounds())
+# 
+#         q.set_offset(-10)
+#         self.assertEqual((10, 0, 11), q.get_bounds())
+# 
+#         q.set_limit(0)
+#         self.assertEqual((0, 0, 0), q.get_bounds())
+# 
+#         q.set_limit(-10)
+#         self.assertEqual((0, 0, 0), q.get_bounds())
 
     def test_insert_and_update(self):
 
@@ -2916,6 +2916,123 @@ class CacheQueryTest(QueryTest):
 
 
         pk_2 = insert(tclass.interface, tclass.schema, 1)[0]
+
+
+class PostgresClauseTest(BaseTestCase):
+    def create_interface(self):
+        config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
+        i = PostgreSQL(config)
+        return i
+
+    def test_field_clause(self):
+        pass
+
+    def test_where_clause(self):
+        i = self.create_interface()
+
+
+        wc = i.create_query().where
+
+
+
+    def test_sort_clause(self):
+        i = self.create_interface()
+
+        sc = i.create_query().sort
+        sc.append("foo", 1)
+        s, a = sc.normalize()
+        self.assertEqual("ORDER BY\n  foo ASC", s)
+        self.assertFalse(a)
+
+        sc = i.create_query().sort
+        sc.append("foo", -1)
+        s, a = sc.normalize()
+        self.assertEqual("ORDER BY\n  foo DESC", s)
+        self.assertFalse(a)
+
+        sc = i.create_query().sort
+        sc.append("foo", -1)
+        sc.append("bar", 1)
+        s, a = sc.normalize()
+        self.assertEqual("ORDER BY\n  foo DESC,\n  bar ASC", s)
+        self.assertFalse(a)
+
+        sc = i.create_query().sort
+        sc.append("foo", -1, [1, 2, 3, 4])
+        s, a = sc.normalize()
+        self.assertEqual("ORDER BY\n  foo = %s DESC,\n  foo = %s DESC,\n  foo = %s DESC,\n  foo = %s DESC", s)
+        self.assertEqual(4, len(a))
+
+        with self.assertRaises(ValueError):
+            sc = i.create_query().sort
+            sc.append("foo", 0)
+
+    def test_select_clause(self):
+        i = self.create_interface()
+        sc = i.create_query().select
+
+        for fname in ["foo", "bar", "che"]:
+            sc.append(fname)
+        self.assertEqual("SELECT\n  foo,\n  bar,\n  che", sc.normalize())
+
+        sc = i.create_query().select
+        sc.is_count = True
+        self.assertEqual("SELECT\n  count(*) as ct", sc.normalize())
+
+        sc = i.create_query().select
+        self.assertEqual("SELECT\n  *", sc.normalize())
+
+    def test_limit_clause(self):
+        i = self.create_interface()
+        lc = i.create_query().limit
+
+        lc.limit = 10
+
+        self.assertEqual((10, 0, 11), lc.get())
+
+        lc.page = 1
+        self.assertEqual((10, 0, 11), lc.get())
+
+        lc.offset = 15
+        self.assertEqual((10, 15, 11), lc.get())
+        self.assertEqual("LIMIT 10 OFFSET 15", lc.normalize())
+
+        lc.page = 2
+        self.assertEqual((10, 10, 11), lc.get())
+
+        lc.page = 3
+        self.assertEqual((10, 20, 11), lc.get())
+        self.assertEqual("LIMIT 10 OFFSET 20", lc.normalize())
+
+        lc.page = 0
+        self.assertEqual((10, 0, 11), lc.get())
+
+        with self.assertRaises(ValueError):
+            lc.page = -10
+        #self.assertEqual((10, 0, 11), lc.get())
+
+        lc.offset = 0
+        self.assertEqual((10, 0, 11), lc.get())
+        self.assertEqual("LIMIT 10 OFFSET 0", lc.normalize())
+
+        with self.assertRaises(ValueError):
+            lc.offset = -10
+        #self.assertEqual((10, 0, 11), lc.get())
+
+        lc.limit = 0
+        self.assertEqual((0, 0, 0), lc.get())
+        self.assertEqual("", lc.normalize())
+
+        with self.assertRaises(ValueError):
+            lc.limit = -10
+        #self.assertEqual((0, 0, 0), lc.get())
+
+    def test_field_clause(self):
+        i = self.create_interface()
+        fc = i.field_class()
+
+
+
 
 
 @skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")

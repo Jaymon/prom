@@ -17,6 +17,7 @@ import psycopg2.extensions
 
 # first party
 from .base.sql import SQLInterface, SQLConnection
+from .base import sql
 from ..utils import get_objects
 
 
@@ -48,6 +49,28 @@ class Connection(SQLConnection, psycopg2.extensions.connection):
         #self.initialize(logger)
 
 
+class SortClause(sql.SortClause):
+    def normalize_field(self, field, sort_dir_str):
+        # this solution is based off:
+        # http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
+        # see also: https://gist.github.com/cpjolicoeur/3590737
+        query_sort_str = []
+        query_args = []
+        for v in reversed(field.val):
+            query_sort_str.append('  {} = {} {}'.format(field.name, self.interface_query.placeholder, sort_dir_str))
+            query_args.append(v)
+
+        return ',\n'.join(query_sort_str), query_args
+
+
+class QueryClause(sql.QueryClause):
+    placeholder = '%s'
+    sort_class = SortClause
+
+
+
+
+
 class PostgreSQL(SQLInterface):
 
     val_placeholder = '%s'
@@ -55,6 +78,17 @@ class PostgreSQL(SQLInterface):
     connection_pool = None
 
     _connection = None
+
+    query_class = QueryClause
+
+#     select_class = SelectClause
+# 
+#     where_class = WhereClause
+# 
+#     sort_class = SortClause
+# 
+#     limit_class = LimitClause
+
 
     def _connect(self, connection_config):
         database = connection_config.database

@@ -1,12 +1,15 @@
 import os
 import datetime
+import textwrap
 
 # first party
 from ...exception import InterfaceError
-from .generic import Connection, Interface
+#from .generic import Connection, Interface
+from . import generic
 
 
-class SQLConnection(Connection):
+
+class SQLConnection(generic.Connection):
     def _transaction_start(self):
         cur = self.cursor()
         cur.execute("BEGIN")
@@ -34,8 +37,201 @@ class SQLConnection(Connection):
         cur.execute("ROLLBACK TO SAVEPOINT {}".format(name))
 
 
-class SQLInterface(Interface):
+class FieldClause(generic.FieldClause):
+    def normalize(self):
+        if not self.val and not self.operator:
+            # check options to decide if we are sorting or 
+            s = self.name
+
+        return s
+
+
+
+class WhereClause(generic.WhereClause):
+
+    def _normalize_date_SQL(self, field_name, field_kwargs):
+        raise NotImplemented()
+
+
+    def normalize_field(self, schema, field):
+        return field.name, self.placeholder
+
+    def normalize_list(self, schema, operator_map, field_name, field_vals, field_kwargs=None):
+
+        format_str = ''
+        format_args = []
+        symbol = symbol_map['symbol']
+
+        if field_kwargs:
+            f = schema.fields[field_name]
+            if issubclass(f.type, (datetime.datetime, datetime.date)):
+                format_strs = self._normalize_date_SQL(field_name, field_kwargs)
+                for fname, fvstr, fargs in format_strs:
+                    if format_str:
+                        format_str += ' AND '
+
+                    format_str += '{} {} ({})'.format(fname, symbol, ', '.join([fvstr] * len(fargs)))
+                    format_args.extend(fargs)
+
+            else:
+                raise ValueError('Field {} does not support extended kwarg values'.format(field_name))
+
+        else:
+            field_name, format_val_str = self._normalize_field_SQL(schema, field_name)
+            format_str = '{} {} ({})'.format(field_name, symbol, ', '.join([format_val_str] * len(field_vals)))
+            format_args.extend(field_vals)
+
+        return format_str, format_args
+
+    def normalize_val(self, schema, operator_map, field):
+
+        format_str = ''
+        format_args = []
+        is_list = getattr(operator_map, 'list', False)
+
+        if field.options:
+            symbol = operator_map['symbol']
+            # options take precedence because None is a perfectly valid field_val
+            f = schema.fields[field_name]
+            if issubclass(f.type, (datetime.datetime, datetime.date)):
+                format_strs = self.normalize_date(field)
+                for fname, fvstr, farg in format_strs:
+                    if format_str:
+                        format_str += ' AND '
+
+                    if is_list:
+                        format_str += '{} {} {}'.format(fname, symbol, fvstr)
+
+                    else:
+                        format_str += '{} {} ({})'.format(fname, symbol, ', '.join([fvstr] * len(farg)))
+
+
+                    format_args.append(farg)
+
+            else:
+                raise ValueError('Field {} does not support extended values'.format(field.name))
+
+        else:
+            if is_list:
+                field_name, format_val_str = self.normalize_field(schema, field)
+                format_str = '{} {} ({})'.format(field_name, symbol, ', '.join([format_val_str] * len(field_vals)))
+                format_args.extend(field_vals)
+
+            else:
+                # special handling for NULL
+                symbol = operator_map['none_symbol'] if field.val is None else operator_map['symbol']
+                field_name, format_val_str = self.normalize_field(schema, field)
+                format_str = '{} {} {}'.format(field_name, symbol, format_val_str)
+                format_args.append(field.val)
+
+        return format_str, format_args
+
+    def normalize(self):
+        if not self.fields: return "", []
+
+        schema = self.interface_query.schema
+        operator_map = {
+            'in': {'symbol': 'IN', 'list': True},
+            'nin': {'symbol': 'NOT IN', 'list': True},
+            'is': {'symbol': '=', 'none_symbol': 'IS'},
+            'not': {'symbol': '!=', 'none_symbol': 'IS NOT'},
+            'gt': {'symbol': '>'},
+            'gte': {'symbol': '>='},
+            'lt': {'symbol': '<'},
+            'lte': {'symbol': '<='},
+        }
+
+        query_str = []
+        query_args = []
+
+        query_str.append('WHERE')
+
+        for i, field in enumerate(self.fields):
+            if i > 0: query_str.append('AND')
+
+            sd = operator_map[field.operator]
+            field_str, field_args = self.normalize_val(schema, sd, field)
+            query_str.append('  {}'.format(field_str))
+            query_args.extend(field_args)
+
+
+class SelectClause(generic.SelectClause):
+    def normalize(self):
+        query_str = []
+        query_str.append('SELECT')
+        is_count = getattr(self, "is_count", False)
+
+        if is_count:
+            query_str.append('  count(*) as ct')
+
+        else:
+            select_fields = self.fields
+            if select_fields:
+                query_str.append(",\n".join(
+                    ("  {}".format(f.name) for f in select_fields)
+                ))
+
+            else:
+                query_str.append('  *')
+
+        return "\n".join(query_str)
+
+
+class SortClause(generic.SortClause):
+    def normalize_field(self, field, sort_dir_str):
+        """normalize the field specific sort string
+
+        return -- tuple -- field_sort_str, field_sort_args"""
+        raise NotImplementedError()
+
+    def normalize(self):
+        if not self.fields: return "", []
+
+        query_str = []
+        query_args = []
+
+        query_sort_str = []
+        query_str.append('ORDER BY')
+        for field in self.fields:
+            sort_dir_str = 'ASC' if field.options["direction"] > 0 else 'DESC'
+            if field.val:
+                field_sort_str, field_sort_args = self.normalize_field(field, sort_dir_str)
+                query_sort_str.append(field_sort_str)
+                query_args.extend(field_sort_args)
+
+            else:
+                query_sort_str.append('  {} {}'.format(field.name, sort_dir_str))
+
+        query_str.append(",\n".join(query_sort_str))
+        return "\n".join(query_str), query_args
+
+
+class LimitClause(generic.LimitClause):
+    def normalize(self):
+        if not self: return ""
+        return "LIMIT {} OFFSET {}".format(self.limit, self.offset)
+
+
+class QueryClause(generic.QueryClause):
+
+    placeholder = '?'
+
+    field_class = FieldClause
+
+    select_class = SelectClause
+
+    where_class = WhereClause
+
+    sort_class = SortClause
+
+    limit_class = LimitClause
+
+
+class SQLInterface(generic.Interface):
     """Generic base class for all SQL derived interfaces"""
+
+    query_class = QueryClause
+
     @property
     def val_placeholder(self):
         raise NotImplementedError("this property should be set in any children class")

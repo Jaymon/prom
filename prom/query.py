@@ -232,10 +232,16 @@ class Query(object):
     """
     Handle standard query creation and allow interface querying
 
+    Query instances are tied to an orm.Model class, so you have to pass orm_class
+    in
+
     example --
         q = Query(orm)
         q.is_foo(1).desc_bar().set_limit(10).set_page(2).get()
     """
+    @property
+    def interface(self):
+        return self.orm_class.interface
 
     @property
     def fields(self):
@@ -245,16 +251,14 @@ class Query(object):
     def fields_select(self):
         return [select_field for select_field, _ in self.fields_set]
 
-    def __init__(self, orm=None, *args, **kwargs):
+    def __init__(self, orm_class, *args, **kwargs):
+        """initialize a query instance
 
-        # needed to use the db querying methods like get(), if you just want to build
-        # a query then you don't need to bother passing this in
-        self.orm = orm
+        orm_class -- orm.Model -- a class this query will use as a factory
+        """
+        self.orm_class = orm_class
+        self.interface_query = self.interface.create_query()
 
-        self.fields_set = []
-        self.fields_where = []
-        self.fields_sort = []
-        self.bounds = {}
         self.args = args
         self.kwargs = kwargs
         # the idea here is to set this to False if there is a condition that will
@@ -298,7 +302,7 @@ class Query(object):
         # NOTE -- for some reason I need to call AllIterator.__iter__() explicitely
         # because it would call AllIterator.next() even though AllIterator.__iter__
         # returns a generator, not sure what's up
-        return self.get() if self.has_limit() else self.all().__iter__()
+        return self.get() if self.bounds else self.all().__iter__()
 
     def copy(self):
         """nice handy wrapper around the deepcopy"""
@@ -494,43 +498,16 @@ class Query(object):
         return command, field_name
 
     def set_limit(self, limit):
-        self.bounds['limit'] = int(limit)
+        self.bounds.limit = limit
         return self
 
     def set_offset(self, offset):
-        self.bounds.pop("page", None)
-        self.bounds['offset'] = int(offset)
+        self.bounds.offset = offset
         return self
 
     def set_page(self, page):
-        self.bounds.pop("offset", None)
-        self.bounds['page'] = int(page)
+        self.bounds.page = page
         return self
-
-    def get_bounds(self):
-        limit = offset = page = limit_paginate = 0
-        if "limit" in self.bounds and self.bounds["limit"] > 0:
-            limit = self.bounds["limit"]
-            limit_paginate = limit + 1
-
-        if "offset" in self.bounds:
-            offset = self.bounds["offset"]
-            offset = offset if offset >= 0 else 0
-
-        else:
-            if "page" in self.bounds:
-                page = self.bounds["page"]
-                page = page if page >= 1 else 1
-                offset = (page - 1) * limit
-
-        return (limit, offset, limit_paginate)
-
-    def has_bounds(self):
-        return len(self.bounds) > 0
-
-    def has_limit(self):
-        limit = self.bounds.get('limit', 0)
-        return limit > 0
 
     def get(self, limit=None, page=None):
         """

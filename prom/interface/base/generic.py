@@ -13,6 +13,176 @@ from ...decorators import reconnecting
 logger = logging.getLogger(__name__)
 
 
+class Clause(object):
+    interface = None
+    def __init__(self, interface_query, *args, **kwargs):
+        self.interface_query = interface_query
+        self.interface = interface_query.interface
+
+    def normalize(self):
+        raise NotImplementedError("Children classes should add definition")
+
+
+class FieldClause(Clause):
+    def __init__(self, name, val=None, operator="", **options):
+        self.name = name
+        self.val = val
+        self.operator = operator
+        self.options = options
+
+
+class FieldsClause(Clause):
+    def __init__(self, interface_query):
+        super(FieldsClause, self).__init__(interface_query)
+        self.fields = []
+        self.field_class = interface_query.field_class
+
+    def append(self, *args, **kwargs):
+        field = self.field_class(*args, **kwargs)
+        self.fields.append(field)
+
+
+class WhereClause(FieldsClause):
+    pass
+
+
+class SelectClause(FieldsClause):
+    def append(self, field_name, *args, **kwargs):
+        f = self.field_class(field_name, operator="select")
+        self.fields.append(f)
+
+
+class SortClause(FieldsClause):
+    def append(self, field_name, direction, field_vals=None, *args, **kwargs):
+        """
+        sort this query by field_name in directrion
+
+        field_name -- string -- the field to sort on
+        direction -- integer -- negative for DESC, positive for ASC
+        field_vals -- list -- the order the rows should be returned in
+        """
+        if direction > 0:
+            direction = 1
+        elif direction < 0:
+            direction = -1
+        else:
+            raise ValueError("direction {} is undefined".format(direction))
+
+        f = self.field_class(field_name, field_vals, operator="sort", direction=direction)
+        self.fields.append(f)
+
+
+class LimitClause(Clause):
+
+    @property
+    def limit(self):
+        return getattr(self, "_limit", 0)
+
+    @limit.setter
+    def limit(self, v):
+        v = int(v)
+        if v < 0:
+            raise ValueError("Limit cannot be negative")
+        self._limit = v
+
+    @limit.deleter
+    def limit(self):
+        try:
+            del self._limit
+        except AttributeError: pass
+
+    @property
+    def limit_paginate(self):
+        limit = self.limit
+        return limit + 1 if limit > 0 else 0
+
+    @property
+    def offset(self):
+        offset = getattr(self, "_offset", None)
+        if offset is None:
+            page = self.page
+            limit = self.limit
+            offset = (page - 1) * limit
+
+        else:
+            offset = offset if offset >= 0 else 0
+
+        return offset
+
+    @offset.setter
+    def offset(self, v):
+        v = int(v)
+        if v < 0:
+            raise ValueError("Offset cannot be negative")
+        del self.page
+        self._offset = v
+
+    @offset.deleter
+    def offset(self):
+        try:
+            del self._offset
+        except AttributeError: pass
+
+    @property
+    def page(self):
+        page = getattr(self, "_page", 0)
+        return page if page >= 1 else 1
+
+    @page.setter
+    def page(self, v):
+        v = int(v)
+        if v < 0:
+            raise ValueError("Page cannot be negative")
+        del self.offset
+        self._page = int(v)
+
+    @page.deleter
+    def page(self):
+        try:
+            del self._page
+        except AttributeError: pass
+
+    def get(self):
+        return (self.limit, self.offset, self.limit_paginate)
+
+    def __nonzero__(self):
+        return self.limit > 0 or self.offset > 0
+
+    def has(self):
+        return bool(self)
+
+    def has_limit(self):
+        return self.limit > 0
+
+    def normalize(self):
+        raise NotImplementedError("Children classes should add definition")
+
+
+class QueryClause(Clause):
+
+    field_class = FieldClause
+
+    select_class = SelectClause
+
+    where_class = WhereClause
+
+    sort_class = SortClause
+
+    limit_class = LimitClause
+
+    def __init__(self, interface):
+        self.interface = interface
+        self.select = self.select_class(self)
+        self.where = self.where_class(self)
+        self.sort = self.sort_class(self)
+        self.limit = self.limit_class(self)
+
+
+
+
+
+
+
 class Connection(object):
     """holds common methods that all raw connections should have"""
 
@@ -107,8 +277,13 @@ class Interface(object):
     connection_config = None
     """a config.Connection() instance"""
 
+    query_class = QueryClause
+
     def __init__(self, connection_config=None):
         self.connection_config = connection_config
+
+    def create_query(self):
+        return self.query_class(self)
 
     def connect(self, connection_config=None, *args, **kwargs):
         """
