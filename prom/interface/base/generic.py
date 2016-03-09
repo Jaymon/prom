@@ -42,6 +42,15 @@ class FieldsClause(Clause):
         self.fields.append(field)
 
 
+    def normalize_val(self, schema, field):
+        raise NotImplementedError()
+
+    def normalize_date(self, field):
+        raise NotImplementedError()
+
+
+
+
 class WhereClause(FieldsClause):
     pass
 
@@ -170,8 +179,9 @@ class QueryClause(Clause):
 
     limit_class = LimitClause
 
-    def __init__(self, interface):
+    def __init__(self, interface, schema):
         self.interface = interface
+        self.schema = schema
         self.select = self.select_class(self)
         self.where = self.where_class(self)
         self.sort = self.sort_class(self)
@@ -282,8 +292,8 @@ class Interface(object):
     def __init__(self, connection_config=None):
         self.connection_config = connection_config
 
-    def create_query(self):
-        return self.query_class(self)
+    def create_query(self, schema):
+        return self.query_class(self, schema)
 
     def connect(self, connection_config=None, *args, **kwargs):
         """

@@ -49,50 +49,28 @@ class FieldClause(generic.FieldClause):
 
 class WhereClause(generic.WhereClause):
 
-    def _normalize_date_SQL(self, field_name, field_kwargs):
-        raise NotImplemented()
+    @property
+    def placeholder(self):
+        return self.interface_query.placeholder
+
+    def normalize_date(self, field):
+        raise NotImplementedError()
 
 
-    def normalize_field(self, schema, field):
-        return field.name, self.placeholder
-
-    def normalize_list(self, schema, operator_map, field_name, field_vals, field_kwargs=None):
-
-        format_str = ''
-        format_args = []
-        symbol = symbol_map['symbol']
-
-        if field_kwargs:
-            f = schema.fields[field_name]
-            if issubclass(f.type, (datetime.datetime, datetime.date)):
-                format_strs = self._normalize_date_SQL(field_name, field_kwargs)
-                for fname, fvstr, fargs in format_strs:
-                    if format_str:
-                        format_str += ' AND '
-
-                    format_str += '{} {} ({})'.format(fname, symbol, ', '.join([fvstr] * len(fargs)))
-                    format_args.extend(fargs)
-
-            else:
-                raise ValueError('Field {} does not support extended kwarg values'.format(field_name))
-
-        else:
-            field_name, format_val_str = self._normalize_field_SQL(schema, field_name)
-            format_str = '{} {} ({})'.format(field_name, symbol, ', '.join([format_val_str] * len(field_vals)))
-            format_args.extend(field_vals)
-
-        return format_str, format_args
-
+#     def normalize_field(self, schema, field):
+#         return field.name, self.placeholder
+# 
     def normalize_val(self, schema, operator_map, field):
 
         format_str = ''
         format_args = []
-        is_list = getattr(operator_map, 'list', False)
+        symbol = operator_map['symbol']
+        is_list = operator_map.get('list', False)
+        placeholder = self.placeholder
 
         if field.options:
-            symbol = operator_map['symbol']
             # options take precedence because None is a perfectly valid field_val
-            f = schema.fields[field_name]
+            f = schema.fields[field.name]
             if issubclass(f.type, (datetime.datetime, datetime.date)):
                 format_strs = self.normalize_date(field)
                 for fname, fvstr, farg in format_strs:
@@ -100,28 +78,27 @@ class WhereClause(generic.WhereClause):
                         format_str += ' AND '
 
                     if is_list:
-                        format_str += '{} {} {}'.format(fname, symbol, fvstr)
+                        format_str += '{} {} ({})'.format(fname, symbol, ', '.join([fvstr] * len(farg)))
+                        format_args.extend(farg)
 
                     else:
-                        format_str += '{} {} ({})'.format(fname, symbol, ', '.join([fvstr] * len(farg)))
-
-
-                    format_args.append(farg)
+                        format_str += '{} {} {}'.format(fname, symbol, fvstr)
+                        format_args.append(farg)
 
             else:
                 raise ValueError('Field {} does not support extended values'.format(field.name))
 
         else:
             if is_list:
-                field_name, format_val_str = self.normalize_field(schema, field)
-                format_str = '{} {} ({})'.format(field_name, symbol, ', '.join([format_val_str] * len(field_vals)))
-                format_args.extend(field_vals)
+                format_str = '{} {} ({})'.format(field.name, symbol, ', '.join([placeholder] * len(field.val)))
+                format_args.extend(field.val)
 
             else:
                 # special handling for NULL
-                symbol = operator_map['none_symbol'] if field.val is None else operator_map['symbol']
-                field_name, format_val_str = self.normalize_field(schema, field)
-                format_str = '{} {} {}'.format(field_name, symbol, format_val_str)
+                if field.val is None:
+                    symbol = operator_map['none_symbol']
+
+                format_str = '{} {} {}'.format(field.name, symbol, placeholder)
                 format_args.append(field.val)
 
         return format_str, format_args
@@ -153,6 +130,8 @@ class WhereClause(generic.WhereClause):
             field_str, field_args = self.normalize_val(schema, sd, field)
             query_str.append('  {}'.format(field_str))
             query_args.extend(field_args)
+
+        return "\n".join(query_str), query_args
 
 
 class SelectClause(generic.SelectClause):

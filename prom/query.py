@@ -257,7 +257,7 @@ class Query(object):
         orm_class -- orm.Model -- a class this query will use as a factory
         """
         self.orm_class = orm_class
-        self.interface_query = self.interface.create_query()
+        self.interface_query = self.interface.create_query(orm_class.schema)
 
         self.args = args
         self.kwargs = kwargs

@@ -2924,15 +2924,42 @@ class PostgresClauseTest(BaseTestCase):
         i = PostgreSQL(config)
         return i
 
+    def create_schema(self, *args, **kwargs):
+        return get_schema(*args, **kwargs)
+
+    def create_interface_query(self):
+        i = self.create_interface()
+        s = self.create_schema(
+            _created=Field(datetime.datetime, False),
+            _updated=Field(datetime.datetime, False)
+        )
+        return i.create_query(s)
+
     def test_field_clause(self):
         pass
 
     def test_where_clause(self):
-        i = self.create_interface()
 
+        wc = self.create_interface_query().where
+        day=int(datetime.datetime.utcnow().strftime('%d'))
+        wc.append("_created", None, operator="is", day=day)
+        wc.append("_updated", None, operator="nin", day=[day, day + 1])
+        s, a = wc.normalize()
+        self.assertEqual("WHERE\n  EXTRACT(DAY FROM _created) = %s\nAND\n  EXTRACT(DAY FROM _updated) NOT IN (%s, %s)", s)
+        self.assertEqual(3, len(a))
 
-        wc = i.create_query().where
+        wc = self.create_interface_query().where
+        wc.append("foo", None, operator="is")
+        s, a = wc.normalize()
+        self.assertEqual("WHERE\n  foo IS %s", s)
+        self.assertEqual(1, len(a))
 
+        wc = self.create_interface_query().where
+        wc.append("foo", 1, operator="is")
+        wc.append("bar", [2, 3, 4, 5], operator="in")
+        s, a = wc.normalize()
+        self.assertEqual("WHERE\n  foo = %s\nAND\n  bar IN (%s, %s, %s, %s)", s)
+        self.assertEqual(5, len(a))
 
 
     def test_sort_clause(self):

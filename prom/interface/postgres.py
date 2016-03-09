@@ -49,6 +49,37 @@ class Connection(SQLConnection, psycopg2.extensions.connection):
         #self.initialize(logger)
 
 
+class WhereClause(sql.WhereClause):
+    def normalize_date(self, field):
+        """
+        allow extracting information from date
+
+        http://www.postgresql.org/docs/8.3/static/functions-datetime.html#FUNCTIONS-DATETIME-EXTRACT
+        """
+        fstrs = []
+        k_opts = {
+            'century': 'EXTRACT(CENTURY FROM {})',
+            'day': 'EXTRACT(DAY FROM {})',
+            'decade': 'EXTRACT(DECADE FROM {})',
+            'weekday': 'EXTRACT(DOW FROM {})',
+            'dow': 'EXTRACT(DOW FROM {})',
+            'isodow': 'EXTRACT(ISODOW FROM {})',
+            'epoch': 'EXTRACT(EPOCH FROM {})',
+            'hour': 'EXTRACT(HOUR FROM {})',
+            'year': 'EXTRACT(YEAR FROM {})',
+            'isoyear': 'EXTRACT(ISOYEAR FROM {})',
+            'minute': 'EXTRACT(MINUTE FROM {})',
+            'month': 'EXTRACT(MONTH FROM {})',
+            'quarter': 'EXTRACT(QUARTER FROM {})',
+            'week': 'EXTRACT(WEEK FROM {})',
+        }
+
+        for k, v in field.options.items():
+            fstrs.append([k_opts[k].format(field.name), self.placeholder, v])
+
+        return fstrs
+
+
 class SortClause(sql.SortClause):
     def normalize_field(self, field, sort_dir_str):
         # this solution is based off:
@@ -66,6 +97,7 @@ class SortClause(sql.SortClause):
 class QueryClause(sql.QueryClause):
     placeholder = '%s'
     sort_class = SortClause
+    where_class = WhereClause
 
 
 
