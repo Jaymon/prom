@@ -20,15 +20,25 @@ class Clause(object):
         self.interface = interface_query.interface
 
     def normalize(self):
-        raise NotImplementedError("Children classes should add definition")
+        raise NotImplementedError()
 
 
 class FieldClause(Clause):
-    def __init__(self, name, val=None, operator="", **options):
+    def __init__(self, interface_query, name, val=None, operator="", **options):
+        super(FieldClause, self).__init__(interface_query)
         self.name = name
         self.val = val
         self.operator = operator
         self.options = options
+
+    def normalize_select(self):
+        return self.name
+
+    def normalize_where(self, schema):
+        raise NotImplementedError()
+
+    def normalize_sort(self):
+        raise NotImplementedError()
 
 
 class FieldsClause(Clause):
@@ -38,17 +48,18 @@ class FieldsClause(Clause):
         self.field_class = interface_query.field_class
 
     def append(self, *args, **kwargs):
-        field = self.field_class(*args, **kwargs)
+        field = self.field_class(self.interface_query, *args, **kwargs)
         self.fields.append(field)
 
+    def extend(self, fields, operator=""):
+        """put all the fields in a {name: val} using operator (usually "insert" or
+        "update")
 
-    def normalize_val(self, schema, field):
-        raise NotImplementedError()
-
-    def normalize_date(self, field):
-        raise NotImplementedError()
-
-
+        fields -- dict -- {name: val}
+        operator -- string -- usually something like "insert" or "update"
+        """
+        for name, val in fields:
+            self.append(name=name, val=val, operator=operator)
 
 
 class WhereClause(FieldsClause):
@@ -56,9 +67,8 @@ class WhereClause(FieldsClause):
 
 
 class SelectClause(FieldsClause):
-    def append(self, field_name, *args, **kwargs):
-        f = self.field_class(field_name, operator="select")
-        self.fields.append(f)
+    def append(self, field_name):
+        super(SelectClause, self).append(name=field_name, operator="select")
 
 
 class SortClause(FieldsClause):
@@ -77,8 +87,7 @@ class SortClause(FieldsClause):
         else:
             raise ValueError("direction {} is undefined".format(direction))
 
-        f = self.field_class(field_name, field_vals, operator="sort", direction=direction)
-        self.fields.append(f)
+        super(SortClause, self).append(name=field_name, val=field_vals, operator="sort", direction=direction)
 
 
 class LimitClause(Clause):
@@ -167,6 +176,12 @@ class LimitClause(Clause):
         raise NotImplementedError("Children classes should add definition")
 
 
+class SetClause(FieldsClause):
+    pass
+#     def append(self, field_name, field_val):
+#         super(SetClause, self).append(name=field_name, val=field_val, operator="set")
+
+
 class QueryClause(Clause):
 
     field_class = FieldClause
@@ -179,6 +194,8 @@ class QueryClause(Clause):
 
     limit_class = LimitClause
 
+    set_class = SetClause
+
     def __init__(self, interface, schema):
         self.interface = interface
         self.schema = schema
@@ -186,11 +203,7 @@ class QueryClause(Clause):
         self.where = self.where_class(self)
         self.sort = self.sort_class(self)
         self.limit = self.limit_class(self)
-
-
-
-
-
+        self.set = self.set_class(self)
 
 
 class Connection(object):

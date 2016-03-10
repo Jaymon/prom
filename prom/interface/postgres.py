@@ -49,8 +49,10 @@ class Connection(SQLConnection, psycopg2.extensions.connection):
         #self.initialize(logger)
 
 
-class WhereClause(sql.WhereClause):
-    def normalize_date(self, field):
+class FieldClause(sql.FieldClause):
+    placeholder = '%s'
+
+    def normalize_where_date(self):
         """
         allow extracting information from date
 
@@ -74,33 +76,31 @@ class WhereClause(sql.WhereClause):
             'week': 'EXTRACT(WEEK FROM {})',
         }
 
-        for k, v in field.options.items():
-            fstrs.append([k_opts[k].format(field.name), self.placeholder, v])
+        for k, v in self.options.items():
+            fstrs.append([k_opts[k].format(self.name), self.placeholder, v])
 
         return fstrs
 
-
-class SortClause(sql.SortClause):
-    def normalize_field(self, field, sort_dir_str):
+    def normalize_sort_val(self, sort_dir_str):
         # this solution is based off:
         # http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
         # see also: https://gist.github.com/cpjolicoeur/3590737
         query_sort_str = []
         query_args = []
-        for v in reversed(field.val):
-            query_sort_str.append('  {} = {} {}'.format(field.name, self.interface_query.placeholder, sort_dir_str))
+        for i, v in enumerate(reversed(self.val)):
+            query_sort_str.append('{}{} = {} {}'.format(
+                "  " if i > 0 else "",
+                self.name,
+                self.placeholder,
+                sort_dir_str
+            ))
             query_args.append(v)
 
         return ',\n'.join(query_sort_str), query_args
 
 
 class QueryClause(sql.QueryClause):
-    placeholder = '%s'
-    sort_class = SortClause
-    where_class = WhereClause
-
-
-
+    field_class = FieldClause
 
 
 class PostgreSQL(SQLInterface):
@@ -112,15 +112,6 @@ class PostgreSQL(SQLInterface):
     _connection = None
 
     query_class = QueryClause
-
-#     select_class = SelectClause
-# 
-#     where_class = WhereClause
-# 
-#     sort_class = SortClause
-# 
-#     limit_class = LimitClause
-
 
     def _connect(self, connection_config):
         database = connection_config.database

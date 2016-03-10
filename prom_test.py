@@ -2935,83 +2935,91 @@ class PostgresClauseTest(BaseTestCase):
         )
         return i.create_query(s)
 
-    def test_field_clause(self):
-        pass
+    def test_field_normalize_where_date(self):
+        """postgres specific where field stuff"""
+        day=int(datetime.datetime.utcnow().strftime('%d'))
+        wc = self.create_interface_query().where
+        wc.append("_created", None, operator="is", day=day)
+        f = wc.fields[0]
+        s = f.normalize()
+        self.assertEqual("EXTRACT(DAY FROM _created) = %s", s)
+        self.assertEqual(1, len(f.normalize_vals()))
+
+        wc.append("_updated", None, operator="nin", day=[day, day + 1])
+        f = wc.fields[1]
+        s = f.normalize()
+        self.assertEqual("EXTRACT(DAY FROM _updated) NOT IN (%s, %s)", s)
+        self.assertEqual(2, len(f.normalize_vals()))
+
+    def test_field_normalize_sort(self):
+        """postgres specific sort field stuff"""
+        sc = self.create_interface_query().sort
+        ph = sc.field_class.placeholder
+        sc.append("foo", -1, [1, 2, 3, 4])
+        s = sc.normalize()
+        self.assertEqual(
+            "ORDER BY\n  foo = {ph} DESC,\n  foo = {ph} DESC,\n  foo = {ph} DESC,\n  foo = {ph} DESC".format(ph=ph),
+            s
+        )
+        self.assertEqual(4, len(sc.normalize_vals()))
 
     def test_where_clause(self):
-
         wc = self.create_interface_query().where
-        day=int(datetime.datetime.utcnow().strftime('%d'))
-        wc.append("_created", None, operator="is", day=day)
-        wc.append("_updated", None, operator="nin", day=[day, day + 1])
-        s, a = wc.normalize()
-        self.assertEqual("WHERE\n  EXTRACT(DAY FROM _created) = %s\nAND\n  EXTRACT(DAY FROM _updated) NOT IN (%s, %s)", s)
-        self.assertEqual(3, len(a))
-
-        wc = self.create_interface_query().where
+        ph = wc.field_class.placeholder
         wc.append("foo", None, operator="is")
-        s, a = wc.normalize()
-        self.assertEqual("WHERE\n  foo IS %s", s)
-        self.assertEqual(1, len(a))
+        s = wc.normalize()
+        self.assertEqual("WHERE\n  foo IS {}".format(ph), s)
+        self.assertEqual(1, len(wc.normalize_vals()))
 
         wc = self.create_interface_query().where
         wc.append("foo", 1, operator="is")
         wc.append("bar", [2, 3, 4, 5], operator="in")
-        s, a = wc.normalize()
-        self.assertEqual("WHERE\n  foo = %s\nAND\n  bar IN (%s, %s, %s, %s)", s)
-        self.assertEqual(5, len(a))
-
+        s = wc.normalize()
+        self.assertEqual("WHERE\n  foo = {ph}\nAND\n  bar IN ({ph}, {ph}, {ph}, {ph})".format(ph=ph), s)
+        self.assertEqual(5, len(wc.normalize_vals()))
 
     def test_sort_clause(self):
         i = self.create_interface()
+        sc = self.create_interface_query().sort
 
-        sc = i.create_query().sort
         sc.append("foo", 1)
-        s, a = sc.normalize()
+        s = sc.normalize()
         self.assertEqual("ORDER BY\n  foo ASC", s)
-        self.assertFalse(a)
+        self.assertFalse(sc.normalize_vals())
 
-        sc = i.create_query().sort
+        sc = self.create_interface_query().sort
         sc.append("foo", -1)
-        s, a = sc.normalize()
+        s = sc.normalize()
         self.assertEqual("ORDER BY\n  foo DESC", s)
-        self.assertFalse(a)
+        self.assertFalse(sc.normalize_vals())
 
-        sc = i.create_query().sort
+        sc = self.create_interface_query().sort
         sc.append("foo", -1)
         sc.append("bar", 1)
-        s, a = sc.normalize()
+        s = sc.normalize()
         self.assertEqual("ORDER BY\n  foo DESC,\n  bar ASC", s)
-        self.assertFalse(a)
-
-        sc = i.create_query().sort
-        sc.append("foo", -1, [1, 2, 3, 4])
-        s, a = sc.normalize()
-        self.assertEqual("ORDER BY\n  foo = %s DESC,\n  foo = %s DESC,\n  foo = %s DESC,\n  foo = %s DESC", s)
-        self.assertEqual(4, len(a))
+        self.assertFalse(sc.normalize_vals())
 
         with self.assertRaises(ValueError):
-            sc = i.create_query().sort
+            sc = self.create_interface_query().sort
             sc.append("foo", 0)
 
     def test_select_clause(self):
-        i = self.create_interface()
-        sc = i.create_query().select
+        sc = self.create_interface_query().select
 
         for fname in ["foo", "bar", "che"]:
             sc.append(fname)
         self.assertEqual("SELECT\n  foo,\n  bar,\n  che", sc.normalize())
 
-        sc = i.create_query().select
+        sc = self.create_interface_query().select
         sc.is_count = True
         self.assertEqual("SELECT\n  count(*) as ct", sc.normalize())
 
-        sc = i.create_query().select
+        sc = self.create_interface_query().select
         self.assertEqual("SELECT\n  *", sc.normalize())
 
     def test_limit_clause(self):
-        i = self.create_interface()
-        lc = i.create_query().limit
+        lc = self.create_interface_query().limit
 
         lc.limit = 10
 
@@ -3053,13 +3061,6 @@ class PostgresClauseTest(BaseTestCase):
         with self.assertRaises(ValueError):
             lc.limit = -10
         #self.assertEqual((0, 0, 0), lc.get())
-
-    def test_field_clause(self):
-        i = self.create_interface()
-        fc = i.field_class()
-
-
-
 
 
 @skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")
