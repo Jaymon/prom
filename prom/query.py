@@ -3,6 +3,7 @@ Classes and stuff that handle querying the interface for a passed in Orm class
 """
 import types
 import copy
+from collections import defaultdict
 
 from .utils import make_list, get_objects, make_dict
 
@@ -248,12 +249,13 @@ class Query(object):
 
         # needed to use the db querying methods like get(), if you just want to build
         # a query then you don't need to bother passing this in
+        # TODO -- change to orm_class to better match other parts of codebase
         self.orm = orm
 
-        self.fields_set = []
-        self.fields_where = []
-        self.fields_sort = []
-        self.bounds = {}
+        self.fields_set = Fields()
+        self.fields_where = Fields()
+        self.fields_sort = Fields()
+        self.bounds = Limit()
         self.args = args
         self.kwargs = kwargs
         # the idea here is to set this to False if there is a condition that will
@@ -339,7 +341,7 @@ class Query(object):
 
         n insert/update queries, these are the fields that will be inserted/updated into the db
         """
-        self.fields_set.append([field_name, field_val])
+        self.fields_set.append(field_name, [field_name, field_val])
         return self
 
     def set_fields(self, fields=None, *fields_args, **fields_kwargs):
@@ -370,12 +372,12 @@ class Query(object):
 
     def is_field(self, field_name, *field_val, **field_kwargs):
         fv = field_val[0] if field_val else None
-        self.fields_where.append(["is", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["is", field_name, fv, field_kwargs])
         return self
 
     def not_field(self, field_name, *field_val, **field_kwargs):
         fv = field_val[0] if field_val else None
-        self.fields_where.append(["not", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["not", field_name, fv, field_kwargs])
         return self
 
     def between_field(self, field_name, low, high):
@@ -385,22 +387,22 @@ class Query(object):
 
     def lte_field(self, field_name, *field_val, **field_kwargs):
         fv = field_val[0] if field_val else None
-        self.fields_where.append(["lte", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["lte", field_name, fv, field_kwargs])
         return self
 
     def lt_field(self, field_name, *field_val, **field_kwargs):
         fv = field_val[0] if field_val else None
-        self.fields_where.append(["lt", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["lt", field_name, fv, field_kwargs])
         return self
 
     def gte_field(self, field_name, *field_val, **field_kwargs):
         fv = field_val[0] if field_val else None
-        self.fields_where.append(["gte", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["gte", field_name, fv, field_kwargs])
         return self
 
     def gt_field(self, field_name, *field_val, **field_kwargs):
         fv = field_val[0] if field_val else None
-        self.fields_where.append(["gt", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["gt", field_name, fv, field_kwargs])
         return self
 
     def in_field(self, field_name, *field_vals, **field_kwargs):
@@ -418,7 +420,7 @@ class Query(object):
         else:
             if not fv: self.can_get = False
 
-        self.fields_where.append(["in", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["in", field_name, fv, field_kwargs])
         return self
 
     def nin_field(self, field_name, *field_vals, **field_kwargs):
@@ -436,7 +438,7 @@ class Query(object):
         else:
             if not fv: self.can_get = False
 
-        self.fields_where.append(["nin", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["nin", field_name, fv, field_kwargs])
         return self
 
     def sort_field(self, field_name, direction, field_vals=None):
@@ -454,7 +456,7 @@ class Query(object):
         else:
             raise ValueError("direction {} is undefined".format(direction))
 
-        self.fields_sort.append([direction, field_name, list(field_vals) if field_vals else field_vals])
+        self.fields_sort.append(field_name, [direction, field_name, list(field_vals) if field_vals else field_vals])
         return self
 
     def asc_field(self, field_name, field_vals=None):
@@ -607,12 +609,12 @@ class Query(object):
 
     def pks(self, limit=None, page=None):
         """convenience method for setting select_pk().values() since this is so common"""
-        self.fields_set = []
+        self.fields_set.reset()
         return self.select_pk().values(limit, page)
 
     def pk(self):
         """convenience method for setting select_pk().value() since this is so common"""
-        self.fields_set = []
+        self.fields_set.reset()
         return self.select_pk().value()
 
     def get_pks(self, field_vals):
@@ -638,7 +640,7 @@ class Query(object):
 
         # count queries shouldn't care about sorting
         fields_sort = self.fields_sort
-        self.fields_sort = []
+        self.fields_sort = Fields()
 
         self.default_val = 0
         ret = self._query('count')
@@ -704,4 +706,180 @@ class Query(object):
         i = self.orm.interface
         s = self.orm.schema
         return getattr(i, method_name)(s, self) # i.method_name(schema, query)
+
+
+class CacheQuery(Query):
+    """a standard query caching skeleton class with the idea that it would be expanded
+    upon on a per project or per model basis"""
+
+    cache_ttl = 3600
+    """how long you should cache results for cacheable queries"""
+
+    def cache_invalidate(self, method_name):
+        cached = getattr(self, "cached", {})
+        cached.clear()
+
+    def cache_key(self, method_name):
+        """decides if this query is cacheable, returns a key if it is, otherwise empty"""
+        key = make_hash(method_name, self.fields_set, self.fields_where, self.fields_sort)
+        return key
+
+    def cache_set(self, key, result):
+        cached = getattr(self, "cached", {})
+        now = datetime.datetime.utcnow()
+        cached[key] = {
+            "datetime": now,
+            "result": result
+        }
+
+    def cache_get(self, key):
+        result = None
+        cache_hit = False
+        cached = getattr(self, "cached", {})
+        now = datetime.datetime.utcnow()
+        if key in cached:
+            td = now - cached[key]["datetime"]
+            if td.total_seconds() < self.cached_ttl:
+                cache_hit = True
+                result = cached[key]["result"]
+
+        return result, cache_hit
+
+    def _query(self, method_name):
+        cache_hit = False
+        cache_key = self.cache_key(method_name)
+        if cache_key:
+            result, cache_hit = self.cache_get(cache_key)
+
+        if not cache_hit:
+            result = super(CacheQuery, self)._query(method_name)
+            if cache_key:
+                self.cache_set(cache_key, result)
+
+        self.cache_hit = cache_hit
+        return result
+
+    def update(self):
+        ret = super(CachedQuery, self).update()
+        if ret:
+            self.invalidate("update")
+        return ret
+
+    def delete(self):
+        ret = super(CachedQuery, self).delete()
+        if ret:
+            self.invalidate("delete")
+        return ret
+
+
+class Fields(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.fields = []
+        self.fields_map = defaultdict(list)
+
+#     def append(self, field_name, field_val=None, operator="", **field_options):
+#         index = len(self.fields)
+#         self.fields.append([operator, field_name, field_val, field_options])
+#         self.fields_map[field_name].append(index)
+
+    def append(self, field_name, field_args):
+        index = len(self.fields)
+        self.fields.append(field_args)
+        self.fields_map[field_name].append(index)
+
+    def __iter__(self):
+        for field in self.fields:
+            yield field
+
+    def __nonzero__(self):
+        return bool(self.fields)
+
+class Limit(object):
+
+    @property
+    def limit(self):
+        return getattr(self, "_limit", 0)
+
+    @limit.setter
+    def limit(self, v):
+        v = int(v)
+        if v < 0:
+            raise ValueError("Limit cannot be negative")
+        self._limit = v
+
+    @limit.deleter
+    def limit(self):
+        try:
+            del self._limit
+        except AttributeError: pass
+
+    @property
+    def limit_paginate(self):
+        limit = self.limit
+        return limit + 1 if limit > 0 else 0
+
+    @property
+    def offset(self):
+        offset = getattr(self, "_offset", None)
+        if offset is None:
+            page = self.page
+            limit = self.limit
+            offset = (page - 1) * limit
+
+        else:
+            offset = offset if offset >= 0 else 0
+
+        return offset
+
+    @offset.setter
+    def offset(self, v):
+        v = int(v)
+        if v < 0:
+            raise ValueError("Offset cannot be negative")
+        del self.page
+        self._offset = v
+
+    @offset.deleter
+    def offset(self):
+        try:
+            del self._offset
+        except AttributeError: pass
+
+    @property
+    def page(self):
+        page = getattr(self, "_page", 0)
+        return page if page >= 1 else 1
+
+    @page.setter
+    def page(self, v):
+        v = int(v)
+        if v < 0:
+            raise ValueError("Page cannot be negative")
+        del self.offset
+        self._page = int(v)
+
+    @page.deleter
+    def page(self):
+        try:
+            del self._page
+        except AttributeError: pass
+
+    def get(self):
+        return (self.limit, self.offset, self.limit_paginate)
+
+    def __nonzero__(self):
+        return self.limit > 0 or self.offset > 0
+
+    def has(self):
+        return bool(self)
+
+    def has_limit(self):
+        return self.limit > 0
+
+    def normalize(self):
+        raise NotImplementedError("Children classes should add definition")
+
 
