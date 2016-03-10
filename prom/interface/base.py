@@ -756,9 +756,11 @@ class SQLInterface(Interface):
             query_str.append(',{}'.format(os.linesep).join(query_sort_str))
 
         if query.bounds:
-            limit, offset, _ = query.get_bounds()
-            if limit > 0:
-                query_str.append('LIMIT {} OFFSET {}'.format(limit, offset))
+            if query.bounds:
+                query_str.append('LIMIT {} OFFSET {}'.format(
+                    query.bounds.limit,
+                    query.bounds.offset
+                ))
 
         query_str = os.linesep.join(query_str)
         return query_str, query_args
@@ -827,8 +829,10 @@ class SQLInterface(Interface):
 
     def _get_one(self, schema, query, **kwargs):
         # compensate for getting one with an offset
-        if query.has_bounds() and not query.has_limit():
-            query.set_limit(1)
+        if query.bounds.offset > 0:
+            query.bounds.limit = 1
+        #if query.has_bounds() and not query.has_limit():
+        #    query.set_limit(1)
         query_str, query_args = self.get_SQL(schema, query)
         return self.query(query_str, *query_args, fetchone=True, **kwargs)
 

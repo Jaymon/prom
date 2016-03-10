@@ -299,7 +299,7 @@ class Query(object):
         # NOTE -- for some reason I need to call AllIterator.__iter__() explicitely
         # because it would call AllIterator.next() even though AllIterator.__iter__
         # returns a generator, not sure what's up
-        return self.get() if self.has_limit() else self.all().__iter__()
+        return self.get() if self.bounds else self.all().__iter__()
 
     def copy(self):
         """nice handy wrapper around the deepcopy"""
@@ -495,43 +495,16 @@ class Query(object):
         return command, field_name
 
     def set_limit(self, limit):
-        self.bounds['limit'] = int(limit)
+        self.bounds.limit = limit
         return self
 
     def set_offset(self, offset):
-        self.bounds.pop("page", None)
-        self.bounds['offset'] = int(offset)
+        self.bounds.offset = offset
         return self
 
     def set_page(self, page):
-        self.bounds.pop("offset", None)
-        self.bounds['page'] = int(page)
+        self.bounds.page = page
         return self
-
-    def get_bounds(self):
-        limit = offset = page = limit_paginate = 0
-        if "limit" in self.bounds and self.bounds["limit"] > 0:
-            limit = self.bounds["limit"]
-            limit_paginate = limit + 1
-
-        if "offset" in self.bounds:
-            offset = self.bounds["offset"]
-            offset = offset if offset >= 0 else 0
-
-        else:
-            if "page" in self.bounds:
-                page = self.bounds["page"]
-                page = page if page >= 1 else 1
-                offset = (page - 1) * limit
-
-        return (limit, offset, limit_paginate)
-
-    def has_bounds(self):
-        return len(self.bounds) > 0
-
-    def has_limit(self):
-        limit = self.bounds.get('limit', 0)
-        return limit > 0
 
     def get(self, limit=None, page=None):
         """
@@ -539,24 +512,17 @@ class Query(object):
 
         return -- Iterator()
         """
-        if limit is not None:
-            self.set_limit(limit)
-        if page is not None:
-            self.set_page(page)
-
         has_more = False
-        limit, offset, limit_paginate = self.get_bounds()
-        if limit_paginate:
-            self.set_limit(limit_paginate)
-
+        self.bounds.paginate = True
+        limit_paginate, offset = self.bounds.get(limit, page)
         self.default_val = []
         results = self._query('get')
 
         if limit_paginate:
-            self.set_limit(limit)
+            self.bounds.paginate = False
             if len(results) == limit_paginate:
                 has_more = True
-                results.pop(limit)
+                results.pop(-1)
 
         iterator_class = self.orm.iterator_class if self.orm else Iterator
         return iterator_class(results, orm=self.orm, has_more=has_more, query=self)
@@ -801,7 +767,8 @@ class Limit(object):
 
     @property
     def limit(self):
-        return getattr(self, "_limit", 0)
+        return self.limit_paginate if self.paginate else getattr(self, "_limit", 0)
+        #return getattr(self, "_limit", 0)
 
     @limit.setter
     def limit(self, v):
@@ -818,7 +785,8 @@ class Limit(object):
 
     @property
     def limit_paginate(self):
-        limit = self.limit
+        limit = getattr(self, "_limit", 0)
+        #limit = self.limit
         return limit + 1 if limit > 0 else 0
 
     @property
@@ -826,7 +794,8 @@ class Limit(object):
         offset = getattr(self, "_offset", None)
         if offset is None:
             page = self.page
-            limit = self.limit
+            #limit = self.limit
+            limit = getattr(self, "_limit", 0)
             offset = (page - 1) * limit
 
         else:
@@ -867,8 +836,21 @@ class Limit(object):
             del self._page
         except AttributeError: pass
 
-    def get(self):
-        return (self.limit, self.offset, self.limit_paginate)
+
+    def __init__(self):
+        self.paginate = False
+        self._limit = 0
+        self._offset = 0
+        self._page = 0
+
+    def get(self, limit=None, page=None):
+        if limit is not None:
+            self.limit = limit
+        if page is not None:
+            self.page = page
+
+        #return (self.limit, self.offset, self.limit_paginate)
+        return (self.limit, self.offset)
 
     def __nonzero__(self):
         return self.limit > 0 or self.offset > 0
@@ -878,8 +860,4 @@ class Limit(object):
 
     def has_limit(self):
         return self.limit > 0
-
-    def normalize(self):
-        raise NotImplementedError("Children classes should add definition")
-
 
