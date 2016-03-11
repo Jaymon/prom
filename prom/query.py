@@ -151,7 +151,7 @@ class AllIterator(Iterator):
     NOTE -- pop() may have unexpected results
     """
     def __init__(self, query):
-        limit, offset, _ = query.get_bounds()
+        limit, offset = query.bounds.get()
         if not limit:
             limit = 5000
 
@@ -228,6 +228,151 @@ class AllIterator(Iterator):
         return super(AllIterator, self).values()
 
 
+class Fields(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.fields = []
+        self.fields_map = defaultdict(list)
+
+    def append(self, field_name, field_args):
+        index = len(self.fields)
+        self.fields.append(field_args)
+        self.fields_map[field_name].append(index)
+
+    def __iter__(self):
+        for field in self.fields:
+            yield field
+
+    def __nonzero__(self):
+        return bool(self.fields)
+
+    def __len__(self):
+        return len(self.fields)
+
+    def __getitem__(self, index):
+        return self.fields[index]
+
+    def has(self, field_name):
+        return field_name in self.fields_map
+
+    def __contains__(self, field_name):
+        return self.has(field_name)
+
+    def get(self, field_name):
+        fields = []
+        for index in self.fields_map.get(field_name, []):
+            fields.append(self.fields[index])
+
+        return fields
+
+
+class Limit(object):
+
+    @property
+    def limit(self):
+        l = self.limit_paginate if self.paginate else self._limit
+        return l if l else 0
+        #return getattr(self, "_limit", 0)
+
+    @limit.setter
+    def limit(self, v):
+        v = int(v)
+        if v < 0:
+            raise ValueError("Limit cannot be negative")
+        self._limit = v
+
+    @limit.deleter
+    def limit(self):
+        self._limit = None
+#         try:
+#             del self._limit
+#         except AttributeError: pass
+
+    @property
+    def limit_paginate(self):
+        limit = self._limit
+        #limit = self.limit
+        return limit + 1 if limit > 0 else 0
+
+    @property
+    def offset(self):
+        offset = self._offset
+        if offset is None:
+            page = self.page
+            #limit = self.limit
+            limit = self._limit
+            if not limit: limit = 1
+            offset = (page - 1) * limit
+
+        else:
+            offset = offset if offset >= 0 else 0
+
+        return offset
+
+    @offset.setter
+    def offset(self, v):
+        v = int(v)
+        if v < 0:
+            raise ValueError("Offset cannot be negative")
+        del self.page
+        self._offset = v
+
+    @offset.deleter
+    def offset(self):
+        self._offset = None
+#         try:
+#             del self._offset
+#         except AttributeError: pass
+
+    @property
+    def page(self):
+        page = self._page
+        return page if page >= 1 else 1
+
+    @page.setter
+    def page(self, v):
+        v = int(v)
+        if v < 0:
+            raise ValueError("Page cannot be negative")
+        del self.offset
+        self._page = int(v)
+
+    @page.deleter
+    def page(self):
+        self._page = None
+#         try:
+#             del self._page
+#         except AttributeError: pass
+
+
+    def __init__(self):
+        self.paginate = False
+        self._limit = None
+        self._offset = None
+        self._page = None
+
+    def set(self, limit=None, page=None):
+        if limit is not None:
+            self.limit = limit
+        if page is not None:
+            self.page = page
+
+    def get(self, limit=None, page=None):
+        self.set(limit, page)
+        return (self.limit, self.offset)
+
+    def __nonzero__(self):
+        return self.limit > 0 or self.offset > 0
+
+    def has(self):
+        return bool(self)
+
+    def has_limit(self):
+        return self.limit > 0
+
+
 class Query(object):
     """
     Handle standard query creation and allow interface querying
@@ -236,6 +381,9 @@ class Query(object):
         q = Query(orm)
         q.is_foo(1).desc_bar().set_limit(10).set_page(2).get()
     """
+    fields_class = Fields
+
+    bounds_class = Limit
 
     @property
     def fields(self):
@@ -249,13 +397,12 @@ class Query(object):
 
         # needed to use the db querying methods like get(), if you just want to build
         # a query then you don't need to bother passing this in
-        # TODO -- change to orm_class to better match other parts of codebase
-        self.orm = orm
+        self.orm = orm # TODO -- change to orm_class to be more consistent
 
-        self.fields_set = Fields()
-        self.fields_where = Fields()
-        self.fields_sort = Fields()
-        self.bounds = Limit()
+        self.fields_set = self.fields_class()
+        self.fields_where = self.fields_class()
+        self.fields_sort = self.fields_class()
+        self.bounds = self.bounds_class()
         self.args = args
         self.kwargs = kwargs
         # the idea here is to set this to False if there is a condition that will
@@ -301,31 +448,14 @@ class Query(object):
         # returns a generator, not sure what's up
         return self.get() if self.bounds else self.all().__iter__()
 
-    def copy(self):
-        """nice handy wrapper around the deepcopy"""
-        return copy.deepcopy(self)
-
-    def __deepcopy__(self, memodict={}):
-        q = type(self)(self.orm)
-        for key, val in self.__dict__.iteritems():
-            if isinstance(val, types.ListType):
-                setattr(q, key, list(val))
-
-            elif isinstance(val, types.DictType):
-                setattr(q, key, dict(val))
-
-            elif isinstance(val, types.TupleType):
-                setattr(q, key, tuple(val))
-
-            else:
-                setattr(q, key, val)
-
-        return q
-
     def select_field(self, field_name):
         """set a field to be selected"""
         return self.set_field(field_name, None)
 
+    def select(self, *fields):
+        return self.select_fields(*fields)
+
+    # DEPRECATED maybe? -- 3-10-2016 -- use select()
     def select_fields(self, *fields):
         """set multiple fields to be selected"""
         if fields:
@@ -344,6 +474,10 @@ class Query(object):
         self.fields_set.append(field_name, [field_name, field_val])
         return self
 
+    def set(self, fields=None, *fields_args, **fields_kwargs):
+        return self.set_fields(fields, *fields_args, **fields_kwargs)
+
+    # DEPRECATED maybe? -- 3-10-2016 -- use select()
     def set_fields(self, fields=None, *fields_args, **fields_kwargs):
         """
         completely replaces the current .fields with fields and fields_kwargs combined
@@ -494,14 +628,26 @@ class Query(object):
 
         return command, field_name
 
+    def limit(self, limit):
+        return self.set_limit(limit)
+
+    # DEPRECATED maybe? -- 3-10-2016 -- use limit()
     def set_limit(self, limit):
         self.bounds.limit = limit
         return self
 
+    def offset(self, offset):
+        return self.set_offset(offset)
+
+    # DEPRECATED maybe? -- 3-10-2016 -- use offset()
     def set_offset(self, offset):
         self.bounds.offset = offset
         return self
 
+    def page(self, page):
+        return self.set_page(page)
+
+    # DEPRECATED maybe? -- 3-10-2016 -- use page()
     def set_page(self, page):
         self.bounds.page = page
         return self
@@ -606,7 +752,7 @@ class Query(object):
 
         # count queries shouldn't care about sorting
         fields_sort = self.fields_sort
-        self.fields_sort = Fields()
+        self.fields_sort = self.fields_class()
 
         self.default_val = 0
         ret = self._query('count')
@@ -673,8 +819,18 @@ class Query(object):
         s = self.orm.schema
         return getattr(i, method_name)(s, self) # i.method_name(schema, query)
 
+    def copy(self):
+        """nice handy wrapper around the deepcopy"""
+        return copy.deepcopy(self)
 
-class CacheQuery(Query):
+    def __deepcopy__(self, memodict={}):
+        instance = type(self)(self.orm)
+        for key, val in self.__dict__.iteritems():
+            setattr(instance, key, copy.deepcopy(val, memodict))
+        return instance
+
+
+class CacheQuery(object):
     """a standard query caching skeleton class with the idea that it would be expanded
     upon on a per project or per model basis"""
 
@@ -737,127 +893,4 @@ class CacheQuery(Query):
             self.invalidate("delete")
         return ret
 
-
-class Fields(object):
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.fields = []
-        self.fields_map = defaultdict(list)
-
-#     def append(self, field_name, field_val=None, operator="", **field_options):
-#         index = len(self.fields)
-#         self.fields.append([operator, field_name, field_val, field_options])
-#         self.fields_map[field_name].append(index)
-
-    def append(self, field_name, field_args):
-        index = len(self.fields)
-        self.fields.append(field_args)
-        self.fields_map[field_name].append(index)
-
-    def __iter__(self):
-        for field in self.fields:
-            yield field
-
-    def __nonzero__(self):
-        return bool(self.fields)
-
-class Limit(object):
-
-    @property
-    def limit(self):
-        return self.limit_paginate if self.paginate else getattr(self, "_limit", 0)
-        #return getattr(self, "_limit", 0)
-
-    @limit.setter
-    def limit(self, v):
-        v = int(v)
-        if v < 0:
-            raise ValueError("Limit cannot be negative")
-        self._limit = v
-
-    @limit.deleter
-    def limit(self):
-        try:
-            del self._limit
-        except AttributeError: pass
-
-    @property
-    def limit_paginate(self):
-        limit = getattr(self, "_limit", 0)
-        #limit = self.limit
-        return limit + 1 if limit > 0 else 0
-
-    @property
-    def offset(self):
-        offset = getattr(self, "_offset", None)
-        if offset is None:
-            page = self.page
-            #limit = self.limit
-            limit = getattr(self, "_limit", 0)
-            offset = (page - 1) * limit
-
-        else:
-            offset = offset if offset >= 0 else 0
-
-        return offset
-
-    @offset.setter
-    def offset(self, v):
-        v = int(v)
-        if v < 0:
-            raise ValueError("Offset cannot be negative")
-        del self.page
-        self._offset = v
-
-    @offset.deleter
-    def offset(self):
-        try:
-            del self._offset
-        except AttributeError: pass
-
-    @property
-    def page(self):
-        page = getattr(self, "_page", 0)
-        return page if page >= 1 else 1
-
-    @page.setter
-    def page(self, v):
-        v = int(v)
-        if v < 0:
-            raise ValueError("Page cannot be negative")
-        del self.offset
-        self._page = int(v)
-
-    @page.deleter
-    def page(self):
-        try:
-            del self._page
-        except AttributeError: pass
-
-
-    def __init__(self):
-        self.paginate = False
-        self._limit = 0
-        self._offset = 0
-        self._page = 0
-
-    def get(self, limit=None, page=None):
-        if limit is not None:
-            self.limit = limit
-        if page is not None:
-            self.page = page
-
-        #return (self.limit, self.offset, self.limit_paginate)
-        return (self.limit, self.offset)
-
-    def __nonzero__(self):
-        return self.limit > 0 or self.offset > 0
-
-    def has(self):
-        return bool(self)
-
-    def has_limit(self):
-        return self.limit > 0
 
