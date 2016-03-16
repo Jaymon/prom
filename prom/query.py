@@ -4,8 +4,13 @@ Classes and stuff that handle querying the interface for a passed in Orm class
 import types
 import copy
 from collections import defaultdict
+import datetime
+import logging
 
-from .utils import make_list, get_objects, make_dict
+from .utils import make_list, get_objects, make_dict, make_hash
+
+
+logger = logging.getLogger(__name__)
 
 
 class Iterator(object):
@@ -38,7 +43,7 @@ class Iterator(object):
         """
         self.results = results
         self.ifilter = None # https://docs.python.org/2/library/itertools.html#itertools.ifilter
-        self.orm = orm
+        self.orm = orm # TODO -- change to orm_class to be more consistent
         self.has_more = has_more
         self.query = query.copy()
         self._values = False
@@ -267,6 +272,9 @@ class Fields(object):
 
         return fields
 
+    def __str__(self):
+        return str(self.fields)
+
 
 class Limit(object):
 
@@ -372,6 +380,9 @@ class Limit(object):
     def has_limit(self):
         return self.limit > 0
 
+    def __str__(self):
+        return "limit: {}, offset: {}".format(self.limit, self.offset)
+
 
 class Query(object):
     """
@@ -386,6 +397,21 @@ class Query(object):
     bounds_class = Limit
 
     @property
+    def interface(self):
+        if not self.orm_class: return None
+        return self.orm_class.interface
+
+    @property
+    def schema(self):
+        if not self.orm_class: return None
+        return self.orm_class.schema
+
+    @property
+    def iterator_class(self):
+        if not self.orm_class: return None
+        return self.orm_class.iterator_class if self.orm_class else Iterator
+
+    @property
     def fields(self):
         return dict(self.fields_set)
 
@@ -393,18 +419,21 @@ class Query(object):
     def fields_select(self):
         return [select_field for select_field, _ in self.fields_set]
 
-    def __init__(self, orm=None, *args, **kwargs):
+    def __init__(self, orm_class=None, *args, **kwargs):
 
         # needed to use the db querying methods like get(), if you just want to build
         # a query then you don't need to bother passing this in
-        self.orm = orm # TODO -- change to orm_class to be more consistent
+        self.orm = kwargs.get("orm", orm_class) # DEPRECATED -- 3-11-2016 -- switch to orm_class
+        self.orm_class = orm_class if orm_class else self.orm
+        self.reset()
+        self.args = args
+        self.kwargs = kwargs
 
+    def reset(self):
         self.fields_set = self.fields_class()
         self.fields_where = self.fields_class()
         self.fields_sort = self.fields_class()
         self.bounds = self.bounds_class()
-        self.args = args
-        self.kwargs = kwargs
         # the idea here is to set this to False if there is a condition that will
         # automatically cause the query to fail but not necessarily be an error, 
         # the best example is the IN (...) queries, if you do self.in_foo([]).get()
@@ -425,7 +454,7 @@ class Query(object):
 
         orm_classpath -- string -- a full python class path (eg, foo.bar.Che)
         cls_pk -- mixed -- automatically set the where field of orm_classpath 
-            that references self.orm to the value in cls_pk if present
+            that references self.orm_class to the value in cls_pk if present
         return -- Query()
         """
         # split orm from module path
@@ -434,7 +463,7 @@ class Query(object):
         if cls_pk:
             for fn, f in orm_class.schema.fields.items():
                 cls_ref_s = f.schema
-                if cls_ref_s and self.orm.schema == cls_ref_s:
+                if cls_ref_s and self.schema == cls_ref_s:
                     q.is_field(fn, cls_pk)
                     break
 
@@ -602,7 +631,6 @@ class Query(object):
         return self
 
     def __getattr__(self, method_name):
-
         command, field_name = self._split_method(method_name)
 
         def callback(*args, **kwargs):
@@ -624,7 +652,10 @@ class Query(object):
         except ValueError:
             raise ValueError("invalid command_method: {}".format(method_name))
 
-        if self.orm: field_name = self.orm.schema.field_name(field_name)
+        # normalize the field name if we can
+        schema = self.schema
+        if schema:
+            field_name = schema.field_name(field_name)
 
         return command, field_name
 
@@ -670,8 +701,7 @@ class Query(object):
                 has_more = True
                 results.pop(-1)
 
-        iterator_class = self.orm.iterator_class if self.orm else Iterator
-        return iterator_class(results, orm=self.orm, has_more=has_more, query=self)
+        return self.iterator_class(results, orm=self.orm_class, has_more=has_more, query=self)
 
     def all(self):
         """
@@ -691,7 +721,7 @@ class Query(object):
         o = self.default_val
         d = self._query('get_one')
         if d:
-            o = self.orm.populate(d)
+            o = self.orm_class.populate(d)
         return o
 
     def values(self, limit=None, page=None):
@@ -731,12 +761,12 @@ class Query(object):
 
     def get_pks(self, field_vals):
         """convenience method for running in__id([...]).get() since this is so common"""
-        field_name = self.orm.schema.pk.name
+        field_name = self.schema.pk.name
         return self.in_field(field_name, field_vals).get()
 
     def get_pk(self, field_val):
         """convenience method for running is_pk(_id).get_one() since this is so common"""
-        field_name = self.orm.schema.pk.name
+        field_name = self.schema.pk.name
         return self.is_field(field_name, field_val).get_one()
 
     def first(self):
@@ -770,22 +800,22 @@ class Query(object):
     def insert(self):
         """persist the .fields"""
         self.default_val = 0
-        fields = self.orm.depart(self.fields, is_update=False)
+        fields = self.orm_class.depart(self.fields, is_update=False)
         self.set_fields(fields)
-        return self.orm.interface.insert(
-            self.orm.schema,
+        return self.interface.insert(
+            self.schema,
             fields
         )
 
-        return self.orm.interface.insert(self.orm.schema, self.fields)
+        return self.interface.insert(self.schema, self.fields)
 
     def update(self):
         """persist the .fields using .fields_where"""
         self.default_val = 0
-        fields = self.orm.depart(self.fields, is_update=True)
+        fields = self.orm_class.depart(self.fields, is_update=True)
         self.set_fields(fields)
-        return self.orm.interface.update(
-            self.orm.schema,
+        return self.interface.update(
+            self.schema,
             fields,
             self
         )
@@ -810,13 +840,13 @@ class Query(object):
         **query_options -- dict -- key:val options for the backend, these are very backend specific
         return -- mixed -- depends on the backend and the type of query
         """
-        i = self.orm.interface
+        i = self.interface
         return i.query(query_str, *query_args, **query_options)
 
     def _query(self, method_name):
         if not self.can_get: return self.default_val
-        i = self.orm.interface
-        s = self.orm.schema
+        i = self.interface
+        s = self.schema
         return getattr(i, method_name)(s, self) # i.method_name(schema, query)
 
     def copy(self):
@@ -824,30 +854,129 @@ class Query(object):
         return copy.deepcopy(self)
 
     def __deepcopy__(self, memodict={}):
-        instance = type(self)(self.orm)
+        instance = type(self)(self.orm_class)
         for key, val in self.__dict__.iteritems():
             setattr(instance, key, copy.deepcopy(val, memodict))
         return instance
 
 
-class CacheQuery(object):
+class CacheQuery(Query):
     """a standard query caching skeleton class with the idea that it would be expanded
-    upon on a per project or per model basis"""
+    upon on a per project or per model basis
 
-    cache_ttl = 3600
+    by default, this is designed to call a caching method for certain queries, so
+    if you only wanted to cache "get_one" type events, you could add a method
+    to a child class like `cache_key_get_one` and this will call that method
+    everytime a `get_one` method is invoked (this includes wrapper methods like
+    `value`, `has`, and `first`).
+
+    similar for delete, there are 3 deleting events, `insert`, `update`, and `delete`
+    and so you can add a method like `cache_delete_update()` to only invalidate on
+    updates but completely ignore update and delete events
+
+    A child class will have to implement the methods that raise NotImplementedError
+    in order to have a valid CacheQuery child
+    """
+    def cache_delete(self, method_name):
+        method = getattr(self, "cache_delete_{}".format(method_name), None)
+        if method:
+            method()
+
+    def cache_key(self, method_name):
+        """decides if this query is cacheable, returns a key if it is, otherwise empty"""
+        key = ""
+        method = getattr(self, "cache_key_{}".format(method_name), None)
+        if method:
+            key = method()
+
+        return key
+
+    def cache_set(self, key, result):
+        raise NotImplementedError()
+
+    def cache_get(self, key):
+        """must return a tuple (returned_value, cache_hit) where the returned value
+        is what would be returned from the db and cache_hit is True if it was in
+        the cache, otherwise False"""
+        raise NotImplementedError()
+
+    def _query(self, method_name):
+        cache_hit = False
+        cache_key = self.cache_key(method_name)
+        table_name = str(self.schema)
+        if cache_key:
+            logger.debug("Cache check on {} for key {}".format(table_name, cache_key))
+            result, cache_hit = self.cache_get(cache_key)
+
+        if not cache_hit:
+            logger.debug("Cache miss on {} for key {}".format(table_name, cache_key))
+            result = super(CacheQuery, self)._query(method_name)
+            if cache_key:
+                self.cache_set(cache_key, result)
+
+        else:
+            logger.debug("Cache hit on {} for key {}".format(table_name, cache_key))
+
+        self.cache_hit = cache_hit
+        return result
+
+    def update(self):
+        ret = super(CacheQuery, self).update()
+        if ret:
+            logger.debug("Cache delete on {} update".format(self.schema))
+            self.cache_delete("update")
+        return ret
+
+    def insert(self):
+        ret = super(CacheQuery, self).insert()
+        if ret:
+            logger.debug("Cache delete on {} insert".format(self.schema))
+            self.cache_delete("insert")
+        return ret
+
+    def delete(self):
+        ret = super(CacheQuery, self).delete()
+        if ret:
+            logger.debug("Cache delete on {} delete".format(self.schema))
+            self.cache_delete("delete")
+        return ret
+
+
+class LocalCacheQuery(CacheQuery):
+    """a simple process in-memory cache, ttls should be short since this has
+    a very naive invalidation mechanism, think 5ish minutes"""
+
+    cache_ttl = 360
     """how long you should cache results for cacheable queries"""
 
-    def cache_invalidate(self, method_name):
-        cached = getattr(self, "cached", {})
+    cached = {}
+    """store the cached values in memory"""
+
+    def cache_cached(self):
+        table_name = str(self.schema)
+        cached = getattr(type(self), "cached", {})
+        if table_name not in cached:
+            cached[table_name] = {}
+
+        return cached[table_name]
+
+    def cache_delete(self, method_name):
+        cached = self.cache_cached()
         cached.clear()
 
     def cache_key(self, method_name):
         """decides if this query is cacheable, returns a key if it is, otherwise empty"""
-        key = make_hash(method_name, self.fields_set, self.fields_where, self.fields_sort)
+        key = make_hash(
+            method_name,
+            self.fields_set,
+            self.fields_where,
+            self.fields_sort,
+            self.bounds
+        )
         return key
 
     def cache_set(self, key, result):
-        cached = getattr(self, "cached", {})
+        cached = self.cache_cached()
         now = datetime.datetime.utcnow()
         cached[key] = {
             "datetime": now,
@@ -857,40 +986,13 @@ class CacheQuery(object):
     def cache_get(self, key):
         result = None
         cache_hit = False
-        cached = getattr(self, "cached", {})
+        cached = self.cache_cached()
         now = datetime.datetime.utcnow()
         if key in cached:
             td = now - cached[key]["datetime"]
-            if td.total_seconds() < self.cached_ttl:
+            if td.total_seconds() < self.cache_ttl:
                 cache_hit = True
                 result = cached[key]["result"]
 
         return result, cache_hit
-
-    def _query(self, method_name):
-        cache_hit = False
-        cache_key = self.cache_key(method_name)
-        if cache_key:
-            result, cache_hit = self.cache_get(cache_key)
-
-        if not cache_hit:
-            result = super(CacheQuery, self)._query(method_name)
-            if cache_key:
-                self.cache_set(cache_key, result)
-
-        self.cache_hit = cache_hit
-        return result
-
-    def update(self):
-        ret = super(CachedQuery, self).update()
-        if ret:
-            self.invalidate("update")
-        return ret
-
-    def delete(self):
-        ret = super(CachedQuery, self).delete()
-        if ret:
-            self.invalidate("delete")
-        return ret
-
 

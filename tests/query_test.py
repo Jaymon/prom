@@ -1,10 +1,11 @@
 from unittest import TestCase, skipIf
 import datetime
+import time
 
 import testdata
 
 from .prom_test import BaseTestCase
-from prom.query import Query, Limit, Iterator, Fields
+from prom.query import Query, Limit, Iterator, Fields, LocalCacheQuery
 import prom
 
 
@@ -152,7 +153,7 @@ class QueryTest(BaseTestCase):
         """you can now pass empty lists to in and nin and not have them throw an
         error, instead they return an empty iterator"""
         _q = self.get_query()
-        self.insert(_q.orm.interface, _q.orm.schema, 1)
+        self.insert(_q, 1)
 
         q = _q.copy()
         r = q.in_foo([]).get()
@@ -171,7 +172,7 @@ class QueryTest(BaseTestCase):
         r = q.get()
         self.assertFalse(r)
 
-        pk = self.insert(q.orm.interface, q.orm.schema, 1)[0]
+        pk = self.insert(q, 1)[0]
 
         # get the ojbect out so we can use it to query
         o = _q.copy().get_pk(pk)
@@ -239,7 +240,7 @@ class QueryTest(BaseTestCase):
         self.assertEqual(None, v)
 
         count = 2
-        pks = self.insert(_q.orm.interface, _q.orm.schema, count)
+        pks = self.insert(_q, count)
         o = _q.copy().get_pk(pks[0])
 
         v = _q.copy().select_foo().value()
@@ -253,7 +254,7 @@ class QueryTest(BaseTestCase):
         _q = self.get_query()
 
         count = 2
-        pks = self.insert(_q.orm.interface, _q.orm.schema, count)
+        pks = self.insert(_q, count)
 
         vals = _q.copy().select_foo().values()
         self.assertEqual(count, len(vals))
@@ -269,29 +270,30 @@ class QueryTest(BaseTestCase):
         self.assertEqual(1, len(vals))
 
     def test_pk(self):
-        q = self.get_query()
-        v = q.pk()
+        orm_class = self.get_orm_class()
+        v = orm_class.query.pk()
         self.assertEqual(None, v)
         count = 2
-        self.insert(q.orm.interface, q.orm.schema, count)
+        self.insert(orm_class, count)
 
-        v = q.pk()
+        v = orm_class.query.asc_pk().pk()
         self.assertEqual(1, v)
 
     def test_pks(self):
+        orm_class = self.get_orm_class()
         q = self.get_query()
-        v = list(q.pks())
+        v = list(orm_class.query.pks())
         self.assertEqual(0, len(v))
         count = 2
-        self.insert(q.orm.interface, q.orm.schema, count)
+        self.insert(orm_class, count)
 
-        v = list(q.pks())
+        v = list(orm_class.query.pks())
         self.assertEqual(2, len(v))
 
     def test___iter__(self):
         count = 5
         q = self.get_query()
-        self.insert(q.orm.interface, q.orm.schema, count)
+        self.insert(q, count)
 
         rcount = 0
         for t in q:
@@ -304,13 +306,13 @@ class QueryTest(BaseTestCase):
         self.assertFalse(q.has())
 
         count = 1
-        self.insert(q.orm.interface, q.orm.schema, count)
+        self.insert(q, count)
         self.assertTrue(q.has())
 
     def test_all(self):
         count = 10
         q = self.get_query()
-        self.insert(q.orm.interface, q.orm.schema, count)
+        self.insert(q, count)
 
         q.set_limit(1)
         rcount = 0
@@ -408,7 +410,7 @@ class QueryTest(BaseTestCase):
         ]
 
         q = self.get_query()
-        q.orm = None
+        q.orm_class = None
 
         for t in tests:
             r = q._split_method(t[0])
@@ -416,6 +418,18 @@ class QueryTest(BaseTestCase):
 
         with self.assertRaises(ValueError):
             q._split_method("testing")
+
+    def test_properties(self):
+        q = self.get_query()
+        r = q.schema
+        self.assertTrue(r)
+
+        r = q.interface
+        self.assertTrue(r)
+
+        q.orm_class = None
+        self.assertFalse(q.schema)
+        self.assertFalse(q.interface)
 
     def test___getattr__(self):
         q = self.get_query()
@@ -545,23 +559,20 @@ class QueryTest(BaseTestCase):
 
     def test_delete(self):
         tclass = self.get_orm_class()
-        first_pk = self.insert(tclass.interface, tclass.schema, 1)[0]
+        first_pk = self.insert(tclass, 1)[0]
 
         with self.assertRaises(ValueError):
             r = tclass.query.delete()
 
-        r = tclass.query.is_foo(1).delete()
+        r = tclass.query.is_pk(first_pk).delete()
         self.assertEqual(1, r)
 
-        r = tclass.query.is_foo(1).delete()
+        r = tclass.query.is_pk(first_pk).delete()
         self.assertEqual(0, r)
 
     def test_get(self):
-        i, s = self.get_table()
-        _ids = self.insert(i, s, 2)
-        class TestGetTorm(prom.Orm):
-            interface = i
-            schema = s
+        TestGetTorm = self.get_orm_class()
+        _ids = self.insert(TestGetTorm, 2)
 
         q = TestGetTorm.query
         for o in q.get():
@@ -570,11 +581,8 @@ class QueryTest(BaseTestCase):
             self.assertFalse(o.is_modified())
 
     def test_get_one(self):
-        i, s = self.get_table()
-        _ids = self.insert(i, s, 1)
-        class TestGetOneTorm(prom.Orm):
-            interface = i
-            schema = s
+        TestGetOneTorm = self.get_orm_class()
+        _ids = self.insert(TestGetOneTorm, 2)
 
         q = TestGetOneTorm.query
         o = q.get_one()
@@ -584,7 +592,7 @@ class QueryTest(BaseTestCase):
 
     def test_first_and_last(self):
         tclass = self.get_orm_class()
-        first_pk = self.insert(tclass.interface, tclass.schema, 1)[0]
+        first_pk = self.insert(tclass, 1)[0]
 
         t = tclass.query.first()
         self.assertEqual(first_pk, t.pk)
@@ -592,7 +600,7 @@ class QueryTest(BaseTestCase):
         t = tclass.query.last()
         self.assertEqual(first_pk, t.pk)
 
-        last_pk = self.insert(tclass.interface, tclass.schema, 1)[0]
+        last_pk = self.insert(tclass, 1)[0]
         t = tclass.query.first()
         self.assertEqual(first_pk, t.pk)
 
@@ -615,7 +623,7 @@ class QueryTest(BaseTestCase):
 class IteratorTest(BaseTestCase):
     def get_iterator(self, count=5, limit=5, page=0):
         q = self.get_query()
-        self.insert(q.orm.interface, q.orm.schema, count)
+        self.insert(q, count)
         i = q.get(limit, page)
         return i
 
@@ -624,7 +632,7 @@ class IteratorTest(BaseTestCase):
         by an AllIterator()"""
         count = 3
         orm_class = self.get_orm_class()
-        self.insert(orm_class.interface, orm_class.schema, count)
+        self.insert(orm_class, count)
 
         self.assertEqual(count, len(list(orm_class.query.get())))
 
@@ -640,7 +648,7 @@ class IteratorTest(BaseTestCase):
     def test_ifilter(self):
         count = 3
         _q = self.get_query()
-        self.insert(_q.orm.interface, _q.orm.schema, count)
+        self.insert(_q, count)
 
         l = _q.copy().get()
         self.assertEqual(3, len(list(l)))
@@ -654,23 +662,23 @@ class IteratorTest(BaseTestCase):
     def test_list_compatibility(self):
         count = 3
         _q = self.get_query()
-        self.insert(_q.orm.interface, _q.orm.schema, count)
+        self.insert(_q, count)
 
         q = _q.copy()
         l = q.get()
 
         self.assertTrue(bool(l))
         self.assertEqual(count, l.count())
-        self.assertEqual(range(1, count + 1), list(l.foo))
+        self.assertEqual(range(1, count + 1), list(l.pk))
 
         l.reverse()
-        self.assertEqual(list(reversed(xrange(1, count + 1))), list(l.foo))
+        self.assertEqual(list(reversed(xrange(1, count + 1))), list(l.pk))
 
         r = l.pop(0)
-        self.assertEqual(count, r.foo)
+        self.assertEqual(count, r.pk)
 
         r = l.pop()
-        self.assertEqual(1, r.foo)
+        self.assertEqual(1, r.pk)
 
         pop_count = 0
         while l:
@@ -681,29 +689,29 @@ class IteratorTest(BaseTestCase):
     def test_all_len(self):
         count = 10
         q = self.get_query()
-        self.insert(q.orm.interface, q.orm.schema, count)
+        self.insert(q, count)
         g = q.select_foo().desc_bar().set_limit(5).set_offset(1).all()
         self.assertEqual(count, len(g))
 
     def test_all(self):
         count = 15
         q = self.get_query()
-        self.insert(q.orm.interface, q.orm.schema, count)
+        self.insert(q, count)
         q.set_limit(5)
         g = q.all()
 
-        self.assertEqual(1, g[0].foo)
-        self.assertEqual(2, g[1].foo)
-        self.assertEqual(3, g[2].foo)
-        self.assertEqual(6, g[5].foo)
-        self.assertEqual(13, g[12].foo)
+        self.assertEqual(1, g[0].pk)
+        self.assertEqual(2, g[1].pk)
+        self.assertEqual(3, g[2].pk)
+        self.assertEqual(6, g[5].pk)
+        self.assertEqual(13, g[12].pk)
 
         with self.assertRaises(IndexError):
             g[count + 5]
 
         for i, x in enumerate(g):
             if i > 7: break
-        self.assertEqual(9, g[8].foo)
+        self.assertEqual(9, g[8].pk)
 
         gcount = 0
         for x in g: gcount += 1
@@ -721,7 +729,7 @@ class IteratorTest(BaseTestCase):
     def test_values(self):
         count = 5
         _q = self.get_query()
-        self.insert(_q.orm.interface, _q.orm.schema, count)
+        self.insert(_q, count)
 
         g = _q.copy().select_bar().get().values()
         icount = 0
@@ -790,7 +798,7 @@ class IteratorTest(BaseTestCase):
         limit = 3
         count = 5
         q = self.get_query()
-        self.insert(q.orm.interface, q.orm.schema, count)
+        self.insert(q.orm, count)
 
         i = q.get(limit, 0)
         self.assertTrue(i.has_more)
@@ -803,5 +811,42 @@ class IteratorTest(BaseTestCase):
 
         i = q.get(0, 0)
         self.assertFalse(i.has_more)
+
+
+class LocalCacheQueryTest(QueryTest):
+    def setUp(self):
+        LocalCacheQuery.cached = {} # clear cache between tests
+        super(LocalCacheQueryTest, self).setUp()
+
+    def get_orm_class(self, *args, **kwargs):
+        orm_class = super(LocalCacheQueryTest, self).get_orm_class(*args, **kwargs)
+        orm_class.query_class = LocalCacheQuery
+        return orm_class
+
+    def test_cache_hit(self):
+        orm_class = self.get_orm_class()
+        self.insert(orm_class, 10)
+
+        start = time.time()
+        q = orm_class.query
+        ref_pks = q.pks()
+        stop = time.time()
+        ref_duration = stop - start
+
+        self.assertEqual(10, len(ref_pks))
+        self.assertFalse(q.cache_hit)
+
+        ref_pks = list(ref_pks)
+        for x in range(10):
+            start = time.time()
+            q = orm_class.query
+            pks = q.pks()
+            stop = time.time()
+            duration = stop - start
+            self.assertLess(duration, ref_duration)
+            self.assertTrue(q.cache_hit)
+            self.assertEqual(ref_pks, list(pks))
+
+
 
 

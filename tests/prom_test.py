@@ -23,6 +23,7 @@ from prom.model import Orm
 from prom.config import Schema, Connection, DsnConnection, Field, Index
 from prom.interface.postgres import PostgreSQL
 from prom.interface.sqlite import SQLite
+from prom.interface.base import Interface
 import prom
 import prom.interface
 
@@ -42,119 +43,40 @@ os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.SQLite://:memory:')
 stdnull = open(os.devnull, 'w') # used to suppress subprocess calls
 
 
-def setUpModule():
-    """
-    http://docs.python.org/2/library/unittest.html#setupmodule-and-teardownmodule
-    """
-    i = get_interface()
-    i.delete_tables(disable_protection=True)
-    prom.set_interface(i)
+# def setUpModule():
+#     """
+#     http://docs.python.org/2/library/unittest.html#setupmodule-and-teardownmodule
+#     """
+#     i = get_interface()
+#     i.delete_tables(disable_protection=True)
+#     prom.set_interface(i)
 
 
+# DEPRECATED -- 3-15-2016 -- use the BaseTestCase methods instead
 def get_orm_class(table_name=None):
-    tn = get_table_name(table_name)
-    class Torm(Orm):
-        table_name = tn
-        interface = get_interface()
-        foo = Field(int, True)
-        bar = Field(str, True)
-        ifoobar = Index("foo", "bar")
-
-    #Torm.table_name = table_name
-    #Torm.interface = get_interface()
-    #del Torm.__dict__["schema"]
-    return Torm
-
-
+    t = DeprecatedShiv()
+    return t.get_orm_class(table_name)
 def get_orm(table_name=None, **fields):
-    orm_class = get_orm_class(table_name)
-    t = orm_class(**fields)
-    return t
-
-
+    t = DeprecatedShiv()
+    return t.get_orm(table_name, **fields)
 def get_interface():
-    config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
-    i = PostgreSQL()
-#    config = DsnConnection(os.environ["PROM_SQLITE_URL"])
-#    i = SQLite()
-    i.connect(config)
-    assert i.connected
-    return i
-
-
+    t = DeprecatedShiv()
+    return t.get_interface()
 def get_table_name(table_name=None):
-    """return a random table name"""
-    if table_name: return table_name
-    return "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
-
-
+    t = DeprecatedShiv()
+    return t.get_table_name(table_name)
 def get_table(table_name=None):
-    """
-    return an interface and schema for a table in the db
-
-    return -- tuple -- interface, schema
-    """
-    i = get_interface()
-    s = get_schema(table_name)
-    i.set_table(s)
-    return i, s
-
-
+    t = DeprecatedShiv()
+    return t.get_table(table_name)
 def get_schema(table_name=None, **fields_or_indexes):
-    if not fields_or_indexes:
-        fields_or_indexes.setdefault("foo", Field(int, True))
-        fields_or_indexes.setdefault("bar", Field(str, True))
-        fields_or_indexes.setdefault("ifoobar", Index("foo", "bar"))
-
-    fields_or_indexes.setdefault("_id", Field(long, True, pk=True))
-
-    s = Schema(
-        get_table_name(table_name),
-        **fields_or_indexes
-    )
-
-    return s
-
-
+    t = DeprecatedShiv()
+    return t.get_schema(table_name, **fields_or_indexes)
 def get_query():
-    orm_class = get_orm_class()
-    return orm_class.query
-
-
+    t = DeprecatedShiv()
+    return t.get_query()
 def insert(interface, schema, count, **kwargs):
-    """
-    insert count rows into schema using interface
-    """
-    pks = []
-    fields = {}
-
-    for i in range(1, count + 1):
-        for k, v in schema.fields.items():
-            if v.is_pk(): continue
-
-            if issubclass(v.type, basestring):
-                fields[k] = testdata.get_words()
-
-            elif issubclass(v.type, (int, long)):
-                fields[k] = i
-
-            elif issubclass(v.type, datetime.datetime):
-                fields[k] = testdata.get_past_datetime()
-
-            elif issubclass(v.type, float):
-                fields[k] = testdata.get_float()
-
-            elif issubclass(v.type, bool):
-                fields[k] = True if random.randint(0, 1) == 1 else False
-            else:
-                raise ValueError("{}".format(v.type))
-
-        pk = interface.insert(schema, fields, **kwargs)
-
-        assert pk > 0
-        pks.append(pk)
-
-    return pks
+    t = DeprecatedShiv()
+    return t.insert(interface, schema, count, **kwargs)
 
 
 class Torm(Orm):
@@ -164,30 +86,153 @@ class Torm(Orm):
 
 
 class BaseTestCase(TestCase):
-
     @classmethod
     def setUpClass(cls):
-        setUpModule()
-
-    def setUp(self):
-        """make sure there is a default interface"""
-        i = get_interface()
+        """make sure there is a default interface for any class"""
+        i = cls.get_interface()
+        i.delete_tables(disable_protection=True)
         prom.set_interface(i)
 
+    @classmethod
+    def get_interface(cls):
+        i = cls.create_interface()
+        i.connect()
+        assert i.connected
+        return i
+
+    @classmethod
+    def create_interface(cls):
+        config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
+        i = PostgreSQL(config)
+        return i
+
+    def get_table(self, table_name=None):
+        """
+        return an interface and schema for a table in the db
+
+        return -- tuple -- interface, schema
+        """
+        i = self.get_interface()
+        s = self.get_schema(table_name)
+        i.set_table(s)
+        return i, s
+
+    def get_table_name(self, table_name=None):
+        """return a random table name"""
+        if table_name: return table_name
+        return "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+
+    def get_orm_class(self, table_name=None):
+        tn = self.get_table_name(table_name)
+        class Torm(Orm):
+            table_name = tn
+            interface = self.get_interface()
+            foo = Field(int, True)
+            bar = Field(str, True)
+            ifoobar = Index("foo", "bar")
+
+        return Torm
+
+    def get_orm(self, table_name=None, **fields):
+        orm_class = self.get_orm_class(table_name)
+        t = orm_class(**fields)
+        return t
+
+    def get_schema(self, table_name=None, **fields_or_indexes):
+        if not fields_or_indexes:
+            fields_or_indexes.setdefault("foo", Field(int, True))
+            fields_or_indexes.setdefault("bar", Field(str, True))
+            fields_or_indexes.setdefault("ifoobar", Index("foo", "bar"))
+
+        fields_or_indexes.setdefault("_id", Field(long, True, pk=True))
+
+        s = Schema(
+            self.get_table_name(table_name),
+            **fields_or_indexes
+        )
+        return s
+
     def get_query(self):
-        return get_query()
+        orm_class = self.get_orm_class()
+        return orm_class.query
 
-    def get_orm_class(self, *args, **kwargs):
-        return get_orm_class(*args, **kwargs)
+    def get_fields(self, schema):
+        """return the fields of orm with randomized data"""
+        fields = {}
+        for k, v in schema.fields.items():
+            if v.is_pk(): continue
 
-    def get_orm(self, *args, **kwargs):
-        return get_orm(*args, **kwargs)
+            if issubclass(v.type, basestring):
+                fields[k] = testdata.get_words()
+
+            elif issubclass(v.type, int):
+                fields[k] = testdata.get_int32()
+
+            elif issubclass(v.type, long):
+                fields[k] = testdata.get_int64()
+
+            elif issubclass(v.type, datetime.datetime):
+                fields[k] = testdata.get_past_datetime()
+
+            elif issubclass(v.type, float):
+                fields[k] = testdata.get_float()
+
+            elif issubclass(v.type, bool):
+                fields[k] = True if random.randint(0, 1) == 1 else False
+
+            else:
+                raise ValueError("{}".format(v.type))
+
+        return fields
 
     def insert(self, *args, **kwargs):
-        return insert(*args, **kwargs)
+        pks = []
+        if isinstance(args[0], Interface):
+            interface = args[0]
+            schema = args[1]
+            count = args[2]
 
-    def get_table(self, *args, **kwargs):
-        return get_table(*args, **kwargs)
+            for i in range(count):
+                fields = self.get_fields(schema)
+                pks.append(interface.insert(schema, fields, **kwargs))
+
+        elif isinstance(args[0], query.Query):
+            q = args[0].copy()
+            q.reset()
+            count = args[1]
+            for i in range(count):
+                fields = self.get_fields(q.orm_class.schema)
+                pks.append(q.copy().set(fields).insert())
+
+        elif issubclass(args[0], Orm):
+            orm_class = args[0]
+            count = args[1]
+            for i in range(count):
+                fields = self.get_fields(orm_class.schema)
+                o = orm_class.create(fields)
+                pks.append(o.pk)
+
+        assert count == len(pks)
+        for pk in pks:
+            assert pk > 0
+        return pks
+
+    def old_insert(self, interface, schema, count, **kwargs):
+        """insert count rows into schema using interface"""
+        pks = []
+        for i in range(count):
+            fields = self.get_fields(schema)
+            pk = interface.insert(schema, fields, **kwargs)
+
+            assert pk > 0
+            pks.append(pk)
+
+        return pks
+
+
+# DEPRECATED -- 3-15-2016 -- just here for the module methods until they are removed
+class DeprecatedShiv(BaseTestCase):
+	def runTest(self): pass
 
 
 class OrmTest(BaseTestCase):
@@ -1092,29 +1137,9 @@ class ConfigFieldTest(BaseTestCase):
 
 
 class BaseTestInterface(BaseTestCase):
-    def create_interface(self):
+    @classmethod
+    def create_interface(cls):
         raise NotImplementedError()
-
-    def get_interface(self):
-        i = self.create_interface()
-        i.connect()
-        self.assertTrue(i.connected)
-        return i
-
-    def get_query(self):
-        orm_class = get_orm_class()
-        return orm_class.query
-
-    def get_table(self, table_name=None):
-        """
-        return an interface and schema for a table in the db
-
-        return -- tuple -- interface, schema
-        """
-        i = self.get_interface()
-        s = get_schema(table_name)
-        i.set_table(s)
-        return i, s
 
     def test_connect(self):
         i = self.get_interface()
@@ -1893,6 +1918,7 @@ class BaseTestInterface(BaseTestCase):
 
         q2 = q.copy()
         foos = list(q2.select_foo().asc__id().values())
+        foos.sort()
 
         for x in range(2, 9):
             q3 = q.copy()
@@ -2051,7 +2077,8 @@ class BaseTestInterface(BaseTestCase):
 
 
 class InterfaceSQLiteTest(BaseTestInterface):
-    def create_interface(self):
+    @classmethod
+    def create_interface(cls):
         config = DsnConnection(os.environ["PROM_SQLITE_URL"])
         i = SQLite(config)
         return i
@@ -2080,7 +2107,8 @@ class InterfaceSQLiteTest(BaseTestInterface):
         pass
 
 class InterfacePostgresTest(BaseTestInterface):
-    def create_interface(self):
+    @classmethod
+    def create_interface(cls):
         config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
         i = PostgreSQL(config)
         return i
@@ -2241,7 +2269,8 @@ def has_spiped():
 
 
 class InterfacePGBouncerTest(InterfacePostgresTest):
-    def create_interface(self):
+    @classmethod
+    def create_interface(cls):
         config = DsnConnection(os.environ["PROM_PGBOUNCER_URL"])
         i = PostgreSQL(config)
         return i
@@ -2306,12 +2335,15 @@ class XInterfacePostgresGeventTest(InterfacePostgresTest):
 
         import prom.gevent
         prom.gevent.patch_all()
+        super(XInterfacePostgresGeventTest, cls).setUpClass()
 
-    def create_interface(self):
+    @classmethod
+    def create_interface(cls):
         orig_url = os.environ["PROM_POSTGRES_URL"]
         os.environ["PROM_POSTGRES_URL"] += '?async=1&pool_maxconn=3&pool_class=prom.gevent.ConnectionPool'
         try:
-            i = super(XInterfacePostgresGeventTest, self).create_interface()
+            i = super(XInterfacePostgresGeventTest, cls).create_interface()
+
         finally:
             os.environ["PROM_POSTGRES_URL"] = orig_url
 

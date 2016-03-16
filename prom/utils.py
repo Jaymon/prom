@@ -1,4 +1,5 @@
 import importlib
+import hashlib
 
 
 def get_objects(classpath):
@@ -45,3 +46,9 @@ def make_dict(fields, fields_kwargs):
 
     return ret
 
+def make_hash(*mixed):
+    s = ""
+    for m in mixed:
+        s += str(m)
+    # http://stackoverflow.com/questions/5297448/how-to-get-md5-sum-of-a-string
+    return hashlib.md5(s).hexdigest()
