@@ -614,40 +614,14 @@ class SQLInterface(Interface):
     def _normalize_field_SQL(self, schema, field_name):
         return field_name, self.val_placeholder
 
-    def _normalize_list_SQL(self, schema, symbol_map, field_name, field_vals, field_kwargs=None):
-
-        format_str = ''
-        format_args = []
-        symbol = symbol_map['symbol']
-
-        if field_kwargs:
-            f = schema.fields[field_name]
-            if issubclass(f.type, (datetime.datetime, datetime.date)):
-                format_strs = self._normalize_date_SQL(field_name, field_kwargs)
-                for fname, fvstr, fargs in format_strs:
-                    if format_str:
-                        format_str += ' AND '
-
-                    format_str += '{} {} ({})'.format(fname, symbol, ', '.join([fvstr] * len(fargs)))
-                    format_args.extend(fargs)
-
-            else:
-                raise ValueError('Field {} does not support extended kwarg values'.format(field_name))
-
-        else:
-            field_name, format_val_str = self._normalize_field_SQL(schema, field_name)
-            format_str = '{} {} ({})'.format(field_name, symbol, ', '.join([format_val_str] * len(field_vals)))
-            format_args.extend(field_vals)
-
-        return format_str, format_args
-
     def _normalize_val_SQL(self, schema, symbol_map, field_name, field_val, field_kwargs=None):
 
         format_str = ''
         format_args = []
+        symbol = symbol_map['symbol']
+        is_list = symbol_map.get('list', False)
 
         if field_kwargs:
-            symbol = symbol_map['symbol']
             # kwargs take precedence because None is a perfectly valid field_val
             f = schema.fields[field_name]
             if issubclass(f.type, (datetime.datetime, datetime.date)):
@@ -656,18 +630,32 @@ class SQLInterface(Interface):
                     if format_str:
                         format_str += ' AND '
 
-                    format_str += '{} {} {}'.format(fname, symbol, fvstr)
-                    format_args.append(farg)
+
+                    if is_list:
+                        format_str += '{} {} ({})'.format(fname, symbol, ', '.join([fvstr] * len(farg)))
+                        format_args.extend(farg)
+
+                    else:
+                        format_str += '{} {} {}'.format(fname, symbol, fvstr)
+                        format_args.append(farg)
 
             else:
                 raise ValueError('Field {} does not support extended kwarg values'.format(field_name))
 
         else:
-            # special handling for NULL
-            symbol = symbol_map['none_symbol'] if field_val is None else symbol_map['symbol']
-            field_name, format_val_str = self._normalize_field_SQL(schema, field_name)
-            format_str = '{} {} {}'.format(field_name, symbol, format_val_str)
-            format_args.append(field_val)
+            if is_list:
+                field_name, format_val_str = self._normalize_field_SQL(schema, field_name)
+                format_str = '{} {} ({})'.format(field_name, symbol, ', '.join([format_val_str] * len(field_val)))
+                format_args.extend(field_val)
+
+            else:
+                # special handling for NULL
+                if field_val is None:
+                    symbol = symbol_map['none_symbol']
+
+                field_name, format_val_str = self._normalize_field_SQL(schema, field_name)
+                format_str = '{} {} {}'.format(field_name, symbol, format_val_str)
+                format_args.append(field_val)
 
         return format_str, format_args
 
@@ -690,14 +678,14 @@ class SQLInterface(Interface):
         """
         only_where_clause = sql_options.get('only_where_clause', False)
         symbol_map = {
-            'in': {'args': self._normalize_list_SQL, 'symbol': 'IN'},
-            'nin': {'args': self._normalize_list_SQL, 'symbol': 'NOT IN'},
-            'is': {'arg': self._normalize_val_SQL, 'symbol': '=', 'none_symbol': 'IS'},
-            'not': {'arg': self._normalize_val_SQL, 'symbol': '!=', 'none_symbol': 'IS NOT'},
-            'gt': {'arg': self._normalize_val_SQL, 'symbol': '>'},
-            'gte': {'arg': self._normalize_val_SQL, 'symbol': '>='},
-            'lt': {'arg': self._normalize_val_SQL, 'symbol': '<'},
-            'lte': {'arg': self._normalize_val_SQL, 'symbol': '<='},
+            'in': {'symbol': 'IN', 'list': True},
+            'nin': {'symbol': 'NOT IN', 'list': True},
+            'is': {'symbol': '=', 'none_symbol': 'IS'},
+            'not': {'symbol': '!=', 'none_symbol': 'IS NOT'},
+            'gt': {'symbol': '>'},
+            'gte': {'symbol': '>='},
+            'lt': {'symbol': '<'},
+            'lte': {'symbol': '<='},
         }
 
         query_args = []
@@ -730,12 +718,13 @@ class SQLInterface(Interface):
 
                 # field[0], field[1], field[2], field[3]
                 _, field_name, field_val, field_kwargs = field
-
-                if 'args' in sd:
-                    field_str, field_args = sd['args'](schema, sd, field_name, field_val, field_kwargs)
-
-                elif 'arg' in sd:
-                    field_str, field_args = sd['arg'](schema, sd, field_name, field_val, field_kwargs)
+                field_str, field_args = self._normalize_val_SQL(
+                    schema,
+                    sd,
+                    field_name,
+                    field_val,
+                    field_kwargs
+                )
 
                 query_str.append('  {}'.format(field_str))
                 query_args.extend(field_args)
