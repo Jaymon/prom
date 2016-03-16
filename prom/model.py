@@ -314,7 +314,13 @@ class Orm(object):
 
     def __setattr__(self, field_name, field_val):
         if field_name in self.schema.fields:
-            self.modified_fields.add(field_name)
+            if field_name == self.schema.pk.name:
+                # we mark everything as dirty because the primary key has changed
+                # and so a new row would be inserted into the db
+                self.modified_fields.update(self.schema.fields.keys())
+
+            else:
+                self.modified_fields.add(field_name)
 
         super(Orm, self).__setattr__(field_name, field_val)
 

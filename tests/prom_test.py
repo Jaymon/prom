@@ -236,6 +236,32 @@ class DeprecatedShiv(BaseTestCase):
 
 
 class OrmTest(BaseTestCase):
+    def test_change_pk(self):
+        orm_class = self.get_orm_class()
+        o = orm_class.create(foo=1, bar="one")
+        self.assertEqual(1, o.pk)
+        o._id = 2
+        o.save()
+
+        o2 = o.query.get_pk(o.pk)
+        for k in o.schema.fields.keys():
+            self.assertEqual(getattr(o, k), getattr(o2, k))
+
+        o2.foo = 11
+        o2.save()
+
+        # now move it back to 1
+        o2._id = 1
+        with self.assertRaises(prom.InterfaceError):
+            o2.save()
+        # remove the original role
+        orm_class.query.is_pk(1).delete()
+        o2.save()
+
+        o3 = o.query.get_pk(o2.pk)
+        for k in o2.schema.fields.keys():
+            self.assertEqual(getattr(o2, k), getattr(o3, k))
+
     def test_overrides(self):
         class FOIndexOverride(Orm):
             table_name = "FOIndexOverride_table"
@@ -2198,7 +2224,7 @@ class InterfacePostgresTest(BaseTestInterface):
         with self.assertRaises(KeyError):
             fstr, fargs = i._normalize_val_SQL(s, {'symbol': '='}, 'ts', None, kwargs)
 
-    def test__normalize_list_SQL(self):
+    def test__normalize_val_SQL_with_list(self):
         i = self.get_interface()
         s = Schema(
             "fake_table_name",
@@ -2206,19 +2232,19 @@ class InterfacePostgresTest(BaseTestInterface):
         )
 
         kwargs = dict(day=[10])
-        fstr, fargs = i._normalize_list_SQL(s, {'symbol': 'IN'}, 'ts', None, kwargs)
+        fstr, fargs = i._normalize_val_SQL(s, {'symbol': 'IN', 'list': True}, 'ts', None, kwargs)
         self.assertEqual("EXTRACT(DAY FROM ts) IN (%s)", fstr)
         self.assertEqual(kwargs['day'], fargs)
 
         kwargs = dict(day=[11, 13], hour=[12])
-        fstr, fargs = i._normalize_list_SQL(s, {'symbol': 'IN'}, 'ts', None, kwargs)
+        fstr, fargs = i._normalize_val_SQL(s, {'symbol': 'IN', 'list': True}, 'ts', None, kwargs)
         self.assertEqual("EXTRACT(DAY FROM ts) IN (%s, %s) AND EXTRACT(HOUR FROM ts) IN (%s)", fstr)
         self.assertEqual(kwargs['day'], fargs[0:2])
         self.assertEqual(kwargs['hour'], fargs[2:])
 
         kwargs = dict(bogus=[5])
         with self.assertRaises(KeyError):
-            fstr, fargs = i._normalize_list_SQL(s, {'symbol': 'IN'}, 'ts', None, kwargs)
+            fstr, fargs = i._normalize_val_SQL(s, {'symbol': 'IN', 'list': True}, 'ts', None, kwargs)
 
     def test__id_insert(self):
         """this fails, so you should be really careful if you set _id and make sure you
