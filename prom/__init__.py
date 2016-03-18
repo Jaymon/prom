@@ -12,7 +12,7 @@ from .utils import get_objects
 from .exception import InterfaceError, Error
 
 
-__version__ = '0.9.79'
+__version__ = '0.9.80'
 
 
 # get rid of "No handler found" warnings (cribbed from requests)

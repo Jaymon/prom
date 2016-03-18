@@ -964,8 +964,7 @@ class LocalCacheQuery(CacheQuery):
         cached = self.cache_cached()
         cached.clear()
 
-    def cache_key(self, method_name):
-        """decides if this query is cacheable, returns a key if it is, otherwise empty"""
+    def cache_hash(self, method_name):
         key = make_hash(
             method_name,
             self.fields_set,
@@ -974,6 +973,15 @@ class LocalCacheQuery(CacheQuery):
             self.bounds
         )
         return key
+
+    def cache_key_get_one(self):
+        return self.cache_hash("get_one")
+
+    def cache_key_get(self):
+        return self.cache_hash("get")
+
+    def cache_key_count(self):
+        return self.cache_hash("count")
 
     def cache_set(self, key, result):
         cached = self.cache_cached()
