@@ -120,7 +120,9 @@ class BaseTestCase(TestCase):
     def get_table_name(self, table_name=None):
         """return a random table name"""
         if table_name: return table_name
-        return "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+        return "{}_table".format(
+            "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
+        )
 
     def get_orm_class(self, table_name=None):
         tn = self.get_table_name(table_name)

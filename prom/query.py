@@ -6,7 +6,16 @@ import copy
 from collections import defaultdict
 import datetime
 import logging
+import os
+from contextlib import contextmanager
 
+try:
+    import thread
+    #import threading
+except ImportError:
+    thread = None
+
+from . import decorators
 from .utils import make_list, get_objects, make_dict, make_hash
 
 
@@ -860,7 +869,7 @@ class Query(object):
         return instance
 
 
-class CacheQuery(Query):
+class BaseCacheQuery(Query):
     """a standard query caching skeleton class with the idea that it would be expanded
     upon on a per project or per model basis
 
@@ -910,7 +919,7 @@ class CacheQuery(Query):
 
         if not cache_hit:
             logger.debug("Cache miss on {} for key {}".format(table_name, cache_key))
-            result = super(CacheQuery, self)._query(method_name)
+            result = super(BaseCacheQuery, self)._query(method_name)
             if cache_key:
                 self.cache_set(cache_key, result)
 
@@ -921,48 +930,136 @@ class CacheQuery(Query):
         return result
 
     def update(self):
-        ret = super(CacheQuery, self).update()
+        ret = super(BaseCacheQuery, self).update()
         if ret:
             logger.debug("Cache delete on {} update".format(self.schema))
             self.cache_delete("update")
         return ret
 
     def insert(self):
-        ret = super(CacheQuery, self).insert()
+        ret = super(BaseCacheQuery, self).insert()
         if ret:
             logger.debug("Cache delete on {} insert".format(self.schema))
             self.cache_delete("insert")
         return ret
 
     def delete(self):
-        ret = super(CacheQuery, self).delete()
+        ret = super(BaseCacheQuery, self).delete()
         if ret:
             logger.debug("Cache delete on {} delete".format(self.schema))
             self.cache_delete("delete")
         return ret
 
 
-class LocalCacheQuery(CacheQuery):
-    """a simple process in-memory cache, ttls should be short since this has
-    a very naive invalidation mechanism, think 5ish minutes"""
+class CacheNamespace(defaultdict):
+    """This is what actually does the memory processing caching of CacheQuery, it
+    namespaces by process_id -> thread_id -> table, otherwise it is identical to
+    any other default dict that sets default_factory to itself
+    """
 
-    cache_ttl = 360
-    """how long you should cache results for cacheable queries"""
+    @property
+    def active(self):
+        ret = False
+        cn = self.get_process()
+        if "active" in cn:
+            ret = cn["active"]
+        return ret
 
-    cached = {}
+    @active.setter
+    def active(self, v):
+        cn = self.get_process()
+        cn["active"] = bool(v)
+
+    @active.deleter
+    def active(self):
+        self.get_process().pop("active", None)
+
+    @property
+    def ttl(self):
+        """how long you should cache results for cacheable queries"""
+        ret = 3600
+        cn = self.get_process()
+        if "ttl" in cn:
+            ret = cn["ttl"]
+        return ret
+
+    @ttl.setter
+    def ttl(self, ttl):
+        cn = self.get_process()
+        cn["ttl"] = int(ttl)
+
+    @ttl.deleter
+    def ttl(self):
+        self.get_process().pop("ttl", None)
+
+    @property
+    def process_id(self):
+        ret = ""
+        if thread:
+            f = getattr(os, 'getpid', None)
+            if f:
+                ret = str(f())
+        return ret
+
+    @property
+    def thread_id(self):
+        ret = ""
+        if thread:
+            ret = str(thread.get_ident())
+        return ret
+
+    def __init__(self):
+        super(CacheNamespace, self).__init__(CacheNamespace)
+
+    def get_process(self):
+        return self[self.process_id][self.thread_id]
+
+    def get_table(self, schema):
+        return self.get_process()[str(schema)]
+
+
+class CacheQuery(BaseCacheQuery):
+    """a simple in-memory cache, ttls should be short since this has
+    a very naive invalidation mechanism"""
+
+    _cache_namespace = CacheNamespace()
     """store the cached values in memory"""
 
-    def cache_cached(self):
-        table_name = str(self.schema)
-        cached = getattr(type(self), "cached", {})
-        if table_name not in cached:
-            cached[table_name] = {}
+    @decorators.classproperty
+    def cache_namespace(cls):
+        return cls._cache_namespace
 
-        return cached[table_name]
+    @classmethod
+    def cache_activate(cls, v):
+        cls.cache_namespace.active = bool(v)
 
-    def cache_delete(self, method_name):
-        cached = self.cache_cached()
-        cached.clear()
+    @property
+    def cache_table(self):
+        return self.cache_namespace.get_table(self.schema)
+
+    @classmethod
+    @contextmanager
+    def cache(cls, ttl=60):
+        cn = cls.cache_namespace
+        cn.ttl = ttl
+        cls.cache_activate(True)
+
+        try:
+            yield cls
+
+        finally:
+            # cleanup
+            cn.clear()
+            cls.cache_activate(False)
+
+    def cache_delete_update(self):
+        self.cache_table.clear()
+
+    def cache_delete_insert(self):
+        self.cache_table.clear()
+
+    def cache_delete_delete(self):
+        self.cache_table.clear()
 
     def cache_hash(self, method_name):
         key = make_hash(
@@ -984,9 +1081,10 @@ class LocalCacheQuery(CacheQuery):
         return self.cache_hash("count")
 
     def cache_set(self, key, result):
-        cached = self.cache_cached()
+        cn = self.cache_namespace
         now = datetime.datetime.utcnow()
-        cached[key] = {
+        self.cache_table[key] = {
+            "ttl": cn.ttl,
             "datetime": now,
             "result": result
         }
@@ -994,13 +1092,14 @@ class LocalCacheQuery(CacheQuery):
     def cache_get(self, key):
         result = None
         cache_hit = False
-        cached = self.cache_cached()
+        ct = self.cache_table
         now = datetime.datetime.utcnow()
-        if key in cached:
-            td = now - cached[key]["datetime"]
-            if td.total_seconds() < self.cache_ttl:
+        if key in ct:
+            val = ct[key]
+            td = now - val["datetime"]
+            if td.total_seconds() < val["ttl"]:
                 cache_hit = True
-                result = cached[key]["result"]
+                result = val["result"]
 
         return result, cache_hit
 
