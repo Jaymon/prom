@@ -238,6 +238,14 @@ class DeprecatedShiv(BaseTestCase):
 
 
 class OrmTest(BaseTestCase):
+    def test_create_pk(self):
+        """there was a bug that if you set the pk then it wouldn't set the updated
+        or created datestamps, this makes sure that is fixed"""
+        orm_class = self.get_orm_class()
+        pk = testdata.get_int()
+        o = orm_class.create(foo=1, bar="1", _id=pk)
+        self.assertEqual(pk, o.pk)
+
     def test_change_pk(self):
         orm_class = self.get_orm_class()
         o = orm_class.create(foo=1, bar="one")

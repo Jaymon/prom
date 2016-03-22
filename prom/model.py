@@ -51,12 +51,14 @@ class Orm(object):
 
     @_created.isetter
     def _created(cls, val, is_update, is_modified):
+        pout.v(val, is_update, is_modified)
         if not is_modified and not is_update:
             val = datetime.datetime.utcnow()
         return val
 
     @_updated.isetter
     def _updated(cls, val, is_update, is_modified):
+        pout.v(val, is_update, is_modified)
         if not is_modified:
             val = datetime.datetime.utcnow()
         return val
@@ -317,7 +319,8 @@ class Orm(object):
             if field_name == self.schema.pk.name:
                 # we mark everything as dirty because the primary key has changed
                 # and so a new row would be inserted into the db
-                self.modified_fields.update(self.schema.fields.keys())
+                self.modified_fields.add(field_name)
+                self.modified_fields.update(self.schema.normal_fields.keys())
 
             else:
                 self.modified_fields.add(field_name)
