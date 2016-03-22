@@ -1103,3 +1103,10 @@ class CacheQuery(BaseCacheQuery):
 
         return result, cache_hit
 
+    def cache_key(self, method_name):
+        ret = ""
+        if self.cache_namespace.active:
+            ret = super(CacheQuery, self).cache_key(method_name)
+        return ret
+
+
