@@ -51,14 +51,12 @@ class Orm(object):
 
     @_created.isetter
     def _created(cls, val, is_update, is_modified):
-        pout.v(val, is_update, is_modified)
         if not is_modified and not is_update:
             val = datetime.datetime.utcnow()
         return val
 
     @_updated.isetter
     def _updated(cls, val, is_update, is_modified):
-        pout.v(val, is_update, is_modified)
         if not is_modified:
             val = datetime.datetime.utcnow()
         return val
