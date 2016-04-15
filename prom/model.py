@@ -10,6 +10,31 @@ from .interface import get_interface
 from .config import Schema, Field, Index
 
 
+class OrmPool(utils.Pool):
+    """
+    Create a pool of Orm instances, which is just a dict of primary_key -> Orm instance
+    mappings
+
+    Let's say you are iterating through millions of rows of Foo, and for each Foo
+    instance you need to get the Bar instance from the Foo.bar_id field, and lots of
+    Foos have the same bar_id, but you only want to pull the Bar instance from
+    the db once, this allows you to easily do that
+
+    example --
+        bar_pool = Bar.pool(500) # keep the pool contained to the last 500 Bar instances
+        for f in Foo.query.all():
+            b = bar_pool[f.bar_id]
+            print "Foo {} loves Bar {}".format(f.pk, b.pk)
+    """
+    def __init__(self, orm_class, size=0):
+        super(OrmPool, self).__init__(size=size)
+        self.orm_class = orm_class
+
+    def create_value(self, pk):
+        #pout.v("missing {}".format(pk))
+        return self.orm_class.query.get_pk(pk)
+
+
 class Orm(object):
     """
     this is the parent class of any model Orm class you want to create that can access the db
@@ -126,7 +151,15 @@ class Orm(object):
     def __init__(self, fields=None, **fields_kwargs):
         self.reset_modified()
         self.modify(fields, **fields_kwargs)
-        #self.hydrate(fields, **fields_kwargs)
+
+    @classmethod
+    def pool(cls, size=0):
+        """
+        return a new OrmPool instance
+
+        return -- OrmPool -- the orm pool instance will be tied to this Orm
+        """
+        return OrmPool(orm=cls, size=size)
 
     @classmethod
     def create(cls, fields=None, **fields_kwargs):

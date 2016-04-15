@@ -1,11 +1,11 @@
-from unittest import TestCase, skipIf
+from unittest import TestCase
 import datetime
 import time
 from threading import Thread
 
 import testdata
 
-from .prom_test import BaseTestCase
+from . import BaseTestCase
 from prom.query import Query, Limit, Iterator, Fields, CacheQuery
 import prom
 
@@ -105,6 +105,43 @@ class LimitTest(TestCase):
 
 
 class QueryTest(BaseTestCase):
+
+    def test_ref_threading(self):
+        basedir = testdata.create_modules({
+            "rtfoo.rtbar.tqr1": [
+                "import prom",
+                "",
+                "class Foo(prom.Orm):",
+                "    table_name = 'thrd_qr2_foo'",
+                "    one=prom.Field(int, True)",
+                "",
+            ],
+            "rtfoo.rtbar.tqr2": [
+                "import prom",
+                "from tqr1 import Foo",
+                "",
+                "class Bar(prom.Orm):",
+                "    table_name = 'thrd_qr2_bar'",
+                "    one=prom.Field(int, True)",
+                "    foo_id=prom.Field(Foo, True)",
+                ""
+            ]
+        })
+
+        import sys
+
+        tqr1 = basedir.module("rtfoo.rtbar.tqr1")
+        sys.modules.pop("rtfoo.rtbar.tqr2.Bar", None)
+        #tqr2 = basedir.module("tqr2")
+        def target():
+            q = tqr1.Foo.ref("rtfoo.rtbar.tqr2.Bar")
+            f = tqr1.Foo()
+            q = f.query.ref("rtfoo.rtbar.tqr2.Bar")
+
+        t1 = Thread(target=target)
+        # if we don't get stuck in a deadlock this test passes
+        t1.start()
+        t1.join()
 
     def test_query_ref(self):
         testdata.create_modules({
