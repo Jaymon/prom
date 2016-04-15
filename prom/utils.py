@@ -48,7 +48,11 @@ class Pool(dict):
 
 class PriorityQueue(object):
     """A semi-generic priority queue, if you never pass in priorities it defaults to
-    a FIFO queue"""
+    a FIFO queue
+
+    This is basically an implementation of the example on this page:
+    https://docs.python.org/2/library/heapq.html#priority-queue-implementation-notes
+    """
     def __init__(self, size=0):
         """create an instance
 
