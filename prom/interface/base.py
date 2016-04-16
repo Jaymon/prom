@@ -693,15 +693,18 @@ class SQLInterface(Interface):
 
         if not only_where_clause:
             query_str.append('SELECT')
+            select_fields = query.fields_select
+            if select_fields:
+                distinct = "DISTINCT " if select_fields.options.get("unique", False) else ""
+                select_fields_str = distinct + ',{}'.format(os.linesep).join(select_fields.names())
+            else:
+                select_fields_str = "*"
 
             if sql_options.get('count_query', False):
-                query_str.append('  count(*) as ct')
+                query_str.append('  count({}) as ct'.format(select_fields_str))
+
             else:
-                select_fields = query.fields_select
-                if select_fields:
-                    query_str.append('  ' + ',{}'.format(os.linesep).join(select_fields))
-                else:
-                    query_str.append('  *')
+                query_str.append('  {}'.format(select_fields_str))
 
             query_str.append('FROM')
             query_str.append('  {}'.format(schema))

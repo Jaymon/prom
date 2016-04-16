@@ -472,8 +472,3 @@ If you want to install the tables manually, you can create a script or something
 
     SomeOrm.install()
 
-
-## License
-
-MIT
-

@@ -395,10 +395,8 @@ class Field(object):
         self.fset = field_options.pop("fset", self.default_fset)
         self.fdel = field_options.pop("fdel", self.default_fdel)
 
-
         self.iset = field_options.pop("iset", self.default_iset)
         self.iget = field_options.pop("iget", self.default_iget)
-
 
         self.name = field_options.pop("name", "")
         # this creates a numeric dict key that can't be accessed as an attribute

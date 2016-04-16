@@ -105,6 +105,29 @@ class LimitTest(TestCase):
 
 
 class QueryTest(BaseTestCase):
+    def test_unique(self):
+        orm_class = self.get_orm_class()
+
+        orm_class.create(foo=2, bar="1")
+        start = datetime.datetime.utcnow()
+        stop = start + datetime.timedelta(seconds=86400)
+
+        for x in range(3):
+            orm_class.create(foo=1, bar=str(x))
+
+        for x in range(10, 15):
+            orm_class.create(foo=x, bar=str(x))
+
+        base_q = orm_class.query.gte__created(start).lte__created(stop)
+        unique_q = base_q.copy().unique_foo()
+        foos = unique_q.copy().get().values()
+        foo_count = unique_q.copy().count()
+        self.assertEqual(foo_count, len(foos))
+
+        foos_all = base_q.copy().select_foo().get().values()
+        foo_all_count = base_q.copy().select_foo().count()
+        self.assertLess(foo_count, len(foos_all))
+        self.assertEqual(foo_all_count, len(foos_all))
 
     def test_ref_threading(self):
         basedir = testdata.create_modules({
@@ -394,37 +417,37 @@ class QueryTest(BaseTestCase):
         fields_select = ['foo', 'bar', 'che']
         fields = dict(zip(fields_select, [None] * len(fields_select)))
         q.set_fields(*fields_select)
-        self.assertEqual(fields_select, q.fields_select)
+        self.assertEqual(fields_select, q.fields_select.names())
         self.assertEqual(fields, q.fields)
 
         q = self.get_query()
         q.set_fields(fields)
-        self.assertEqual(fields_select, q.fields_select)
+        self.assertEqual(fields_select, q.fields_select.names())
         self.assertEqual(fields, q.fields)
 
         q = self.get_query()
         q.set_fields(fields_select)
-        self.assertEqual(fields_select, q.fields_select)
+        self.assertEqual(fields_select, q.fields_select.names())
         self.assertEqual(fields, q.fields)
 
         q = self.get_query()
         q.set_fields(**fields)
-        self.assertEqual(fields_select, q.fields_select)
+        self.assertEqual(fields_select, q.fields_select.names())
         self.assertEqual(fields, q.fields)
 
     def test_fields_select(self):
         q = self.get_query()
         fields_select = ['foo', 'bar', 'che']
         q.select_fields(*fields_select)
-        self.assertEqual(fields_select, q.fields_select)
+        self.assertEqual(fields_select, q.fields_select.names())
 
         q = self.get_query()
         q.select_fields(fields_select)
-        self.assertEqual(fields_select, q.fields_select)
+        self.assertEqual(fields_select, q.fields_select.names())
 
         q = self.get_query()
         q.select_fields(fields_select, 'baz')
-        self.assertEqual(fields_select + ['baz'], q.fields_select)
+        self.assertEqual(fields_select + ['baz'], q.fields_select.names())
 
     def test_child_magic(self):
 

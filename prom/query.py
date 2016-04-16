@@ -78,7 +78,7 @@ class Iterator(object):
             the order you selected them will be returned
         """
         self._values = True
-        self.field_names = self.query.fields_select
+        self.field_names = self.query.fields_select.names()
         self.fcount = len(self.field_names)
         if not self.fcount:
             raise ValueError("no select fields were set, so cannot iterate values")
@@ -249,6 +249,7 @@ class Fields(object):
     def reset(self):
         self.fields = []
         self.fields_map = defaultdict(list)
+        self.options = {}
 
     def append(self, field_name, field_args):
         index = len(self.fields)
@@ -258,6 +259,9 @@ class Fields(object):
     def __iter__(self):
         for field in self.fields:
             yield field
+
+    def names(self):
+        return [f[0] for f in self]
 
     def __nonzero__(self):
         return bool(self.fields)
@@ -282,7 +286,7 @@ class Fields(object):
         return fields
 
     def __str__(self):
-        return str(self.fields)
+        return "{}-{}".format(self.fields, self.options)
 
 
 class Limit(object):
@@ -426,7 +430,8 @@ class Query(object):
 
     @property
     def fields_select(self):
-        return [select_field for select_field, _ in self.fields_set]
+        return self.fields_set
+        #return [select_field for select_field, _ in self.fields_set]
 
     def __init__(self, orm_class=None, *args, **kwargs):
 
@@ -486,8 +491,16 @@ class Query(object):
         # returns a generator, not sure what's up
         return self.get() if self.bounds else self.all().__iter__()
 
+    def unique_field(self, field_name):
+        """set a unique field to be selected, this is automatically called when you do unique_FIELDNAME(...)"""
+        self.fields_set.options["unique"] = True
+        return self.select_field(field_name)
+
+    def unique(self, field_name):
+        return self.unique_field(field_name)
+
     def select_field(self, field_name):
-        """set a field to be selected"""
+        """set a field to be selected, this is automatically called when you do unique_FIELDNAME(...)"""
         return self.set_field(field_name, None)
 
     def select(self, *fields):
@@ -744,7 +757,7 @@ class Query(object):
     def value(self):
         """convenience method to just get one value or tuple of values for the query"""
         field_vals = None
-        field_names = self.fields_select
+        field_names = self.fields_select.names()
         fcount = len(field_names)
         if fcount:
             d = self._query('get_one')
