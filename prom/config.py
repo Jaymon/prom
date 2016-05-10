@@ -320,7 +320,51 @@ class Index(object):
 
 
 class Field(object):
-    """Each column in the database is configured using this class"""
+    """Each column in the database is configured using this class
+
+    You can set a couple getters and setters on this object in order to fine tune
+    control over how a field in the db is set and fetched from the instance and
+    also how it is set and fetched from the interface
+
+    In model.Orm, there are popluate() and depart() class methods, when populate
+    is called, each Field will have its iget() method called. When depart() is called, 
+    each Field will have its iset() method called. By customizing these, you can
+    control functionality when a Field is going to be read or written to the db
+
+    to customize the field, you can use the decorator:
+
+        foo = Field(str, True)
+
+        @foo.igetter
+        def foo(self, val, is_update, is_modified):
+            # do custom things
+            return val
+
+        @foo.isetter
+        def foo(self, val, is_update, is_modified):
+            # do custom things
+            return val
+
+
+    There are also fget/fset/fdel methods that can be set to customize behavior
+    on when a value is set on a particular instance, so if you wanted to make sure
+    that bar was always an int when it is set, you could:
+
+        bar = Field(int, True)
+
+        @bar.fsetter
+        def bar(self, val):
+            # do custom things
+            return int(val)
+
+        @bar.fgetter
+        def bar(self, val):
+            return int(val)
+
+    NOTE -- the fget/fset/fdel methods are different than tradiitional python getters
+    and setters because they always need to return a value and they always take in a
+    value
+    """
 
     @property
     def schema(self):
@@ -419,7 +463,7 @@ class Field(object):
     def default_fset(self, instance, val):
         return val
 
-    def default_fdel(self, instance):
+    def default_fdel(self, instance, val):
         return None
 
     def fgetter(self, fget):
@@ -451,21 +495,26 @@ class Field(object):
         self.iget = iget
         return self
 
-    def __get__(self, instance, classtype=None):
-        """This is the wrapper that will actually be called when the field is
-        fetched from the instance, this is a little different than Python's built-in
-        @property fget method because it will pull the value from a shadow variable in
-        the instance and then call fget"""
-        if instance is None:
-            return self
-
+    def fval(self, instance):
+        """return the raw value that this property is holding internally for instance"""
         try:
             val = instance.__dict__[self.instance_field_name]
         except KeyError as e:
             #raise AttributeError(str(e))
             val = None
 
-        return self.fget(instance, val)
+        return val
+
+    def __get__(self, instance, classtype=None):
+        """This is the wrapper that will actually be called when the field is
+        fetched from the instance, this is a little different than Python's built-in
+        @property fget method because it will pull the value from a shadow variable in
+        the instance and then call fget"""
+        if instance is None:
+            # class is requesting this property, so return it
+            return self
+
+        return self.fget(instance, self.fval(instance))
 
     def __set__(self, instance, val):
         """this is the wrapper that will actually be called when the field is
@@ -478,7 +527,9 @@ class Field(object):
     def __delete__(self, instance):
         """the wrapper for when the field is deleted, for the most part the default
         fdel will almost never be messed with, this is different than Python's built-in
-        @property deleter because the fdel method *NEEDS* to return something"""
-        val = self.fdel(instance)
-        self.__set__(instance, val)
+        @property deleter because the fdel method *NEEDS* to return something and it
+        accepts the current value as an argument"""
+        val = self.fdel(instance, self.fval(instance))
+        instance.__dict__[self.instance_field_name] = val
+        #self.__set__(instance, val)
 
