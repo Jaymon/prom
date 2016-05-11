@@ -37,7 +37,7 @@ log_handler.setFormatter(log_formatter)
 logger.addHandler(log_handler)
 
 
-os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.SQLite://:memory:')
+os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.sqlite.SQLite://:memory:')
 
 
 stdnull = open(os.devnull, 'w') # used to suppress subprocess calls
