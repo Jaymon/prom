@@ -240,6 +240,22 @@ class BaseTestInterface(BaseTestCase):
         r = i.get_tables(s.table)
         self.assertTrue(s.table in r)
 
+    def test_query_modified_table(self):
+        i = self.get_interface()
+        s = prom.Schema(
+            'test_table',
+            one=Field(int, True)
+        )
+        i.set_table(s)
+
+        # Add new column
+        s.set_field("two", Field(int, False))
+        q = query.Query()
+        q.is_two(None)
+
+        # Test if query succeeds
+        i.get_one(s, q)
+
     def test_delete_table(self):
         i = self.get_interface()
         s = get_schema()
