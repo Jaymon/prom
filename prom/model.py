@@ -383,10 +383,10 @@ class Orm(object):
         d = {}
         def default_field_type(field_type):
             r = ''
-            if issubclass(field_type, int):
-                r = 0
-            elif issubclass(field_type, bool):
+            if issubclass(field_type, bool):
                 r = False
+            elif issubclass(field_type, int):
+                r = 0
             elif issubclass(field_type, float):
                 r = 0.0
 
