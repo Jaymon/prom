@@ -1,4 +1,5 @@
 import pickle
+import json
 
 import testdata
 
@@ -129,6 +130,41 @@ class OrmTest(BaseTestCase):
 
         o2 = o.query.get_pk(o.pk)
         self.assertEqual(1000, o2.foo)
+
+    def test_iget_iset_insert_update(self):
+        """Topher noticed when you set both iset and iget to wrap a value (in this case
+        to have a dict become a json string as it goes into the db but a dict any other
+        time) that the value would be iset correctly on insert/update, but then it wouldn't
+        go back to the iget value on success, this test makes sure that is fixed"""
+
+        class IGetSetInsertUpdateOrm(Orm):
+            table_name = "IGetSetInsertUpdateOrm_table"
+            foo = Field(str)
+            @foo.isetter
+            def foo(self, val, is_update, is_modified):
+                if val is None: return val
+                return json.dumps(val)
+
+            @foo.igetter
+            def foo(cls, val):
+                if val is None: return val
+                return json.loads(val)
+
+        o = IGetSetInsertUpdateOrm()
+        o.foo = {"foo": 1, "bar": 2}
+        self.assertTrue(isinstance(o.foo, dict))
+        o.insert()
+        self.assertTrue(isinstance(o.foo, dict))
+
+        o.foo = {"foo": 2, "bar": 1}
+        self.assertTrue(isinstance(o.foo, dict))
+        o.update()
+        self.assertTrue(isinstance(o.foo, dict))
+
+        o2 = o.query.get_pk(o.pk)
+        self.assertTrue(isinstance(o2.foo, dict))
+        self.assertEqual(o.foo, o2.foo)
+
 
     def test_field_getattr(self):
         class FOFieldGAOrm(Orm):

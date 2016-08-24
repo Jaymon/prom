@@ -236,6 +236,12 @@ class Orm(object):
         if pk:
             fields = q.fields
             fields[schema.pk.name] = pk
+
+            # we need to re-run all the fields through their iget methods to mimic
+            # them freshly coming out of the db
+            for k in fields:
+                fields[k] = self.schema.fields[k].iget(type(self), fields[k])
+
             self.modify(fields)
             self.reset_modified()
 
@@ -258,7 +264,14 @@ class Orm(object):
             raise ValueError("You cannot update without a primary key")
 
         if q.update():
-            self.modify(q.fields)
+            # we need to re-run all the fields through their iget methods to mimic
+            # them freshly coming out of the db
+            fields = q.fields
+            for k in fields:
+#                 fields[k] = field.iget(cls, fields[k])
+                fields[k] = self.schema.fields[k].iget(type(self), fields[k])
+
+            self.modify(fields)
             self.reset_modified()
 
         else:
