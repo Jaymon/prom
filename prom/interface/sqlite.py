@@ -320,16 +320,15 @@ class SQLite(SQLInterface):
         ret = False
         if isinstance(e, sqlite3.OperationalError):
             e_msg = str(e)
-            if schema.table in e_msg:
-                if "no such table" in e_msg:
-                    ret = self._set_all_tables(schema, **kwargs)
-
-                elif "column" in e_msg:
-                    # "table yscrmiklbgdtx has no column named che"
-                    try:
-                        ret = self._set_all_fields(schema, **kwargs)
-                    except ValueError, e:
-                        ret = False
+            if "no such column" in e_msg or "has no column" in e_msg:
+                #INSERT: "table yscrmiklbgdtx has no column named che"
+                #SELECT: "no such column: che"
+                try:
+                    ret = self._set_all_fields(schema, **kwargs)
+                except ValueError, e:
+                    ret = False
+            elif "no such table" in e_msg:
+                ret = self._set_all_tables(schema, **kwargs)
 
         return ret
 

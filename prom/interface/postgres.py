@@ -381,15 +381,17 @@ class PostgreSQL(SQLInterface):
         ret = False
         if isinstance(e, psycopg2.ProgrammingError):
             e_msg = str(e)
-            if schema.table in e_msg and "does not exist" in e_msg:
-                # psycopg2.ProgrammingError - column "name" of relation "table_name" does not exist
+            if "does not exist" in e_msg:
                 if "column" in e_msg:
+                    #INSERT: 'column "cancelled_date" of relation "chat_followup" does not exist'
+                    #SELECT: 'column "cancelled_date" does not exist'
                     try:
                         ret = self._set_all_fields(schema, **kwargs)
                     except ValueError as e:
                         ret = False
 
                 else:
+                    #'relation "table_name" does not exit'
                     ret = self._set_all_tables(schema, **kwargs)
 
         return ret
