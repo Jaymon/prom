@@ -37,7 +37,7 @@ log_handler.setFormatter(log_formatter)
 logger.addHandler(log_handler)
 
 
-os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.sqlite.SQLite://:memory:')
+#os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.sqlite.SQLite://:memory:')
 
 
 stdnull = open(os.devnull, 'w') # used to suppress subprocess calls
@@ -1096,9 +1096,7 @@ class BaseTestInterface(BaseTestCase):
 class InterfaceSQLiteTest(BaseTestInterface):
     @classmethod
     def create_interface(cls):
-        config = DsnConnection(os.environ["PROM_SQLITE_URL"])
-        i = SQLite(config)
-        return i
+        return cls.create_sqlite_interface()
 
     def test_db_disconnect(self):
         """make sure interface can recover if the db disconnects mid script execution,
@@ -1123,12 +1121,11 @@ class InterfaceSQLiteTest(BaseTestInterface):
         """noop, this doesn't really apply to SQLite"""
         pass
 
+
 class InterfacePostgresTest(BaseTestInterface):
     @classmethod
     def create_interface(cls):
-        config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
-        i = PostgreSQL(config)
-        return i
+        return cls.create_postgres_interface()
 
     def test_set_table_postgres(self):
         """test some postgres specific things"""

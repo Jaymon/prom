@@ -12,6 +12,7 @@ from prom import query
 from prom.model import Orm
 from prom.config import Schema, DsnConnection, Field, Index
 from prom.interface.postgres import PostgreSQL
+from prom.interface.sqlite import SQLite
 from prom.interface.base import Interface
 import prom
 
@@ -45,6 +46,16 @@ class BaseTestCase(TestCase):
 
     @classmethod
     def create_interface(cls):
+        return cls.create_postgres_interface()
+
+    @classmethod
+    def create_sqlite_interface(cls):
+        config = DsnConnection(os.environ["PROM_SQLITE_URL"])
+        i = SQLite(config)
+        return i
+
+    @classmethod
+    def create_postgres_interface(cls):
         config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
         i = PostgreSQL(config)
         return i

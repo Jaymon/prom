@@ -3,7 +3,7 @@ import os
 import logging
 
 # first party
-from .config import DsnConnection, Schema, Field, Index
+from .config import DsnConnection, Schema, Field, DumpField, Index
 from .query import Query, CacheQuery
 from . import decorators
 from .model import Orm
@@ -12,7 +12,7 @@ from .utils import get_objects
 from .exception import InterfaceError, Error
 
 
-__version__ = '0.9.90'
+__version__ = '0.9.91'
 
 
 # get rid of "No handler found" warnings (cribbed from requests)

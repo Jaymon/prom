@@ -2,8 +2,12 @@ import types
 import urlparse
 import datetime
 import inspect
-
 import re
+import base64
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
 
 from . import utils
 
@@ -412,8 +416,8 @@ class Field(object):
             ignore_case -- boolean -- True to ignore case if this field is used in indexes
         **field_options_kwargs -- will be combined with field_options
         """
-        d = {}
         field_options = utils.make_dict(field_options, field_options_kwargs)
+        d = {}
 
         min_size = field_options.pop("min_size", None)
         max_size = field_options.pop("max_size", None)
@@ -481,12 +485,23 @@ class Field(object):
         self.fdel = fdel
         return self
 
+#     def pickle_iset(self, classtype, val, is_update, is_modified):
+#         """This will pickle and base64 the field before being put into the db"""
+#         if val is None: return val
+#         return base64.b64encode(pickle.dumps(val, pickle.HIGHEST_PROTOCOL))
+
     def default_iset(self, classtype, val, is_update, is_modified):
         return val
 
     def isetter(self, iset):
         self.iset = iset
         return self
+
+#     def pickle_iget(self, classtype, val):
+#         """This will reverse the pickling and base64 encoding when pulling out of
+#         the db"""
+#         if val is None: return val
+#         return pickle.loads(base64.b64decode(val))
 
     def default_iget(self, classtype, val):
         return val
@@ -532,4 +547,34 @@ class Field(object):
         val = self.fdel(instance, self.fval(instance))
         instance.__dict__[self.instance_field_name] = val
         #self.__set__(instance, val)
+
+
+class DumpField(Field):
+    """A special field type for when you just want to shove an object in a field
+
+    this will just pickle and base64 the object so it can be stored in a text field
+    and then it will do the opposite when you pull it out, so basically, you can dump
+    anything you want in this field and it will be saved and restored transparently
+
+    I thought about doing Field(object, ...) but building it in in that way actually
+    proved to be more complicated than I thought, you could pass in some type and if it
+    was that type then it would set the default methods to pickle_iset/iget, but I couldn't
+    decided what type to pass in, if you pass in pickle, then you need to check for picklie and
+    cPickle to decide, you can't pass in something like object because of how foreign keys
+    are figured out, so ultimately, I've decided to just have it be a separate class"""
+    def __init__(self, field_required=False):
+        """
+        unlike the normal Field class, you can't set any options or a type on this
+        Field, because it is a pickled object, so it can't be unique, it doesn't have
+        a size, etc.. Likewise, the field type is always str
+        """
+        super(DumpField, self).__init__(field_type=str, field_required=field_required)
+
+    def default_iset(self, classtype, val, is_update, is_modified):
+        if val is None: return val
+        return base64.b64encode(pickle.dumps(val, pickle.HIGHEST_PROTOCOL))
+
+    def default_iget(self, classtype, val):
+        if val is None: return val
+        return pickle.loads(base64.b64decode(val))
 
