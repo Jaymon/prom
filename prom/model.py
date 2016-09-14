@@ -86,9 +86,6 @@ class Orm(object):
             val = datetime.datetime.utcnow()
         return val
 
-    index_created = Index("_created")
-    index_updated = Index("_updated")
-
     @decorators.classproperty
     def table_name(cls):
         return u"{}_{}".format(
