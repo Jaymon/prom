@@ -753,6 +753,11 @@ class IteratorTest(BaseTestCase):
             l.pop()
         self.assertGreater(pop_count, 0)
 
+    def test_all_pop(self):
+        """due to the nature of the all iterator, it makes no sense to support pop()"""
+        with self.assertRaises(NotImplementedError):
+            q = self.get_query().all().pop()
+
     def test_all_len(self):
         count = 10
         q = self.get_query()

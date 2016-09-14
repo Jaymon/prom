@@ -161,8 +161,6 @@ class AllIterator(Iterator):
     chunk of results until there are no more results of the passed in Query(), so you
     can just iterate through every row of the db without worrying about pulling too
     many rows at one time
-
-    NOTE -- pop() may have unexpected results
     """
     def __init__(self, query, chunk_limit=5000):
 
@@ -204,20 +202,15 @@ class AllIterator(Iterator):
 
         return v
 
-#     def pop(self, k=-1):
-#         if k < 0:
-#             try:
-#                 count = self.pop_count
-#             except AttributeError:
-#                 count = self.count()
-# 
+    def pop(self, k=-1):
+        raise NotImplementedError("{}.pop() is not supported".format(self.__class__.__name__))
 
     def count(self):
         ret = 0
         if self.results.has_more:
             # we need to do a count query
             q = self.query.copy()
-            q.set_limit(0).set_offset(0)
+            q.limit(0).offset(0)
             ret = q.count()
         else:
             ret = (self.offset - self.start_offset) + len(self.results)
