@@ -375,17 +375,23 @@ class QueryTest(BaseTestCase):
         q = self.get_query()
         self.insert(q, count)
 
-        q.set_limit(1)
+        # if no limit is set then it should go through all results
         rcount = 0
-        for r in q.all():
+        for r in q.copy().all():
             rcount += 1
         self.assertEqual(count, rcount)
 
-        q.set_limit(6).set_offset(0)
+        # if there is a limit then all should only go until that limit
         rcount = 0
-        for r in q.all():
+        for r in q.copy().limit(1).all():
             rcount += 1
-        self.assertEqual(count, rcount)
+        self.assertEqual(1, rcount)
+
+        # only go until the end of the results
+        rcount = 0
+        for r in q.copy().limit(6).offset(6).all():
+            rcount += 1
+        self.assertEqual(4, rcount)
 
     def test_in_field(self):
         q = self.get_query()
@@ -704,7 +710,7 @@ class IteratorTest(BaseTestCase):
 
 
         self.assertEqual(count - 1, len(list(orm_class.query.get())))
-        self.assertEqual(count - 1, len(list(orm_class.query.set_limit(1).all())))
+        self.assertEqual(count - 1, len(list(orm_class.query.all())))
 
     def test_ifilter(self):
         count = 3
@@ -751,15 +757,15 @@ class IteratorTest(BaseTestCase):
         count = 10
         q = self.get_query()
         self.insert(q, count)
-        g = q.select_foo().desc_bar().set_limit(5).set_offset(1).all()
+        g = q.select_foo().desc_bar().limit(5).offset(1).all()
         self.assertEqual(count, len(g))
 
     def test_all(self):
         count = 15
         q = self.get_query()
         self.insert(q, count)
-        q.set_limit(5)
         g = q.all()
+        g.chunk_limit = 5
 
         self.assertEqual(1, g[0].pk)
         self.assertEqual(2, g[1].pk)
@@ -786,6 +792,18 @@ class IteratorTest(BaseTestCase):
 
         g = q.all()
         self.assertEqual(count, len(g))
+
+    def test_all_limit(self):
+        count = 15
+        q = self.get_query()
+        self.insert(q, count)
+        q.limit(5)
+        g = q.all()
+
+        self.assertEqual(3, g[2].pk)
+        with self.assertRaises(IndexError):
+            g[6]
+
 
     def test_values(self):
         count = 5

@@ -9,9 +9,9 @@ import logging
 import os
 from contextlib import contextmanager
 
+import threading
 try:
     import thread
-    #import threading
 except ImportError:
     thread = None
 
@@ -164,13 +164,18 @@ class AllIterator(Iterator):
 
     NOTE -- pop() may have unexpected results
     """
-    def __init__(self, query):
-        limit, offset = query.bounds.get()
-        if not limit:
-            limit = 5000
+    def __init__(self, query, chunk_limit=5000):
 
-        self.chunk_limit = limit
+        # decide how many results we are going to iterate through
+        limit, offset = query.bounds.get()
+        if not limit: limit = 0
+        if limit and limit < chunk_limit:
+            chunk_limit = limit
+
+        self.chunk_limit = chunk_limit
+        self.limit = limit
         self.offset = offset
+
         super(AllIterator, self).__init__(results=[], orm=query.orm, query=query)
 
     def __getitem__(self, k):
@@ -184,15 +189,28 @@ class AllIterator(Iterator):
             v = self.results[i]
 
         else:
-            # k is not in here, so let's just grab it
-            q = self.query.copy()
-            orm = q.set_offset(k).get_one()
-            if orm:
-                v = self._get_result(orm.fields)
+            limit = self.limit
+            if not limit or k < limit:
+                # k is not in here, so let's just grab it
+                q = self.query.copy()
+                orm = q.set_offset(k).get_one()
+                if orm:
+                    v = self._get_result(orm.fields)
+                else:
+                    raise IndexError("results index out of range")
+
             else:
-                raise IndexError("results index out of range")
+                raise IndexError("results index {} out of limit {} range".format(k, limit))
 
         return v
+
+#     def pop(self, k=-1):
+#         if k < 0:
+#             try:
+#                 count = self.pop_count
+#             except AttributeError:
+#                 count = self.count()
+# 
 
     def count(self):
         ret = 0
@@ -209,16 +227,23 @@ class AllIterator(Iterator):
     def __iter__(self):
         has_more = True
         self.reset()
+        count = 0
         while has_more:
             has_more = self.results.has_more
             for r in self.results:
                 yield r
 
-            self.offset += self.chunk_limit
-            self._set_results()
+                count += 1
+                if self.limit and (count >= self.limit):
+                    has_more = False
+                    break
+
+            if has_more:
+                self.offset += self.chunk_limit
+                self._set_results()
 
     def _set_results(self):
-        self.results = self.query.set_offset(self.offset).get(self.chunk_limit)
+        self.results = self.query.offset(self.offset).limit(self.chunk_limit).get()
         if self._values:
             self.results = self.results.values()
 
@@ -865,6 +890,31 @@ class Query(object):
         i = self.interface
         return i.query(query_str, *query_args, **query_options)
 
+    def reduce(self, target, threads=10):
+        # first thing we do is we count how many rows we have
+        import math
+
+        q = self.copy()
+        total_count = q.count()
+        pout.v(total_count)
+
+        limit_count = int(math.ceil(float(total_count) / float(threads)))
+        pout.v(limit_count)
+
+        lock = threading.Lock()
+
+        ts = []
+        for page in range(threads):
+            q = self.copy()
+            q.limit(limit_count).offset(limit_count * page)
+            t = ReduceThread(target=target, query=q, lock=lock)
+            t.start()
+            ts.append(t)
+
+        for t in ts:
+            t.join()
+
+
     def _query(self, method_name):
         if not self.can_get: return self.default_val
         i = self.interface
@@ -880,6 +930,27 @@ class Query(object):
         for key, val in self.__dict__.iteritems():
             setattr(instance, key, copy.deepcopy(val, memodict))
         return instance
+
+
+class ReduceThread(threading.Thread):
+    def __init__(self, target, query, lock):
+        self.query = query
+        self.lock = lock
+        super(ReduceThread, self).__init__(target=target)
+
+    def run(self):
+        # we are threaded when this is run
+        #pout.v("run")
+        for orm in self.query.get():
+            #with self.lock:
+            self._Thread__target(orm, self.lock)
+
+        #super(ReduceThread, self).run(*args, **kwargs)
+
+#     def start(self, *args, **kwargs):
+#         pout.v("start")
+#         #return super(ReduceThread, self).start(*args, **kwargs)
+#         return super(ReduceThread, self).start()
 
 
 class BaseCacheQuery(Query):
@@ -1121,5 +1192,6 @@ class CacheQuery(BaseCacheQuery):
         if self.cache_namespace.active:
             ret = super(CacheQuery, self).cache_key(method_name)
         return ret
+
 
 
