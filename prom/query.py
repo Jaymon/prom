@@ -415,13 +415,28 @@ class Fields(object):
         return "{}-{}".format(self.fields, self.options)
 
 
+class FieldsWhere(Fields):
+    """A wrapper around the Fields class that assures fields are only set once, unless
+    they are less than or greater than settings"""
+    def append(self, field_name, field_args):
+        if field_name in self.fields_map:
+            cmd_old = self.fields[self.fields_map[field_name][0]][0]
+            cmd_new = field_args[0]
+            if cmd_old and cmd_new:
+                if not cmd_old.startswith("gt") and not cmd_old.startswith("lt"):
+                    raise ValueError("Field {} has already been set".format(field_name))
+                elif not cmd_new.startswith("gt") and not cmd_new.startswith("lt"):
+                    raise ValueError("Field {} has already been set".format(field_name))
+
+        return super(FieldsWhere, self).append(field_name, field_args)
+
+
 class Limit(object):
 
     @property
     def limit(self):
         l = self.limit_paginate if self.paginate else self._limit
         return l if l else 0
-        #return getattr(self, "_limit", 0)
 
     @limit.setter
     def limit(self, v):
@@ -433,9 +448,6 @@ class Limit(object):
     @limit.deleter
     def limit(self):
         self._limit = None
-#         try:
-#             del self._limit
-#         except AttributeError: pass
 
     @property
     def limit_paginate(self):
@@ -469,9 +481,6 @@ class Limit(object):
     @offset.deleter
     def offset(self):
         self._offset = None
-#         try:
-#             del self._offset
-#         except AttributeError: pass
 
     @property
     def page(self):
@@ -489,10 +498,6 @@ class Limit(object):
     @page.deleter
     def page(self):
         self._page = None
-#         try:
-#             del self._page
-#         except AttributeError: pass
-
 
     def __init__(self):
         self.paginate = False
@@ -531,8 +536,9 @@ class Query(object):
         q = Query(orm_class)
         q.is_foo(1).desc_bar().set_limit(10).set_page(2).get()
     """
-    fields_class = Fields
-
+    fields_set_class = Fields
+    fields_where_class = FieldsWhere
+    fields_sort_class = Fields
     bounds_class = Limit
 
     @property
@@ -569,9 +575,9 @@ class Query(object):
         self.kwargs = kwargs
 
     def reset(self):
-        self.fields_set = self.fields_class()
-        self.fields_where = self.fields_class()
-        self.fields_sort = self.fields_class()
+        self.fields_set = self.fields_set_class()
+        self.fields_where = self.fields_where_class()
+        self.fields_sort = self.fields_sort_class()
         self.bounds = self.bounds_class()
         # the idea here is to set this to False if there is a condition that will
         # automatically cause the query to fail but not necessarily be an error, 
@@ -691,8 +697,8 @@ class Query(object):
         return self
 
     def between_field(self, field_name, low, high):
-        self.lte_field(field_name, low)
-        self.gte_field(field_name, high)
+        self.gte_field(field_name, low)
+        self.lte_field(field_name, high)
         return self
 
     def lte_field(self, field_name, *field_val, **field_kwargs):
@@ -931,7 +937,7 @@ class Query(object):
 
         # count queries shouldn't care about sorting
         fields_sort = self.fields_sort
-        self.fields_sort = self.fields_class()
+        self.fields_sort = self.fields_sort_class()
 
         self.default_val = 0
         ret = self._query('count')

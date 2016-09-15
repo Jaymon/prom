@@ -105,6 +105,28 @@ class LimitTest(TestCase):
 
 
 class QueryTest(BaseTestCase):
+    def test_between(self):
+        _q = self.get_query()
+        self.insert(_q, 5)
+
+        q = _q.copy()
+        vals = list(q.between_pk(2, 4).pks())
+        self.assertEqual(3, len(vals))
+        for v in vals:
+            self.assertTrue(v >= 2 and v <= 4)
+
+    def test_dualset(self):
+        q = self.get_query()
+        q.is_foo(1)
+        with self.assertRaises(ValueError):
+            q.between_foo(1, 2)
+
+        q = self.get_query()
+        q.between_foo(1, 2)
+
+        with self.assertRaises(ValueError):
+            q.in_foo([1, 2, 3])
+
     def test_unique(self):
         orm_class = self.get_orm_class()
 
@@ -245,7 +267,6 @@ class QueryTest(BaseTestCase):
         r = q.get()
         self.assertEqual(1, len(r))
 
-
         q = _q.copy()
         q.in__created(day=day)
         r = q.get()
@@ -258,8 +279,7 @@ class QueryTest(BaseTestCase):
 
     def test_pk_fields(self):
         tclass = self.get_orm_class()
-        q = tclass.query.is_pk(1)
-        q.in_pk([1, 2, 3])
+        q = tclass.query
         q.gte_pk(5).lte_pk(1).lt_pk(1).gte_pk(5)
         q.desc_pk()
         q.asc_pk()
@@ -273,8 +293,6 @@ class QueryTest(BaseTestCase):
 
         for set_tuple in q.fields_set:
             self.assertEqual(set_tuple[0], "_id")
-
-        #self.assertEqual(q.fields_where[0][1], tclass.schema.pk)
 
     def test_get_pks(self):
         tclass = self.get_orm_class()
@@ -519,18 +537,17 @@ class QueryTest(BaseTestCase):
             ("nin_field", ["foo", (1, 2, 3)], ["nin", "foo", [1, 2, 3], {}]),
         ]
 
-
-        q = self.get_query()
         for i, t in enumerate(tests):
+            q = self.get_query()
             cb = getattr(q, t[0])
             r = cb(*t[1])
             self.assertEqual(q, r)
-            self.assertEqual(t[2], q.fields_where[i])
+            self.assertEqual(t[2], q.fields_where[0])
 
         # ("between_field", ["foo", 1, 2], [["lte", "foo", 1], ["gte", "foo", 2]]),
         q = self.get_query()
         q.between_field("foo", 1, 2)
-        self.assertEqual([["lte", "foo", 1, {}], ["gte", "foo", 2, {}]], q.fields_where.fields)
+        self.assertEqual([["gte", "foo", 1, {}], ["lte", "foo", 2, {}]], q.fields_where.fields)
 
     def test_sort_field_methods(self):
         tests = [
