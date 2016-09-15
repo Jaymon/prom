@@ -931,7 +931,7 @@ class BaseTestInterface(BaseTestCase):
 
     def test_sort_order(self):
         q = self.get_query()
-        self.insert(q.orm.interface, q.orm.schema, 10)
+        self.insert(q.orm_class.interface, q.orm_class.schema, 10)
 
         q2 = q.copy()
         foos = list(q2.select_foo().asc__id().values())
@@ -983,7 +983,7 @@ class BaseTestInterface(BaseTestCase):
 
     def test_sort_list(self):
         q = self.get_query()
-        self.insert(q.orm.interface, q.orm.schema, 10)
+        self.insert(q.orm_class.interface, q.orm_class.schema, 10)
 
         q2 = q.copy()
         foos = list(q2.select_foo().values())

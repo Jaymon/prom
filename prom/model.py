@@ -118,7 +118,7 @@ class Orm(object):
         return -- Query() -- every time this is called a new query instance is created using cls.query_class
         """
         query_class = cls.query_class
-        return query_class(orm=cls)
+        return query_class(orm_class=cls)
 
     @property
     def pk(self):

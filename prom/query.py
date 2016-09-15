@@ -22,50 +22,18 @@ from .utils import make_list, get_objects, make_dict, make_hash
 logger = logging.getLogger(__name__)
 
 
-class Iterator(object):
-    """
-    smartly iterate through a result set
+class BaseIterator(object):
+    """The base interface for the iterators
 
-    this is returned from the Query.get() and Query.all() methods, it acts as much
-    like a list as possible to make using it as seemless as can be
-
-    fields --
-        has_more -- boolean -- True if there are more results in the db, false otherwise
-        ifilter -- callback -- an iterator filter, all yielded rows will be passed
-            through this callback and skipped if ifilter(row) returns True
-
-    examples --
-        # iterate through all the primary keys of some orm
-        for pk in SomeOrm.query.all().pk:
-            print pk
+    it acts as much like a list as possible to make using it as seemless as can be
 
     http://docs.python.org/2/library/stdtypes.html#iterator-types
     """
-    def __init__(self, results, orm=None, has_more=False, query=None):
-        """
-        create a result set iterator
-
-        results -- list -- the list of results
-        orm -- Orm -- the Orm class that each row in results should be wrapped with
-        has_more -- boolean -- True if there are more results
-        query -- Query -- the query instance that produced this iterator
-        """
-        self.results = results
-        self.ifilter = None # https://docs.python.org/2/library/itertools.html#itertools.ifilter
-        self.orm = orm # TODO -- change to orm_class to be more consistent
-        self.has_more = has_more
-        self.query = query.copy()
-        self._values = False
-        self.reset()
-
     def reset(self):
-        #self.iresults = (self._get_result(d) for d in self.results)
-        #self.iresults = self.create_generator()
-        inormalize = (self._get_result(d) for d in self.results)
-        self.iresults = (o for o in inormalize if self._filtered(o))
+        raise NotImplementedError()
 
     def next(self):
-        return self.iresults.next()
+        raise NotImplementedError()
 
     def values(self):
         """
@@ -77,6 +45,157 @@ class Iterator(object):
             will be returned, if you selected multiple fields than a tuple of the fields in
             the order you selected them will be returned
         """
+        raise NotImplementedError()
+
+    def __iter__(self):
+        self.reset()
+        return self
+
+    def __nonzero__(self):
+        return True if self.count() else False
+
+    def __len__(self):
+        return self.count()
+
+    def count(self):
+        """list interface compatibility"""
+        raise NotImplementedError()
+
+    def __getitem__(self, k):
+        raise NotImplementedError()
+
+    def pop(self, k=-1):
+        """list interface compatibility"""
+        raise NotImplementedError()
+
+    def reverse(self):
+        """list interface compatibility"""
+        raise NotImplementedError()
+
+    def __reversed__(self):
+        self.reverse()
+        return self
+
+    def sort(self, *args, **kwargs):
+        """list interface compatibility"""
+        raise NotImplementedError()
+
+    def __getattr__(self, k):
+        """
+        this allows you to focus in on certain fields of results
+
+        It's just an easier way of doing: (getattr(x, k, None) for x in self)
+        """
+        raise NotImplementedError()
+
+    def create_generator(self):
+        """put all the pieces together to build a generator of the results"""
+        raise NotImplementedError()
+
+    def _get_result(self, d):
+        raise NotImplementedError()
+
+
+class Iterator(BaseIterator):
+    """The main iterator for all query methods that return iterators
+
+    This is returned from the Query.get() and Query.all() methods, this is also
+    the Iterator class that is set in Orm.iterator_class
+
+    fields --
+        ifilter -- callback -- an iterator filter, all yielded rows will be passed
+            through this callback and skipped if ifilter(row) returns True
+
+    examples --
+        # iterate through all the primary keys of some orm
+        for pk in SomeOrm.query.all().pk:
+            print pk
+    """
+    def __init__(self, results):
+        """
+        restults -- BaseIterator|AllIterator -- this wraps another iterator and 
+        adds filtering capabilities, this is here to allow the Query all() and get()
+        methods to return the same base class so it can be extended
+
+        see -- https://github.com/firstopinion/prom/issues/25
+        """
+        self.results = results
+        self.ifilter = None # https://docs.python.org/2/library/itertools.html#itertools.ifilter
+        self.reset()
+
+    def reset(self):
+        self.results.reset()
+
+    def next(self):
+        o = self.results.next()
+        while not self._filtered(o):
+            o = self.results.next()
+        return o
+
+    def values(self):
+        return self.results.values()
+
+    def count(self):
+        return self.results.count()
+
+    def __getitem__(self, k):
+        return self.results[k]
+
+    def pop(self, k=-1):
+        return self.results.pop(k)
+
+    def reverse(self):
+        return self.results.reverse()
+
+    def sort(self, *args, **kwargs):
+        return self.results.sort()
+
+    def __getattr__(self, k):
+        return getattr(self.results, k)
+
+    def _filtered(self, o):
+        """run orm o through the filter, if True then orm o should be included"""
+        return self.ifilter(o) if self.ifilter else True
+
+
+class ResultsIterator(BaseIterator):
+    """
+    smartly iterate through a result set
+
+    this is returned from the Query.get() and it acts as much
+    like a list as possible to make using it as seemless as can be
+
+    fields --
+        has_more -- boolean -- True if there are more results in the db, false otherwise
+
+    examples --
+        # iterate through all the primary keys of some orm
+        for pk in SomeOrm.query.get().pk:
+            print pk
+    """
+    def __init__(self, results, orm_class=None, has_more=False, query=None):
+        """
+        create a result set iterator
+
+        results -- list -- the list of results
+        orm_class -- Orm -- the Orm class that each row in results should be wrapped with
+        has_more -- boolean -- True if there are more results
+        query -- Query -- the query instance that produced this iterator
+        """
+        self.results = results
+        self.orm_class = orm_class
+        self.has_more = has_more
+        self.query = query.copy()
+        self._values = False
+        self.reset()
+
+    def reset(self):
+        self.iresults = self.create_generator()
+
+    def next(self):
+        return self.iresults.next()
+
+    def values(self):
         self._values = True
         self.field_names = self.query.fields_select.names()
         self.fcount = len(self.field_names)
@@ -96,7 +215,6 @@ class Iterator(object):
         return self.count()
 
     def count(self):
-        """list interface compatibility"""
         return len(self.results)
 
     def __getitem__(self, k):
@@ -104,12 +222,10 @@ class Iterator(object):
         return self._get_result(self.results[k])
 
     def pop(self, k=-1):
-        """list interface compatibility"""
         k = int(k)
         return self._get_result(self.results.pop(k))
 
     def reverse(self):
-        """list interface compatibility"""
         self.results.reverse()
         self.reset()
 
@@ -118,23 +234,16 @@ class Iterator(object):
         return self
 
     def sort(self, *args, **kwargs):
-        """list interface compatibility"""
         self.results.sort(*args, **kwargs)
         self.reset()
 
     def __getattr__(self, k):
-        """
-        this allows you to focus in on certain fields of results
-
-        It's just an easier way of doing: (getattr(x, k, None) for x in self)
-        """
-        field_name = self.orm.schema.field_name(k)
+        field_name = self.orm_class.schema.field_name(k)
         return (getattr(r, field_name, None) for r in self)
 
     def create_generator(self):
         """put all the pieces together to build a generator of the results"""
-        inormalize = (self._get_result(d) for d in self.results)
-        return (o for o in inormalize if not self._filtered(o))
+        return (self._get_result(d) for d in self.results)
 
     def _get_result(self, d):
         r = None
@@ -143,19 +252,15 @@ class Iterator(object):
             r = field_vals if self.fcount > 1 else field_vals[0]
 
         else:
-            if self.orm:
-                r = self.orm.populate(d)
+            if self.orm_class:
+                r = self.orm_class.populate(d)
             else:
                 r = d
 
         return r
 
-    def _filtered(self, o):
-        """run orm o through the filter, if True then orm o should be included"""
-        return self.ifilter(o) if self.ifilter else True
 
-
-class AllIterator(Iterator):
+class AllIterator(ResultsIterator):
     """
     Similar to Iterator, but will chunk up results and make another query for the next
     chunk of results until there are no more results of the passed in Query(), so you
@@ -174,7 +279,7 @@ class AllIterator(Iterator):
         self.limit = limit
         self.offset = offset
 
-        super(AllIterator, self).__init__(results=[], orm=query.orm, query=query)
+        super(AllIterator, self).__init__(results=[], orm_class=query.orm_class, query=query)
 
     def __getitem__(self, k):
         v = None
@@ -234,6 +339,9 @@ class AllIterator(Iterator):
             if has_more:
                 self.offset += self.chunk_limit
                 self._set_results()
+
+    def next(self):
+        return self.results.next()
 
     def _set_results(self):
         self.results = self.query.offset(self.offset).limit(self.chunk_limit).get()
@@ -420,7 +528,7 @@ class Query(object):
     Handle standard query creation and allow interface querying
 
     example --
-        q = Query(orm)
+        q = Query(orm_class)
         q.is_foo(1).desc_bar().set_limit(10).set_page(2).get()
     """
     fields_class = Fields
@@ -455,8 +563,7 @@ class Query(object):
 
         # needed to use the db querying methods like get(), if you just want to build
         # a query then you don't need to bother passing this in
-        self.orm = kwargs.get("orm", orm_class) # DEPRECATED -- 3-11-2016 -- switch to orm_class
-        self.orm_class = orm_class if orm_class else self.orm
+        self.orm_class = orm_class
         self.reset()
         self.args = args
         self.kwargs = kwargs
@@ -741,7 +848,8 @@ class Query(object):
                 has_more = True
                 results.pop(-1)
 
-        return self.iterator_class(results, orm=self.orm_class, has_more=has_more, query=self)
+        it = ResultsIterator(results, orm_class=self.orm_class, has_more=has_more, query=self)
+        return self.iterator_class(it)
 
     def all(self):
         """
@@ -753,7 +861,8 @@ class Query(object):
 
         return -- Iterator()
         """
-        return AllIterator(self)
+        ait = AllIterator(self)
+        return self.iterator_class(ait)
 
     def get_one(self):
         """get one row from the db"""

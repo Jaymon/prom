@@ -853,7 +853,7 @@ class IteratorTest(BaseTestCase):
         count = 5
         i = self.get_iterator(count)
         for x in range(count):
-            self.assertEqual(i[x].pk, i.results[x]['_id'])
+            self.assertEqual(i[x].pk, i.results[x].pk)
 
         with self.assertRaises(IndexError):
             i[count + 1]
@@ -882,7 +882,7 @@ class IteratorTest(BaseTestCase):
         limit = 3
         count = 5
         q = self.get_query()
-        self.insert(q.orm, count)
+        self.insert(q.orm_class, count)
 
         i = q.get(limit, 0)
         self.assertTrue(i.has_more)
