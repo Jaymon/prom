@@ -28,18 +28,23 @@ class Pool(dict):
 
         return val
 
+    def __setitem__(self, key, val):
+        super(Pool, self).__setitem__(key, val)
+        try:
+            self.pq.add(key, val)
+        except OverflowError:
+            self.popitem()
+            self.pq.add(key, val)
+
+    def popitem(self):
+        dead_key, dead_val, dead_priority = self.pq.popitem()
+        del self[dead_key]
+        return dead_key, dead_val
+
     def __missing__(self, key):
         #pout.v("missing {}".format(key))
         val = self.create_value(key)
         self[key] = val
-        try:
-            self.pq.add(key, val)
-
-        except OverflowError:
-            dead_key, dead_val, dead_priority = self.pq.popitem()
-            del self[dead_key]
-            self.pq.add(key, val)
-
         return val
 
     def create_value(self, key):
