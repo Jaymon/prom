@@ -37,16 +37,6 @@ class InterfacePostgresTest(BaseTestInterface):
     def create_interface(cls):
         return cls.create_postgres_interface()
 
-#     def test_set_table_json(self):
-#         import json
-# 
-#         i = self.get_interface()
-#         s = prom.Schema(
-#             self.get_table_name(),
-#             _id=Field(int, pk=True),
-#             three=Field(json, True),
-#         )
-
     def test_table_persist(self):
         i = self.get_interface()
         s = self.get_schema()
