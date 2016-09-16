@@ -6,7 +6,8 @@ from threading import Thread
 import testdata
 
 from . import BaseTestCase
-from prom.query import Query, Limit, Iterator, Fields, CacheQuery
+from prom.query import Query, Limit, Fields, CacheQuery
+from prom.query import Iterator, AllIterator
 import prom
 
 
@@ -705,6 +706,46 @@ class QueryTest(BaseTestCase):
 
 
 class IteratorTest(BaseTestCase):
+    def test_all_wrapper(self):
+        count = 100
+        orm_class = self.get_orm_class()
+        self.insert(orm_class, count)
+
+        q = orm_class.query
+        ait = AllIterator(q, chunk_limit=10)
+        it = Iterator(ait)
+
+        icount = 0
+        for o in it:
+            icount += 1
+        self.assertEqual(count, icount)
+
+        q = orm_class.query.limit(20)
+        ait = AllIterator(q, chunk_limit=10)
+        it = Iterator(ait)
+        pks = []
+        for o in it:
+            pks.append(o.pk)
+        self.assertEqual(20, len(pks))
+
+        q = orm_class.query.limit(20).offset(10)
+        ait = AllIterator(q, chunk_limit=10)
+        it = Iterator(ait)
+        pks2 = []
+        for o in it:
+            pks2.append(o.pk)
+        self.assertEqual(20, len(pks))
+
+        self.assertNotEqual(pks, pks2)
+
+        q = orm_class.query.limit(20).offset(90)
+        ait = AllIterator(q, chunk_limit=10)
+        it = Iterator(ait)
+        pks = []
+        for o in it:
+            pks.append(o.pk)
+        self.assertEqual(10, len(pks))
+
     def get_iterator(self, count=5, limit=5, page=0):
         q = self.get_query()
         self.insert(q, count)

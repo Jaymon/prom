@@ -278,6 +278,7 @@ class AllIterator(ResultsIterator):
         self.chunk_limit = chunk_limit
         self.limit = limit
         self.offset = offset
+        self._iter_count = 0 # internal counter of how many rows iterated
 
         super(AllIterator, self).__init__(results=[], orm_class=query.orm_class, query=query)
 
@@ -322,26 +323,23 @@ class AllIterator(ResultsIterator):
 
         return ret
 
-    def __iter__(self):
-        has_more = True
-        self.reset()
-        count = 0
-        while has_more:
-            has_more = self.results.has_more
-            for r in self.results:
-                yield r
+    def next(self):
+        if self.limit and (self._iter_count >= self.limit):
+            raise StopIteration("iteration exceeded limit")
 
-                count += 1
-                if self.limit and (count >= self.limit):
-                    has_more = False
-                    break
+        try:
+            ret = self.results.next()
+            self._iter_count += 1
 
-            if has_more:
+        except StopIteration:
+            if self.results.has_more:
                 self.offset += self.chunk_limit
                 self._set_results()
+                ret = self.next()
+            else:
+                raise
 
-    def next(self):
-        return self.results.next()
+        return ret
 
     def _set_results(self):
         self.results = self.query.offset(self.offset).limit(self.chunk_limit).get()
