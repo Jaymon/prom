@@ -9,6 +9,7 @@ import os
 import types
 import decimal
 import datetime
+import json
 
 # third party
 import psycopg2
@@ -44,6 +45,10 @@ class Connection(SQLConnection, psycopg2.extensions.connection):
         # http://initd.org/psycopg/docs/usage.html#unicode-handling
         psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, self)
         psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, self)
+
+        #
+        psycopg2.extras.register_default_json(loads=lambda x: psycopg2.extras.Json(x))
+        #psycopg2.extensions.register_adapter(dict, psycopg2.extras.Json)
 
         #self.initialize(logger)
 
@@ -313,53 +318,59 @@ class PostgreSQL(SQLInterface):
             field_type = 'BIGSERIAL PRIMARY KEY'
 
         else:
-            if issubclass(field.type, bool):
-                field_type = 'BOOL'
 
-            elif issubclass(field.type, int):
-                size = 2147483647
-                if 'size' in field.options:
-                    size = field.options['size']
-                elif 'max_size' in field.options:
-                    size = field.options['max_size']
-
-                if size < 32767:
-                    field_type = 'SMALLINT'
-                else:
-                    if field.is_ref():
-                        field_type = 'BIGINT'
-                    else:
-                        field_type = 'INTEGER'
-
-            elif issubclass(field.type, long):
-                field_type = 'BIGINT'
-
-            elif issubclass(field.type, types.StringTypes):
-                if 'size' in field.options:
-                    field_type = 'CHAR({})'.format(field.options['size'])
-                elif 'max_size' in field.options:
-                    field_type = 'VARCHAR({})'.format(field.options['max_size'])
-                else:
-                    field_type = 'TEXT'
-
-            elif issubclass(field.type, datetime.datetime):
-                # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
-                field_type = 'TIMESTAMP WITHOUT TIME ZONE'
-
-            elif issubclass(field.type, datetime.date):
-                field_type = 'DATE'
-
-            elif issubclass(field.type, float):
-                field_type = 'REAL'
-                size = field.options.get('size', field.options.get('max_size', 0))
-                if size > 6:
-                    field_type = 'DOUBLE PRECISION'
-
-            elif issubclass(field.type, decimal.Decimal):
-                field_type = 'NUMERIC'
+            if isinstance(field.type, types.ModuleType):
+                # http://stackoverflow.com/questions/1547466/check-if-a-parameter-is-a-python-module
+                field_type = 'JSON'
 
             else:
-                raise ValueError('unknown python type: {}'.format(field.type.__name__))
+                if issubclass(field.type, bool):
+                    field_type = 'BOOL'
+
+                elif issubclass(field.type, int):
+                    size = 2147483647
+                    if 'size' in field.options:
+                        size = field.options['size']
+                    elif 'max_size' in field.options:
+                        size = field.options['max_size']
+
+                    if size < 32767:
+                        field_type = 'SMALLINT'
+                    else:
+                        if field.is_ref():
+                            field_type = 'BIGINT'
+                        else:
+                            field_type = 'INTEGER'
+
+                elif issubclass(field.type, long):
+                    field_type = 'BIGINT'
+
+                elif issubclass(field.type, types.StringTypes):
+                    if 'size' in field.options:
+                        field_type = 'CHAR({})'.format(field.options['size'])
+                    elif 'max_size' in field.options:
+                        field_type = 'VARCHAR({})'.format(field.options['max_size'])
+                    else:
+                        field_type = 'TEXT'
+
+                elif issubclass(field.type, datetime.datetime):
+                    # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
+                    field_type = 'TIMESTAMP WITHOUT TIME ZONE'
+
+                elif issubclass(field.type, datetime.date):
+                    field_type = 'DATE'
+
+                elif issubclass(field.type, float):
+                    field_type = 'REAL'
+                    size = field.options.get('size', field.options.get('max_size', 0))
+                    if size > 6:
+                        field_type = 'DOUBLE PRECISION'
+
+                elif issubclass(field.type, decimal.Decimal):
+                    field_type = 'NUMERIC'
+
+                else:
+                    raise ValueError('unknown python type: {}'.format(field.type.__name__))
 
             if field.required:
                 field_type += ' NOT NULL'

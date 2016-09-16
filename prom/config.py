@@ -383,8 +383,9 @@ class Field(object):
                 ret = o
 
             else:
-                module, klass = utils.get_objects(o)
-                ret = klass.schema
+                if not isinstance(o, types.ModuleType):
+                    module, klass = utils.get_objects(o)
+                    ret = klass.schema
 
             self._schema = ret
 
@@ -393,7 +394,7 @@ class Field(object):
     @property
     def type(self):
         ret = self._type
-        if not isinstance(ret, types.TypeType) or hasattr(ret, "schema"):
+        if not isinstance(ret, (types.TypeType, types.ModuleType)) or hasattr(ret, "schema"):
             s = self.schema
             ret = s.pk.type
 
