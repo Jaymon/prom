@@ -5,7 +5,8 @@ import testdata
 from . import BaseTestCase
 import prom
 from prom.model import Orm
-from prom.config import Schema, Connection, DsnConnection, Field, DumpField, Index
+from prom.config import Schema, Connection, DsnConnection, Index
+from prom.config import Field, ObjectField, JsonField
 
 
 class SchemaTest(BaseTestCase):
@@ -308,11 +309,13 @@ class ConnectionTest(BaseTestCase):
         self.assertEqual(43, p.port)
 
 
-class DumpFieldTest(BaseTestCase):
+class ObjectFieldTest(BaseTestCase):
+    field_class = ObjectField
+
     def test_imethods_pickle_sqlite(self):
         class IMethodPickleOrmSQLite(Orm):
             interface = self.create_sqlite_interface()
-            body = DumpField(True)
+            body = self.field_class(True)
 
         o = IMethodPickleOrmSQLite()
         o.body = {"foo": 1}
@@ -324,7 +327,7 @@ class DumpFieldTest(BaseTestCase):
     def test_imethods_pickle_postgres(self):
         class IMethodPickleOrmPostgres(Orm):
             interface = self.create_postgres_interface()
-            body = DumpField(True)
+            body = self.field_class(True)
 
         o = IMethodPickleOrmPostgres()
         o.body = {"bar": 1}
@@ -332,6 +335,10 @@ class DumpFieldTest(BaseTestCase):
 
         o2 = type(o).query.get_pk(o.pk)
         self.assertEqual(o.body, o2.body)
+
+
+class JsonFieldTest(ObjectFieldTest):
+    field_class = JsonField
 
 
 class FieldTest(BaseTestCase):

@@ -4,6 +4,7 @@ import datetime
 import inspect
 import re
 import base64
+import json
 try:
     import cPickle as pickle
 except ImportError:
@@ -365,7 +366,7 @@ class Field(object):
         def bar(self, val):
             return int(val)
 
-    NOTE -- the fget/fset/fdel methods are different than tradiitional python getters
+    NOTE -- the fget/fset/fdel methods are different than traditional python getters
     and setters because they always need to return a value and they always take in a
     value
     """
@@ -485,23 +486,12 @@ class Field(object):
         self.fdel = fdel
         return self
 
-#     def pickle_iset(self, classtype, val, is_update, is_modified):
-#         """This will pickle and base64 the field before being put into the db"""
-#         if val is None: return val
-#         return base64.b64encode(pickle.dumps(val, pickle.HIGHEST_PROTOCOL))
-
     def default_iset(self, classtype, val, is_update, is_modified):
         return val
 
     def isetter(self, iset):
         self.iset = iset
         return self
-
-#     def pickle_iget(self, classtype, val):
-#         """This will reverse the pickling and base64 encoding when pulling out of
-#         the db"""
-#         if val is None: return val
-#         return pickle.loads(base64.b64decode(val))
 
     def default_iget(self, classtype, val):
         return val
@@ -549,26 +539,27 @@ class Field(object):
         #self.__set__(instance, val)
 
 
-class DumpField(Field):
+class ObjectField(Field):
     """A special field type for when you just want to shove an object in a field
 
     this will just pickle and base64 the object so it can be stored in a text field
     and then it will do the opposite when you pull it out, so basically, you can dump
     anything you want in this field and it will be saved and restored transparently
 
-    I thought about doing Field(object, ...) but building it in in that way actually
+    I thought about doing Field(object, ...) but building it in that way actually
     proved to be more complicated than I thought, you could pass in some type and if it
     was that type then it would set the default methods to pickle_iset/iget, but I couldn't
-    decided what type to pass in, if you pass in pickle, then you need to check for picklie and
-    cPickle to decide, you can't pass in something like object because of how foreign keys
-    are figured out, so ultimately, I've decided to just have it be a separate class"""
+    decide what type to pass in, if you pass in pickle, then you need to check for pickle and
+    cPickle to decide, you can't pass in something like `object` without complicating 
+    how foreign keys are figured out, so ultimately, I've decided to just have it be
+    a separate class"""
     def __init__(self, field_required=False):
         """
         unlike the normal Field class, you can't set any options or a type on this
         Field, because it is a pickled object, so it can't be unique, it doesn't have
         a size, etc.. Likewise, the field type is always str
         """
-        super(DumpField, self).__init__(field_type=str, field_required=field_required)
+        super(ObjectField, self).__init__(field_type=str, field_required=field_required)
 
     def default_iset(self, classtype, val, is_update, is_modified):
         if val is None: return val
@@ -577,4 +568,16 @@ class DumpField(Field):
     def default_iget(self, classtype, val):
         if val is None: return val
         return pickle.loads(base64.b64decode(val))
+
+
+class JsonField(ObjectField):
+    """Similar to ObjectField but stores json in the db"""
+    def default_iset(self, classtype, val, is_update, is_modified):
+        if val is None: return val
+        return json.dumps(val)
+
+    def default_iget(self, classtype, val):
+        if val is None: return val
+        return json.loads(val)
+
 
