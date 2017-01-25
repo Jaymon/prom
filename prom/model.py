@@ -156,7 +156,7 @@ class Orm(object):
 
         return -- OrmPool -- the orm pool instance will be tied to this Orm
         """
-        return OrmPool(orm=cls, size=size)
+        return OrmPool(orm_class=cls, size=size)
 
     @classmethod
     def create(cls, fields=None, **fields_kwargs):
