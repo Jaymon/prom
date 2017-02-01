@@ -8,6 +8,7 @@ import datetime
 import logging
 import os
 from contextlib import contextmanager
+import multiprocessing
 
 import threading
 try:
@@ -541,8 +542,24 @@ class Query(object):
 
     @property
     def interface(self):
-        if not self.orm_class: return None
-        return self.orm_class.interface
+        interface = getattr(self, "_interface", None)
+        if not interface:
+            interface = None
+            if self.orm_class:
+                interface = self.orm_class.interface
+            self._interface = interface
+        return interface
+
+    @interface.setter
+    def interface(self, interface):
+        self._interface = interface
+
+    @interface.deleter
+    def interface(self):
+        try:
+            del self._interface
+        except AttributeError:
+            pass
 
     @property
     def schema(self):
@@ -996,9 +1013,12 @@ class Query(object):
         i = self.interface
         return i.query(query_str, *query_args, **query_options)
 
-    def reduce(self, target, threads=10):
+    def reduce(self, target, threads=0):
         # first thing we do is we count how many rows we have
         import math
+
+        if not threads:
+            threads = multiprocessing.cpu_count()
 
         q = self.copy()
         total_count = q.count()
@@ -1007,19 +1027,27 @@ class Query(object):
         limit_count = int(math.ceil(float(total_count) / float(threads)))
         pout.v(limit_count)
 
-        lock = threading.Lock()
+        #global manager
+        manager = multiprocessing.Manager()
+        d = manager.dict()
+
+        # we close the connection to open it local in this thread
+        #self.interface.close()
+        #del self.interface
 
         ts = []
+        pout.b()
         for page in range(threads):
             q = self.copy()
             q.limit(limit_count).offset(limit_count * page)
-            t = ReduceThread(target=target, query=q, lock=lock)
+            t = ReduceThread(target=target, query=q, connection=q.interface.connection_config, args=(d,))
             t.start()
             ts.append(t)
 
         for t in ts:
             t.join()
 
+        return d
 
     def _query(self, method_name):
         if not self.can_get: return self.default_val
@@ -1038,20 +1066,61 @@ class Query(object):
         return instance
 
 
-class ReduceThread(threading.Thread):
-    def __init__(self, target, query, lock):
-        self.query = query
-        self.lock = lock
-        super(ReduceThread, self).__init__(target=target)
+#class ReduceThread(threading.Thread):
+class ReduceThread(multiprocessing.Process):
+    def __init__(self, target, query, connection, args=None, kwargs=None):
 
-    def run(self):
-        # we are threaded when this is run
-        #pout.v("run")
-        for orm in self.query.get():
-            #with self.lock:
-            self._Thread__target(orm, self.lock)
+        if args is None: args = ()
+        if kwargs is None: kwargs = {}
 
-        #super(ReduceThread, self).run(*args, **kwargs)
+        def wrapper_target(target, query, connection, args, kwargs):
+            #query.interface = query.interface.spawn()
+            #interface_class = connection.interface_class
+            #interface = interface_class(connection)
+            #time.sleep(random.choice([0.1, 0.2, 0.25, 0.3]))
+            #interface = SQLite(connection)
+            #inter = SQLite()
+            #query.interface = interface
+            #interface.connect()
+            #query.interface = connection.interface
+            #query.interface.connect()
+            #conn = interface.get_connection()
+            #pout.v(multiprocessing.current_process().name, id(query), id(inter))
+
+            #pout.v(id(conn))
+            #pout.v(id(query.interface))
+            query.interface = connection.interface
+            for orm in query.all():
+                target(orm, *args, **kwargs)
+
+#         super(ReduceThread, self).__init__(
+#             target=wrapper_target,
+#             args=(target, query, args[0], kwargs),
+#         )
+
+        super(ReduceThread, self).__init__(target=wrapper_target, kwargs={
+        #super(ReduceThread, self).__init__(kwargs={
+            "target": target,
+            "connection": connection,
+            "query": query,
+            "args": args,
+            "kwargs": kwargs,
+        })
+
+#     def run(self, target, query, connection, args, kwargs):
+#         inter = SQLite()
+#         pout.v(multiprocessing.current_process().name, id(query), id(inter))
+#         #for orm in query.all():
+#         #    target(orm, *args, **kwargs)
+
+#     def run(self):
+#         # we are threaded when this is run
+#         #pout.v("run")
+#         for orm in self.query.get():
+#             #with self.lock:
+#             self._Thread__target(orm, self.lock)
+# 
+#         #super(ReduceThread, self).run(*args, **kwargs)
 
 #     def start(self, *args, **kwargs):
 #         pout.v("start")

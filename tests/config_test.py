@@ -267,6 +267,21 @@ class DsnConnectionTest(BaseTestCase):
 
 
 class ConnectionTest(BaseTestCase):
+    def test_interface_is_unique_each_time(self):
+        c = Connection(
+            interface_name="prom.interface.sqlite.SQLite",
+            database=":memory:",
+        )
+
+        iids = set()
+        inters = set()
+        for x in range(10):
+            inter = c.interface
+            iid = id(inter)
+            self.assertFalse(iid in iids)
+            iids.add(iid)
+            inters.add(inter)
+
     def test___init__(self):
 
         c = Connection(

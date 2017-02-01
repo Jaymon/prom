@@ -41,6 +41,16 @@ class Connection(object):
     """any other db options, these can be interface implementation specific"""
 
     @property
+    def interface_class(self):
+        interface_module, interface_class = utils.get_objects(self.interface_name)
+        return interface_class
+
+    @property
+    def interface(self):
+        interface_class = self.interface_class
+        return interface_class(self)
+
+    @property
     def host(self):
         """the db host"""
         if not hasattr(self, '_host'): self._host = None

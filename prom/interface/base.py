@@ -496,6 +496,9 @@ class Interface(object):
 
     def _delete(self, schema, query, **kwargs): raise NotImplementedError()
 
+    def spawn(self):
+        return type(self)(self.connection_config)
+
     def handle_error(self, schema, e, **kwargs):
         """
         try and handle the error, return False if the error can't be handled

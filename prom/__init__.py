@@ -13,7 +13,6 @@ from .query import Query, CacheQuery
 from . import decorators
 from .model import Orm
 from .interface import get_interface, set_interface, get_interfaces
-from .utils import get_objects
 from .exception import InterfaceError, Error
 
 
@@ -79,8 +78,7 @@ def configure(dsn):
     if c.name in get_interfaces():
         raise ValueError('a connection named "{}" has already been configured'.format(c.name))
 
-    interface_module, interface_class = get_objects(c.interface_name)
-    i = interface_class(c)
+    i = c.interface
     set_interface(i, c.name)
     return i
 
