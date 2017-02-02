@@ -1014,15 +1014,15 @@ class Query(object):
         i = self.interface
         return i.query(query_str, *query_args, **query_options)
 
-    def reduce(self, target_map, target_reduce=None, threads=0):
+    def reduce(self, target_map, target_reduce, threads=0):
         # first thing we do is we count how many rows we have
         import math
 
         if not threads:
             threads = multiprocessing.cpu_count()
 
+        # we subtract one for the main process
         map_threads = threads - 1 if threads > 1 else 1
-        reduce_threads = 1 if target_reduce else 0
 
         q = self.copy()
         total_count = q.count()
@@ -1033,8 +1033,8 @@ class Query(object):
             total_count
         ))
 
-        #queue = multiprocessing.JoinableQueue()
-        queue = MapQueue()
+        queue = multiprocessing.JoinableQueue()
+        #queue = MapQueue()
 
         mts = []
         for page in range(map_threads):
@@ -1048,29 +1048,49 @@ class Query(object):
             t.start()
             mts.append(t)
 
-        rts = []
-        for i in range(reduce_threads):
-            t = ReduceThread(
-                target=target_reduce,
-                queue=queue,
-            )
-            t.daemon = True
-            t.start()
-            rts.append(t)
+
+        while mts or not queue.empty():
+            try:
+                val = queue.get(True, 1.0)
+                target_reduce(val)
+
+            except queues.Empty:
+                pass
+
+            else:
+                queue.task_done()
+
+            # faster than using any((t.is_alive() for t in mts))
+            mts = [t for t in mts if t.is_alive()]
+
+#         while any((t.is_alive() for t in mts)) or not queue.empty():
+#             try:
+#                 val = queue.get(True, 1.0)
+#                 target_reduce(val)
+# 
+#             except queues.Empty:
+#                 pass
+# 
+#             else:
+#                 queue.task_done()
+
+        #queue.join()
+
+
+
 
         # wait for all the mappers to finish
-        for t in mts:
-            t.join()
+#             t.join()
+# 
+#         if rts:
+#             # wait for the queue to completely empty
+#             queue.join()
+# 
+#             # clean up the reducers
+#             for t in rts:
+#                 t.terminate()
 
-        if rts:
-            # wait for the queue to completely empty
-            queue.join()
-
-            # clean up the reducers
-            for t in rts:
-                t.terminate()
-
-        return queue
+        #return queue
 
     def _query(self, method_name):
         if not self.can_get: return self.default_val
@@ -1090,43 +1110,43 @@ class Query(object):
 
 
 #class MapQueue(multiprocessing.queues.JoinableQueue):
-class MapQueue(queues.JoinableQueue):
-    def __iter__(self):
-        while True:
-            try:
-                yield self.get_nowait()
+# class MapQueue(queues.JoinableQueue):
+#     def __iter__(self):
+#         while True:
+#             try:
+#                 yield self.get_nowait()
+# 
+#             except queues.Empty:
+#                 pass
+# 
+#             else:
+#                 self.task_done()
+# 
+#             finally:
+#                 if self.empty():
+#                     break
 
-            except queues.Empty:
-                pass
 
-            else:
-                self.task_done()
-
-            finally:
-                if self.empty():
-                    break
-
-
-class ReduceThread(multiprocessing.Process):
-    def __init__(self, target, queue):
-
-        def wrapper_target(target, queue):
-            while True:
-                try:
-                    val = queue.get(True, 1.0)
-                    target(val)
-
-                except queues.Empty:
-                    pass
-
-                else:
-                    queue.task_done()
-
-        super(ReduceThread, self).__init__(target=wrapper_target, kwargs={
-            "target": target,
-            "queue": queue,
-        })
-
+# class ReduceThread(multiprocessing.Process):
+#     def __init__(self, target, queue):
+# 
+#         def wrapper_target(target, queue):
+#             while True:
+#                 try:
+#                     val = queue.get(True, 1.0)
+#                     target(val)
+# 
+#                 except queues.Empty:
+#                     pass
+# 
+#                 else:
+#                     queue.task_done()
+# 
+#         super(ReduceThread, self).__init__(target=wrapper_target, kwargs={
+#             "target": target,
+#             "queue": queue,
+#         })
+# 
 
 class MapThread(multiprocessing.Process):
     def __init__(self, target, query, queue):
