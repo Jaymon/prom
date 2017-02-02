@@ -10,6 +10,7 @@ import os
 from contextlib import contextmanager
 import multiprocessing
 from multiprocessing import queues
+import math
 
 import threading
 try:
@@ -543,11 +544,10 @@ class Query(object):
 
     @property
     def interface(self):
+        if not self.orm_class: return None
         interface = getattr(self, "_interface", None)
         if not interface:
-            interface = None
-            if self.orm_class:
-                interface = self.orm_class.interface
+            interface = self.orm_class.interface
             self._interface = interface
         return interface
 
@@ -1015,9 +1015,17 @@ class Query(object):
         return i.query(query_str, *query_args, **query_options)
 
     def reduce(self, target_map, target_reduce, threads=0):
-        # first thing we do is we count how many rows we have
-        import math
+        """map/reduce this query among a bunch of processes
 
+        :param target_map: callable, this function will be called once for each 
+            row this query pulls out of the db, if you want something about the row
+            to be seen by the target_reduce function return that value from this function
+            and it will be queued for the target_reduce function to process it
+        :param target_reduce: callable, this function will be called for any non 
+            None value that the target_map function returns
+        :param threads: integer, if not passed in this will be pegged to how many
+            cpus python detects, which is almost always what you want
+        """
         if not threads:
             threads = multiprocessing.cpu_count()
 
@@ -1034,22 +1042,20 @@ class Query(object):
         ))
 
         queue = multiprocessing.JoinableQueue()
-        #queue = MapQueue()
 
-        mts = []
+        ts = []
         for page in range(map_threads):
             q = self.copy()
             q.limit(limit_count).offset(limit_count * page)
-            t = MapThread(
+            t = ReduceThread(
                 target=target_map,
                 query=q,
                 queue=queue,
             )
             t.start()
-            mts.append(t)
+            ts.append(t)
 
-
-        while mts or not queue.empty():
+        while ts or not queue.empty():
             try:
                 val = queue.get(True, 1.0)
                 target_reduce(val)
@@ -1061,36 +1067,7 @@ class Query(object):
                 queue.task_done()
 
             # faster than using any((t.is_alive() for t in mts))
-            mts = [t for t in mts if t.is_alive()]
-
-#         while any((t.is_alive() for t in mts)) or not queue.empty():
-#             try:
-#                 val = queue.get(True, 1.0)
-#                 target_reduce(val)
-# 
-#             except queues.Empty:
-#                 pass
-# 
-#             else:
-#                 queue.task_done()
-
-        #queue.join()
-
-
-
-
-        # wait for all the mappers to finish
-#             t.join()
-# 
-#         if rts:
-#             # wait for the queue to completely empty
-#             queue.join()
-# 
-#             # clean up the reducers
-#             for t in rts:
-#                 t.terminate()
-
-        #return queue
+            ts = [t for t in ts if t.is_alive()]
 
     def _query(self, method_name):
         if not self.can_get: return self.default_val
@@ -1104,54 +1081,22 @@ class Query(object):
 
     def __deepcopy__(self, memodict={}):
         instance = type(self)(self.orm_class)
-        for key, val in self.__dict__.iteritems():
-            setattr(instance, key, copy.deepcopy(val, memodict))
+        ignore_keys = set(["_interface"])
+        for key, val in self.__dict__.items():
+            if key not in ignore_keys:
+                setattr(instance, key, copy.deepcopy(val, memodict))
         return instance
 
 
-#class MapQueue(multiprocessing.queues.JoinableQueue):
-# class MapQueue(queues.JoinableQueue):
-#     def __iter__(self):
-#         while True:
-#             try:
-#                 yield self.get_nowait()
-# 
-#             except queues.Empty:
-#                 pass
-# 
-#             else:
-#                 self.task_done()
-# 
-#             finally:
-#                 if self.empty():
-#                     break
+class ReduceThread(multiprocessing.Process):
+    """Runs one of the reduce processes created in Query.reduce()
 
-
-# class ReduceThread(multiprocessing.Process):
-#     def __init__(self, target, queue):
-# 
-#         def wrapper_target(target, queue):
-#             while True:
-#                 try:
-#                     val = queue.get(True, 1.0)
-#                     target(val)
-# 
-#                 except queues.Empty:
-#                     pass
-# 
-#                 else:
-#                     queue.task_done()
-# 
-#         super(ReduceThread, self).__init__(target=wrapper_target, kwargs={
-#             "target": target,
-#             "queue": queue,
-#         })
-# 
-
-class MapThread(multiprocessing.Process):
+    You probably don't need to worry about this class
+    """
     def __init__(self, target, query, queue):
 
         def wrapper_target(target, query, queue):
+            # create a new connection just for this thread
             query.interface = query.interface.spawn()
             for orm in query.all():
                 val = target(orm)
@@ -1169,8 +1114,9 @@ class MapThread(multiprocessing.Process):
                         queue.cancel_join_thread()
                         break
 
-        super(MapThread, self).__init__(target=wrapper_target, kwargs={
-        #super(ReduceThread, self).__init__(kwargs={
+            query.interface.close()
+
+        super(ReduceThread, self).__init__(target=wrapper_target, kwargs={
             "target": target,
             "query": query,
             "queue": queue,

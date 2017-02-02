@@ -416,7 +416,7 @@ While Prom will most likely work on other versions, these are the versions we ar
 ### Postgres
 
     $ psql --version
-    psql (PostgreSQL) 9.1.9
+    psql (PostgreSQL) 9.3.6
 
 
 ## Installation
@@ -466,7 +466,7 @@ Prom installs using pip:
 
 ### Using for the first time
 
-Prom takes the approach that you don't want to be hassled with table installation while developing, so when it tries to do something and sees that the table doesn't yet exist, it will use your defined fields for your `prom.Orm` child and create a table for you, that way you don't have to remember to run a script or craft some custom db query to add your tables, Prom takes care of that for you automatically.
+Prom takes the approach that you don't want to be hassled with table installation while developing, so when it tries to do something and sees that the table doesn't yet exist, it will use your defined fields for your `prom.Orm` child and create a table for you, that way you don't have to remember to run a script or craft some custom db query to add your tables, Prom takes care of that for you automatically. Likewise, if you add a field (and it's not required) then prom will go ahead and add that field to your table so you don't have to bother with crafting `ALTER` queries while developing.
 
 If you want to install the tables manually, you can create a script or something and use the `install()` method:
 

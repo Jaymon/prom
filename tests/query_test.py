@@ -106,6 +106,24 @@ class LimitTest(TestCase):
 
 
 class QueryTest(BaseTestCase):
+    def test_reduce(self):
+        _q = self.get_query()
+        self.insert(_q, 100)
+
+        def target_map(o):
+            if o.pk % 2 == 0:
+                return o.pk
+
+        pk_count = 0
+        d = {"pk_count": 0}
+        def target_reduce(pk):
+            d["pk_count"] += 1
+
+        q = _q.copy()
+        q.reduce(target_map, target_reduce, threads=3)
+        #q.reduce(target_map, target_reduce)
+        self.assertEqual(50, d["pk_count"])
+
     def test_between(self):
         _q = self.get_query()
         self.insert(_q, 5)

@@ -16,7 +16,7 @@ from .interface import get_interface, set_interface, get_interfaces
 from .exception import InterfaceError, Error
 
 
-__version__ = '0.9.94'
+__version__ = '0.9.95'
 
 
 # get rid of "No handler found" warnings (cribbed from requests)
