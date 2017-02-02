@@ -497,6 +497,10 @@ class Interface(object):
     def _delete(self, schema, query, **kwargs): raise NotImplementedError()
 
     def spawn(self):
+        """Return a new instance of this Interface with the same connection configuration
+
+        :returns: Interface instance
+        """
         return type(self)(self.connection_config)
 
     def handle_error(self, schema, e, **kwargs):

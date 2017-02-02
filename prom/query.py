@@ -9,6 +9,7 @@ import logging
 import os
 from contextlib import contextmanager
 import multiprocessing
+from multiprocessing import queues
 
 import threading
 try:
@@ -1013,41 +1014,63 @@ class Query(object):
         i = self.interface
         return i.query(query_str, *query_args, **query_options)
 
-    def reduce(self, target, threads=0):
+    def reduce(self, target_map, target_reduce=None, threads=0):
         # first thing we do is we count how many rows we have
         import math
 
         if not threads:
             threads = multiprocessing.cpu_count()
 
+        map_threads = threads - 1 if threads > 1 else 1
+        reduce_threads = 1 if target_reduce else 0
+
         q = self.copy()
         total_count = q.count()
-        pout.v(total_count)
+        limit_count = int(math.ceil(float(total_count) / float(map_threads)))
+        logger.info("{} processes will handle {} rows each for a total of {}".format(
+            map_threads,
+            limit_count,
+            total_count
+        ))
 
-        limit_count = int(math.ceil(float(total_count) / float(threads)))
-        pout.v(limit_count)
+        #queue = multiprocessing.JoinableQueue()
+        queue = MapQueue()
 
-        #global manager
-        manager = multiprocessing.Manager()
-        d = manager.dict()
-
-        # we close the connection to open it local in this thread
-        #self.interface.close()
-        #del self.interface
-
-        ts = []
-        pout.b()
-        for page in range(threads):
+        mts = []
+        for page in range(map_threads):
             q = self.copy()
             q.limit(limit_count).offset(limit_count * page)
-            t = ReduceThread(target=target, query=q, connection=q.interface.connection_config, args=(d,))
+            t = MapThread(
+                target=target_map,
+                query=q,
+                queue=queue,
+            )
             t.start()
-            ts.append(t)
+            mts.append(t)
 
-        for t in ts:
+        rts = []
+        for i in range(reduce_threads):
+            t = ReduceThread(
+                target=target_reduce,
+                queue=queue,
+            )
+            t.daemon = True
+            t.start()
+            rts.append(t)
+
+        # wait for all the mappers to finish
+        for t in mts:
             t.join()
 
-        return d
+        if rts:
+            # wait for the queue to completely empty
+            queue.join()
+
+            # clean up the reducers
+            for t in rts:
+                t.terminate()
+
+        return queue
 
     def _query(self, method_name):
         if not self.can_get: return self.default_val
@@ -1066,66 +1089,72 @@ class Query(object):
         return instance
 
 
-#class ReduceThread(threading.Thread):
+#class MapQueue(multiprocessing.queues.JoinableQueue):
+class MapQueue(queues.JoinableQueue):
+    def __iter__(self):
+        while True:
+            try:
+                yield self.get_nowait()
+
+            except queues.Empty:
+                pass
+
+            else:
+                self.task_done()
+
+            finally:
+                if self.empty():
+                    break
+
+
 class ReduceThread(multiprocessing.Process):
-    def __init__(self, target, query, connection, args=None, kwargs=None):
+    def __init__(self, target, queue):
 
-        if args is None: args = ()
-        if kwargs is None: kwargs = {}
+        def wrapper_target(target, queue):
+            while True:
+                try:
+                    val = queue.get(True, 1.0)
+                    target(val)
 
-        def wrapper_target(target, query, connection, args, kwargs):
-            #query.interface = query.interface.spawn()
-            #interface_class = connection.interface_class
-            #interface = interface_class(connection)
-            #time.sleep(random.choice([0.1, 0.2, 0.25, 0.3]))
-            #interface = SQLite(connection)
-            #inter = SQLite()
-            #query.interface = interface
-            #interface.connect()
-            #query.interface = connection.interface
-            #query.interface.connect()
-            #conn = interface.get_connection()
-            #pout.v(multiprocessing.current_process().name, id(query), id(inter))
+                except queues.Empty:
+                    pass
 
-            #pout.v(id(conn))
-            #pout.v(id(query.interface))
-            query.interface = connection.interface
-            for orm in query.all():
-                target(orm, *args, **kwargs)
-
-#         super(ReduceThread, self).__init__(
-#             target=wrapper_target,
-#             args=(target, query, args[0], kwargs),
-#         )
+                else:
+                    queue.task_done()
 
         super(ReduceThread, self).__init__(target=wrapper_target, kwargs={
-        #super(ReduceThread, self).__init__(kwargs={
             "target": target,
-            "connection": connection,
-            "query": query,
-            "args": args,
-            "kwargs": kwargs,
+            "queue": queue,
         })
 
-#     def run(self, target, query, connection, args, kwargs):
-#         inter = SQLite()
-#         pout.v(multiprocessing.current_process().name, id(query), id(inter))
-#         #for orm in query.all():
-#         #    target(orm, *args, **kwargs)
 
-#     def run(self):
-#         # we are threaded when this is run
-#         #pout.v("run")
-#         for orm in self.query.get():
-#             #with self.lock:
-#             self._Thread__target(orm, self.lock)
-# 
-#         #super(ReduceThread, self).run(*args, **kwargs)
+class MapThread(multiprocessing.Process):
+    def __init__(self, target, query, queue):
 
-#     def start(self, *args, **kwargs):
-#         pout.v("start")
-#         #return super(ReduceThread, self).start(*args, **kwargs)
-#         return super(ReduceThread, self).start()
+        def wrapper_target(target, query, queue):
+            query.interface = query.interface.spawn()
+            for orm in query.all():
+                val = target(orm)
+                if val:
+                    try:
+                        # queue size taps out at 32767, booooo
+                        # http://stackoverflow.com/questions/5900985/multiprocessing-queue-maxsize-limit-is-32767
+                        #queue.put_nowait(val)
+                        queue.put(val, True, 1.0)
+                    except queues.Full as e:
+                        logger.exception(e)
+                        #queue.close()
+                        # If we ever hit a full queue you lose a ton of data but if you
+                        # don't call this method then the process just hangs
+                        queue.cancel_join_thread()
+                        break
+
+        super(MapThread, self).__init__(target=wrapper_target, kwargs={
+        #super(ReduceThread, self).__init__(kwargs={
+            "target": target,
+            "query": query,
+            "queue": queue,
+        })
 
 
 class BaseCacheQuery(Query):
