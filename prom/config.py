@@ -42,11 +42,13 @@ class Connection(object):
 
     @property
     def interface_class(self):
+        """Return the configured interface class object that can be used to create new instances"""
         interface_module, interface_class = utils.get_objects(self.interface_name)
         return interface_class
 
     @property
     def interface(self):
+        """Return a new Interface instance using this configuration"""
         interface_class = self.interface_class
         return interface_class(self)
 
@@ -62,7 +64,7 @@ class Connection(object):
         check host for a :port, and split that off into the .port attribute if there
         """
         # normalize the host so urlparse can parse it correctly
-        # http://stackoverflow.com/questions/9530950/parsing-hostname-and-port-from-string-or-url#comment12075005_9531210
+        # http://stackoverflow.com/questions/9530950/#comment12075005_9531210
         if re.search(ur'\:memory\:', h, re.I):
             h = re.sub(ur'(?:\S+|^)\/\/', '', h)
             self._host = h

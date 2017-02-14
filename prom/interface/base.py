@@ -170,6 +170,8 @@ class Interface(object):
 
     def get_connection(self): raise NotImplementedError()
 
+    def is_connected(self): return self.connected
+
     @contextmanager
     def connection(self, connection=None, **kwargs):
         try:
@@ -615,10 +617,10 @@ class SQLInterface(Interface):
 
             return ret
 
-    def _normalize_date_SQL(self, field_name, field_kwargs):
+    def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
 
-    def _normalize_field_SQL(self, schema, field_name):
+    def _normalize_field_SQL(self, schema, field_name, symbol):
         return field_name, self.val_placeholder
 
     def _normalize_val_SQL(self, schema, symbol_map, field_name, field_val, field_kwargs=None):
@@ -632,7 +634,7 @@ class SQLInterface(Interface):
             # kwargs take precedence because None is a perfectly valid field_val
             f = schema.fields[field_name]
             if issubclass(f.type, (datetime.datetime, datetime.date)):
-                format_strs = self._normalize_date_SQL(field_name, field_kwargs)
+                format_strs = self._normalize_date_SQL(field_name, field_kwargs, symbol)
                 for fname, fvstr, farg in format_strs:
                     if format_str:
                         format_str += ' AND '
@@ -651,7 +653,7 @@ class SQLInterface(Interface):
 
         else:
             if is_list:
-                field_name, format_val_str = self._normalize_field_SQL(schema, field_name)
+                field_name, format_val_str = self._normalize_field_SQL(schema, field_name, symbol)
                 format_str = '{} {} ({})'.format(field_name, symbol, ', '.join([format_val_str] * len(field_val)))
                 format_args.extend(field_val)
 
@@ -660,7 +662,7 @@ class SQLInterface(Interface):
                 if field_val is None:
                     symbol = symbol_map['none_symbol']
 
-                field_name, format_val_str = self._normalize_field_SQL(schema, field_name)
+                field_name, format_val_str = self._normalize_field_SQL(schema, field_name, symbol)
                 format_str = '{} {} {}'.format(field_name, symbol, format_val_str)
                 format_args.append(field_val)
 
@@ -693,6 +695,10 @@ class SQLInterface(Interface):
             'gte': {'symbol': '>='},
             'lt': {'symbol': '<'},
             'lte': {'symbol': '<='},
+            # https://www.tutorialspoint.com/postgresql/postgresql_like_clause.htm
+            # https://www.tutorialspoint.com/sqlite/sqlite_like_clause.htm
+            'like': {'symbol': 'LIKE'},
+            'nlike': {'symbol': 'NOT LIKE'},
         }
 
         query_args = []

@@ -246,9 +246,12 @@ class PostgreSQL(SQLInterface):
         ret = self.query(query_str, *query_vals, **kwargs)
         return ret[0][pk_name]
 
-    def _normalize_field_SQL(self, schema, field_name):
+    def _normalize_field_SQL(self, schema, field_name, symbol):
         format_field_name = field_name
         format_val_str = self.val_placeholder
+
+        if 'LIKE' in symbol:
+            format_field_name += '::text'
 
         # postgres specific for getting around case sensitivity:
         if schema.fields[field_name].options.get('ignore_case', False):
@@ -269,7 +272,7 @@ class PostgreSQL(SQLInterface):
 
         return ',\n'.join(query_sort_str), query_args
 
-    def _normalize_date_SQL(self, field_name, field_kwargs):
+    def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         """
         allow extracting information from date
 

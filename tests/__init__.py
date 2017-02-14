@@ -112,7 +112,7 @@ class BaseTestCase(TestCase):
         orm_class = self.get_orm_class()
         return orm_class.query
 
-    def get_fields(self, schema):
+    def get_fields(self, schema, **field_kwargs):
         """return the fields of orm with randomized data"""
         fields = {}
         for k, v in schema.fields.items():
@@ -139,6 +139,7 @@ class BaseTestCase(TestCase):
             else:
                 raise ValueError("{}".format(v.type))
 
+        fields.update(field_kwargs)
         return fields
 
     def insert(self, *args, **kwargs):

@@ -72,15 +72,13 @@ def configure(dsn):
 
     dsn -- string -- a properly formatted prom dsn, see DsnConnection for how to format the dsn
     """
-    #global interfaces
-
     c = DsnConnection(dsn)
     if c.name in get_interfaces():
         raise ValueError('a connection named "{}" has already been configured'.format(c.name))
 
-    i = c.interface
-    set_interface(i, c.name)
-    return i
+    inter = c.interface
+    set_interface(inter, c.name)
+    return inter
 
 
 configure_environ()

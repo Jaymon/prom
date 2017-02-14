@@ -1,24 +1,16 @@
 #!/usr/bin/env python
-# I shamefully ripped most of this off from fbconsole
 # http://docs.python.org/distutils/setupscript.html
 # http://docs.python.org/2/distutils/examples.html
 
-import sys
 from setuptools import setup
-import ast
+import re
 import os
 
-name = 'prom'
-version = ''
-with open('{}{}__init__.py'.format(name, os.sep), 'rU') as f:
-    for node in (n for n in ast.parse(f.read()).body if isinstance(n, ast.Assign)):
-        node_name = node.targets[0]
-        if isinstance(node_name, ast.Name) and node_name.id.startswith('__version__'):
-            version = node.value.s
-            break
 
-if not version:
-    raise RuntimeError('Unable to find version number')
+name = 'prom'
+with open(os.path.join(name, "__init__.py")) as f:
+    version = re.search("^__version__\s*=\s*[\'\"]([^\'\"]+)", f.read(), flags=re.I | re.M).group(1)
+
 
 setup(
     name=name,

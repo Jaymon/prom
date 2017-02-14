@@ -20,6 +20,7 @@ except ImportError:
 
 from . import decorators
 from .utils import make_list, get_objects, make_dict, make_hash
+from .interface import get_interfaces
 
 
 logger = logging.getLogger(__name__)
@@ -773,6 +774,32 @@ class Query(object):
         self.fields_where.append(field_name, ["nin", field_name, fv, field_kwargs])
         return self
 
+    def like_field(self, field_name, *field_val, **field_kwargs):
+        """Perform a field_name LIKE field_val query
+
+        :param field_name: string, the field we are filtering on
+        :param field_val: string, the like query: %val, %val%, val%
+        :returns: self, for fluid interface
+        """
+        if not field_val:
+            raise ValueError("Cannot LIKE nothing")
+        fv = field_val[0]
+        self.fields_where.append(field_name, ["like", field_name, fv, field_kwargs])
+        return self
+
+    def nlike_field(self, field_name, *field_val, **field_kwargs):
+        """Perform a field_name NOT LIKE field_val query
+
+        :param field_name: string, the field we are filtering on
+        :param field_val: string, the like query: %val, %val%, val%
+        :returns: self, for fluid interface
+        """
+        if not field_val:
+            raise ValueError("Cannot NOT LIKE nothing")
+        fv = field_val[0]
+        self.fields_where.append(field_name, ["nlike", field_name, fv, field_kwargs])
+        return self
+
     def sort_field(self, field_name, direction, field_vals=None):
         """
         sort this query by field_name in directrion
@@ -1043,6 +1070,17 @@ class Query(object):
 
         queue = multiprocessing.JoinableQueue()
 
+        # close all open db global connections just in case, because we can't be sure
+        # what the target_map methods are going to do, we want them to re-open connections
+        # that they need
+        interfaces = get_interfaces()
+        for name, inter in interfaces.items():
+            inter.close()
+
+        # just in case we also close the query connection since it can in theory
+        # be non-global
+        q.interface.close()
+
         ts = []
         for page in range(map_threads):
             q = self.copy()
@@ -1095,9 +1133,16 @@ class ReduceThread(multiprocessing.Process):
     """
     def __init__(self, target, query, queue):
 
+        name = "Reduce-{}to{}".format(
+            query.bounds.offset,
+            query.bounds.offset + query.bounds.limit
+        )
+
+        logger.debug("Starting process: {}".format(name))
+
         def wrapper_target(target, query, queue):
             # create a new connection just for this thread
-            query.interface = query.interface.spawn()
+            #query.interface = query.interface.spawn()
             for orm in query.all():
                 val = target(orm)
                 if val:
@@ -1116,7 +1161,7 @@ class ReduceThread(multiprocessing.Process):
 
             query.interface.close()
 
-        super(ReduceThread, self).__init__(target=wrapper_target, kwargs={
+        super(ReduceThread, self).__init__(target=wrapper_target, name=name, kwargs={
             "target": target,
             "query": query,
             "queue": queue,

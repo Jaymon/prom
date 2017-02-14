@@ -106,12 +106,46 @@ class LimitTest(TestCase):
 
 
 class QueryTest(BaseTestCase):
+    def test_like(self):
+        _q = self.get_query()
+        self.insert(_q, 5)
+        for bar in ["bar che", "foo bar", "foo bar che"]:
+            fields = self.get_fields(_q.orm_class.schema, bar=bar)
+            _q.orm_class.create(**fields)
+
+        count = _q.copy().like_bar("bar%").count()
+        self.assertEqual(1, count)
+
+        count = _q.copy().like_bar("%bar").count()
+        self.assertEqual(1, count)
+
+        count = _q.copy().like_bar("%bar%").count()
+        self.assertEqual(3, count)
+
+        count = _q.copy().nlike_bar("bar%").count()
+        self.assertEqual(7, count)
+
+        count = _q.copy().nlike_bar("%bar").count()
+        self.assertEqual(7, count)
+
+        count = _q.copy().nlike_bar("%bar%").count()
+        self.assertEqual(5, count)
+
+        count = _q.copy().like_bar("bar____").count()
+        self.assertEqual(1, count)
+
+        count = _q.copy().like_bar("____bar").count()
+        self.assertEqual(1, count)
+
+        count = _q.copy().like_bar("____bar____").count()
+        self.assertEqual(1, count)
+
     def test_reduce(self):
         _q = self.get_query()
         self.insert(_q, 100)
 
         def target_map(o):
-            if o.pk % 2 == 0:
+            if o.pk and (o.pk % 2 == 0):
                 return o.pk
 
         pk_count = 0

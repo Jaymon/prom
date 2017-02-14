@@ -339,7 +339,7 @@ class SQLite(SQLInterface):
         fields = self._query(query_str, **kwargs)
         return set((d['name'] for d in fields))
 
-    def _normalize_date_SQL(self, field_name, field_kwargs):
+    def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         """
         allow extracting information from date
 
