@@ -7,7 +7,7 @@ import datetime
 from .query import Query, Iterator
 from . import decorators, utils
 from .interface import get_interface
-from .config import Schema, Field, Index
+from .config import Schema, Field, ObjectField, Index
 
 
 class OrmPool(utils.Pool):
@@ -326,6 +326,11 @@ class Orm(object):
         fields = {}
         for field_name in self.modified_fields:
             fields[field_name] = getattr(self, field_name)
+
+        # compensate for us not having knowledge of certain fields changing
+        for field_name, field in self.schema.normal_fields.items():
+            if isinstance(field, ObjectField):
+                fields[field_name] = getattr(self, field_name)
 
         return fields
 

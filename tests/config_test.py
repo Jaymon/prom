@@ -327,12 +327,22 @@ class ConnectionTest(BaseTestCase):
 class ObjectFieldTest(BaseTestCase):
     field_class = ObjectField
 
-    def test_imethods_pickle_sqlite(self):
+    def get_sqlite_orm(self):
         class IMethodPickleOrmSQLite(Orm):
             interface = self.create_sqlite_interface()
             body = self.field_class(True)
 
-        o = IMethodPickleOrmSQLite()
+        return IMethodPickleOrmSQLite()
+
+    def get_postgres_orm(self):
+        class IMethodPickleOrmPostgres(Orm):
+            interface = self.create_postgres_interface()
+            body = self.field_class(True)
+
+        return IMethodPickleOrmPostgres()
+
+    def test_imethods_pickle_sqlite(self):
+        o = self.get_sqlite_orm()
         o.body = {"foo": 1}
         o.save()
 
@@ -340,12 +350,19 @@ class ObjectFieldTest(BaseTestCase):
         self.assertEqual(o.body, o2.body)
 
     def test_imethods_pickle_postgres(self):
-        class IMethodPickleOrmPostgres(Orm):
-            interface = self.create_postgres_interface()
-            body = self.field_class(True)
-
-        o = IMethodPickleOrmPostgres()
+        o = self.get_postgres_orm()
         o.body = {"bar": 1}
+        o.save()
+
+        o2 = type(o).query.get_pk(o.pk)
+        self.assertEqual(o.body, o2.body)
+
+    def test_modify(self):
+        o = self.get_sqlite_orm()
+        o.body = {"bar": 1}
+        o.save()
+
+        o.body["che"] = 2
         o.save()
 
         o2 = type(o).query.get_pk(o.pk)
