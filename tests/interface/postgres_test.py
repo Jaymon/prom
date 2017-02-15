@@ -40,18 +40,18 @@ class InterfacePostgresTest(BaseTestInterface):
     def test_table_persist(self):
         i = self.get_interface()
         s = self.get_schema()
-        r = i.has_table(s.table)
+        r = i.has_table(str(s))
         self.assertFalse(r)
 
         r = i.set_table(s)
 
-        r = i.has_table(s.table)
+        r = i.has_table(str(s))
         self.assertTrue(r)
 
         # make sure it persists
         i.close()
         i = self.get_interface()
-        self.assertTrue(i.has_table(s.table))
+        self.assertTrue(i.has_table(str(s)))
 
     def test_set_table_postgres(self):
         """test some postgres specific things"""

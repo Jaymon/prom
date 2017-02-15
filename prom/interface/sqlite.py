@@ -182,6 +182,7 @@ class SQLite(SQLInterface):
         field_type = ""
 
         if field.options.get('pk', False):
+            # this CANNOT be set to BIGINT PRIMARY KEY, it won't actually autoincrement
             field_type = 'INTEGER PRIMARY KEY'
 
         else:
@@ -232,11 +233,11 @@ class SQLite(SQLInterface):
             if field.is_ref():
                 if field.required: # strong ref, it deletes on fk row removal
                     ref_s = field.schema
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s.table, ref_s.pk.name)
+                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s, ref_s.pk.name)
 
                 else: # weak ref, it sets column to null on fk row removal
                     ref_s = field.schema
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s.table, ref_s.pk.name)
+                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s, ref_s.pk.name)
 
         return '{} {}'.format(field_name, field_type)
 
@@ -245,7 +246,7 @@ class SQLite(SQLInterface):
         http://sqlite.org/lang_createtable.html
         """
         query_str = []
-        query_str.append("CREATE TABLE {} (".format(schema.table))
+        query_str.append("CREATE TABLE {} (".format(schema))
 
         query_fields = []
         for field_name, field in schema.fields.items():
@@ -332,12 +333,58 @@ class SQLite(SQLInterface):
 
         return ret
 
-    def _get_fields(self, schema, **kwargs):
-        """return all the fields for the given schema"""
-        ret = []
-        query_str = 'PRAGMA table_info({})'.format(schema)
+    def _get_fields(self, table_name, **kwargs):
+        """return all the fields for the given table"""
+        ret = {}
+        query_str = 'PRAGMA table_info({})'.format(table_name)
         fields = self._query(query_str, **kwargs)
-        return set((d['name'] for d in fields))
+        #pout.v([dict(d) for d in fields])
+
+        query_str = 'PRAGMA foreign_key_list({})'.format(table_name)
+        fks = {f["from"]: f for f in self._query(query_str, **kwargs)}
+        #pout.v([dict(d) for d in fks.values()])
+
+        pg_types = {
+            "INTEGER": int,
+            "BIGINT": long,
+            "DOUBLE PRECISION": float,
+            "NUMERIC": decimal.Decimal,
+            "BOOLEAN": bool,
+            "DATE": datetime.date,
+            "TIMESTAMP": datetime.datetime,
+            "CHARACTER": str,
+            "VARCHAR": str,
+            "TEXT": str,
+        }
+
+        # the rows we can set: field_type, name, field_required, min_size, max_size,
+        #   size, unique, pk, <foreign key info>
+        # These keys will roughly correspond with schema.Field
+        # TODO -- we could actually use "type" to get the size because SQLite returns
+        # a value like VARCHAR[32]
+        for row in fields:
+            field = {
+                "name": row["name"],
+                "field_required": bool(row["notnull"]) or bool(row["pk"]),
+                "pk": bool(row["pk"]),
+            }
+
+            for tname, ty in pg_types.items():
+                if row["type"].startswith(tname):
+                    field["field_type"] = ty
+                    break
+
+            if field["pk"] and field["field_type"] is int:
+                # we compensate for SQLite internally setting pk to int
+                field["field_type"] = long
+
+            if row["name"] in fks:
+                field["schema_table_name"] = fks[row["name"]]["table"]
+                field["ref_table_name"] = fks[row["name"]]["table"]
+
+            ret[field["name"]] = field
+
+        return ret
 
     def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         """

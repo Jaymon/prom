@@ -44,12 +44,12 @@ class BaseTestInterface(BaseTestCase):
     def test_set_table(self):
         i = self.get_interface()
         s = self.get_schema()
-        r = i.has_table(s.table)
+        r = i.has_table(str(s))
         self.assertFalse(r)
 
         r = i.set_table(s)
 
-        r = i.has_table(s.table)
+        r = i.has_table(str(s))
         self.assertTrue(r)
 
         # make sure it persists
@@ -57,7 +57,7 @@ class BaseTestInterface(BaseTestCase):
         # goes away when the connections is closed
 #        i.close()
 #        i = self.get_interface()
-#        self.assertTrue(i.has_table(s.table))
+#        self.assertTrue(i.has_table(str(s)))
 
         # make sure known indexes are there
         indexes = i.get_indexes(s)
@@ -110,10 +110,10 @@ class BaseTestInterface(BaseTestCase):
         s = self.get_schema()
         r = i.set_table(s)
         r = i.get_tables()
-        self.assertTrue(s.table in r)
+        self.assertTrue(str(s) in r)
 
-        r = i.get_tables(s.table)
-        self.assertTrue(s.table in r)
+        r = i.get_tables(str(s))
+        self.assertTrue(str(s) in r)
 
     def test_query_modified_table(self):
         i = self.get_interface()
@@ -136,15 +136,15 @@ class BaseTestInterface(BaseTestCase):
         s = self.get_schema()
 
         r = i.set_table(s)
-        self.assertTrue(i.has_table(s.table))
+        self.assertTrue(i.has_table(str(s)))
 
         r = i.delete_table(s)
-        self.assertFalse(i.has_table(s.table))
+        self.assertFalse(i.has_table(str(s)))
 
         # make sure it persists
         i.close()
         i = self.get_interface()
-        self.assertFalse(i.has_table(s.table))
+        self.assertFalse(i.has_table(str(s)))
 
     def test_delete_tables(self):
 
@@ -499,11 +499,48 @@ class BaseTestInterface(BaseTestCase):
         self.assertTrue(i.has_table(table_name_1))
         self.assertTrue(i.has_table(table_name_2))
 
-    def test__get_fields(self):
-        i, s = self.get_table()
-        fields = set([u'_id', u'bar', u'foo'])
-        ret_fields = i._get_fields(s)
-        self.assertEqual(fields, ret_fields)
+    def test_get_fields(self):
+        orm_class = self.get_orm_class()
+        orm_class.install()
+
+        i = self.get_interface()
+        s = Schema(
+            self.get_table_name(),
+            _id=Field(long, pk=True),
+            a_bool_y=Field(bool, True),
+            a_bool_n=Field(bool, False),
+            a_sint_y=Field(int, True, size=50),
+            a_sint_n=Field(int, False, size=50),
+            a_dec_y=Field(decimal.Decimal, True),
+            a_dec_n=Field(decimal.Decimal, False),
+            a_float_y=Field(float, True, size=10),
+            a_float_n=Field(float, False, size=10),
+            a_long_y=Field(long, True),
+            a_long_n=Field(long, False),
+            a_fk_y=Field(orm_class, True),
+            a_fk_n=Field(orm_class, False),
+            a_dt_y=Field(datetime.datetime, True),
+            a_dt_n=Field(datetime.datetime, False),
+            a_d_y=Field(datetime.date, True),
+            a_d_n=Field(datetime.date, False),
+            a_int_y=Field(int, True),
+            a_int_n=Field(int, False),
+            a_str_y=Field(str, True),
+            a_str_n=Field(str, False),
+            a_vchar_y=Field(str, True, max_size=512),
+            a_vchar_n=Field(str, False, max_size=512),
+            a_char_y=Field(str, True, size=32),
+            a_char_n=Field(str, False, size=32),
+        )
+        r = i.set_table(s)
+
+        fields = i.get_fields(str(s))
+
+        for field_name, field in s:
+            field2 = fields[field_name]
+            self.assertEqual(field.type, field2["field_type"])
+            self.assertEqual(field.is_pk(), field2["pk"])
+            self.assertEqual(field.required, field2["field_required"], field_name)
 
     def test__set_all_fields(self):
         i, s = self.get_table()
@@ -518,7 +555,7 @@ class BaseTestInterface(BaseTestCase):
         with self.assertRaises(ValueError):
             ret = i._set_all_fields(s)
 
-        s = self.get_schema(table_name=s.table)
+        s = self.get_schema(table_name=str(s))
         s.che = str, False
         ret = i._set_all_fields(s)
         self.assertTrue(ret)
@@ -535,7 +572,7 @@ class BaseTestInterface(BaseTestCase):
         with self.assertRaises(prom.InterfaceError):
             rd = i.insert(s, fields)
 
-        s = self.get_schema(table_name=s.table)
+        s = self.get_schema(table_name=str(s))
         s.set_field("che", Field(str, False)) # not required so error recovery can fire
         pk = i.insert(s, fields)
         self.assertLess(0, pk)

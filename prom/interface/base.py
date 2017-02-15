@@ -250,7 +250,7 @@ class Interface(object):
         """
         with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
-            if self.has_table(schema.table, **kwargs): return True
+            if self.has_table(str(schema), **kwargs): return True
 
             try:
                 with self.transaction(**kwargs):
@@ -294,7 +294,7 @@ class Interface(object):
         """
         with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
-            return self._get_tables(table_name, **kwargs)
+            return self._get_tables(str(table_name), **kwargs)
 
     def _get_tables(self, table_name, **kwargs): raise NotImplementedError()
 
@@ -306,7 +306,7 @@ class Interface(object):
         """
         with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
-            if not self.has_table(schema.table, **kwargs): return True
+            if not self.has_table(str(schema), **kwargs): return True
             with self.transaction(**kwargs):
                 self._delete_table(schema, **kwargs)
 
@@ -330,6 +330,13 @@ class Interface(object):
             self._delete_tables(**kwargs)
 
     def _delete_tables(self, **kwargs): raise NotImplementedError()
+
+    def get_fields(self, table_name, **kwargs):
+        with self.connection(**kwargs) as connection:
+            kwargs['connection'] = connection
+            return self._get_fields(str(table_name), **kwargs)
+
+    def _get_fields(self, table_name, **kwargs): raise NotImplementedError()
 
     def get_indexes(self, schema, **kwargs):
         """
@@ -825,7 +832,7 @@ class SQLInterface(Interface):
             query_args.append(field_val)
 
         query_str = query_str.format(
-            schema.table,
+            str(schema),
             ',{}'.format(os.linesep).join(field_str),
             where_query_str
         )
@@ -857,7 +864,7 @@ class SQLInterface(Interface):
         the reason they have to be NULL is adding fields to Postgres that can be NULL
         is really light, but if they have a default value, then it can be costly
         """
-        current_fields = self._get_fields(schema, **kwargs)
+        current_fields = self.get_fields(schema, **kwargs)
         for field_name, field in schema.fields.items():
             if field_name not in current_fields:
                 if field.required:

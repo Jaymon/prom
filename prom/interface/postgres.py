@@ -137,7 +137,7 @@ class PostgreSQL(SQLInterface):
         http://pythonhosted.org/psycopg2/usage.html#adaptation-of-python-values-to-sql-types
         """
         query_str = []
-        query_str.append("CREATE TABLE {} (".format(schema.table))
+        query_str.append("CREATE TABLE {} (".format(str(schema)))
 
         query_fields = []
         for field_name, field in schema.fields.items():
@@ -152,23 +152,73 @@ class PostgreSQL(SQLInterface):
         query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(str(schema))
         ret = self.query(query_str, ignore_result=True, **kwargs)
 
-    def _get_fields(self, schema, **kwargs):
+    def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given schema"""
-        ret = []
+        ret = {}
         query_str = []
+        query_args = ['f', table_name]
+
         query_str.append('SELECT')
-        query_str.append('  attname')
+        query_str.append(',  '.join([
+            'a.attnum',
+            'a.attname',
+            'a.attnotnull',
+            't.typname',
+            'i.indisprimary',
+            #'s.conname',
+            #'pg_get_constraintdef(s.oid, true) as condef',
+            'c.relname AS confrelname',
+        ]))
         query_str.append('FROM')
-        query_str.append('  pg_class, pg_attribute')
+        query_str.append('  pg_attribute a')
+        query_str.append('JOIN pg_type t ON a.atttypid = t.oid')
+        query_str.append('LEFT JOIN pg_index i ON a.attrelid = i.indrelid')
+        query_str.append('  AND a.attnum = any(i.indkey)')
+        query_str.append('LEFT JOIN pg_constraint s ON a.attrelid = s.conrelid')
+        query_str.append('  AND s.contype = {} AND a.attnum = any(s.conkey)'.format(self.val_placeholder))
+        query_str.append('LEFT JOIN pg_class c ON s.confrelid = c.oid')
         query_str.append('WHERE')
-        query_str.append('  pg_class.relname = %s')
-        query_str.append('  AND pg_class.oid = pg_attribute.attrelid')
-        query_str.append('  AND pg_attribute.attnum > 0')
-        #query_str.append('ORDER BY')
-        #query_str.append('  attname')
+        query_str.append('  a.attrelid = {}::regclass'.format(self.val_placeholder))
+        query_str.append('  AND a.attisdropped = False')
+        query_str.append('  AND a.attnum > 0')
+        query_str.append('ORDER BY a.attnum ASC')
+
         query_str = os.linesep.join(query_str)
-        fields = self.query(query_str, schema.table, **kwargs)
-        return set((d['attname'] for d in fields))
+        fields = self.query(query_str, *query_args, **kwargs)
+
+        pg_types = {
+            "float8": float,
+            "timestamp": datetime.datetime,
+            "int2": int,
+            "int4": int,
+            "int8": long,
+            "numeric": decimal.Decimal,
+            "text": str,
+            "bpchar": str,
+            "varchar": str,
+            "bool": bool,
+            "date": datetime.date,
+        }
+
+        # the rows we can set: field_type, name, field_required, min_size, max_size,
+        #   size, unique, pk, <foreign key info>
+        # These keys will roughly correspond with schema.Field
+        for row in fields:
+            field = {
+                "name": row["attname"],
+                "field_type": pg_types[row["typname"]],
+                "field_required": row["attnotnull"],
+                "pk": bool(row["indisprimary"]),
+            }
+
+            if row["confrelname"]:
+                # TODO -- I can't decide which name I like
+                field["schema_table_name"] = row["confrelname"]
+                field["ref_table_name"] = row["confrelname"]
+
+            ret[field["name"]] = field
+
+        return ret
 
     def _get_indexes(self, schema, **kwargs):
         """return all the indexes for the given schema"""
@@ -186,7 +236,7 @@ class PostgreSQL(SQLInterface):
         query_str.append('  tbl.relname, i.relname')
         query_str = os.linesep.join(query_str)
 
-        indexes = self.query(query_str, 'r', schema.table, **kwargs)
+        indexes = self.query(query_str, 'r', str(schema), **kwargs)
 
         # massage the data into more readable {index_name: fields} format
         for idict in indexes:
@@ -237,7 +287,7 @@ class PostgreSQL(SQLInterface):
             query_vals.append(field_val)
 
         query_str = 'INSERT INTO {} ({}) VALUES ({}) RETURNING {}'.format(
-            schema.table,
+            str(schema),
             ', '.join(field_names),
             ', '.join(field_formats),
             pk_name
@@ -372,11 +422,11 @@ class PostgreSQL(SQLInterface):
             if field.is_ref():
                 if field.required: # strong ref, it deletes on fk row removal
                     ref_s = field.schema
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s.table, ref_s.pk.name)
+                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s, ref_s.pk.name)
 
                 else: # weak ref, it sets column to null on fk row removal
                     ref_s = field.schema
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s.table, ref_s.pk.name)
+                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s, ref_s.pk.name)
 
         return '{} {}'.format(field_name, field_type)
 

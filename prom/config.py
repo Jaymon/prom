@@ -175,7 +175,7 @@ class Schema(object):
     instances = {}
     """class variable, holds different schema instances for various orms"""
 
-    table = u""
+    table_name = u""
     """string -- set the table name for this schema instance"""
 
     fields = None
@@ -216,7 +216,7 @@ class Schema(object):
 
         return cls.instances[table_name]
 
-    def __init__(self, table, **fields_or_indexes):
+    def __init__(self, table_name, **fields_or_indexes):
         """
         create an instance
 
@@ -231,18 +231,25 @@ class Schema(object):
                 index_fields=Index("field1", "field2")
             )
 
-        table -- string -- the table name
+        table_name -- string -- the table name
         **fields_or_indexes -- a dict of field name or index keys with tuple values, see __getattr__ for more details
         """
         self.fields = {}
         self.indexes = {}
-        self.table = str(table)
+        self.table_name = str(table_name)
 
         for name, val in fields_or_indexes.items():
             self.set(name, val)
 
     def __str__(self):
-        return self.table
+        return self.table_name
+
+    def __iter__(self):
+        """iterate through all the fields defined in this schema
+
+        :returns: tuple, (name, Field)
+        """
+        return (f for f in self.fields.items())
 
     def set(self, name, val):
         if isinstance(val, Field):
@@ -269,7 +276,7 @@ class Schema(object):
                     if field.options.get('pk', False):
                         return field
 
-            raise AttributeError("No {} field in schema {}".format(name, self.table))
+            raise AttributeError("No {} field in schema {}".format(name, self.table_name))
 
     def set_field(self, field_name, field):
         if not field_name: raise ValueError("field_name is empty")
@@ -463,8 +470,8 @@ class Field(object):
         # this creates a numeric dict key that can't be accessed as an attribute
         self.instance_field_name = str(id(self))
         self._type = field_type
-        self.required = field_required
         self.options = field_options
+        self.required = field_required if field_required else self.is_pk()
 
     def is_pk(self):
         """return True if this field is a primary key"""
