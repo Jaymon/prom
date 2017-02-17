@@ -6,6 +6,7 @@ http://wiki.postgresql.org/wiki/Using_psycopg2_with_PostgreSQL
 http://pythonhosted.org/psycopg2/
 """
 import os
+import sys
 import types
 import decimal
 import datetime
@@ -363,14 +364,19 @@ class PostgreSQL(SQLInterface):
         field_type = ""
 
         if field.options.get('pk', False):
-            field_type = 'BIGSERIAL PRIMARY KEY'
+            if issubclass(field.type, (int, long)):
+                field_type = 'BIGSERIAL PRIMARY KEY'
+            else:
+                # TODO -- someday support this
+                raise ValueError("non-integer primary keys not supported")
 
         else:
             if issubclass(field.type, bool):
                 field_type = 'BOOL'
 
             elif issubclass(field.type, int):
-                size = 2147483647
+                #size = 2147483647
+                size = sys.maxsize # http://stackoverflow.com/questions/7604966
                 if 'size' in field.options:
                     size = field.options['size']
                 elif 'max_size' in field.options:

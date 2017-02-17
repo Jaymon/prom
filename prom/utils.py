@@ -2,6 +2,42 @@ import importlib
 import hashlib
 import heapq
 import itertools
+import os
+import sys
+import codecs
+from contextlib import contextmanager
+
+
+class Stream(object):
+    """In the CLI we either want to print to stdout or write to a file, this wrapper
+    does that, if path is empty then anything you write to it will write to stdout
+    """
+    def __init__(self, path=""):
+        self.path = path
+        if path:
+            self.path = os.path.abspath(os.path.expanduser(str(path)))
+            self.stream = codecs.open(self.path, encoding='utf-8', mode='w+')
+        else:
+            self.stream = sys.stdout
+
+    def __getattr__(self, k):
+        return getattr(self.stream, k)
+
+    @contextmanager
+    def open(self):
+        yield self
+        if self.path:
+            self.stream.close()
+
+    def write_line(self, line, count=1):
+        """writes the line and count newlines after the line"""
+        self.write(line)
+        self.write_newlines(count)
+
+    def write_newlines(self, count=1):
+        """writes count newlines"""
+        for c in range(count):
+            self.write("\n")
 
 
 class Pool(dict):

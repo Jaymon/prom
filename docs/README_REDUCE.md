@@ -44,14 +44,14 @@ from __future__ import print_function
 
 
 def target_map(o):
-    """This is our mapping function, any non-None value is passed to our reduce function"""
+    """This is our mapping function, any non None value is passed to our reduce function"""
     if o.pk % 2 == 0:
         return o.pk
 
 
 d = {"count": 0}
 def target_reduce(pk):
-    """any non-None value from target_map is run through this function"""
+    """any non None value from target_map is run through this function"""
     d["count"] += 1
 
 

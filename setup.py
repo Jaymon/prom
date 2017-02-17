@@ -34,4 +34,9 @@ setup(
         'Programming Language :: Python :: 2.7',
     ],
     #test_suite = "{}_test".format(name),
+    entry_points = {
+        'console_scripts': [
+            '{} = {}.__main__:console'.format(name, name),
+        ],
+    },
 )

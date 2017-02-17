@@ -183,7 +183,12 @@ class SQLite(SQLInterface):
 
         if field.options.get('pk', False):
             # this CANNOT be set to BIGINT PRIMARY KEY, it won't actually autoincrement
-            field_type = 'INTEGER PRIMARY KEY'
+            if issubclass(field.type, (int, long)):
+                # http://sqlite.org/autoinc.html
+                field_type = 'INTEGER PRIMARY KEY'
+            else:
+                # TODO -- someday support this
+                raise ValueError("non-integer primary keys not supported")
 
         else:
             if issubclass(field.type, bool):

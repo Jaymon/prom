@@ -16,7 +16,7 @@ from .interface import get_interface, set_interface, get_interfaces
 from .exception import InterfaceError, Error
 
 
-__version__ = '0.9.95'
+__version__ = '0.9.96'
 
 
 # get rid of "No handler found" warnings (cribbed from requests)
@@ -50,7 +50,7 @@ def configure_environ(dsn_env_name='PROM_DSN'):
 
     # now try importing 1 -> N dsns
     increment_name = lambda name, num: '{}_{}'.format(name, num)
-    dsn_num = 1
+    dsn_num = 0 if increment_name(dsn_env_name, 0) in os.environ else 1
     dsn_env_num_name = increment_name(dsn_env_name, dsn_num)
     if dsn_env_num_name in os.environ:
         try:

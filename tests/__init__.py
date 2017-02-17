@@ -5,6 +5,7 @@ import random
 import string
 import datetime
 import logging
+import decimal
 
 import testdata
 
@@ -14,6 +15,7 @@ from prom.config import Schema, DsnConnection, Field, Index
 from prom.interface.postgres import PostgreSQL
 from prom.interface.sqlite import SQLite
 from prom.interface.base import Interface
+from prom.interface import get_interfaces
 import prom
 
 
@@ -30,6 +32,11 @@ os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.SQLite://:memory:')
 
 
 class BaseTestCase(TestCase):
+    @classmethod
+    def get_interfaces(cls):
+        """Return all currently configured interfaces in a list"""
+        return get_interfaces().values()
+
     @classmethod
     def setUpClass(cls):
         """make sure there is a default interface for any class"""
@@ -106,6 +113,49 @@ class BaseTestCase(TestCase):
             self.get_table_name(table_name),
             **fields_or_indexes
         )
+        return s
+
+    def get_schema_all(self, inter=None):
+        """return a schema that has a field for all supported standard field types"""
+        orm_class = self.get_orm_class()
+        if inter:
+            orm_class.interface = inter
+            i = inter
+            orm_class.install()
+
+        s = Schema(
+            self.get_table_name(),
+            _id=Field(long, pk=True),
+            a_bool_y=Field(bool, True),
+            a_bool_n=Field(bool, False),
+            a_sint_y=Field(int, True, size=50),
+            a_sint_n=Field(int, False, size=50),
+            a_dec_y=Field(decimal.Decimal, True),
+            a_dec_n=Field(decimal.Decimal, False),
+            a_float_y=Field(float, True, size=10),
+            a_float_n=Field(float, False, size=10),
+            a_long_y=Field(long, True),
+            a_long_n=Field(long, False),
+            a_fk_y=Field(orm_class, True),
+            a_fk_n=Field(orm_class, False),
+            a_dt_y=Field(datetime.datetime, True),
+            a_dt_n=Field(datetime.datetime, False),
+            a_d_y=Field(datetime.date, True),
+            a_d_n=Field(datetime.date, False),
+            a_int_y=Field(int, True),
+            a_int_n=Field(int, False),
+            a_str_y=Field(str, True),
+            a_str_n=Field(str, False),
+            a_vchar_y=Field(str, True, max_size=512),
+            a_vchar_n=Field(str, False, max_size=512),
+            a_char_y=Field(str, True, size=32),
+            a_char_n=Field(str, False, size=32),
+        )
+
+        if inter:
+            #i = self.get_interface()
+            inter.set_table(s)
+
         return s
 
     def get_query(self):

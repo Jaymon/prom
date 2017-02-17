@@ -500,40 +500,8 @@ class BaseTestInterface(BaseTestCase):
         self.assertTrue(i.has_table(table_name_2))
 
     def test_get_fields(self):
-        orm_class = self.get_orm_class()
-        orm_class.install()
-
         i = self.get_interface()
-        s = Schema(
-            self.get_table_name(),
-            _id=Field(long, pk=True),
-            a_bool_y=Field(bool, True),
-            a_bool_n=Field(bool, False),
-            a_sint_y=Field(int, True, size=50),
-            a_sint_n=Field(int, False, size=50),
-            a_dec_y=Field(decimal.Decimal, True),
-            a_dec_n=Field(decimal.Decimal, False),
-            a_float_y=Field(float, True, size=10),
-            a_float_n=Field(float, False, size=10),
-            a_long_y=Field(long, True),
-            a_long_n=Field(long, False),
-            a_fk_y=Field(orm_class, True),
-            a_fk_n=Field(orm_class, False),
-            a_dt_y=Field(datetime.datetime, True),
-            a_dt_n=Field(datetime.datetime, False),
-            a_d_y=Field(datetime.date, True),
-            a_d_n=Field(datetime.date, False),
-            a_int_y=Field(int, True),
-            a_int_n=Field(int, False),
-            a_str_y=Field(str, True),
-            a_str_n=Field(str, False),
-            a_vchar_y=Field(str, True, max_size=512),
-            a_vchar_n=Field(str, False, max_size=512),
-            a_char_y=Field(str, True, size=32),
-            a_char_n=Field(str, False, size=32),
-        )
-        r = i.set_table(s)
-
+        s = self.get_schema_all(i)
         fields = i.get_fields(str(s))
 
         for field_name, field in s:
