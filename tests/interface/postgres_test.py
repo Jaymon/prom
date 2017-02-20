@@ -201,9 +201,7 @@ class InterfacePostgresTest(BaseTestInterface):
 class InterfacePGBouncerTest(InterfacePostgresTest):
     @classmethod
     def create_interface(cls):
-        config = DsnConnection(os.environ["PROM_PGBOUNCER_URL"])
-        i = PostgreSQL(config)
-        return i
+        return cls.create_environ_interface("PROM_PGBOUNCER_URL")
 
     def test_no_connection(self):
         """this will make sure prom handles it gracefully if there is no connection

@@ -88,3 +88,96 @@ class Bar3(Orm):
     _created = None
 ```
 
+
+### dump
+
+This command will only work with PostgreSQL databases.
+
+```
+$ prom dump --help
+usage: prom dump [-h] -D DIRECTORY [--dry-run] paths [paths ...]
+
+dump all or part of the prom data, currently only works on Postgres databases
+basically just a wrapper around `dump backup` https://github.com/Jaymon/dump
+
+positional arguments:
+  paths                 module or class paths (eg, foo.bar or foo.bar.Che)
+                        where prom Orm classes are defined
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -D DIRECTORY, --dir DIRECTORY, --directory DIRECTORY
+                        directory where the backup files should go (default:
+                        None)
+  --dry-run, --dry_run  act like you are going to do everything but do nothing
+                        (default: False)
+```
+
+
+#### Example
+
+Create a module for your `prom.Orm` objects in `foo/bar.py`
+
+```python
+# foo.bar module
+
+from prom import Orm, Field
+
+
+class Foo(Orm):
+
+  table_name = "foo_table"
+
+  one = Field(int)
+  two = Field(str)
+
+class Bar(Orm):
+
+  table_name = "bar_table"
+
+  three = Field(int)
+  four = Field(str)
+```
+
+Now dump them all:
+
+```
+$ prom dump foo.bar --directory=/tmp/dump
+```
+
+Dump just the `Foo` orm:
+
+```
+$ prom dump foo.bar.Foo --directory=/tmp/dump
+```
+
+
+### restore
+
+```
+$ prom restore --help
+usage: prom restore [-h] -D DIRECTORY [--conn-name CONN_NAME]
+
+Restore your database dumped with the dump command just a wrapper around `dump
+restore` https://github.com/Jaymon/dump
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -D DIRECTORY, --dir DIRECTORY, --directory DIRECTORY
+                        directory where the backup files from a previous prom
+                        dump are located (default: None)
+  --conn-name CONN_NAME, --connection-name CONN_NAME, --conn_name CONN_NAME, -c CONN_NAME
+                        the connection name (from prom dsn) you want to
+                        restore (default: )
+```
+
+
+#### Example
+
+Restore your dumped data (this can only restore data dumped with `prom dump`)
+
+```
+$ prom restore --directory=/tmp/dump
+```
+
+

@@ -17,10 +17,10 @@ class BaseTestInterface(BaseTestCase):
     def create_interface(cls):
         raise NotImplementedError()
 
-    def test_connect(self):
-        i = self.get_interface()
+#     def test_connect(self):
+#         i = self.get_interface()
 
-    def test_close(self):
+    def test_connect_close(self):
         i = self.get_interface()
         i.close()
         #self.assertTrue(i.connection is None)

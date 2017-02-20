@@ -28,10 +28,13 @@ log_handler.setFormatter(log_formatter)
 logger.addHandler(log_handler)
 
 
-os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.SQLite://:memory:')
+os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.sqlite.SQLite://:memory:')
 
 
 class BaseTestCase(TestCase):
+
+    connections = set()
+
     @classmethod
     def get_interfaces(cls):
         """Return all currently configured interfaces in a list"""
@@ -43,6 +46,11 @@ class BaseTestCase(TestCase):
         i = cls.get_interface()
         i.delete_tables(disable_protection=True)
         prom.set_interface(i)
+
+    @classmethod
+    def tearDownClass(cls):
+        for inter in cls.connections:
+            inter.close()
 
     @classmethod
     def get_interface(cls):
@@ -57,15 +65,18 @@ class BaseTestCase(TestCase):
 
     @classmethod
     def create_sqlite_interface(cls):
-        config = DsnConnection(os.environ["PROM_SQLITE_URL"])
-        i = SQLite(config)
-        return i
+        return cls.create_environ_interface("PROM_SQLITE_URL")
 
     @classmethod
     def create_postgres_interface(cls):
-        config = DsnConnection(os.environ["PROM_POSTGRES_URL"])
-        i = PostgreSQL(config)
-        return i
+        return cls.create_environ_interface("PROM_POSTGRES_URL")
+
+    @classmethod
+    def create_environ_interface(cls, environ_key):
+        config = DsnConnection(os.environ[environ_key])
+        inter = config.interface
+        cls.connections.add(inter)
+        return inter
 
     def get_table(self, table_name=None):
         """

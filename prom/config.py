@@ -212,9 +212,14 @@ class Schema(object):
                             s.set(k, v)
                         seen_properties.add(k)
 
+            #s.orm_class = orm_class
             cls.instances[table_name] = s
 
-        return cls.instances[table_name]
+        else:
+            s = cls.instances[table_name]
+
+        s.orm_class = orm_class
+        return s
 
     def __init__(self, table_name, **fields_or_indexes):
         """

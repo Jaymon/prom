@@ -12,86 +12,80 @@ except ImportError:
     ]))
     exit()
 
-from prom.interface import get_interfaces
-from prom import Field, __version__
-from prom.utils import Stream
+from prom.interface import get_interface
+#from prom.cli import run_cmd
+from prom.cli.generate import main_generate
+from prom.cli.dump import main_dump
+from prom.cli.dump import main_restore
 
 
-def get_table_info(*table_names):
-    """Returns a dict with table_name keys mapped to the Interface that table exists in
-
-    :param *table_names: the tables you are searching for
-    """
-    ret = {}
-    if table_names:
-        for table_name in table_names:
-            for name, inter in get_interfaces().items():
-                if inter.has_table(table_name):
-                    yield table_name, inter, inter.get_fields(table_name)
-
-    else:
-        for name, inter in get_interfaces().items():
-            pout.v(inter.connection_config.dsn)
-            import os
-            pout.v(os.environ)
-
-            table_names = inter.get_tables()
-            for table_name in table_names:
-                yield table_name, inter, inter.get_fields(table_name)
-
-
-def get_field_def(field_name, field_d):
-    field_required = field_d["field_required"]
-    if "ref_table_name" in field_d:
-        field_type = field_d["ref_table_name"].title().replace("_", "")
-    else:
-        field_type = field_d["field_type"].__name__
-
-    arg_bits = [field_type, str(field_required)]
-    if field_d["pk"]:
-        arg_bits.append("pk={}".format(field_d["pk"]))
-
-    return "    {} = Field({})".format(field_name, ", ".join(arg_bits))
-
-
-@arg("table_names", nargs="*", help="the table(s) to generate a prom.Orm for")
-@arg("--out-file", "-o", dest="stream", type=Stream, default="", help="Write to a file path, default stdout")
-def main_generate(table_names, stream):
-    """This will print out valid prom python code for given tables that already exist
-    in a database.
-
-    This is really handy when you want to bootstrap an existing database to work
-    with prom and don't want to manually create Orm objects for the tables you want
-    to use, let `generate` do it for you
-    """
-
-    with stream.open() as fp:
-        fp.write_line("from datetime import datetime, date")
-        fp.write_line("from decimal import Decimal")
-        fp.write_line("from prom import Orm, Field")
-        fp.write_newlines()
-
-        for table_name, inter, fields in get_table_info(*table_names):
-            fp.write_line("class {}(Orm):".format(table_name.title().replace("_", "")))
-            fp.write_line("    table_name = '{}'".format(table_name))
-            if inter.connection_config.name:
-                fp.write_line("    connection_name = '{}'".format(inter.connection_config.name))
-
-            fp.write_newlines()
-            magic_field_names = set(["_id", "_created", "_updated"])
-
-            if "_id" in fields:
-                fp.write_line(get_field_def("_id", fields.pop("_id")))
-                magic_field_names.discard("_id")
-
-            for field_name, field_d in fields.items():
-                fp.write_line(get_field_def(field_name, field_d))
-
-            for magic_field_name in magic_field_names:
-                if magic_field_name not in fields:
-                    fp.write_line("    {} = None".format(magic_field_name))
-
-            fp.write_newlines(2)
+# @arg("--connection-name", "-c",
+#     dest="conn_name",
+#     default="",
+#     help="the connection name (from prom dsn) you want to restore")
+# def main_shell(conn_name):
+#     """quick way to get into the db shell using prom dsn"""
+#     inter = get_interface(conn_name)
+#     conn = inter.connection_config
+# 
+#     if "postgres" in conn.interface_name.lower():
+#         # TODO -- need to write password to pgpass file and set environment variable
+#         # and call psql, I don't think you can put the password on the cli
+#         cmd = [
+#             "psql",
+#             "--dbname",
+#             conn.database,
+#             "--username",
+#             conn.username,
+#             "--password",
+#             conn.password,
+#             "--host",
+#             conn.host,
+#             "--port",
+#             str(conn.port),
+#         ]
+# 
+#     elif "sqlite" in conn.interface_name.lower():
+#         cmd = [
+#             "sqlite3",
+#             conn.database
+#         ]
+#     else:
+#         raise RuntimeError("Unsupported interface")
+# 
+#     import subprocess
+#     try:
+#         process = subprocess.Popen(
+#             cmd,
+#             stdout=subprocess.PIPE,
+#             stderr=subprocess.PIPE,
+#             stdin=subprocess.PIPE,
+#         )
+# 
+#         c = ""
+#         while True:
+#             process.stdin.write(c)
+#             r = process.stdout.readline()
+#             sys.stdout.write(r)
+#             sys.stdout.flush()
+# 
+# 
+#             #r = process.communicate(c)
+#             #print 'gnugo says: ' + str(r)
+#             c = raw_input()
+#             c += "\n"
+# 
+# 
+# 
+# #         for line in iter(process.stdout.readline, ""):
+# #             #echo.out(line)
+# #             sys.stdout.write(line)
+# #             sys.stdout.flush()
+# #         process.wait()
+# 
+#     except subprocess.CalledProcessError as e:
+#         raise RuntimeError("dump failed with code {} and output: {}".format(e.returncode, e.output))
+# 
 
 
 if __name__ == "__main__":

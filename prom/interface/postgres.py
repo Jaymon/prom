@@ -57,6 +57,8 @@ class PostgreSQL(SQLInterface):
 
     _connection = None
 
+#     conn_count = set()
+
     def _connect(self, connection_config):
         database = connection_config.database
         username = connection_config.username
@@ -97,6 +99,8 @@ class PostgreSQL(SQLInterface):
 
     def free_connection(self, connection):
         if not self.connected: return
+#         type(self).conn_count.discard(id(self))
+#         pout.v(len(type(self).conn_count))
         if self._connection:
             self.log("freeing sync connection")
             return
@@ -105,14 +109,19 @@ class PostgreSQL(SQLInterface):
 
     def get_connection(self):
         if not self.connected: self.connect()
+        type(self).conn_count.add(id(self))
+        pout.v(len(type(self).conn_count))
         if self._connection:
             self.log("getting sync connection")
             return self._connection
         connection = self.connection_pool.getconn()
         self.log("getting async connection {}", id(connection))
+
         return connection
 
     def _close(self):
+#         type(self).conn_count.discard(id(self))
+#         pout.v(len(type(self).conn_count))
         self.connection_pool.closeall()
         if self._connection:
             self._connection.close()

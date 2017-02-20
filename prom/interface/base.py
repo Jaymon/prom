@@ -140,6 +140,9 @@ class Interface(object):
     def __init__(self, connection_config=None):
         self.connection_config = connection_config
 
+#     def __del__(self):
+#         self.close()
+
     def connect(self, connection_config=None, *args, **kwargs):
         """
         connect to the interface

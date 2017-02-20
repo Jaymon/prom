@@ -106,6 +106,11 @@ class LimitTest(TestCase):
 
 
 class QueryTest(BaseTestCase):
+#     @classmethod
+#     def setUpClass(cls):
+#         from unittest import SkipTest
+#         raise SkipTest()
+
     def test_like(self):
         _q = self.get_query()
         self.insert(_q, 5)

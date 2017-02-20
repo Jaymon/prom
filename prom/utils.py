@@ -182,7 +182,15 @@ def get_objects(classpath):
     """
     module_name, class_name = classpath.rsplit('.', 1)
     module = importlib.import_module(module_name)
-    klass = getattr(module, class_name)
+    try:
+        klass = getattr(module, class_name)
+    except AttributeError:
+        raise AttributeError("module {} has no attribute {} parsing {}".format(
+            module.__name__,
+            class_name,
+            classpath
+        ))
+
     return module, klass
 
 
