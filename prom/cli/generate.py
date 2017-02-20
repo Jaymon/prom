@@ -23,10 +23,6 @@ def get_table_info(*table_names):
 
     else:
         for name, inter in get_interfaces().items():
-            pout.v(inter.connection_config.dsn)
-            import os
-            pout.v(os.environ)
-
             table_names = inter.get_tables()
             for table_name in table_names:
                 yield table_name, inter, inter.get_fields(table_name)
@@ -56,7 +52,6 @@ def main_generate(table_names, stream):
     with prom and don't want to manually create Orm objects for the tables you want
     to use, let `generate` do it for you
     """
-
     with stream.open() as fp:
         fp.write_line("from datetime import datetime, date")
         fp.write_line("from decimal import Decimal")
@@ -64,6 +59,7 @@ def main_generate(table_names, stream):
         fp.write_newlines()
 
         for table_name, inter, fields in get_table_info(*table_names):
+            pout.v(fields)
             fp.write_line("class {}(Orm):".format(table_name.title().replace("_", "")))
             fp.write_line("    table_name = '{}'".format(table_name))
             if inter.connection_config.name:

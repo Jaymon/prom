@@ -213,6 +213,7 @@ class PostgreSQL(SQLInterface):
             "varchar": str,
             "bool": bool,
             "date": datetime.date,
+            "blob": bytearray,
         }
 
         # the rows we can set: field_type, name, field_required, min_size, max_size,
@@ -430,6 +431,9 @@ class PostgreSQL(SQLInterface):
 
             elif issubclass(field.type, decimal.Decimal):
                 field_type = 'NUMERIC'
+
+            elif issubclass(field.type, bytearray):
+                field_type = 'BLOB'
 
             else:
                 raise ValueError('unknown python type: {}'.format(field.type.__name__))
