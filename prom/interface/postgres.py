@@ -57,8 +57,6 @@ class PostgreSQL(SQLInterface):
 
     _connection = None
 
-#     conn_count = set()
-
     def _connect(self, connection_config):
         database = connection_config.database
         username = connection_config.username
@@ -99,8 +97,6 @@ class PostgreSQL(SQLInterface):
 
     def free_connection(self, connection):
         if not self.connected: return
-#         type(self).conn_count.discard(id(self))
-#         pout.v(len(type(self).conn_count))
         if self._connection:
             self.log("freeing sync connection")
             return
@@ -120,8 +116,6 @@ class PostgreSQL(SQLInterface):
         return connection
 
     def _close(self):
-#         type(self).conn_count.discard(id(self))
-#         pout.v(len(type(self).conn_count))
         self.connection_pool.closeall()
         if self._connection:
             self._connection.close()
@@ -168,6 +162,17 @@ class PostgreSQL(SQLInterface):
         query_str = []
         query_args = ['f', table_name]
 
+        # I had to brush up on my join knowledge while writing this query
+        # https://en.wikipedia.org/wiki/Join_(SQL)
+        #
+        # other helpful links
+        # https://wiki.postgresql.org/wiki/Retrieve_primary_key_columns
+        # https://www.postgresql.org/docs/9.4/static/catalog-pg-attribute.html
+        # https://www.postgresql.org/docs/9.3/static/catalog-pg-type.html
+        # 
+        # another approach
+        # http://dba.stackexchange.com/questions/22362/how-do-i-list-all-columns-for-a-specified-table
+        # http://gis.stackexchange.com/questions/94049/how-to-get-the-data-type-of-each-column-from-a-postgis-table
         query_str.append('SELECT')
         query_str.append(',  '.join([
             'a.attnum',
