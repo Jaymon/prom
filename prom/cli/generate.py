@@ -59,7 +59,6 @@ def main_generate(table_names, stream):
         fp.write_newlines()
 
         for table_name, inter, fields in get_table_info(*table_names):
-            pout.v(fields)
             fp.write_line("class {}(Orm):".format(table_name.title().replace("_", "")))
             fp.write_line("    table_name = '{}'".format(table_name))
             if inter.connection_config.name:
