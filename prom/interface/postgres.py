@@ -105,8 +105,6 @@ class PostgreSQL(SQLInterface):
 
     def get_connection(self):
         if not self.connected: self.connect()
-        type(self).conn_count.add(id(self))
-        pout.v(len(type(self).conn_count))
         if self._connection:
             self.log("getting sync connection")
             return self._connection
