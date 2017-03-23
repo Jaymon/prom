@@ -1,5 +1,6 @@
 import pickle
 import json
+import datetime
 
 import testdata
 
@@ -294,15 +295,17 @@ class OrmTest(BaseTestCase):
 
     def test_jsonable(self):
         orm_class = self.get_orm_class()
-        t = orm_class.populate(foo=1, bar="blah")
+        orm_class.dt = Field(datetime.datetime)
+        t = orm_class.populate(foo=1, bar="blah", dt=datetime.datetime.utcnow())
         d = t.jsonable()
         self.assertEqual(1, d['foo'])
         self.assertEqual("blah", d['bar'])
+        self.assertTrue("dt" in d)
 
         t = orm_class.populate(foo=1)
         d = t.jsonable()
         self.assertEqual(1, d['foo'])
-        self.assertEqual("", d['bar'])
+        self.assertFalse("bar" in d)
 
     def test_modify(self):
         class TM(prom.Orm):

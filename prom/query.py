@@ -774,6 +774,15 @@ class Query(object):
         self.fields_where.append(field_name, ["nin", field_name, fv, field_kwargs])
         return self
 
+    def startswith_field(self, field_name, *field_val, **field_kwargs):
+        return self.like_field(field_name, u"{}%".format(field_val[0]), **field_kwargs)
+
+    def endswith_field(self, field_name, *field_val, **field_kwargs):
+        return self.like_field(field_name, u"%{}".format(field_val[0]), **field_kwargs)
+
+    def contains_field(self, field_name, *field_val, **field_kwargs):
+        return self.like_field(field_name, u"%{}%".format(field_val[0]), **field_kwargs)
+
     def like_field(self, field_name, *field_val, **field_kwargs):
         """Perform a field_name LIKE field_val query
 

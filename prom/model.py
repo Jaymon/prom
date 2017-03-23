@@ -382,6 +382,37 @@ class Orm(object):
     def __int__(self):
         return int(self.pk)
 
+    def datestamp(self, field_val):
+        """get the field_val as a string datestamp
+
+        why does this exist? I kept needing certain fields to be formatted a certain
+        way for apis and the like and it got annoying to keep having to add that
+        functionality to jsonable()
+
+        :param field_val: datetime.Date|Datetime
+        :returns: string, the datetime as a string representative
+        """
+        format_str = "%Y-%m-%d"
+
+        if isinstance(field_val, datetime.datetime):
+            format_str = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+        return datetime.datetime.strftime(field_val, format_str)
+
+    def jsonable_field(self, field_name, field_val, field):
+        """handle make the field_val safe to be in a json blob
+
+        :param field_name: string, the name of the field
+        :param field_val: mixed, the value of the field_name, can be None
+        :param field: Field, the actual Field instance for field_name
+        :returns: mixed, field_val but safe for json
+        """
+        if field_val is not None:
+            if isinstance(field_val, (datetime.date, datetime.datetime)):
+                field_val = self.datestamp(field_val)
+
+        return field_val
+
     def jsonable(self, *args, **options):
         """
         return a public version of this instance that can be jsonified
@@ -396,31 +427,22 @@ class Orm(object):
         like dictify() though, but I've already used this method in so many places
         """
         d = {}
-        def default_field_type(field_type):
-            r = ''
-            if issubclass(field_type, bool):
-                r = False
-            elif issubclass(field_type, int):
-                r = 0
-            elif issubclass(field_type, float):
-                r = 0.0
-
-            return r
+#         def default_field_type(field_type):
+#             r = ''
+#             if issubclass(field_type, bool):
+#                 r = False
+#             elif issubclass(field_type, int):
+#                 r = 0
+#             elif issubclass(field_type, float):
+#                 r = 0.0
+# 
+#             return r
 
         for field_name, field in self.schema.normal_fields.items():
-            try:
-                d[field_name] = getattr(self, field_name, None)
-                if d[field_name]:
-                    if isinstance(d[field_name], datetime.date):
-                        d[field_name] = str(d[field_name])
-                    elif isinstance(d[field_name], datetime.datetime):
-                        d[field_name] = str(d[field_name])
-
-                else:
-                    d[field_name] = default_field_type(field.type)
-
-            except AttributeError:
-                d[field_name] = default_field_type(field.type)
+            field_val = getattr(self, field_name, None)
+            field_val = self.jsonable_field(field_name, field_val, field)
+            if field_val is not None:
+                d[field_name] = field_val
 
         return d
 
