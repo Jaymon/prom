@@ -368,6 +368,33 @@ class ObjectFieldTest(BaseTestCase):
         o2 = type(o).query.get_pk(o.pk)
         self.assertEqual(o.body, o2.body)
 
+    def test_iget_iset_override(self):
+        o = self.get_sqlite_orm()
+        ocls = type(o)
+
+        ocls_iget = ocls.body.iget
+        ocls_iset = ocls.body.iset
+
+        @ocls.body.igetter
+        def body(cls, field_val):
+            self.assertTrue(isinstance(field_val, dict))
+            return field_val
+
+        @ocls.body.isetter
+        def body(cls, field_val, *args, **kwargs):
+            self.assertTrue(isinstance(field_val, dict))
+            return field_val
+
+        o.body = {"bar": 1, "igetter": 0, "isetter": 0}
+        o.save()
+        self.assertTrue(isinstance(o.body, dict))
+
+        o2 = type(o).query.get_pk(o.pk)
+        self.assertTrue(isinstance(o2.body, dict))
+
+        ocls.body.iget = ocls_iget
+        ocls.body.iset = ocls_iset
+
 
 class JsonFieldTest(ObjectFieldTest):
     field_class = JsonField

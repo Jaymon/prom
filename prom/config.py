@@ -360,20 +360,24 @@ class Field(object):
     each Field will have its iset() method called. By customizing these, you can
     control functionality when a Field is going to be read or written to the db
 
-    to customize the field, you can use the decorator:
+    to customize the field on set and get from the db, you can use the decorators,
+    which are classmethods:
 
         foo = Field(str, True)
 
         @foo.igetter
-        def foo(self, val, is_update, is_modified):
+        def foo(cls, val):
             # do custom things
             return val
 
         @foo.isetter
-        def foo(self, val, is_update, is_modified):
+        def foo(cls, val, is_update, is_modified):
             # do custom things
             return val
 
+    NOTE -- the iset/iget methods are different than traditional python getters
+    and setters because they always need to return a value and they always take in a
+    value, and they are classmethods
 
     There are also fget/fset/fdel methods that can be set to customize behavior
     on when a value is set on a particular instance, so if you wanted to make sure
@@ -464,12 +468,21 @@ class Field(object):
         field_options.setdefault("unique", False)
         field_options.update(d)
 
-        self.fget = field_options.pop("fget", self.default_fget)
-        self.fset = field_options.pop("fset", self.default_fset)
-        self.fdel = field_options.pop("fdel", self.default_fdel)
 
-        self.iset = field_options.pop("iset", self.default_iset)
-        self.iget = field_options.pop("iget", self.default_iget)
+        self.fgetter(field_options.pop("fget", self.default_fget))
+        self.fsetter(field_options.pop("fset", self.default_fset))
+        self.fdeleter(field_options.pop("fdel", self.default_fdel))
+
+        self.isetter(field_options.pop("iset", self.default_iset))
+        self.igetter(field_options.pop("iget", self.default_iget))
+
+
+#         self.fget = self.fgetter(field_options.pop("fget", self.default_fget))
+#         self.fset = self.fsetter(field_options.pop("fset", self.default_fset))
+#         self.fdel = self.fdeleter(field_options.pop("fdel", self.default_fdel))
+# 
+#         self.iset = self.isetter(field_options.pop("iset", self.default_iset))
+#         self.iget = self.igetter(field_options.pop("iget", self.default_iget))
 
         self.name = field_options.pop("name", "")
         # this creates a numeric dict key that can't be accessed as an attribute
@@ -585,23 +598,47 @@ class ObjectField(Field):
         """
         super(ObjectField, self).__init__(field_type=str, field_required=field_required)
 
-    def default_iset(self, classtype, val, is_update, is_modified):
+    def encode(self, val):
         if val is None: return val
         return base64.b64encode(pickle.dumps(val, pickle.HIGHEST_PROTOCOL))
 
-    def default_iget(self, classtype, val):
+    def decode(self, val):
         if val is None: return val
         return pickle.loads(base64.b64decode(val))
+
+    def isetter(self, iset):
+        def master_iset(cls, val, is_update, is_modified):
+            v = iset(cls, val, is_update, is_modified)
+            return self.encode(val)
+            #return iset(cls, v, is_update, is_modified)
+        return super(ObjectField, self).isetter(master_iset)
+
+    def igetter(self, iget):
+        def master_iget(cls, val):
+            v = self.decode(val)
+            return iget(cls, v)
+        return super(ObjectField, self).igetter(master_iget)
 
 
 class JsonField(ObjectField):
     """Similar to ObjectField but stores json in the db"""
-    def default_iset(self, classtype, val, is_update, is_modified):
+
+    def encode(self, val):
         if val is None: return val
         return json.dumps(val)
 
-    def default_iget(self, classtype, val):
+    def decode(self, val):
         if val is None: return val
         return json.loads(val)
 
+
+
+#     def default_iset(self, classtype, val, is_update, is_modified):
+#         if val is None: return val
+#         return json.dumps(val)
+# 
+#     def default_iget(self, classtype, val):
+#         if val is None: return val
+#         return json.loads(val)
+# 
 
