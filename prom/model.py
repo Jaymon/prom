@@ -180,7 +180,7 @@ class Orm(object):
         fields -- dict -- field_name keys, with their respective values
         **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
         """
-        fields = utils.make_dict(fields, fields_kwargs)
+        fields = cls.make_dict(fields, fields_kwargs)
         for k, field in cls.schema.fields.items():
             fields[k] = field.iget(
                 cls,
@@ -221,6 +221,31 @@ class Orm(object):
                     raise KeyError("Missing required field {}".format(field_name))
 
         return fields
+
+    @classmethod
+    def datestamp(cls, field_val):
+        """get the field_val as a string datestamp
+
+        why does this exist? I kept needing certain fields to be formatted a certain
+        way for apis and the like and it got annoying to keep having to add that
+        functionality to jsonable()
+
+        :param field_val: datetime.Date|Datetime
+        :returns: string, the datetime as a string representative
+        """
+        format_str = "%Y-%m-%d"
+
+        if isinstance(field_val, datetime.datetime):
+            format_str = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+        return datetime.datetime.strftime(field_val, format_str)
+
+    @classmethod
+    def make_dict(cls, fields, fields_kwargs):
+        """This combines fields and fields_kwargs into one master dict, turns out
+        we want to do this more than I would've thought to keep api compatibility
+        with prom proper"""
+        return utils.make_dict(fields, fields_kwargs)
 
     def insert(self):
         """persist the field values of this orm"""
@@ -319,7 +344,7 @@ class Orm(object):
         return ret
 
     def modify_fields(self, fields=None, **fields_kwargs):
-        return utils.make_dict(fields, fields_kwargs)
+        return self.make_dict(fields, fields_kwargs)
 
     def get_modified(self):
         """return the modified fields and their new values"""
@@ -381,23 +406,6 @@ class Orm(object):
 
     def __int__(self):
         return int(self.pk)
-
-    def datestamp(self, field_val):
-        """get the field_val as a string datestamp
-
-        why does this exist? I kept needing certain fields to be formatted a certain
-        way for apis and the like and it got annoying to keep having to add that
-        functionality to jsonable()
-
-        :param field_val: datetime.Date|Datetime
-        :returns: string, the datetime as a string representative
-        """
-        format_str = "%Y-%m-%d"
-
-        if isinstance(field_val, datetime.datetime):
-            format_str = "%Y-%m-%dT%H:%M:%S.%fZ"
-
-        return datetime.datetime.strftime(field_val, format_str)
 
     def jsonable_field(self, field_name, field_val, field):
         """handle make the field_val safe to be in a json blob
