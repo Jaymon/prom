@@ -163,6 +163,41 @@ class QueryTest(BaseTestCase):
         #q.reduce(target_map, target_reduce)
         self.assertEqual(50, d["pk_count"])
 
+    def test_reduce_limit(self):
+        _q = self.get_query()
+        self.insert(_q, 100)
+
+        def target_map(o):
+            return o.pk
+
+        pk_count = 0
+        pks = set()
+        def target_reduce(pk):
+            pks.add(pk)
+
+        q = _q.copy().limit(50)
+        #q.reduce(target_map, target_reduce, threads=3)
+        q.reduce(target_map, target_reduce)
+        self.assertEqual(50, len(pks))
+
+    def test_reduce_offset_limit(self):
+        _q = self.get_query()
+        self.insert(_q, 100)
+
+        def target_map(o):
+            if o.pk <= 50:
+                return o.pk
+
+        pk_count = 0
+        pks = set()
+        def target_reduce(pk):
+            pks.add(pk)
+
+        q = _q.copy().limit(50).offset(10)
+        #q.reduce(target_map, target_reduce, threads=3)
+        q.reduce(target_map, target_reduce)
+        self.assertEqual(40, len(pks))
+
     def test_between(self):
         _q = self.get_query()
         self.insert(_q, 5)

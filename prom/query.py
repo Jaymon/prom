@@ -1069,7 +1069,10 @@ class Query(object):
         map_threads = threads - 1 if threads > 1 else 1
 
         q = self.copy()
-        total_count = q.count()
+        limit = q.bounds.limit
+        offset = q.bounds.offset
+
+        total_count = limit if limit else q.count()
         limit_count = int(math.ceil(float(total_count) / float(map_threads)))
         logger.info("{} processes will handle {} rows each for a total of {}".format(
             map_threads,
@@ -1093,7 +1096,7 @@ class Query(object):
         ts = []
         for page in range(map_threads):
             q = self.copy()
-            q.limit(limit_count).offset(limit_count * page)
+            q.limit(limit_count).offset(offset + (limit_count * page))
             t = ReduceThread(
                 target=target_map,
                 query=q,
