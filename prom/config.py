@@ -74,8 +74,11 @@ class Connection(object):
                 h = "//{}".format(h)
 
             o = urlparse.urlparse(h)
+            if o.hostname:
+                self._host = o.hostname
+            else:
+                self._host = o.path
 
-            self._host = o.hostname
             if o.port: self.port = o.port
 
     def __init__(self, **kwargs):

@@ -24,6 +24,7 @@ import os
 import types
 import decimal
 import datetime
+from distutils import dir_util
 
 # third party
 import sqlite3
@@ -109,7 +110,7 @@ class SQLite(SQLInterface):
             host = connection_config.host
             db = connection_config.database
             if not host:
-                path = os.sep + db
+                path = db
 
             elif not db:
                 path = host
@@ -133,7 +134,19 @@ class SQLite(SQLInterface):
             if k in connection_config.options:
                 options[k] = connection_config.options[k]
 
-        self._connection = sqlite3.connect(path, **options)
+        try:
+            self._connection = sqlite3.connect(path, **options)
+
+        except sqlite3.DatabaseError as e:
+            path_d = os.path.dirname(path)
+            if os.path.isdir(path_d):
+                raise
+
+            else:
+                # let's try and make the directory path and connect again
+                dir_util.mkpath(path_d)
+                self._connection = sqlite3.connect(path, **options)
+
         # https://docs.python.org/2/library/sqlite3.html#row-objects
         self._connection.row_factory = SQLiteRowDict
         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory

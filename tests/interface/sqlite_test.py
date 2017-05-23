@@ -1,5 +1,6 @@
+import os
 
-
+import testdata
 
 from prom import query
 from prom.interface.sqlite import SQLite
@@ -11,6 +12,16 @@ class InterfaceSQLiteTest(BaseTestInterface):
     @classmethod
     def create_interface(cls):
         return cls.create_sqlite_interface()
+
+    def test_create_path(self):
+        i = self.create_interface()
+        config = i.connection_config
+
+        d = testdata.create_dir()
+        config.host = os.path.join(d, "create_path", "db.sqlite")
+
+        i.connect(config)
+        self.assertTrue(i.connected)
 
     def test_db_disconnect(self):
         """make sure interface can recover if the db disconnects mid script execution,
