@@ -620,7 +620,7 @@ class Query(object):
         return -- Query()
         """
         # split orm from module path
-        orm_module, orm_class = get_objects(orm_classpath)
+        orm_module, orm_class = get_objects(orm_classpath, __name__)
         q = orm_class.query
         if cls_pk:
             for fn, f in orm_class.schema.fields.items():
