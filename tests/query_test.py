@@ -2,6 +2,7 @@ from unittest import TestCase
 import datetime
 import time
 from threading import Thread
+import sys
 
 import testdata
 
@@ -266,8 +267,6 @@ class QueryTest(BaseTestCase):
             ]
         })
 
-        import sys
-
         tqr1 = basedir.module("rtfoo.rtbar.tqr1")
         sys.modules.pop("rtfoo.rtbar.tqr2.Bar", None)
         #tqr2 = basedir.module("tqr2")
@@ -324,6 +323,53 @@ class QueryTest(BaseTestCase):
 
         l = list(ti1.query.ref(orm_classpath).select_foo().all().values())
         self.assertEqual(2, len(l))
+
+    def test_ref_relative(self):
+        basedir = testdata.create_modules({
+            "rrel1.relimp.one": [
+                "import prom",
+                "",
+                "class Foo(prom.Orm):",
+                "    table_name = 'relimp1'",
+                "    one = prom.Field(int, True)",
+                "",
+            ],
+            "rrel1.relimp.two": [
+                "import prom",
+                "",
+                "class Bar(prom.Orm):",
+                "    table_name = 'relimp2'",
+                "    one = prom.Field(int, True)",
+                "",
+                "    @property",
+                "    def fooq(self):",
+                "        return self.query.ref('..one.Foo')",
+                ""
+            ],
+            "rrel1.three": [
+                "import prom",
+                "from .relimp.two import Bar",
+                "",
+                "class Che(Bar):",
+                "    table_name = 'relimp3'",
+                "    three = prom.Field(int, True)",
+                "",
+            ],
+        })
+
+        one = basedir.module("rrel1.relimp.one")
+        two = basedir.module("rrel1.relimp.two")
+        three = basedir.module("rrel1.three")
+
+        c = three.Che()
+        fooq = c.fooq
+        self.assertEqual(one.__name__, fooq.orm_class.__module__)
+        self.assertEqual(one.Foo, fooq.orm_class)
+
+        b = two.Bar()
+        fooq = b.fooq
+        self.assertEqual(one.__name__, fooq.orm_class.__module__)
+        self.assertEqual(one.Foo, fooq.orm_class)
 
     def test_null_iterator(self):
         """you can now pass empty lists to in and nin and not have them throw an

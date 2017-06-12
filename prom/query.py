@@ -11,6 +11,7 @@ from contextlib import contextmanager
 import multiprocessing
 from multiprocessing import queues
 import math
+import inspect
 
 import threading
 try:
@@ -620,7 +621,46 @@ class Query(object):
         return -- Query()
         """
         # split orm from module path
-        orm_module, orm_class = get_objects(orm_classpath, __name__)
+        if orm_classpath.startswith("."):
+            # we handle relative classpaths by using the orm_class and its parents
+            # to find the relative import
+            if self.orm_class:
+                try:
+                    orm_module, orm_class = get_objects(
+                        orm_classpath,
+                        self.orm_class.__module__
+                    )
+                except ImportError:
+                    parents = inspect.getmro(self.orm_class)
+                    if parents:
+                        for pc in parents[1:-1]:
+                            try:
+                                orm_module, orm_class = get_objects(
+                                    orm_classpath,
+                                    pc.__module__
+                                )
+                            except ImportError:
+                                pass
+
+                        if not orm_module or not orm_class:
+                            raise ImportError(
+                                "Unable to resolve relative ref using {}".format(
+                                    self.orm_class.__module__
+                                )
+                            )
+
+            else:
+                raise ImportError("trying relative ref without orm_class")
+
+        else:
+            orm_module, orm_class = get_objects(orm_classpath)
+
+
+#         if isinstance(orm_classpath, basestring):
+#             orm_module, orm_class = get_objects(orm_classpath)
+#         else:
+#             orm_module, orm_class = get_objects(orm_classpath[0], orm_classpath[1])
+
         q = orm_class.query
         if cls_pk:
             for fn, f in orm_class.schema.fields.items():
