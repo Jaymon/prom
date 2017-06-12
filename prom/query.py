@@ -621,39 +621,40 @@ class Query(object):
         return -- Query()
         """
         # split orm from module path
-        if orm_classpath.startswith("."):
-            # we handle relative classpaths by using the orm_class and its parents
-            # to find the relative import
-            if self.orm_class:
-                try:
-                    orm_module, orm_class = get_objects(
-                        orm_classpath,
-                        self.orm_class.__module__
-                    )
-                except ImportError:
-                    parents = inspect.getmro(self.orm_class)
-                    if parents:
-                        for pc in parents[1:-1]:
-                            try:
-                                orm_module, orm_class = get_objects(
-                                    orm_classpath,
-                                    pc.__module__
-                                )
-                            except ImportError:
-                                pass
-
-                        if not orm_module or not orm_class:
-                            raise ImportError(
-                                "Unable to resolve relative ref using {}".format(
-                                    self.orm_class.__module__
-                                )
-                            )
-
-            else:
-                raise ImportError("trying relative ref without orm_class")
-
-        else:
-            orm_module, orm_class = get_objects(orm_classpath)
+        orm_module, orm_class = get_objects(orm_classpath)
+#         if orm_classpath.startswith("."):
+#             # we handle relative classpaths by using the orm_class and its parents
+#             # to find the relative import
+#             if self.orm_class:
+#                 try:
+#                     orm_module, orm_class = get_objects(
+#                         orm_classpath,
+#                         self.orm_class.__module__
+#                     )
+#                 except ImportError:
+#                     parents = inspect.getmro(self.orm_class)
+#                     if parents:
+#                         for pc in parents[1:-1]:
+#                             try:
+#                                 orm_module, orm_class = get_objects(
+#                                     orm_classpath,
+#                                     pc.__module__
+#                                 )
+#                             except ImportError:
+#                                 pass
+# 
+#                         if not orm_module or not orm_class:
+#                             raise ImportError(
+#                                 "Unable to resolve relative ref using {}".format(
+#                                     self.orm_class.__module__
+#                                 )
+#                             )
+# 
+#             else:
+#                 raise ImportError("trying relative ref without orm_class")
+# 
+#         else:
+#             orm_module, orm_class = get_objects(orm_classpath)
 
 
 #         if isinstance(orm_classpath, basestring):
