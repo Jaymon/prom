@@ -311,18 +311,60 @@ class QueryTest(BaseTestCase):
 
         l = list(ti1.query.ref(orm_classpath, ti12.pk).select_foo().values())
         self.assertEqual(22, l[0])
+        self.assertEqual(1, len(l))
 
         l = list(ti1.query.ref(orm_classpath, ti1.pk).select_foo().all().values())
         self.assertEqual(21, l[0])
+        self.assertEqual(1, len(l))
 
         l = list(ti1.query.ref(orm_classpath, ti1.pk).select_foo().get().values())
         self.assertEqual(21, l[0])
+        self.assertEqual(1, len(l))
 
         l = list(ti1.query.ref(orm_classpath, ti1.pk).select_foo().values())
         self.assertEqual(21, l[0])
+        self.assertEqual(1, len(l))
 
         l = list(ti1.query.ref(orm_classpath).select_foo().all().values())
         self.assertEqual(2, len(l))
+
+    def test_query_ref_2(self):
+        testdata.create_modules({
+            "qre": "\n".join([
+                "import prom",
+                "",
+                "class T1(prom.Orm):",
+                "    table_name = 'qre_t1'",
+                ""
+                "class T2(prom.Orm):",
+                "    table_name = 'qre_t2'",
+                "    t1_id=prom.Field(T1, True)",
+                ""
+                "class T3(prom.Orm):",
+                "    table_name = 'qre_t3'",
+                ""
+            ])
+        })
+
+        from qre import T1, T2, T3
+
+        t1a = T1.create()
+        t1b = T1.create()
+        t2 = T2.create(t1_id=t1a.pk)
+
+        classpath = "{}.{}".format(T3.__module__, T3.__name__)
+        with self.assertRaises(ValueError):
+            T1.query.ref(classpath, t1a.pk).count()
+
+
+        classpath = "{}.{}".format(T2.__module__, T2.__name__)
+
+        r = T1.query.ref(classpath, t1a.pk).count()
+        self.assertEqual(1, r)
+
+        r = T1.query.ref(classpath, t1b.pk).count()
+        self.assertEqual(0, r)
+
 
 #     def test_ref_relative(self):
 #         basedir = testdata.create_modules({

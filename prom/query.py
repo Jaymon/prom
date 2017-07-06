@@ -664,11 +664,19 @@ class Query(object):
 
         q = orm_class.query
         if cls_pk:
+            found = False
             for fn, f in orm_class.schema.fields.items():
                 cls_ref_s = f.schema
                 if cls_ref_s and self.schema == cls_ref_s:
                     q.is_field(fn, cls_pk)
+                    found = True
                     break
+
+            if not found:
+                raise ValueError("Did not find a foreign key field for [{}] in [{}]".format(
+                    self.orm_class.table_name,
+                    orm_class.table_name,
+                ))
 
         return q
 
