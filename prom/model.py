@@ -407,6 +407,18 @@ class Orm(object):
     def __int__(self):
         return int(self.pk)
 
+    def __long__(self):
+        return long(self.pk)
+
+    def __str__(self):
+        return str(self.pk)
+
+    def __unicode__(self):
+        return unicode(self.pk)
+
+    def __bytes__(self):
+        return bytes(self.pk)
+
     def jsonable_field(self, field_name, field_val, field):
         """handle make the field_val safe to be in a json blob
 

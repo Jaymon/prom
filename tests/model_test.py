@@ -4,8 +4,7 @@ import datetime
 
 import testdata
 
-from . import BaseTestCase
-from .prom_test import BaseTestCase
+from . import BaseTestCase, EnvironTestCase
 from prom.model import Orm, OrmPool
 from prom.config import Field, Index
 import prom
@@ -52,7 +51,8 @@ class OrmPoolTest(BaseTestCase):
         self.assertEqual(pool.pq.keys()[0], pks[1])
 
 
-class OrmTest(BaseTestCase):
+#class OrmTest(BaseTestCase):
+class OrmTest(EnvironTestCase):
     def test_create_pk(self):
         """there was a bug that if you set the pk then it wouldn't set the updated
         or created datestamps, this makes sure that is fixed"""
@@ -566,7 +566,6 @@ class OrmTest(BaseTestCase):
 
             @classmethod
             def creation(cls, d):
-                """create a customer user"""
                 with cls.interface.transaction():
                     d['foo'] = "foo"
                     tt = cls.create(**d)
@@ -588,10 +587,39 @@ class OrmTest(BaseTestCase):
 
         self.assertEqual(0, TransTorm1.query.count())
 
-        d = {"bar": testdata.get_ascii(32)}
-        with self.assertRaises(prom.InterfaceError):
+        #d = {"bar": testdata.get_ascii(32)}
+        d = {}
+        #with self.assertRaises(prom.InterfaceError):
+        with self.assertRaises(Exception):
             tt = TransTorm1.creation(d)
 
         self.assertEqual(0, TransTorm1.query.count())
 
+    def test_non_int_primary_key(self):
+        class Nipk(Orm):
+            table_name = "non_int_pk_1"
+            _id = Field(str, True, pk=True, max_size=64)
+
+        class Nipk2(Orm):
+            table_name = "non_int_pk_2"
+            nipk_id = Field(Nipk, True)
+
+        # since our pk no longer is auto-increment we always have to provide it
+        with self.assertRaises(prom.InterfaceError):
+            Nipk.create()
+
+        n = Nipk.create(_id="pk1")
+        pout.v(n.fields)
+        self.assertEqual("pk1", n.pk)
+        self.assertEqual("pk1", n._id)
+
+        with self.assertRaises(ValueError):
+            pk = int(n)
+        self.assertEqual("pk1", str(n))
+
+        with self.assertRaises(prom.InterfaceError):
+            Nipk.create(_id="pk1")
+
+        n2 = Nipk2.create(nipk_id=n.pk)
+        self.assertEqual(n.pk, n2.nipk_id)
 

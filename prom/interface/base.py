@@ -614,12 +614,12 @@ class SQLInterface(Interface):
                     ret = cur
 
                 elif not ignore_result:
-                        if one_result:
-                            ret = cur.fetchone()
-                        elif count_result:
-                            ret = cur.rowcount
-                        else:
-                            ret = cur.fetchall()
+                    if one_result:
+                        ret = cur.fetchone()
+                    elif count_result:
+                        ret = cur.rowcount
+                    else:
+                        ret = cur.fetchall()
 
             except Exception as e:
                 self.log(e)

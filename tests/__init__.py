@@ -6,6 +6,8 @@ import string
 import datetime
 import logging
 import decimal
+import tempfile
+from uuid import uuid4
 
 import testdata
 
@@ -28,7 +30,11 @@ log_handler.setFormatter(log_formatter)
 logger.addHandler(log_handler)
 
 
-os.environ.setdefault('PROM_SQLITE_URL', 'prom.interface.sqlite.SQLite://:memory:')
+#os.environ.setdefault('PROM_SQLITE_DSN', 'prom.interface.sqlite.SQLite://:memory:')
+os.environ.setdefault(
+    'PROM_SQLITE_DSN',
+    'prom.interface.sqlite.SQLite://{}.sqlite'.format(os.path.join(tempfile.gettempdir(), str(uuid4())))
+)
 
 
 class BaseTestCase(TestCase):
@@ -65,11 +71,11 @@ class BaseTestCase(TestCase):
 
     @classmethod
     def create_sqlite_interface(cls):
-        return cls.create_environ_interface("PROM_SQLITE_URL")
+        return cls.create_environ_interface("PROM_SQLITE_DSN")
 
     @classmethod
     def create_postgres_interface(cls):
-        return cls.create_environ_interface("PROM_POSTGRES_URL")
+        return cls.create_environ_interface("PROM_POSTGRES_DSN")
 
     @classmethod
     def create_environ_interface(cls, environ_key):
@@ -248,4 +254,37 @@ class BaseTestCase(TestCase):
 
         return pks
 
+
+class EnvironTestCase(BaseTestCase):
+    """This will run all the tests with multple environments (eg, both SQLite and Postgres)"""
+
+    @classmethod
+    def setUpClass(cls):
+        """make sure there is a default interface for any class"""
+        for i in cls.create_interfaces():
+            i.delete_tables(disable_protection=True)
+            prom.set_interface(i)
+
+    @classmethod
+    def tearDownClass(cls):
+        for inter in cls.connections:
+            inter.close()
+
+
+    @classmethod
+    def create_interfaces(cls):
+        return [
+            cls.create_environ_interface("PROM_POSTGRES_DSN"),
+            cls.create_environ_interface("PROM_SQLITE_DSN")
+        ]
+
+    @classmethod
+    def create_interface(cls):
+        return cls.create_environ_interface("PROM_DSN")
+
+    def run(self, *args, **kwargs):
+        for i in self.create_interfaces():
+            os.environ["PROM_DSN"] = i.connection_config.dsn
+            prom.set_interface(i)
+            super(EnvironTestCase, self).run(*args, **kwargs)
 

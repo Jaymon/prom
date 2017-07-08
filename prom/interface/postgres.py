@@ -375,20 +375,17 @@ class PostgreSQL(SQLInterface):
         return -- string -- the field type (eg, foo BOOL NOT NULL)
         """
         field_type = ""
+        is_pk = field.options.get('pk', False)
 
-        if field.options.get('pk', False):
-            if issubclass(field.type, (int, long)):
+        if issubclass(field.type, bool):
+            field_type = 'BOOL'
+
+        elif issubclass(field.type, int):
+            #size = 2147483647
+            if is_pk:
                 field_type = 'BIGSERIAL PRIMARY KEY'
+
             else:
-                # TODO -- someday support this
-                raise ValueError("non-integer primary keys not supported")
-
-        else:
-            if issubclass(field.type, bool):
-                field_type = 'BOOL'
-
-            elif issubclass(field.type, int):
-                #size = 2147483647
                 size = sys.maxsize # http://stackoverflow.com/questions/7604966
                 if 'size' in field.options:
                     size = field.options['size']
@@ -403,39 +400,46 @@ class PostgreSQL(SQLInterface):
                     else:
                         field_type = 'INTEGER'
 
-            elif issubclass(field.type, long):
+        elif issubclass(field.type, long):
+            if is_pk:
+                field_type = 'BIGSERIAL PRIMARY KEY'
+            else:
                 field_type = 'BIGINT'
 
-            elif issubclass(field.type, types.StringTypes):
-                if 'size' in field.options:
-                    field_type = 'CHAR({})'.format(field.options['size'])
-                elif 'max_size' in field.options:
-                    field_type = 'VARCHAR({})'.format(field.options['max_size'])
-                else:
-                    field_type = 'TEXT'
-
-            elif issubclass(field.type, datetime.datetime):
-                # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
-                field_type = 'TIMESTAMP WITHOUT TIME ZONE'
-
-            elif issubclass(field.type, datetime.date):
-                field_type = 'DATE'
-
-            elif issubclass(field.type, float):
-                field_type = 'REAL'
-                size = field.options.get('size', field.options.get('max_size', 0))
-                if size > 6:
-                    field_type = 'DOUBLE PRECISION'
-
-            elif issubclass(field.type, decimal.Decimal):
-                field_type = 'NUMERIC'
-
-            elif issubclass(field.type, bytearray):
-                field_type = 'BLOB'
-
+        elif issubclass(field.type, types.StringTypes):
+            if 'size' in field.options:
+                field_type = 'CHAR({})'.format(field.options['size'])
+            elif 'max_size' in field.options:
+                field_type = 'VARCHAR({})'.format(field.options['max_size'])
             else:
-                raise ValueError('unknown python type: {}'.format(field.type.__name__))
+                field_type = 'TEXT'
 
+            if is_pk:
+                field_type += ' PRIMARY KEY'
+
+        elif issubclass(field.type, datetime.datetime):
+            # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
+            field_type = 'TIMESTAMP WITHOUT TIME ZONE'
+
+        elif issubclass(field.type, datetime.date):
+            field_type = 'DATE'
+
+        elif issubclass(field.type, float):
+            field_type = 'REAL'
+            size = field.options.get('size', field.options.get('max_size', 0))
+            if size > 6:
+                field_type = 'DOUBLE PRECISION'
+
+        elif issubclass(field.type, decimal.Decimal):
+            field_type = 'NUMERIC'
+
+        elif issubclass(field.type, bytearray):
+            field_type = 'BLOB'
+
+        else:
+            raise ValueError('unknown python type: {}'.format(field.type.__name__))
+
+        if not is_pk:
             if field.required:
                 field_type += ' NOT NULL'
             else:
@@ -444,11 +448,17 @@ class PostgreSQL(SQLInterface):
             if field.is_ref():
                 if field.required: # strong ref, it deletes on fk row removal
                     ref_s = field.schema
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(ref_s, ref_s.pk.name)
+                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(
+                        ref_s,
+                        ref_s.pk.name
+                    )
 
                 else: # weak ref, it sets column to null on fk row removal
                     ref_s = field.schema
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(ref_s, ref_s.pk.name)
+                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(
+                        ref_s,
+                        ref_s.pk.name
+                    )
 
         return '{} {}'.format(field_name, field_type)
 

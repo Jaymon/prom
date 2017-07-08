@@ -201,7 +201,7 @@ class InterfacePostgresTest(BaseTestInterface):
 class InterfacePGBouncerTest(InterfacePostgresTest):
     @classmethod
     def create_interface(cls):
-        return cls.create_environ_interface("PROM_PGBOUNCER_URL")
+        return cls.create_environ_interface("PROM_PGBOUNCER_DSN")
 
     def test_no_connection(self):
         """this will make sure prom handles it gracefully if there is no connection
@@ -267,13 +267,13 @@ class XInterfacePostgresGeventTest(InterfacePostgresTest):
 
     @classmethod
     def create_interface(cls):
-        orig_url = os.environ["PROM_POSTGRES_URL"]
-        os.environ["PROM_POSTGRES_URL"] += '?async=1&pool_maxconn=3&pool_class=prom.gevent.ConnectionPool'
+        orig_url = os.environ["PROM_POSTGRES_DSN"]
+        os.environ["PROM_POSTGRES_DSN"] += '?async=1&pool_maxconn=3&pool_class=prom.gevent.ConnectionPool'
         try:
             i = super(XInterfacePostgresGeventTest, cls).create_interface()
 
         finally:
-            os.environ["PROM_POSTGRES_URL"] = orig_url
+            os.environ["PROM_POSTGRES_DSN"] = orig_url
 
         return i
 
