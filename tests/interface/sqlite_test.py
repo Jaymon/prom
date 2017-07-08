@@ -47,11 +47,13 @@ class InterfaceSQLiteTest(BaseTestInterface):
         pass
 
     def test_delete_nonexistent_table(self):
-        """this was to fix https://github.com/firstopinion/prom/issues/47 but I
-        can't seem to reproduce the problem"""
+        """this makes sure https://github.com/firstopinion/prom/issues/47 is fixed,
+        the problem was table names weren't wrapped with single quotes and so if they
+        started with a number or something like that SQLite would choke"""
+        name = "1{}".format(testdata.get_ascii(32))
         i = self.create_interface()
-        i.delete_table(testdata.get_ascii(32))
-        i._delete_table(testdata.get_ascii(32))
+        i.delete_table(name)
+        i._delete_table(name)
         i.delete_tables(disable_protection=True)
         i.delete_tables(disable_protection=True)
 

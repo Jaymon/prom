@@ -211,14 +211,26 @@ class SQLite(SQLInterface):
                 field_type = 'BIGINT'
 
         elif issubclass(field.type, types.StringTypes):
-            if 'size' in field.options:
-                field_type = 'CHARACTER({})'.format(field.options['size'])
-            elif 'max_size' in field.options:
-                field_type = 'VARCHAR({})'.format(field.options['max_size'])
+            fo = field.options
+            if field.is_ref():
+                # TODO -- 7-8-17 - this isn't a great way to do this, ideally the Field instance
+                # would combine all the options of both the current field and the
+                # foreign key field and return all those when Field.options is called
+                # (with the current field's options taking precedence) but there are
+                # lots of circular dependency things that happen when one field is
+                # trying to get the schema of another field and I don't have time
+                # to sort it all out right now
+                ref_s = field.schema
+                fo = ref_s.pk.options
+
+            if 'size' in fo:
+                field_type = 'CHARACTER({})'.format(fo['size'])
+            elif 'max_size' in fo:
+                field_type = 'VARCHAR({})'.format(fo['max_size'])
             else:
                 field_type = 'TEXT'
 
-            if field.options.get('ignore_case', False):
+            if fo.get('ignore_case', False):
                 field_type += ' COLLATE NOCASE'
 
             if is_pk:
@@ -253,15 +265,14 @@ class SQLite(SQLInterface):
 
         if not is_pk:
             if field.is_ref():
+                ref_s = field.schema
                 if field.required: # strong ref, it deletes on fk row removal
-                    ref_s = field.schema
                     field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(
                         ref_s,
                         ref_s.pk.name
                     )
 
                 else: # weak ref, it sets column to null on fk row removal
-                    ref_s = field.schema
                     field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(
                         ref_s,
                         ref_s.pk.name
@@ -342,7 +353,8 @@ class SQLite(SQLInterface):
         return ret.lastrowid if pk_name not in fields else fields[pk_name]
 
     def _delete_table(self, schema, **kwargs):
-        query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
+        #query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
+        query_str = "DROP TABLE IF EXISTS '{}'".format(str(schema))
         ret = self._query(query_str, ignore_result=True, **kwargs)
 
     def _handle_error(self, schema, e, **kwargs):

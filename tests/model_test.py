@@ -609,7 +609,6 @@ class OrmTest(EnvironTestCase):
             Nipk.create()
 
         n = Nipk.create(_id="pk1")
-        pout.v(n.fields)
         self.assertEqual("pk1", n.pk)
         self.assertEqual("pk1", n._id)
 

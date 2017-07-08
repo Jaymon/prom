@@ -407,10 +407,15 @@ class PostgreSQL(SQLInterface):
                 field_type = 'BIGINT'
 
         elif issubclass(field.type, types.StringTypes):
-            if 'size' in field.options:
-                field_type = 'CHAR({})'.format(field.options['size'])
-            elif 'max_size' in field.options:
-                field_type = 'VARCHAR({})'.format(field.options['max_size'])
+            fo = field.options
+            if field.is_ref():
+                ref_s = field.schema
+                fo = ref_s.pk.options
+
+            if 'size' in fo:
+                field_type = 'CHAR({})'.format(fo['size'])
+            elif 'max_size' in fo:
+                field_type = 'VARCHAR({})'.format(fo['max_size'])
             else:
                 field_type = 'TEXT'
 
@@ -446,15 +451,14 @@ class PostgreSQL(SQLInterface):
                 field_type += ' NULL'
 
             if field.is_ref():
+                ref_s = field.schema
                 if field.required: # strong ref, it deletes on fk row removal
-                    ref_s = field.schema
                     field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(
                         ref_s,
                         ref_s.pk.name
                     )
 
                 else: # weak ref, it sets column to null on fk row removal
-                    ref_s = field.schema
                     field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(
                         ref_s,
                         ref_s.pk.name

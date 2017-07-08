@@ -401,7 +401,6 @@ class Field(object):
     and setters because they always need to return a value and they always take in a
     value
     """
-
     @property
     def schema(self):
         """return the schema instance if this is reference to another table"""
