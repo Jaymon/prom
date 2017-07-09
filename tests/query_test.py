@@ -6,7 +6,7 @@ import sys
 
 import testdata
 
-from . import BaseTestCase
+from . import BaseTestCase, EnvironTestCase
 from prom.query import Query, Limit, Fields, CacheQuery
 from prom.query import Iterator, AllIterator
 import prom
@@ -106,7 +106,7 @@ class LimitTest(TestCase):
         self.assertEqual((10, 15), lc.get())
 
 
-class QueryTest(BaseTestCase):
+class QueryTest(EnvironTestCase):
 #     @classmethod
 #     def setUpClass(cls):
 #         from unittest import SkipTest
@@ -493,7 +493,7 @@ class QueryTest(BaseTestCase):
         self.assertEqual(2, len(res))
         self.assertEqual(list(res.pk), pks)
 
-    def test_value(self):
+    def test_value_query(self):
         _q = self.get_query()
 
         v = _q.copy().select_foo().value()
@@ -503,14 +503,14 @@ class QueryTest(BaseTestCase):
         pks = self.insert(_q, count)
         o = _q.copy().get_pk(pks[0])
 
-        v = _q.copy().select_foo().value()
+        v = _q.copy().select_foo().is_pk(o.pk).value()
         self.assertEqual(o.foo, v)
 
-        v = _q.copy().select_foo().select_bar().value()
+        v = _q.copy().select_foo().select_bar().is_pk(o.pk).value()
         self.assertEqual(o.foo, v[0])
         self.assertEqual(o.bar, v[1])
 
-    def test_values(self):
+    def test_values_query(self):
         _q = self.get_query()
 
         count = 2

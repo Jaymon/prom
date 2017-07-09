@@ -175,8 +175,8 @@ class BaseTestCase(TestCase):
 
         return s
 
-    def get_query(self):
-        orm_class = self.get_orm_class()
+    def get_query(self, table_name=None):
+        orm_class = self.get_orm_class(table_name)
         return orm_class.query
 
     def get_fields(self, schema, **field_kwargs):

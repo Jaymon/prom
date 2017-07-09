@@ -285,7 +285,7 @@ class SQLite(SQLInterface):
         http://sqlite.org/lang_createtable.html
         """
         query_str = []
-        query_str.append("CREATE TABLE {} (".format(schema))
+        query_str.append("CREATE TABLE {} (".format(self._normalize_table_name(schema)))
 
         query_fields = []
         for field_name, field in schema.fields.items():
@@ -300,11 +300,11 @@ class SQLite(SQLInterface):
         """
         https://www.sqlite.org/lang_createindex.html
         """
-        query_str = 'CREATE {}INDEX IF NOT EXISTS {}_{} ON {} ({})'.format(
+        query_str = "CREATE {}INDEX IF NOT EXISTS '{}_{}' ON {} ({})".format(
             'UNIQUE ' if index_options.get('unique', False) else '',
             schema,
             name,
-            schema,
+            self._normalize_table_name(schema),
             ', '.join(fields)
         )
 
@@ -339,8 +339,8 @@ class SQLite(SQLInterface):
             field_formats.append(self.val_placeholder)
             query_vals.append(field_val)
 
-        query_str = 'INSERT INTO {} ({}) VALUES ({})'.format(
-            schema,
+        query_str = "INSERT INTO {} ({}) VALUES ({})".format(
+            self._normalize_table_name(schema),
             ', '.join(field_names),
             ', '.join(field_formats)
         )
@@ -354,7 +354,7 @@ class SQLite(SQLInterface):
 
     def _delete_table(self, schema, **kwargs):
         #query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
-        query_str = "DROP TABLE IF EXISTS '{}'".format(str(schema))
+        query_str = "DROP TABLE IF EXISTS {}".format(self._normalize_table_name(schema))
         ret = self._query(query_str, ignore_result=True, **kwargs)
 
     def _handle_error(self, schema, e, **kwargs):
@@ -473,5 +473,8 @@ class SQLite(SQLInterface):
         query_sort_str.append('  END'.format(field_name))
         query_sort_str = "\n".join(query_sort_str)
         return query_sort_str, query_args
+
+    def _normalize_table_name(self, schema):
+        return "'{}'".format(schema)
 
 

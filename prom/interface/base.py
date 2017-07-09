@@ -684,6 +684,9 @@ class SQLInterface(Interface):
         return -- tuple -- field_sort_str, field_sort_args"""
         raise NotImplemented()
 
+    def _normalize_table_name(self, schema):
+        return str(schema)
+
     def get_SQL(self, schema, query, **sql_options):
         """
         convert the query instance into SQL
@@ -730,7 +733,7 @@ class SQLInterface(Interface):
                 query_str.append('  {}'.format(select_fields_str))
 
             query_str.append('FROM')
-            query_str.append('  {}'.format(schema))
+            query_str.append("  {}".format(self._normalize_table_name(schema)))
 
         if query.fields_where:
             query_str.append('WHERE')
