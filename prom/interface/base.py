@@ -567,9 +567,9 @@ class SQLInterface(Interface):
 #         raise NotImplementedError()
 
     def _delete_tables(self, **kwargs):
-        for table_name in self.get_tables(**kwargs):
-            with self.transaction(**kwargs) as connection:
-                kwargs['connection'] = connection
+        with self.transaction(**kwargs) as connection:
+            kwargs['connection'] = connection
+            for table_name in self.get_tables(**kwargs):
                 self._delete_table(table_name, **kwargs)
 
         return True

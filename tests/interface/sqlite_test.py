@@ -71,6 +71,36 @@ class InterfaceSQLiteTest(BaseTestInterface):
         i.delete_tables(disable_protection=True)
         self.assertFalse(i.has_table(table_name))
 
+    def test_delete_table_ref(self):
+        path = testdata.create_module("dtref", [
+            "import prom",
+            "",
+            "class Foo(prom.Orm):",
+            "    table_name = 'dtref_foo'",
+            "",
+            "class Bar(prom.Orm):",
+            "    table_name = 'dtref_bar'",
+            "    foo_id=prom.Field(Foo, True)",
+            "    foo2_id=prom.Field(Foo, True)",
+            ""
+        ])
+
+        from dtref import Foo, Bar
+
+        Foo.install()
+        Bar.install()
+
+        self.assertTrue(Foo.interface.has_table("dtref_foo"))
+        Foo.interface.delete_table("dtref_foo")
+        self.assertFalse(Foo.interface.has_table("dtref_foo"))
+
+        Bar.interface.close()
+        self.assertFalse(Bar.interface.is_connected())
+        self.assertTrue(Bar.interface.has_table("dtref_bar"))
+        Bar.interface.delete_tables(disable_protection=True)
+        self.assertFalse(Bar.interface.has_table("dtref_bar"))
+
+
 # not sure I'm a huge fan of this solution to remove common parent from testing queue
 # http://stackoverflow.com/questions/1323455/python-unit-test-with-base-and-sub-class
 del(BaseTestInterface)
