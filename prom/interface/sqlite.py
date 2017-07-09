@@ -353,11 +353,9 @@ class SQLite(SQLInterface):
         return ret.lastrowid if pk_name not in fields else fields[pk_name]
 
     def _delete_tables(self, **kwargs):
-        with self.transaction(**kwargs) as connection:
-            kwargs['connection'] = connection
-            self._query('PRAGMA foreign_keys = OFF', ignore_result=True, **kwargs);
-            ret = super(SQLite, self)._delete_tables(**kwargs)
-            self._query('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs);
+        self._query('PRAGMA foreign_keys = OFF', ignore_result=True, **kwargs);
+        ret = super(SQLite, self)._delete_tables(**kwargs)
+        self._query('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs);
         return ret
 
     def _delete_table(self, schema, **kwargs):
