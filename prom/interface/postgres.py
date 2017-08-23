@@ -19,6 +19,7 @@ import psycopg2.extensions
 # first party
 from .base import SQLInterface, SQLConnection
 from ..utils import get_objects
+from ..exception import UniqueError
 
 
 # class LoggingCursor(psycopg2.extras.RealDictCursor):
@@ -484,4 +485,11 @@ class PostgreSQL(SQLInterface):
                     ret = self._set_all_tables(schema, **kwargs)
 
         return ret
+
+    def _create_error(self, e, exc_info):
+        if isinstance(e, psycopg2.IntegrityError):
+            er = UniqueError(e, exc_info)
+        else:
+            er = super(PostgreSQL, self)._create_error(e, exc_info)
+        return er
 

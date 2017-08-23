@@ -30,6 +30,7 @@ from distutils import dir_util
 import sqlite3
 
 # first party
+from ..exception import UniqueError
 from .base import SQLInterface, SQLConnection
 
 
@@ -103,15 +104,14 @@ class SQLite(SQLInterface):
 
     _connection = None
 
-    def _connect(self, connection_config):
-        path = ''
+    @classmethod
+    def configure(cls, connection_config):
         dsn = getattr(connection_config, 'dsn', '')
         if dsn:
             host = connection_config.host
             db = connection_config.database
             if not host:
-                # NOTE -- without the os.sep this will make a relative path
-                path = os.sep + db
+                path = db
 
             elif not db:
                 path = host
@@ -124,6 +124,12 @@ class SQLite(SQLInterface):
 
         if not path:
             raise ValueError("no sqlite db path found in connection_config")
+
+        connection_config.path = path
+        return connection_config
+
+    def _connect(self, connection_config):
+        path = connection_config.path
 
         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
         options = {
@@ -377,7 +383,17 @@ class SQLite(SQLInterface):
             elif "no such table" in e_msg:
                 ret = self._set_all_tables(schema, **kwargs)
 
+            elif "UNIQUE" in e_msg:
+                self.raise_error(e, e_class=UniqueError)
+
         return ret
+
+    def _create_error(self, e, exc_info):
+        if isinstance(e, sqlite3.IntegrityError):
+            er = UniqueError(e, exc_info)
+        else:
+            er = super(SQLite, self)._create_error(e, exc_info)
+        return er
 
     def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given table"""

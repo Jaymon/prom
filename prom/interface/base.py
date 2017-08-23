@@ -137,11 +137,16 @@ class Interface(object):
     connection_config = None
     """a config.Connection() instance"""
 
+    @classmethod
+    def configure(cls, connection_config):
+        host = connection_config.host
+        if host:
+            db = connection_config.database
+            connection_config.database = db.strip("/")
+        return connection_config
+
     def __init__(self, connection_config=None):
         self.connection_config = connection_config
-
-#     def __del__(self):
-#         self.close()
 
     def connect(self, connection_config=None, *args, **kwargs):
         """
@@ -549,12 +554,19 @@ class Interface(object):
         """this is just a wrapper to make the passed in exception an InterfaceError"""
         if not exc_info:
             exc_info = sys.exc_info()
+
         if not isinstance(e, InterfaceError):
             # allow python's built in errors to filter up through
             # https://docs.python.org/2/library/exceptions.html
             if not hasattr(exceptions, e.__class__.__name__):
-                e = InterfaceError(e, exc_info)
+                e = self._create_error(e, exc_info)
+
         raise e.__class__, e, exc_info[2]
+
+    def _create_error(self, e, exc_info):
+        """create the error that you want to raise, this gives you an opportunity
+        to customize the error"""
+        return InterfaceError(e, exc_info)
 
 
 class SQLInterface(Interface):

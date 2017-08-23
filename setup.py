@@ -15,12 +15,12 @@ with open(os.path.join(name, "__init__.py")) as f:
 setup(
     name=name,
     version=version,
-    description='A lightweight orm for PostgreSQL or SQLite',
+    description='A sensible orm for PostgreSQL or SQLite',
     author='Jay Marcyes',
     author_email='jay@marcyes.com',
     url='http://github.com/firstopinion/{}'.format(name),
     packages=find_packages(),
-    tests_require=['testdata', 'gevent', 'captain'],
+    tests_require=['testdata', 'gevent', 'captain', 'dsnparse'],
     license="MIT",
     classifiers=[ # https://pypi.python.org/pypi?:action=list_classifiers
         'Development Status :: 4 - Beta',

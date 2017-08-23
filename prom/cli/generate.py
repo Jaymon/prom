@@ -81,4 +81,3 @@ def main_generate(table_names, stream):
             fp.write_newlines(2)
 
 
-

@@ -743,7 +743,8 @@ class BaseTestInterface(BaseTestCase):
 
         d = i.insert(s, {'foo': 1, 'bar': 'v1', 'should_be_unique': 1})
 
-        with self.assertRaises(prom.InterfaceError):
+        #with self.assertRaises(prom.InterfaceError):
+        with self.assertRaises(prom.UniqueError):
             d = i.insert(s, {'foo': 2, 'bar': 'v2', 'should_be_unique': 1})
 
     def test_index_ignore_case(self):

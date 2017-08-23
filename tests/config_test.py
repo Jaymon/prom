@@ -110,61 +110,10 @@ class DsnConnectionTest(BaseTestCase):
     def test_dsn(self):
         tests = [
             (
-                "Backend://../this/is/the/path",
-                {
-                    'interface_name': "Backend",
-                    'host': '..',
-                    'database': 'this/is/the/path'
-                }
-            ),
-            (
-                "Backend://./this/is/the/path",
-                {
-                    'interface_name': "Backend",
-                    'host': '.',
-                    'database': 'this/is/the/path'
-                }
-            ),
-            (
-                "Backend:///this/is/the/path",
-                {
-                    'interface_name': "Backend",
-                    'host': None,
-                    'database': 'this/is/the/path'
-                }
-            ),
-            (
-                "Backend://:memory:#fragment_name",
-                {
-                    'interface_name': "Backend",
-                    'host': ":memory:",
-                    'name': 'fragment_name'
-                }
-            ),
-            (
-                "Backend://:memory:?option=1&var=2#fragment_name",
-                {
-                    'interface_name': "Backend",
-                    'host': ":memory:",
-                    'name': 'fragment_name',
-                    'options': {
-                        'var': "2",
-                        'option': "1"
-                    }
-                }
-            ),
-            (
-                "Backend://:memory:",
-                {
-                    'interface_name': "Backend",
-                    'host': ":memory:",
-                }
-            ),
-            (
-                "some.Backend://username:password@localhost:5000/database?option=1&var=2#fragment",
+                "prom.interface.postgres.PostgreSQL://username:password@localhost:5000/database?option=1&var=2#fragment",
                 {
                     'username': "username",
-                    'interface_name': "some.Backend",
+                    'interface_name': "prom.interface.postgres.PostgreSQL",
                     'database': "database",
                     'host': "localhost",
                     'port': 5000,
@@ -177,67 +126,28 @@ class DsnConnectionTest(BaseTestCase):
                 }
             ),
             (
-                "a.long.backend.Interface://localhost:5/database2",
+                "prom.interface.postgres.PostgreSQL://localhost:5/database2",
                 {
-                    'interface_name': "a.long.backend.Interface",
+                    'interface_name': "prom.interface.postgres.PostgreSQL",
                     'database': "database2",
                     'host': "localhost",
                     'port': 5,
                 }
             ),
             (
-                "Interface://localhost/db3",
+                "prom.interface.postgres.PostgreSQL://localhost/db3",
                 {
-                    'interface_name': "Interface",
+                    'interface_name': "prom.interface.postgres.PostgreSQL",
                     'database': "db3",
                     'host': "localhost",
                 }
             ),
             (
-                "Interface:///db4",
+                "prom.interface.postgres.PostgreSQL://localhost/db3?var1=1&var2=2#name",
                 {
-                    'interface_name': "Interface",
-                    'database': "db4",
-                }
-            ),
-            (
-                "Interface:///relative/path/to/db/4.sqlite",
-                {
-                    'interface_name': "Interface",
-                    'database': "relative/path/to/db/4.sqlite",
-                }
-            ),
-            (
-                "Interface:////abs/path/to/db/4.sqlite",
-                {
-                    'interface_name': "Interface",
-                    'database': "/abs/path/to/db/4.sqlite",
-                }
-            ),
-            (
-                "Interface:////abs/path/to/db/4.sqlite?var1=1&var2=2",
-                {
-                    'interface_name': "Interface",
-                    'database': "/abs/path/to/db/4.sqlite",
-                    'options': {
-                        'var1': "1",
-                        'var2': "2"
-                    }
-                }
-            ),
-            (
-                "Interface:////abs/path/to/db/4.sqlite?var1=1&var2=2#name",
-                {
-                    'interface_name': "Interface",
-                    'database': "/abs/path/to/db/4.sqlite",
-                    'name': "name",
-                }
-            ),
-            (
-                "Interface:////abs/path/to/db/4.sqlite?var1=1&var2=2#name",
-                {
-                    'interface_name': "Interface",
-                    'database': "/abs/path/to/db/4.sqlite",
+                    'interface_name': "prom.interface.postgres.PostgreSQL",
+                    'database': "db3",
+                    'host': "localhost",
                     'name': "name",
                     'options': {
                         'var1': "1",
@@ -246,11 +156,110 @@ class DsnConnectionTest(BaseTestCase):
                 }
             ),
             (
-                "Interface://localhost/db3?var1=1&var2=2#name",
+                "prom.interface.sqlite.SQLite://../this/is/the/path",
                 {
-                    'interface_name': "Interface",
-                    'database': "db3",
-                    'host': "localhost",
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': '../this/is/the/path'
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite://./this/is/the/path",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': './this/is/the/path'
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///this/is/the/path",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': '/this/is/the/path'
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite://:memory:#fragment_name",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': ":memory:",
+                    'name': 'fragment_name'
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite://:memory:?option=1&var=2#fragment_name",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': ":memory:",
+                    'name': 'fragment_name',
+                    'options': {
+                        'var': "2",
+                        'option': "1"
+                    }
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite://:memory:",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': ":memory:",
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///db4",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/db4",
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///relative/path/to/db/4.sqlite",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/relative/path/to/db/4.sqlite",
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/abs/path/to/db/4.sqlite",
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/abs/path/to/db/4.sqlite",
+                    'options': {
+                        'var1': "1",
+                        'var2': "2"
+                    }
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2#name",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/abs/path/to/db/4.sqlite",
+                    'name': "name",
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2#name",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/abs/path/to/db/4.sqlite",
                     'name': "name",
                     'options': {
                         'var1': "1",
@@ -261,9 +270,9 @@ class DsnConnectionTest(BaseTestCase):
         ]
 
         for t in tests:
-           c = DsnConnection(t[0])
-           for attr, val in t[1].iteritems():
-               self.assertEqual(val, getattr(c, attr))
+            c = DsnConnection(t[0])
+            for attr, val in t[1].items():
+                self.assertEqual(val, getattr(c, attr))
 
 
 class ConnectionTest(BaseTestCase):
@@ -285,6 +294,7 @@ class ConnectionTest(BaseTestCase):
     def test___init__(self):
 
         c = Connection(
+            interface_name="prom.interface.sqlite.SQLite",
             database="dbname",
             port=5000,
             some_random_thing="foo"
@@ -293,35 +303,6 @@ class ConnectionTest(BaseTestCase):
         self.assertEqual(5000, c.port)
         self.assertEqual("dbname", c.database)
         self.assertEqual({"some_random_thing": "foo"}, c.options)
-
-    def test_host(self):
-        tests = [
-            ("localhost:8000", ["localhost", 8000]),
-            ("localhost", ["localhost", 0]),
-            ("//localhost", ["localhost", 0]),
-            ("http://localhost:10", ["localhost", 10]),
-            ("http://some.crazydomain.com", ["some.crazydomain.com", 0]),
-            ("http://some.crazydomain.com:1000", ["some.crazydomain.com", 1000]),
-            ("http://:memory:", [":memory:", 0]),
-            (":memory:", [":memory:", 0]),
-            ("//:memory:", [":memory:", 0]),
-        ]
-
-        for t in tests:
-            p = Connection()
-            p.host = t[0]
-            self.assertEqual(t[1][0], p.host)
-            self.assertEqual(t[1][1], p.port)
-
-        p = Connection()
-        p.port = 555
-        p.host = "blah.example.com"
-        self.assertEqual("blah.example.com", p.host)
-        self.assertEqual(555, p.port)
-
-        p.host = "blah.example.com:43"
-        self.assertEqual("blah.example.com", p.host)
-        self.assertEqual(43, p.port)
 
 
 class ObjectFieldTest(BaseTestCase):

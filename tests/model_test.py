@@ -622,3 +622,25 @@ class OrmTest(EnvironTestCase):
         n2 = Nipk2.create(nipk_id=n.pk)
         self.assertEqual(n.pk, n2.nipk_id)
 
+    def test_failure_save(self):
+        """test to make sure saving on a table that doesn't exist doesn't actually fail"""
+        class FailureSetTorm(Orm):
+            interface = self.get_interface()
+            schema = self.get_schema()
+
+        f = FailureSetTorm(foo=1, bar="value 1")
+        f.save()
+        self.assertTrue(f.pk)
+
+    def test_failure_get(self):
+        """test to make sure getting on a table that doesn't exist works without raising
+        an error
+        """
+        class FailureGetTorm(Orm):
+            interface = self.get_interface()
+            schema = self.get_schema()
+
+        f = FailureGetTorm(foo=1, bar="value 1")
+        f.query.get_one()
+        # we succeeded if no error was raised
+

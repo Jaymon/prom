@@ -10,3 +10,7 @@ class Error(Exception):
 class InterfaceError(Error):
     """specifically for wrapping SQLite and Postgres errors"""
     pass
+
+
+class UniqueError(InterfaceError):
+    pass

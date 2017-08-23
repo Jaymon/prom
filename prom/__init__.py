@@ -2,7 +2,8 @@
 import os
 import logging
 
-# first party
+import dsnparse
+
 from .config import DsnConnection, \
     Schema, \
     Field, \
@@ -13,10 +14,11 @@ from .query import Query, CacheQuery
 from . import decorators
 from .model import Orm
 from .interface import get_interface, set_interface, get_interfaces
-from .exception import InterfaceError, Error
+from .exception import InterfaceError, Error, UniqueError
+from . import utils
 
 
-__version__ = '0.9.104'
+__version__ = '0.9.105'
 
 
 # get rid of "No handler found" warnings (cribbed from requests)
@@ -43,24 +45,16 @@ def configure_environ(dsn_env_name='PROM_DSN'):
         >>> import prom
         >>> print prom.interfaces # prints a dict with interfaces i1 and i2 keys
 
-    dsn_env_name -- string -- the name of the environment variables
+    :param dsn_env_name: string, the name of the environment variables
     """
-    if dsn_env_name in os.environ:
-        configure(os.environ[dsn_env_name])
+    inters = []
+    cs = dsnparse.parse_environs(dsn_env_name, parse_class=DsnConnection)
+    for c in cs:
+        inter = c.interface
+        set_interface(inter, c.name)
+        inters.append(inter)
 
-    # now try importing 1 -> N dsns
-    increment_name = lambda name, num: '{}_{}'.format(name, num)
-    dsn_num = 0 if increment_name(dsn_env_name, 0) in os.environ else 1
-    dsn_env_num_name = increment_name(dsn_env_name, dsn_num)
-    if dsn_env_num_name in os.environ:
-        try:
-            while True:
-                configure(os.environ[dsn_env_num_name])
-                dsn_num += 1
-                dsn_env_num_name = increment_name(dsn_env_name, dsn_num)
-
-        except KeyError:
-            pass
+    return inters
 
 
 def configure(dsn):
@@ -72,10 +66,7 @@ def configure(dsn):
 
     dsn -- string -- a properly formatted prom dsn, see DsnConnection for how to format the dsn
     """
-    c = DsnConnection(dsn)
-    if c.name in get_interfaces():
-        raise ValueError('a connection named "{}" has already been configured'.format(c.name))
-
+    c = dsnparse.parse(dsn, parse_class=DsnConnection)
     inter = c.interface
     set_interface(inter, c.name)
     return inter

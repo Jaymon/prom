@@ -10,6 +10,8 @@ try:
 except ImportError:
     import pickle
 
+import dsnparse
+
 from . import utils
 
 
@@ -24,6 +26,9 @@ class Connection(object):
 
     interface_name = ""
     """string -- full Interface class name -- the interface the connection should use to talk with the db"""
+
+    host = ""
+    """the hostname"""
 
     database = ""
     """the db name to use, in postgres, this is the database name"""
@@ -40,11 +45,11 @@ class Connection(object):
     options = None
     """any other db options, these can be interface implementation specific"""
 
-    @property
-    def interface_class(self):
-        """Return the configured interface class object that can be used to create new instances"""
-        interface_module, interface_class = utils.get_objects(self.interface_name)
-        return interface_class
+#     @property
+#     def interface_class(self):
+#         """Return the configured interface class object that can be used to create new instances"""
+#         interface_module, interface_class = utils.get_objects(self.interface_name)
+#         return interface_class
 
     @property
     def interface(self):
@@ -52,41 +57,42 @@ class Connection(object):
         interface_class = self.interface_class
         return interface_class(self)
 
-    @property
-    def host(self):
-        """the db host"""
-        if not hasattr(self, '_host'): self._host = None
-        return self._host
+#     @property
+#     def host(self):
+#         """the db host"""
+#         if not hasattr(self, '_host'): self._host = None
+#         return self._host
+# 
+#     @host.setter
+#     def host(self, h):
+#         """
+#         check host for a :port, and split that off into the .port attribute if there
+#         """
+#         # normalize the host so urlparse can parse it correctly
+#         # http://stackoverflow.com/questions/9530950/#comment12075005_9531210
+#         if re.search(ur'\:memory\:', h, re.I):
+#             h = re.sub(ur'(?:\S+|^)\/\/', '', h)
+#             self._host = h
+# 
+#         else:
+#             if not re.match(ur'(?:\S+|^)\/\/', h):
+#                 h = "//{}".format(h)
+# 
+#             o = urlparse.urlparse(h)
+#             if o.hostname:
+#                 self._host = o.hostname
+#             else:
+#                 self._host = o.path
+# 
+#             if o.port: self.port = o.port
 
-    @host.setter
-    def host(self, h):
-        """
-        check host for a :port, and split that off into the .port attribute if there
-        """
-        # normalize the host so urlparse can parse it correctly
-        # http://stackoverflow.com/questions/9530950/#comment12075005_9531210
-        if re.search(ur'\:memory\:', h, re.I):
-            h = re.sub(ur'(?:\S+|^)\/\/', '', h)
-            self._host = h
-
-        else:
-            if not re.match(ur'(?:\S+|^)\/\/', h):
-                h = "//{}".format(h)
-
-            o = urlparse.urlparse(h)
-            if o.hostname:
-                self._host = o.hostname
-            else:
-                self._host = o.path
-
-            if o.port: self.port = o.port
-
-    def __init__(self, **kwargs):
+    def __init__(self, fields=None, **fields_kwargs):
         """
         set all the values by passing them into this constructor, any unrecognized kwargs get put into .options
 
         example --
             c = Connection(
+                host="127.0.0.1",
                 database="dbname",
                 port=5000,
                 some_random_thing="foo"
@@ -95,13 +101,23 @@ class Connection(object):
             print c.port # 5000
             print c.options # {"some_random_thing": "foo"}
         """
+
+        kwargs = utils.make_dict(fields, fields_kwargs)
+        if "interface_name" not in kwargs:
+            raise ValueError("no interface_name passed into Connection")
+
         self.options = {}
 
-        for key, val in kwargs.iteritems():
+        for key, val in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, val)
             else:
                 self.options[key] = val
+
+
+        interface_module, interface_class = utils.get_objects(self.interface_name)
+        self.interface_class = interface_class
+        interface_class.configure(self)
 
 
 class DsnConnection(Connection):
@@ -120,51 +136,28 @@ class DsnConnection(Connection):
     http://en.wikipedia.org/wiki/Connection_string
     http://en.wikipedia.org/wiki/Data_source_name
     """
+    dsn = ""
+    """holds the raw dsn string that was parsed"""
+
+    @classmethod
+    def parse(cls, dsn):
+        d = dsnparse.ParseResult.parse(dsn)
+
+        # remap certain values
+        d["name"] = d.pop("fragment")
+        d["interface_name"] = d.pop("scheme")
+        d["database"] = d.pop("path")
+        d["options"] = d.pop("query")
+        d["host"] = d.pop("hostname")
+
+        # get rid of certain values
+        d.pop("params", None)
+        return d
+
     def __init__(self, dsn):
         # get the scheme, which is actually our interface_name
-        first_colon = dsn.find(':')
-        interface_name = dsn[0:first_colon]
-        dsn_url = dsn[first_colon+1:]
-        dsn_url, is_memory = re.subn(ur'\/\/\:memory\:', u'//memory', dsn_url, flags=re.I)
-        url = urlparse.urlparse(dsn_url)
-        self.dsn = dsn
-
-        # parse the query into options
-        options = {}
-        if url.query:
-            for k, kv in urlparse.parse_qs(url.query, True).iteritems():
-                if len(kv) > 1:
-                    options[k] = kv
-                else:
-                    options[k] = kv[0]
-
-        d = {
-            'interface_name': interface_name,
-            'database': url.path[1:],
-        }
-
-        if url.hostname:
-            if is_memory:
-                d['host'] = u':memory:'
-            else:
-                d['host'] = url.hostname
-
-        if url.port:
-            d['port'] = url.port
-
-        if url.username:
-            d['username'] = url.username
-
-        if url.password:
-            d['password'] = url.password
-
-        if url.fragment:
-            d['name'] = url.fragment
-
-        if options:
-            d['options'] = options
-
-        super(DsnConnection, self).__init__(**d)
+        kwargs = self.parse(dsn)
+        super(DsnConnection, self).__init__(**kwargs)
 
 
 class Schema(object):
