@@ -77,6 +77,7 @@ class PostgreSQL(SQLInterface):
         _, pool_class = get_objects(pool_class_name)
 
         self.log("connecting using pool class {}".format(pool_class_name))
+
         self.connection_pool = pool_class(
             minconn,
             maxconn,
@@ -90,7 +91,6 @@ class PostgreSQL(SQLInterface):
             #cursor_factory=LoggingCursor,
             connection_factory=Connection,
         )
-
 
         # hack for sync backwards compatibility with transactions
         if not async:
