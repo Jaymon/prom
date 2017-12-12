@@ -140,7 +140,7 @@ class PostgreSQL(SQLInterface):
         http://pythonhosted.org/psycopg2/usage.html#adaptation-of-python-values-to-sql-types
         """
         query_str = []
-        query_str.append("CREATE TABLE {} (".format(str(schema)))
+        query_str.append("CREATE TABLE {} (".format(self._normalize_table_name(schema)))
 
         query_fields = []
         for field_name, field in schema.fields.items():
@@ -152,7 +152,7 @@ class PostgreSQL(SQLInterface):
         ret = self.query(query_str, ignore_result=True, **kwargs)
 
     def _delete_table(self, schema, **kwargs):
-        query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(str(schema))
+        query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(self._normalize_table_name(schema))
         ret = self.query(query_str, ignore_result=True, **kwargs)
 
     def _get_fields(self, table_name, **kwargs):
@@ -297,12 +297,12 @@ class PostgreSQL(SQLInterface):
         field_names = []
         query_vals = []
         for field_name, field_val in fields.items():
-            field_names.append(field_name)
+            field_names.append(self._normalize_name(field_name))
             field_formats.append('%s')
             query_vals.append(field_val)
 
         query_str = 'INSERT INTO {} ({}) VALUES ({}) RETURNING {}'.format(
-            str(schema),
+            self._normalize_table_name(schema),
             ', '.join(field_names),
             ', '.join(field_formats),
             pk_name
@@ -312,7 +312,7 @@ class PostgreSQL(SQLInterface):
         return ret[0][pk_name]
 
     def _normalize_field_SQL(self, schema, field_name, symbol):
-        format_field_name = field_name
+        format_field_name = self._normalize_name(field_name)
         format_val_str = self.val_placeholder
 
         if 'LIKE' in symbol:
@@ -332,7 +332,8 @@ class PostgreSQL(SQLInterface):
         query_sort_str = []
         query_args = []
         for v in reversed(field_vals):
-            query_sort_str.append('  {} = {} {}'.format(field_name, self.val_placeholder, sort_dir_str))
+            query_sort_str.append('  {} = {} {}'.format(
+                self._normalize_name(field_name), self.val_placeholder, sort_dir_str))
             query_args.append(v)
 
         return ',\n'.join(query_sort_str), query_args
@@ -362,7 +363,7 @@ class PostgreSQL(SQLInterface):
         }
 
         for k, v in field_kwargs.items():
-            fstrs.append([k_opts[k].format(field_name), self.val_placeholder, v])
+            fstrs.append([k_opts[k].format(self._normalize_name(field_name)), self.val_placeholder, v])
 
         return fstrs
 
@@ -465,7 +466,7 @@ class PostgreSQL(SQLInterface):
                         ref_s.pk.name
                     )
 
-        return '{} {}'.format(field_name, field_type)
+        return '{} {}'.format(self._normalize_name(field_name), field_type)
 
     def _handle_error(self, schema, e, **kwargs):
         ret = False

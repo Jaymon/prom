@@ -643,7 +643,7 @@ class SQLInterface(Interface):
         raise NotImplemented()
 
     def _normalize_field_SQL(self, schema, field_name, symbol):
-        return field_name, self.val_placeholder
+        return self._normalize_name(field_name), self.val_placeholder
 
     def _normalize_val_SQL(self, schema, symbol_map, field_name, field_val, field_kwargs=None):
 
@@ -663,7 +663,11 @@ class SQLInterface(Interface):
 
 
                     if is_list:
-                        format_str += '{} {} ({})'.format(fname, symbol, ', '.join([fvstr] * len(farg)))
+                        format_str += '{} {} ({})'.format(
+                            fname,
+                            symbol,
+                            ', '.join([fvstr] * len(farg))
+                        )
                         format_args.extend(farg)
 
                     else:
@@ -676,7 +680,11 @@ class SQLInterface(Interface):
         else:
             if is_list:
                 field_name, format_val_str = self._normalize_field_SQL(schema, field_name, symbol)
-                format_str = '{} {} ({})'.format(field_name, symbol, ', '.join([format_val_str] * len(field_val)))
+                format_str = '{} {} ({})'.format(
+                    field_name,
+                    symbol,
+                    ', '.join([format_val_str] * len(field_val))
+                )
                 format_args.extend(field_val)
 
             else:
@@ -684,8 +692,16 @@ class SQLInterface(Interface):
                 if field_val is None:
                     symbol = symbol_map['none_symbol']
 
-                field_name, format_val_str = self._normalize_field_SQL(schema, field_name, symbol)
-                format_str = '{} {} {}'.format(field_name, symbol, format_val_str)
+                field_name, format_val_str = self._normalize_field_SQL(
+                    schema,
+                    field_name,
+                    symbol
+                )
+                format_str = '{} {} {}'.format(
+                    field_name,
+                    symbol,
+                    format_val_str
+                )
                 format_args.append(field_val)
 
         return format_str, format_args
@@ -697,7 +713,17 @@ class SQLInterface(Interface):
         raise NotImplemented()
 
     def _normalize_table_name(self, schema):
-        return str(schema)
+        return self._normalize_name(schema)
+
+    def _normalize_name(self, name):
+        """normalize a non value name for the query
+
+        https://blog.christosoft.de/2012/10/sqlite-escaping-table-acolumn-names/
+
+        :param name: str, the name that should be prepared to be queried
+        :returns: the modified name ready to be added to a query string
+        """
+        return '"{}"'.format(name)
 
     def get_SQL(self, schema, query, **sql_options):
         """
@@ -734,7 +760,9 @@ class SQLInterface(Interface):
             select_fields = query.fields_select
             if select_fields:
                 distinct = "DISTINCT " if select_fields.options.get("unique", False) else ""
-                select_fields_str = distinct + ',{}'.format(os.linesep).join(select_fields.names())
+                select_fields_str = distinct + ',{}'.format(os.linesep).join(
+                    (self._normalize_name(f) for f in select_fields.names())
+                )
             else:
                 select_fields_str = "*"
 
@@ -846,11 +874,11 @@ class SQLInterface(Interface):
 
         field_str = []
         for field_name, field_val in fields.items():
-            field_str.append('{} = {}'.format(field_name, self.val_placeholder))
+            field_str.append('{} = {}'.format(self._normalize_name(field_name), self.val_placeholder))
             query_args.append(field_val)
 
         query_str = query_str.format(
-            str(schema),
+            self._normalize_table_name(schema),
             ',{}'.format(os.linesep).join(field_str),
             where_query_str
         )

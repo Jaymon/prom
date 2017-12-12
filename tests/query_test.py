@@ -654,6 +654,12 @@ class QueryTest(EnvironTestCase):
         q.select_fields(fields_select, 'baz')
         self.assertEqual(fields_select + ['baz'], q.fields_select.names())
 
+        # make sure chaining works
+        q = self.get_query()
+        fields_select = ['foo', 'bar', 'che']
+        q.select_fields(fields_select[0]).select_fields(*fields_select[1:])
+        self.assertEqual(fields_select, q.fields_select.names())
+
     def test_child_magic(self):
 
         orm_class = self.get_orm_class()

@@ -119,20 +119,20 @@ class InterfacePostgresTest(BaseTestInterface):
         #kwargs = dict(day=int(datetime.datetime.utcnow().strftime('%d')))
         kwargs = dict(day=10)
         fstr, fargs = i._normalize_val_SQL(s, {'symbol': '='}, 'ts', None, kwargs)
-        self.assertEqual("EXTRACT(DAY FROM ts) = %s", fstr)
+        self.assertEqual('EXTRACT(DAY FROM "ts") = %s', fstr)
         self.assertEqual(10, fargs[0])
 
         kwargs = dict(day=11, hour=12)
         fstr, fargs = i._normalize_val_SQL(s, {'symbol': '='}, 'ts', None, kwargs)
-        self.assertEqual("EXTRACT(DAY FROM ts) = %s AND EXTRACT(HOUR FROM ts) = %s", fstr)
+        self.assertEqual('EXTRACT(DAY FROM "ts") = %s AND EXTRACT(HOUR FROM "ts") = %s', fstr)
         self.assertEqual(11, fargs[0])
         self.assertEqual(12, fargs[1])
 
         fstr, fargs = i._normalize_val_SQL(s, {'symbol': '=', 'none_symbol': 'IS'}, 'ts', None)
-        self.assertEqual("ts IS %s", fstr)
+        self.assertEqual('"ts" IS %s', fstr)
 
         fstr, fargs = i._normalize_val_SQL(s, {'symbol': '!=', 'none_symbol': 'IS NOT'}, 'ts', None)
-        self.assertEqual("ts IS NOT %s", fstr)
+        self.assertEqual('"ts" IS NOT %s', fstr)
 
         kwargs = dict(bogus=5)
         with self.assertRaises(KeyError):
@@ -147,12 +147,12 @@ class InterfacePostgresTest(BaseTestInterface):
 
         kwargs = dict(day=[10])
         fstr, fargs = i._normalize_val_SQL(s, {'symbol': 'IN', 'list': True}, 'ts', None, kwargs)
-        self.assertEqual("EXTRACT(DAY FROM ts) IN (%s)", fstr)
+        self.assertEqual('EXTRACT(DAY FROM "ts") IN (%s)', fstr)
         self.assertEqual(kwargs['day'], fargs)
 
         kwargs = dict(day=[11, 13], hour=[12])
         fstr, fargs = i._normalize_val_SQL(s, {'symbol': 'IN', 'list': True}, 'ts', None, kwargs)
-        self.assertEqual("EXTRACT(DAY FROM ts) IN (%s, %s) AND EXTRACT(HOUR FROM ts) IN (%s)", fstr)
+        self.assertEqual('EXTRACT(DAY FROM "ts") IN (%s, %s) AND EXTRACT(HOUR FROM "ts") IN (%s)', fstr)
         self.assertEqual(kwargs['day'], fargs[0:2])
         self.assertEqual(kwargs['hour'], fargs[2:])
 

@@ -9,7 +9,7 @@ from prom import query
 from prom.config import Schema, Field, Index
 import prom
 
-from .. import BaseTestCase
+from .. import BaseTestCase, testdata
 
 
 class BaseTestInterface(BaseTestCase):
@@ -972,6 +972,23 @@ class BaseTestInterface(BaseTestCase):
         q.is_foo(day=21, month=3)
         d = i.get_one(s, q)
         self.assertFalse(d)
+
+    def test_group_field_name(self):
+        i = self.get_interface()
+        s = Schema(
+            self.get_table_name(),
+            _id=Field(int, True, pk=True),
+            group=Field(str, True),
+        )
+        i.set_table(s)
+
+        text = testdata.get_words()
+        pk = i.insert(s, {'group': text})
+
+        q = query.Query().is__id(pk)
+        d = dict(i.get_one(s, q))
+        self.assertEqual(text, d["group"])
+        self.assertEqual(pk, d["_id"])
 
 
 # https://docs.python.org/2/library/unittest.html#load-tests-protocol

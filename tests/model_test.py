@@ -140,6 +140,7 @@ class OrmTest(EnvironTestCase):
 
         class IGetSetInsertUpdateOrm(Orm):
             table_name = "IGetSetInsertUpdateOrm_table"
+            #interface = self.get_interface()
             foo = Field(str)
             @foo.isetter
             def foo(self, val, is_update, is_modified):

@@ -712,6 +712,7 @@ class Query(object):
 
         for field_name in fields:
             self.select_field(field_name)
+        return self
 
     def set_field(self, field_name, field_val=None):
         """

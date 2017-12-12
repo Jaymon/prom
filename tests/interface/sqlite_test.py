@@ -112,6 +112,20 @@ class InterfaceSQLiteTest(BaseTestInterface):
         _id = self.insert(i, s, 1)[0]
         self.assertTrue(_id)
 
+    def test_list_field(self):
+        from prom import Field, Orm
+        class ListFieldOrm(Orm):
+            interface = self.get_interface()
+            foo = Field(list)
+
+        with self.assertRaises(ValueError):
+            ListFieldOrm.install()
+
+        lf = ListFieldOrm()
+        lf.foo = [testdata.get_words(), testdata.get_words()]
+        with self.assertRaises(ValueError):
+            lf.save()
+
 
     # NOTE -- the x is in front of the db so this goes last because it causes
     # test_delete_table_ref to fail when it isn't last (not sure why)

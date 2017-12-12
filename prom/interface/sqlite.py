@@ -284,7 +284,7 @@ class SQLite(SQLInterface):
                         ref_s.pk.name
                     )
 
-        return '{} {}'.format(field_name, field_type)
+        return '{} {}'.format(self._normalize_name(field_name), field_type)
 
     def _set_table(self, schema, **kwargs):
         """
@@ -322,7 +322,7 @@ class SQLite(SQLInterface):
         # http://www.mail-archive.com/sqlite-users@sqlite.org/msg22055.html
         # http://stackoverflow.com/questions/604939/
         ret = {}
-        rs = self._query('PRAGMA index_list({})'.format(schema), **kwargs)
+        rs = self._query('PRAGMA index_list({})'.format(self._normalize_table_name(schema)), **kwargs)
         if rs:
             for r in rs:
                 iname = r['name']
@@ -341,7 +341,7 @@ class SQLite(SQLInterface):
         field_names = []
         query_vals = []
         for field_name, field_val in fields.items():
-            field_names.append(field_name)
+            field_names.append(self._normalize_name(field_name))
             field_formats.append(self.val_placeholder)
             query_vals.append(field_val)
 
@@ -469,7 +469,7 @@ class SQLite(SQLInterface):
         }
 
         for k, v in field_kwargs.iteritems():
-            fstrs.append([k_opts[k].format(field_name), self.val_placeholder, v])
+            fstrs.append([k_opts[k].format(self._normalize_name(field_name)), self.val_placeholder, v])
 
         return fstrs
 
@@ -486,17 +486,13 @@ class SQLite(SQLInterface):
         else:
             fvi = (t for t in enumerate(reversed(field_vals))) 
 
-        query_sort_str = ['  CASE {}'.format(field_name)]
+        query_sort_str = ['  CASE {}'.format(self._normalize_name(field_name))]
         query_args = []
         for i, v in fvi:
             query_sort_str.append('    WHEN {} THEN {}'.format(self.val_placeholder, i))
             query_args.append(v)
 
-        query_sort_str.append('  END'.format(field_name))
+        query_sort_str.append('  END')
         query_sort_str = "\n".join(query_sort_str)
         return query_sort_str, query_args
-
-    def _normalize_table_name(self, schema):
-        return "'{}'".format(schema)
-
 
