@@ -382,6 +382,42 @@ class JsonFieldTest(ObjectFieldTest):
 
 
 class FieldTest(BaseTestCase):
+    def test_fcrud(self):
+
+        class FCrudOrm(Orm):
+            foo = Field(int)
+
+            @foo.fsetter
+            def foo(self, v):
+                return 0 if v is None else v
+
+            @foo.fgetter
+            def foo(self, v):
+                return None if v is None else v + 1
+
+            @foo.fdeleter
+            def foo(self, val):
+                return None
+
+        o = FCrudOrm()
+
+        self.assertEqual(None, o.foo)
+        o.foo = 0
+        self.assertEqual(1, o.foo)
+        self.assertEqual(1, o.foo)
+
+        pk = o.save()
+        self.assertEqual(1, o.foo)
+        self.assertEqual(2, o.foo)
+
+        del o.foo
+        self.assertEqual(-1, o.foo)
+        pk = o.save()
+        self.assertEqual(1, o.foo)
+
+
+
+
     def test_fdeleter(self):
         class FDOrm(Orm):
             foo = Field(int)

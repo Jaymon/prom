@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals, division, print_function, absolute_import
 import types
 import urlparse
 import datetime
@@ -205,6 +207,7 @@ class Schema(object):
                 for k, v in vars(klass).items():
                     if k not in seen_properties:
                         if isinstance(v, (Field, Index)):
+                            v.orm_class = orm_class
                             s.set(k, v)
                         seen_properties.add(k)
 
@@ -467,10 +470,35 @@ class Field(object):
         self.fgetter(field_options.pop("fget", self.default_fget))
         self.fsetter(field_options.pop("fset", self.default_fset))
         self.fdeleter(field_options.pop("fdel", self.default_fdel))
+        #self.fdeleter(field_options.pop("fdefault", self.default_fdefault))
 
-        self.isetter(field_options.pop("iset", self.default_iset))
+#         getter
+#         setter
+#         deleter
+# 
+#         updater
+#         inserter
+#         loader
+#         saver
+#         jsonabler
+# 
+#         fgetter
+#         fsetter
+#         fdeleter
+# 
+#         updater
+#         inserter
+#         isetter
+#         igetter
+# 
+#         jsonabler
+
+        self.updater(field_options.pop("update", self.default_update))
+        self.inserter(field_options.pop("insert", self.default_insert))
         self.igetter(field_options.pop("iget", self.default_iget))
+        self.isetter(field_options.pop("iset", self.default_iset))
 
+        self.jsonabler(field_options.pop("jsonable", self.default_jsonable))
 
 #         self.fget = self.fgetter(field_options.pop("fget", self.default_fget))
 #         self.fset = self.fsetter(field_options.pop("fset", self.default_fset))
@@ -503,6 +531,21 @@ class Field(object):
     def default_fdel(self, instance, val):
         return None
 
+    def default_iset(self, instance, val, is_update, is_modified):
+        return val
+
+    def default_update(self, instance, val):
+        return val
+
+    def default_insert(self, instance, val):
+        return val
+
+    def default_iget(self, instance, val):
+        return val
+
+    def default_jsonable(self, instance, val):
+        return val
+
     def fgetter(self, fget):
         """decorator for setting field's fget function"""
         self.fget = fget
@@ -518,19 +561,24 @@ class Field(object):
         self.fdel = fdel
         return self
 
-    def default_iset(self, classtype, val, is_update, is_modified):
-        return val
+    def updater(self, update, is_modified):
+        self.update = update
+        return self
+
+    def inserter(self, insert, is_modified):
+        self.insert = insert
+        return self
+
+    def igetter(self, iget):
+        self.iget = iget
+        return self
 
     def isetter(self, iset):
         self.iset = iset
         return self
 
-    def default_iget(self, classtype, val):
-        return val
-
-    def igetter(self, iget):
-        self.iget = iget
-        return self
+    def jsonabler(self, jsonable):
+        self.jsonable = jsonable
 
     def fval(self, instance):
         """return the raw value that this property is holding internally for instance"""

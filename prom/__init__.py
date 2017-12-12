@@ -1,4 +1,5 @@
-# stdlib
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import logging
 
@@ -25,7 +26,7 @@ __version__ = '0.9.106'
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 
-def configure_environ(dsn_env_name='PROM_DSN'):
+def configure_environ(dsn_env_name='PROM_DSN', connection_class=DsnConnection):
     """
     configure interfaces based on environment variables
 
@@ -48,7 +49,7 @@ def configure_environ(dsn_env_name='PROM_DSN'):
     :param dsn_env_name: string, the name of the environment variables
     """
     inters = []
-    cs = dsnparse.parse_environs(dsn_env_name, parse_class=DsnConnection)
+    cs = dsnparse.parse_environs(dsn_env_name, parse_class=connection_class)
     for c in cs:
         inter = c.interface
         set_interface(inter, c.name)
@@ -57,7 +58,7 @@ def configure_environ(dsn_env_name='PROM_DSN'):
     return inters
 
 
-def configure(dsn):
+def configure(dsn, connection_class=DsnConnection):
     """
     configure an interface to be used to query a backend
 
@@ -66,7 +67,7 @@ def configure(dsn):
 
     dsn -- string -- a properly formatted prom dsn, see DsnConnection for how to format the dsn
     """
-    c = dsnparse.parse(dsn, parse_class=DsnConnection)
+    c = dsnparse.parse(dsn, parse_class=connection_class)
     inter = c.interface
     set_interface(inter, c.name)
     return inter

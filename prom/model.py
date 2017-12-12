@@ -1,4 +1,5 @@
-# stdlib
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals, division, print_function, absolute_import
 import inspect
 import sys
 import datetime
@@ -74,17 +75,29 @@ class Orm(object):
     _created = Field(datetime.datetime, True)
     _updated = Field(datetime.datetime, True)
 
-    @_created.isetter
-    def _created(cls, val, is_update, is_modified):
-        if not is_modified and not is_update:
+    @_created.inserter
+    def _created(self, val, is_modified):
+        if val is None:
             val = datetime.datetime.utcnow()
         return val
 
     @_updated.isetter
-    def _updated(cls, val, is_update, is_modified):
+    def _updated(self, val, is_update, is_modified):
         if not is_modified:
             val = datetime.datetime.utcnow()
         return val
+
+#     @_created.isetter
+#     def _created(cls, val, is_update, is_modified):
+#         if not is_modified and not is_update:
+#             val = datetime.datetime.utcnow()
+#         return val
+# 
+#     @_updated.isetter
+#     def _updated(cls, val, is_update, is_modified):
+#         if not is_modified:
+#             val = datetime.datetime.utcnow()
+#         return val
 
     @decorators.classproperty
     def table_name(cls):
@@ -247,13 +260,45 @@ class Orm(object):
         with prom proper"""
         return utils.make_dict(fields, fields_kwargs)
 
+    def get_save(self, is_update):
+        """Get all the fields that need to be saved
+
+        NOTE -- I hate this name, but it's late and I've got nothing better
+
+        :param is_udpate: bool, True if update query, False if insert
+        :returns: dict, key is field_name and val is the field value to be saved
+        """
+        fields = self.get_modified()
+        schema = self.schema
+        for k in self.fields:
+            is_modified = k in fields
+            v1 = getattr(self, k)
+            v2 = schema.fields[k].iset(
+                self,
+                v1,
+                is_update=is_update,
+                is_modified=is_modified
+            )
+            if is_modified or (v1 != v2):
+                fields[k] = v2
+
+            if is_update:
+                v3 = schema.fields[k].update(self, v, is_modified)
+            else:
+                v3 = schema.fields[k].insert(self, v, is_modified)
+
+        return fields
+
     def insert(self):
         """persist the field values of this orm"""
         ret = True
 
         schema = self.schema
+        fields = self.get_save(False)
+
         q = self.query
-        q.set_fields(self.get_modified())
+        q.set_fields(fields)
+        #q.set_fields(self.get_modified())
         pk = q.insert()
         if pk:
             fields = q.fields
@@ -262,7 +307,7 @@ class Orm(object):
             # we need to re-run all the fields through their iget methods to mimic
             # them freshly coming out of the db
             for k in fields:
-                fields[k] = self.schema.fields[k].iget(type(self), fields[k])
+                fields[k] = schema.fields[k].iget(self, fields[k])
 
             self.modify(fields)
             self.reset_modified()
@@ -275,8 +320,10 @@ class Orm(object):
     def update(self):
         """re-persist the updated field values of this orm that has a primary key"""
         ret = True
+        fields = self.get_save(True)
         q = self.query
-        q.set_fields(self.get_modified())
+        #q.set_fields(self.get_modified())
+        q.set_fields(fields)
 
         pk = self.pk
         if pk:
@@ -290,8 +337,7 @@ class Orm(object):
             # them freshly coming out of the db
             fields = q.fields
             for k in fields:
-#                 fields[k] = field.iget(cls, fields[k])
-                fields[k] = self.schema.fields[k].iget(type(self), fields[k])
+                fields[k] = self.schema.fields[k].iget(self, fields[k])
 
             self.modify(fields)
             self.reset_modified()
