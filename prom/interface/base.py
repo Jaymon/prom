@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals, division, print_function, absolute_import
 import sys
 import os
 import datetime
@@ -575,9 +577,6 @@ class SQLInterface(Interface):
     def val_placeholder(self):
         raise NotImplementedError("this property should be set in any children class")
 
-#     def get_field_SQL(self):
-#         raise NotImplementedError()
-
     def _delete_tables(self, **kwargs):
         with self.transaction(**kwargs) as connection:
             kwargs['connection'] = connection
@@ -627,17 +626,23 @@ class SQLInterface(Interface):
 
                 elif not ignore_result:
                     if one_result:
-                        ret = cur.fetchone()
+                        ret = self._normalize_result_dict(cur.fetchone())
                     elif count_result:
                         ret = cur.rowcount
                     else:
-                        ret = cur.fetchall()
+                        ret = self._normalize_result_list(cur.fetchall())
 
             except Exception as e:
                 self.log(e)
                 raise
 
             return ret
+
+    def _normalize_result_dict(self, row):
+        return row
+
+    def _normalize_result_list(self, rows):
+        return rows
 
     def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
@@ -898,7 +903,7 @@ class SQLInterface(Interface):
         query_str, query_args = self.get_SQL(schema, query, count_query=True)
         ret = self.query(query_str, *query_args, **kwargs)
         if ret:
-            ret = int(ret[0]['ct'])
+            ret = int(ret[0][b'ct'])
         else:
             ret = 0
 

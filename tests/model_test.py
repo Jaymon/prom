@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals, division, print_function, absolute_import
 import pickle
 import json
 import datetime
@@ -51,8 +53,24 @@ class OrmPoolTest(BaseTestCase):
         self.assertEqual(pool.pq.keys()[0], pks[1])
 
 
-#class OrmTest(BaseTestCase):
 class OrmTest(EnvironTestCase):
+#     def test_alt_fieldtypes(self):
+#         class FTOrm(Orm):
+#             table_name = "ftorm_table"
+#             one = Field(dict)
+#             two = Field(list)
+#             #three = Field(json)
+#             #four = Field(object)
+# 
+#         o = FTOrm()
+#         o.one = {"foo": 1, "bar": 2}
+#         o.two = [1, 2, 3, 4]
+#         o.save()
+#         pout.v(o.fields)
+# 
+#         o2 = o.query.get_pk(o.pk)
+#         pout.v(o2.fields)
+
     def test_create_pk(self):
         """there was a bug that if you set the pk then it wouldn't set the updated
         or created datestamps, this makes sure that is fixed"""

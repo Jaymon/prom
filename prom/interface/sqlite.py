@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Bindings for SQLite
 
@@ -20,6 +21,7 @@ https://www.sqlite.org/lang_altertable.html
 other links that were helpful
 http://www.numericalexpert.com/blog/sqlite_blob_time/
 """
+from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import types
 import decimal
@@ -160,10 +162,10 @@ class SQLite(SQLInterface):
         self._connection.text_factory = StringType.adapt
 
         sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
-        sqlite3.register_converter('NUMERIC', NumericType.convert)
+        sqlite3.register_converter(b'NUMERIC', NumericType.convert)
 
         sqlite3.register_adapter(bool, BooleanType.adapt)
-        sqlite3.register_converter('BOOLEAN', BooleanType.convert)
+        sqlite3.register_converter(b'BOOLEAN', BooleanType.convert)
 
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
@@ -186,7 +188,7 @@ class SQLite(SQLInterface):
             query_args.append(str(table_name))
 
         ret = self._query(query_str, query_args, **kwargs)
-        return [r['tbl_name'] for r in ret]
+        return [r[b'tbl_name'] for r in ret]
 
     def get_field_SQL(self, field_name, field):
         """
@@ -325,11 +327,11 @@ class SQLite(SQLInterface):
         rs = self._query('PRAGMA index_list({})'.format(self._normalize_table_name(schema)), **kwargs)
         if rs:
             for r in rs:
-                iname = r['name']
+                iname = r[b'name']
                 ret.setdefault(iname, [])
-                indexes = self._query('PRAGMA index_info({})'.format(r['name']), **kwargs)
+                indexes = self._query('PRAGMA index_info({})'.format(r[b'name']), **kwargs)
                 for idict in indexes:
-                    ret[iname].append(idict['name'])
+                    ret[iname].append(idict[b'name'])
 
         return ret
 
@@ -403,7 +405,7 @@ class SQLite(SQLInterface):
         #pout.v([dict(d) for d in fields])
 
         query_str = 'PRAGMA foreign_key_list({})'.format(table_name)
-        fks = {f["from"]: f for f in self._query(query_str, **kwargs)}
+        fks = {f[b"from"]: f for f in self._query(query_str, **kwargs)}
         #pout.v([dict(d) for d in fks.values()])
 
         pg_types = {
@@ -427,13 +429,13 @@ class SQLite(SQLInterface):
         # a value like VARCHAR[32]
         for row in fields:
             field = {
-                "name": row["name"],
-                "field_required": bool(row["notnull"]) or bool(row["pk"]),
-                "pk": bool(row["pk"]),
+                "name": row[b"name"],
+                "field_required": bool(row[b"notnull"]) or bool(row[b"pk"]),
+                "pk": bool(row[b"pk"]),
             }
 
             for tname, ty in pg_types.items():
-                if row["type"].startswith(tname):
+                if row[b"type"].startswith(tname):
                     field["field_type"] = ty
                     break
 
@@ -441,13 +443,19 @@ class SQLite(SQLInterface):
                 # we compensate for SQLite internally setting pk to int
                 field["field_type"] = long
 
-            if row["name"] in fks:
-                field["schema_table_name"] = fks[row["name"]]["table"]
-                field["ref_table_name"] = fks[row["name"]]["table"]
+            if row[b"name"] in fks:
+                field["schema_table_name"] = fks[row[b"name"]][b"table"]
+                field["ref_table_name"] = fks[row[b"name"]][b"table"]
 
             ret[field["name"]] = field
 
         return ret
+
+    def _normalize_result_dict(self, row):
+        return dict(row) if row else row
+
+    def _normalize_result_list(self, rows):
+        return [self._normalize_result_dict(row) for row in rows]
 
     def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         """

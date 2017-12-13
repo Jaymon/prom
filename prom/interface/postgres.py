@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 http://pythonhosted.org/psycopg2/module.html
 
@@ -5,6 +6,7 @@ http://zetcode.com/db/postgresqlpythontutorial/
 http://wiki.postgresql.org/wiki/Using_psycopg2_with_PostgreSQL
 http://pythonhosted.org/psycopg2/
 """
+from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import sys
 import types

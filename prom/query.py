@@ -1,6 +1,8 @@
+# -*- coding: utf-8 -*-
 """
 Classes and stuff that handle querying the interface for a passed in Orm class
 """
+from __future__ import unicode_literals, division, print_function, absolute_import
 import types
 import copy
 from collections import defaultdict
