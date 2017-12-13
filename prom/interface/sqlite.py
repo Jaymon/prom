@@ -37,9 +37,12 @@ from .base import SQLInterface, SQLConnection
 
 
 class SQLiteRowDict(sqlite3.Row):
+    def __getitem__(self, k):
+        return super(SQLiteRowDict, self).__getitem__(b"{}".format(k))
+
     def get(self, k, default_val=None):
         r = default_val
-        r = self[str(k)]
+        r = self[k]
         return r
 
 
@@ -450,12 +453,6 @@ class SQLite(SQLInterface):
             ret[field["name"]] = field
 
         return ret
-
-    def _normalize_result_dict(self, row):
-        return dict(row) if row else row
-
-    def _normalize_result_list(self, rows):
-        return [self._normalize_result_dict(row) for row in rows]
 
     def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         """
