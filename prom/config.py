@@ -393,6 +393,11 @@ class Field(object):
         def bar(self, val):
             return int(val)
 
+        @bar.jsonabler
+        def bar(self, val):
+            # convert val to something json safe
+            return val
+
     NOTE -- the fget/fset/fdel methods are different than traditional python getters
     and setters because they always need to return a value and they always take in a
     value
@@ -515,6 +520,9 @@ class Field(object):
         return val
 
     def default_jsonable(self, instance, val):
+        if val is not None:
+            if isinstance(val, (datetime.date, datetime.datetime)):
+                val = instance.datestamp(val)
         return val
 
     def fgetter(self, fget):
