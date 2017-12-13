@@ -792,16 +792,19 @@ class QueryTest(EnvironTestCase):
 #         self.assertEqual((0, 0), q.limit.get())
 
     def test_insert_and_update(self):
-
         IUTorm = self.get_orm_class()
         q = IUTorm.query
-        pk = q.copy().set_fields(foo=1, bar="value 1").insert()
+        o = IUTorm(foo=1, bar="value 1")
+        fields = o.depopulate(is_update=False)
+        pk = q.copy().set_fields(fields).insert()
         o = q.copy().get_pk(pk)
         self.assertLess(0, pk)
         self.assertTrue(o._created)
         self.assertTrue(o._updated)
 
-        row_count = q.copy().set_fields(foo=2, bar="value 2").is_pk(pk).update()
+        o = IUTorm(_id=o.pk, foo=2, bar="value 2", _created=fields["_created"])
+        fields = o.depopulate(is_update=True)
+        row_count = q.copy().set_fields(fields).is_pk(pk).update()
         self.assertEqual(1, row_count)
 
         #time.sleep(0.1)

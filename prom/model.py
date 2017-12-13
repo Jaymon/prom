@@ -75,29 +75,17 @@ class Orm(object):
     _created = Field(datetime.datetime, True)
     _updated = Field(datetime.datetime, True)
 
-    @_created.inserter
-    def _created(self, val, is_modified):
-        if val is None:
+    @_created.isetter
+    def _created(cls, val, is_update, is_modified):
+        if not is_modified and not is_update:
             val = datetime.datetime.utcnow()
         return val
 
     @_updated.isetter
-    def _updated(self, val, is_update, is_modified):
+    def _updated(cls, val, is_update, is_modified):
         if not is_modified:
             val = datetime.datetime.utcnow()
         return val
-
-#     @_created.isetter
-#     def _created(cls, val, is_update, is_modified):
-#         if not is_modified and not is_update:
-#             val = datetime.datetime.utcnow()
-#         return val
-# 
-#     @_updated.isetter
-#     def _updated(cls, val, is_update, is_modified):
-#         if not is_modified:
-#             val = datetime.datetime.utcnow()
-#         return val
 
     @decorators.classproperty
     def table_name(cls):
@@ -179,13 +167,13 @@ class Orm(object):
         fields -- dict -- field_name keys, with their respective values
         **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
         """
-        # NOTE -- you cannot use populate here because populate alters modified fields
+        # NOTE -- you cannot use hydrate/populate here because populate alters modified fields
         instance = cls(fields, **fields_kwargs)
         instance.save()
         return instance
 
     @classmethod
-    def populate(cls, fields=None, **fields_kwargs):
+    def hydrate(cls, fields=None, **fields_kwargs):
         """
         create an instance of cls with the passed in fields but don't set it into the db or mark the passed
         in fields as modified, this is used by the Query class to hydrate objects
@@ -203,37 +191,6 @@ class Orm(object):
         instance = cls(fields)
         instance.reset_modified()
         return instance
-
-    @classmethod
-    def depart(cls, fields, is_update):
-        """
-        return a dict of fields that is ready to be persisted into the db
-
-        fields -- dict -- the raw fields that haven't been processed with any
-            schema iset functions yet
-        is_update -- boolean -- True if getting fields for an update query, False
-            if for an insert query
-
-        return -- dict -- the fields all ran through iset functions
-        """
-        schema = cls.schema
-        for k, field in schema.fields.items():
-            is_modified = k in fields
-            v = field.iset(
-                cls,
-                fields[k] if is_modified else None,
-                is_update=is_update,
-                is_modified=is_modified
-            )
-            if is_modified or (v is not None):
-                fields[k] = v
-
-        if not is_update:
-            for field_name in schema.required_fields.keys():
-                if field_name not in fields:
-                    raise KeyError("Missing required field {}".format(field_name))
-
-        return fields
 
     @classmethod
     def datestamp(cls, field_val):
@@ -260,32 +217,45 @@ class Orm(object):
         with prom proper"""
         return utils.make_dict(fields, fields_kwargs)
 
-    def get_save(self, is_update):
-        """Get all the fields that need to be saved
+    def populate(self, fields):
+        # if is_update is true then it will run just the fields through, if False
+        # then it will run all the fields of the Orm, not just the fields in fields
+        # dict, another name would be hydrate
 
-        NOTE -- I hate this name, but it's late and I've got nothing better
+        # we need to re-run all the fields through their iget methods to mimic
+        # them freshly coming out of the db
+        schema = self.schema
+        for k, v in fields.items():
+            fields[k] = schema.fields[k].iget(self, v)
+
+        self.modify(fields)
+        self.reset_modified()
+
+    def depopulate(self, is_update):
+        """Get all the fields that need to be saved
 
         :param is_udpate: bool, True if update query, False if insert
         :returns: dict, key is field_name and val is the field value to be saved
         """
-        fields = self.get_modified()
+        fields = {}
+        #fields = self.get_modified()
         schema = self.schema
-        for k in self.fields:
-            is_modified = k in fields
-            v1 = getattr(self, k)
-            v2 = schema.fields[k].iset(
+        for k, field in schema.fields.items():
+        #for k, v in self.fields.items():
+            is_modified = k in self.modified_fields
+            v = field.iset(
                 self,
-                v1,
+                getattr(self, k),
                 is_update=is_update,
                 is_modified=is_modified
             )
-            if is_modified or (v1 != v2):
-                fields[k] = v2
+            if v is not None:
+                fields[k] = v
 
-            if is_update:
-                v3 = schema.fields[k].update(self, v, is_modified)
-            else:
-                v3 = schema.fields[k].insert(self, v, is_modified)
+        if not is_update:
+            for field_name in schema.required_fields.keys():
+                if field_name not in fields:
+                    raise KeyError("Missing required field {}".format(field_name))
 
         return fields
 
@@ -294,7 +264,7 @@ class Orm(object):
         ret = True
 
         schema = self.schema
-        fields = self.get_save(False)
+        fields = self.depopulate(False)
 
         q = self.query
         q.set_fields(fields)
@@ -303,14 +273,7 @@ class Orm(object):
         if pk:
             fields = q.fields
             fields[schema.pk.name] = pk
-
-            # we need to re-run all the fields through their iget methods to mimic
-            # them freshly coming out of the db
-            for k in fields:
-                fields[k] = schema.fields[k].iget(self, fields[k])
-
-            self.modify(fields)
-            self.reset_modified()
+            self.populate(fields)
 
         else:
             ret = False
@@ -320,7 +283,7 @@ class Orm(object):
     def update(self):
         """re-persist the updated field values of this orm that has a primary key"""
         ret = True
-        fields = self.get_save(True)
+        fields = self.depopulate(True)
         q = self.query
         #q.set_fields(self.get_modified())
         q.set_fields(fields)
@@ -333,14 +296,8 @@ class Orm(object):
             raise ValueError("You cannot update without a primary key")
 
         if q.update():
-            # we need to re-run all the fields through their iget methods to mimic
-            # them freshly coming out of the db
             fields = q.fields
-            for k in fields:
-                fields[k] = self.schema.fields[k].iget(self, fields[k])
-
-            self.modify(fields)
-            self.reset_modified()
+            self.populate(fields)
 
         else:
             ret = False
@@ -395,6 +352,7 @@ class Orm(object):
     def get_modified(self):
         """return the modified fields and their new values"""
         fields = {}
+
         for field_name in self.modified_fields:
             fields[field_name] = getattr(self, field_name)
 

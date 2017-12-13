@@ -258,7 +258,7 @@ class ResultsIterator(BaseIterator):
 
         else:
             if self.orm_class:
-                r = self.orm_class.populate(d)
+                r = self.orm_class.hydrate(d)
             else:
                 r = d
 
@@ -978,7 +978,7 @@ class Query(object):
         o = self.default_val
         d = self._query('get_one')
         if d:
-            o = self.orm_class.populate(d)
+            o = self.orm_class.hydrate(d)
         return o
 
     def values(self, limit=None, page=None):
@@ -1057,11 +1057,12 @@ class Query(object):
     def insert(self):
         """persist the .fields"""
         self.default_val = 0
-        fields = self.orm_class.depart(self.fields, is_update=False)
-        self.set_fields(fields)
+        #fields = self.fields
+        #fields = self.orm_class.depart(self.fields, is_update=False)
+        #self.set_fields(fields)
         return self.interface.insert(
             self.schema,
-            fields
+            self.fields
         )
 
         return self.interface.insert(self.schema, self.fields)
@@ -1069,11 +1070,12 @@ class Query(object):
     def update(self):
         """persist the .fields using .fields_where"""
         self.default_val = 0
-        fields = self.orm_class.depart(self.fields, is_update=True)
-        self.set_fields(fields)
+        #fields = self.fields
+        #fields = self.orm_class.depart(self.fields, is_update=True)
+        #self.set_fields(fields)
         return self.interface.update(
             self.schema,
-            fields,
+            self.fields,
             self
         )
         #return self._query('update')

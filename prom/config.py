@@ -466,35 +466,12 @@ class Field(object):
         field_options.setdefault("unique", False)
         field_options.update(d)
 
-
         self.fgetter(field_options.pop("fget", self.default_fget))
         self.fsetter(field_options.pop("fset", self.default_fset))
         self.fdeleter(field_options.pop("fdel", self.default_fdel))
         #self.fdeleter(field_options.pop("fdefault", self.default_fdefault))
 
-#         getter
-#         setter
-#         deleter
-# 
-#         updater
-#         inserter
-#         loader
-#         saver
-#         jsonabler
-# 
-#         fgetter
-#         fsetter
-#         fdeleter
-# 
-#         updater
-#         inserter
-#         isetter
-#         igetter
-# 
-#         jsonabler
 
-        self.updater(field_options.pop("update", self.default_update))
-        self.inserter(field_options.pop("insert", self.default_insert))
         self.igetter(field_options.pop("iget", self.default_iget))
         self.isetter(field_options.pop("iset", self.default_iset))
 
@@ -534,12 +511,6 @@ class Field(object):
     def default_iset(self, instance, val, is_update, is_modified):
         return val
 
-    def default_update(self, instance, val):
-        return val
-
-    def default_insert(self, instance, val):
-        return val
-
     def default_iget(self, instance, val):
         return val
 
@@ -559,14 +530,6 @@ class Field(object):
     def fdeleter(self, fdel):
         """decorator for setting field's fdel function"""
         self.fdel = fdel
-        return self
-
-    def updater(self, update, is_modified):
-        self.update = update
-        return self
-
-    def inserter(self, insert, is_modified):
-        self.insert = insert
         return self
 
     def igetter(self, iget):

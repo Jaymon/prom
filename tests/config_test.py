@@ -407,15 +407,55 @@ class FieldTest(BaseTestCase):
         self.assertEqual(1, o.foo)
 
         pk = o.save()
-        self.assertEqual(1, o.foo)
+        self.assertEqual(2, o.foo)
         self.assertEqual(2, o.foo)
 
         del o.foo
-        self.assertEqual(-1, o.foo)
+        self.assertEqual(None, o.foo)
         pk = o.save()
+        self.assertEqual(None, o.foo)
+
+        o.foo = 10
+        self.assertEqual(11, o.foo)
+        self.assertEqual(11, o.foo)
+
+        o.foo = None
         self.assertEqual(1, o.foo)
 
+    def test_icrud(self):
+        class ICrudOrm(Orm):
+            foo = Field(int)
 
+            @foo.isetter
+            def foo(self, v, is_update, is_modified):
+                if is_modified:
+                    v = v + 1
+                elif is_update:
+                    v = v - 1
+                else:
+                    v = 0
+                return v
+
+            @foo.igetter
+            def foo(self, v):
+                if v > 1:
+                    v = v * 100
+                return v
+
+        o = ICrudOrm()
+        self.assertEqual(None, o.foo)
+
+        o.save()
+        self.assertEqual(0, o.foo)
+
+        o.foo = 5
+        self.assertEqual(5, o.foo)
+
+        o.save()
+        self.assertEqual(600, o.foo)
+
+        o2 = o.query.get_pk(o.pk)
+        self.assertEqual(600, o2.foo)
 
 
     def test_fdeleter(self):
