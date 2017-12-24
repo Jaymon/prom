@@ -9,6 +9,7 @@ import prom
 from prom.model import Orm
 from prom.config import Schema, Connection, DsnConnection, Index
 from prom.config import Field, ObjectField, JsonField
+from prom.compat import *
 
 
 class SchemaTest(BaseTestCase):

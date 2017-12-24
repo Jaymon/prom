@@ -3,9 +3,8 @@
 Classes and stuff that handle querying the interface for a passed in Orm class
 """
 from __future__ import unicode_literals, division, print_function, absolute_import
-import types
 import copy
-from collections import defaultdict
+from collections import defaultdict, Mapping
 import datetime
 import logging
 import os
@@ -24,6 +23,7 @@ except ImportError:
 from . import decorators
 from .utils import make_list, get_objects, make_dict, make_hash
 from .interface import get_interfaces
+from .compat import *
 
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,10 @@ class BaseIterator(object):
 
     def next(self):
         raise NotImplementedError()
+
+    def __next__(self):
+        """needed for py3 api compatibility"""
+        return self.next()
 
     def values(self):
         """
@@ -200,7 +204,10 @@ class ResultsIterator(BaseIterator):
         self.iresults = self.create_generator()
 
     def next(self):
-        return self.iresults.next()
+        if is_py2:
+            return self.iresults.next()
+        else:
+            return self.iresults.__next__()
 
     def values(self):
         self._values = True
@@ -456,8 +463,7 @@ class Limit(object):
 
     @property
     def limit_paginate(self):
-        limit = self._limit
-        #limit = self.limit
+        limit = 0 if self._limit is None else self._limit
         return limit + 1 if limit > 0 else 0
 
     @property
@@ -489,7 +495,7 @@ class Limit(object):
 
     @property
     def page(self):
-        page = self._page
+        page = 0 if self._page is None else self._page
         return page if page >= 1 else 1
 
     @page.setter
@@ -520,8 +526,9 @@ class Limit(object):
         self.set(limit, page)
         return (self.limit, self.offset)
 
-    def __nonzero__(self):
+    def __bool__(self):
         return self.limit > 0 or self.offset > 0
+    __nonzero__ = __bool__ # py2
 
     def has(self):
         return bool(self)
@@ -709,7 +716,7 @@ class Query(object):
     def select_fields(self, *fields):
         """set multiple fields to be selected"""
         if fields:
-            if not isinstance(fields[0], types.StringTypes): 
+            if not isinstance(fields[0], basestring): 
                 fields = list(fields[0]) + list(fields)[1:]
 
         for field_name in fields:
@@ -745,7 +752,7 @@ class Query(object):
                 self.set_field(field_name, field_val)
 
         else:
-            if isinstance(fields, (types.DictType, types.DictProxyType)):
+            if isinstance(fields, Mapping):
                 for field_name, field_val in fields.items():
                     self.set_field(field_name, field_val)
 

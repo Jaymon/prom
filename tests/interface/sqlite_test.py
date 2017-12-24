@@ -6,6 +6,7 @@ import testdata
 
 from prom import query, InterfaceError
 from prom.interface.sqlite import SQLite
+from prom.compat import *
 
 from . import BaseTestInterface
 

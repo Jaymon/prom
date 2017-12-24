@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
-import types
-import urlparse
 import datetime
 import inspect
 import re
@@ -59,35 +57,6 @@ class Connection(object):
         interface_class = self.interface_class
         return interface_class(self)
 
-#     @property
-#     def host(self):
-#         """the db host"""
-#         if not hasattr(self, '_host'): self._host = None
-#         return self._host
-# 
-#     @host.setter
-#     def host(self, h):
-#         """
-#         check host for a :port, and split that off into the .port attribute if there
-#         """
-#         # normalize the host so urlparse can parse it correctly
-#         # http://stackoverflow.com/questions/9530950/#comment12075005_9531210
-#         if re.search(ur'\:memory\:', h, re.I):
-#             h = re.sub(ur'(?:\S+|^)\/\/', '', h)
-#             self._host = h
-# 
-#         else:
-#             if not re.match(ur'(?:\S+|^)\/\/', h):
-#                 h = "//{}".format(h)
-# 
-#             o = urlparse.urlparse(h)
-#             if o.hostname:
-#                 self._host = o.hostname
-#             else:
-#                 self._host = o.path
-# 
-#             if o.port: self.port = o.port
-
     def __init__(self, fields=None, **fields_kwargs):
         """
         set all the values by passing them into this constructor, any unrecognized kwargs get put into .options
@@ -141,13 +110,18 @@ class DsnConnection(Connection):
     dsn = ""
     """holds the raw dsn string that was parsed"""
 
+    def __init__(self, dsn):
+        # get the scheme, which is actually our interface_name
+        kwargs = self.parse(dsn)
+        super(DsnConnection, self).__init__(**kwargs)
+
     @classmethod
     def parse(cls, dsn):
         d = dsnparse.ParseResult.parse(dsn)
 
         # remap certain values
         d["name"] = d.pop("fragment")
-        d["interface_name"] = d.pop("scheme")
+        d["interface_name"] = cls.normalize_scheme(d.pop("scheme"))
         d["database"] = d.pop("path")
         d["options"] = d.pop("query")
         d["host"] = d.pop("hostname")
@@ -156,10 +130,20 @@ class DsnConnection(Connection):
         d.pop("params", None)
         return d
 
-    def __init__(self, dsn):
-        # get the scheme, which is actually our interface_name
-        kwargs = self.parse(dsn)
-        super(DsnConnection, self).__init__(**kwargs)
+    @classmethod
+    def normalize_scheme(cls, v):
+        ret = v
+        kv = v.lower()
+        d = {
+            "prom.interface.sqlite.SQLite": set(["sqlite"]),
+            "prom.interface.postgres.PostgreSQL": set(["postgres", "postgresql"])
+        }
+        for interface_name, vals in d.items():
+            if v in vals:
+                ret = interface_name
+                break
+
+        return ret
 
 
 class Schema(object):
@@ -342,7 +326,7 @@ class Index(object):
             raise ValueError("fields list is empty")
 
         self.name = ""
-        self.fields = map(str, fields)
+        self.fields = list(map(str, fields))
         self.options = options
         self.unique = options.get("unique", False)
 
@@ -408,7 +392,7 @@ class Field(object):
         if not hasattr(self, "_schema"):
             ret = None
             o = self._type
-            if isinstance(o, types.TypeType):
+            if isinstance(o, type):
                 ret = getattr(o, "schema", None)
 
             elif isinstance(o, Schema):
@@ -425,7 +409,7 @@ class Field(object):
     @property
     def type(self):
         ret = self._type
-        if not isinstance(ret, types.TypeType) or hasattr(ret, "schema"):
+        if not isinstance(ret, type) or hasattr(ret, "schema"):
             s = self.schema
             ret = s.pk.type
 
@@ -451,17 +435,17 @@ class Field(object):
         field_options = utils.make_dict(field_options, field_options_kwargs)
         d = {}
 
-        min_size = field_options.pop("min_size", None)
-        max_size = field_options.pop("max_size", None)
-        size = field_options.pop("size", None)
+        min_size = field_options.pop("min_size", -1)
+        max_size = field_options.pop("max_size", -1)
+        size = field_options.pop("size", -1)
 
         if size > 0:
             d['size'] = size
         else:
-            if min_size > 0 and max_size == None:
+            if min_size > 0 and max_size < 0:
                 raise ValueError("min_size option was set with no corresponding max_size")
 
-            elif min_size == None and max_size > 0:
+            elif min_size < -1 and max_size > 0:
                 d['max_size'] = max_size
 
             elif min_size >= 0 and max_size >= 0:

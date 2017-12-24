@@ -9,6 +9,7 @@ from .query import Query, Iterator
 from . import decorators, utils
 from .interface import get_interface
 from .config import Schema, Field, ObjectField, Index
+from .compat import *
 
 
 class OrmPool(utils.Pool):

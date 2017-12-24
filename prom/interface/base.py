@@ -5,13 +5,13 @@ import os
 import datetime
 import logging
 from contextlib import contextmanager
-import exceptions
 import uuid as uuidgen
 
 # first party
 from ..query import Query
 from ..exception import InterfaceError
 from ..decorators import reconnecting
+from ..compat import *
 
 
 logger = logging.getLogger(__name__)
@@ -560,10 +560,11 @@ class Interface(object):
         if not isinstance(e, InterfaceError):
             # allow python's built in errors to filter up through
             # https://docs.python.org/2/library/exceptions.html
-            if not hasattr(exceptions, e.__class__.__name__):
+            #if not hasattr(exceptions, e.__class__.__name__):
+            if not hasattr(builtins, e.__class__.__name__):
                 e = self._create_error(e, exc_info)
 
-        raise e.__class__, e, exc_info[2]
+        reraise(e.__class__, e, exc_info[2])
 
     def _create_error(self, e, exc_info):
         """create the error that you want to raise, this gives you an opportunity
@@ -613,13 +614,12 @@ class SQLInterface(Interface):
             cur_result = query_options.get('cursor_result', False)
 
             try:
-                if not query_args:
-                    self.log(query_str)
-                    cur.execute(query_str)
-
-                else:
+                if query_args:
                     self.log("{}{}{}", query_str, os.linesep, query_args)
                     cur.execute(query_str, query_args)
+                else:
+                    self.log(query_str)
+                    cur.execute(query_str)
 
                 if cur_result:
                     ret = cur
@@ -903,7 +903,7 @@ class SQLInterface(Interface):
         query_str, query_args = self.get_SQL(schema, query, count_query=True)
         ret = self.query(query_str, *query_args, **kwargs)
         if ret:
-            ret = int(ret[0][b'ct'])
+            ret = int(ret[0]['ct'])
         else:
             ret = 0
 

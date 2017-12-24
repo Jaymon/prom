@@ -9,6 +9,7 @@ import datetime
 
 from prom import query
 from prom.config import Schema, Field, Index
+from prom.compat import *
 import prom
 
 from .. import BaseTestCase, testdata
@@ -318,7 +319,7 @@ class BaseTestInterface(BaseTestCase):
         q = query.Query()
         q.set_limit(5)
         count = 0
-        for p in xrange(1, 5):
+        for p in range(1, 5):
             q.set_page(p)
             l = i.get(s, q)
             for d in l:
@@ -731,7 +732,7 @@ class BaseTestInterface(BaseTestCase):
                     pk2 = i.set(s2, {"bar": 2, "s_pk": pk1}, connection=connection)
                     raise RuntimeError("testing")
 
-        except Exception, e:
+        except Exception as e:
             pass
 
         self.assertEqual(0, i.count(s1, query.Query().is__id(pk1)))
@@ -768,7 +769,7 @@ class BaseTestInterface(BaseTestCase):
         self.assertGreater(len(r), 0)
 
         lv = list(v)
-        for x in xrange(len(v)):
+        for x in range(len(v)):
             lv[x] = lv[x].upper()
             qv = "".join(lv)
             q = query.Query()

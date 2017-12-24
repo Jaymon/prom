@@ -14,6 +14,7 @@ from uuid import uuid4
 import testdata
 
 from prom import query
+from prom.compat import *
 from prom.model import Orm
 from prom.config import Schema, DsnConnection, Field, Index
 from prom.interface.postgres import PostgreSQL
@@ -23,13 +24,7 @@ from prom.interface import get_interfaces
 import prom
 
 
-# configure root logger
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
-log_handler = logging.StreamHandler(stream=sys.stderr)
-log_formatter = logging.Formatter('[%(levelname)s] %(message)s')
-log_handler.setFormatter(log_formatter)
-logger.addHandler(log_handler)
+testdata.basic_logging()
 
 
 #os.environ.setdefault('PROM_SQLITE_DSN', 'prom.interface.sqlite.SQLite://:memory:')

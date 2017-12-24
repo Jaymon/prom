@@ -9,7 +9,6 @@ http://pythonhosted.org/psycopg2/
 from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import sys
-import types
 import decimal
 import datetime
 
@@ -20,6 +19,7 @@ import psycopg2.extensions
 
 # first party
 from .base import SQLInterface, SQLConnection
+from ..compat import *
 from ..utils import get_objects
 from ..exception import UniqueError
 
@@ -44,10 +44,37 @@ class Connection(SQLConnection, psycopg2.extensions.connection):
         # http://initd.org/psycopg/docs/connection.html#connection.autocommit
         self.autocommit = True
 
-        # unicode harden for python 2
-        # http://initd.org/psycopg/docs/usage.html#unicode-handling
-        psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, self)
-        psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, self)
+        if is_py2:
+            # unicode harden for python 2
+            # http://initd.org/psycopg/docs/usage.html#unicode-handling
+            psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, self)
+            psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, self)
+
+        else:
+            def normalize_str(v, cur):
+                if isinstance(v, str) and v.startswith("\\x"):
+                    buf = psycopg2.BINARY(v, cur)
+                    v = bytes(buf).decode(cur.connection.encoding)
+
+                    #import binascii
+                    #pout.v(binascii.unhexlify(v[2:]))
+                    #v = v.encode(cur.connection.encoding)
+                    #v = bytes(v, encoding=cur.connection.encoding)
+                return v
+#             psycopg2.extensions.register_type(
+#                 psycopg2.extensions.new_type(psycopg2.BINARY.values, "BYTES", cast_bytes)
+#             )
+            psycopg2.extensions.register_type(
+                psycopg2.extensions.new_type(psycopg2.STRING.values, "STRING", normalize_str)
+            )
+
+
+        # http://initd.org/psycopg/docs/connection.html#connection.set_client_encoding
+        # https://www.postgresql.org/docs/current/static/multibyte.html
+        # > The default is the encoding defined by the database
+        # Not sure we want to override db encoding which is why I'm sure why I didn't
+        # set this previously
+        #self.set_client_encoding("UTF8")
 
         #self.initialize(logger)
 
@@ -74,17 +101,17 @@ class PostgreSQL(SQLInterface):
             'pool_class',
             'psycopg2.pool.SimpleConnectionPool'
         )
-        async = int(connection_config.options.get('async', 0))
+        async_conn = int(connection_config.options.get('async', 0))
 
         _, pool_class = get_objects(pool_class_name)
 
         self.log("connecting using pool class {}".format(pool_class_name))
 
+        # http://initd.org/psycopg/docs/module.html#psycopg2.connect
         self.connection_pool = pool_class(
             minconn,
             maxconn,
-            # http://pythonhosted.org/psycopg2/module.html
-            database=database,
+            dbname=database,
             user=username,
             password=password,
             host=host,
@@ -95,7 +122,7 @@ class PostgreSQL(SQLInterface):
         )
 
         # hack for sync backwards compatibility with transactions
-        if not async:
+        if not async_conn:
             self._connection = self.connection_pool.getconn()
 
     def free_connection(self, connection):
@@ -275,16 +302,15 @@ class PostgreSQL(SQLInterface):
         index_fields = []
         for field_name in fields:
             field = schema.fields[field_name]
-            if issubclass(field.type, types.StringTypes):
+            if issubclass(field.type, basestring):
                 if field.options.get('ignore_case', False):
-                    field_name = 'UPPER({})'.format(field_name)
+                    field_name = 'UPPER({})'.format(self._normalize_name(field_name))
             index_fields.append(field_name)
 
-        query_str = 'CREATE {}INDEX {}_{} ON {} USING BTREE ({})'.format(
+        query_str = 'CREATE {}INDEX {} ON {} USING BTREE ({})'.format(
             'UNIQUE ' if index_options.get('unique', False) else '',
-            schema,
-            name,
-            schema,
+            self._normalize_name("{}_{}".format(schema, name)),
+            self._normalize_table_name(schema),
             ', '.join(index_fields)
         )
 
@@ -300,14 +326,14 @@ class PostgreSQL(SQLInterface):
         query_vals = []
         for field_name, field_val in fields.items():
             field_names.append(self._normalize_name(field_name))
-            field_formats.append('%s')
+            field_formats.append(self.val_placeholder)
             query_vals.append(field_val)
 
         query_str = 'INSERT INTO {} ({}) VALUES ({}) RETURNING {}'.format(
             self._normalize_table_name(schema),
             ', '.join(field_names),
             ', '.join(field_formats),
-            pk_name
+            self._normalize_name(pk_name),
         )
 
         ret = self.query(query_str, *query_vals, **kwargs)
@@ -384,6 +410,12 @@ class PostgreSQL(SQLInterface):
         if issubclass(field.type, bool):
             field_type = 'BOOL'
 
+        elif issubclass(field.type, long):
+            if is_pk:
+                field_type = 'BIGSERIAL PRIMARY KEY'
+            else:
+                field_type = 'BIGINT'
+
         elif issubclass(field.type, int):
             #size = 2147483647
             if is_pk:
@@ -404,13 +436,7 @@ class PostgreSQL(SQLInterface):
                     else:
                         field_type = 'INTEGER'
 
-        elif issubclass(field.type, long):
-            if is_pk:
-                field_type = 'BIGSERIAL PRIMARY KEY'
-            else:
-                field_type = 'BIGINT'
-
-        elif issubclass(field.type, types.StringTypes):
+        elif issubclass(field.type, basestring):
             fo = field.options
             if field.is_ref():
                 ref_s = field.schema

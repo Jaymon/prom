@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
 import importlib
-import hashlib
 import heapq
 import itertools
 import os
 import sys
 import codecs
 from contextlib import contextmanager
+
+from .compat import *
 
 
 class Stream(object):
@@ -258,5 +259,5 @@ def make_hash(*mixed):
     for m in mixed:
         s += str(m)
     # http://stackoverflow.com/questions/5297448/how-to-get-md5-sum-of-a-string
-    return hashlib.md5(s).hexdigest()
+    return md5(s)
 

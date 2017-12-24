@@ -23,7 +23,6 @@ http://www.numericalexpert.com/blog/sqlite_blob_time/
 """
 from __future__ import unicode_literals, division, print_function, absolute_import
 import os
-import types
 import decimal
 import datetime
 from distutils import dir_util
@@ -33,12 +32,16 @@ import sqlite3
 
 # first party
 from ..exception import UniqueError
+from ..compat import *
 from .base import SQLInterface, SQLConnection
 
 
 class SQLiteRowDict(sqlite3.Row):
     def __getitem__(self, k):
-        return super(SQLiteRowDict, self).__getitem__(b"{}".format(k))
+        if is_py2:
+            return super(SQLiteRowDict, self).__getitem__(b"{}".format(k))
+        else:
+            return super(SQLiteRowDict, self).__getitem__(k)
 
     def get(self, k, default_val=None):
         r = default_val
@@ -90,14 +93,22 @@ class NumericType(object):
 
     @staticmethod
     def convert(val):
-        return decimal.Decimal(str(val))
+        if is_py2:
+            ret = decimal.Decimal(str(val))
+        else:
+            if isinstance(val, bytes):
+                ret = decimal.Decimal(val.decode("utf-8"))
+            else:
+                ret = decimal.Decimal(val)
+        return ret
 
 
 class StringType(object):
     """this just makes sure 8-bit bytestrings get converted ok"""
     @staticmethod
     def adapt(val):
-        if isinstance(val, str):
+        #if isinstance(val, str):
+        if isinstance(val, bytes):
             val = val.decode('utf-8')
 
         return val
@@ -163,12 +174,15 @@ class SQLite(SQLInterface):
         self._connection.row_factory = SQLiteRowDict
         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
         self._connection.text_factory = StringType.adapt
+        # for some reason this is needed in python 3.6 in order for saved bytes
+        # to be ran through the converter, not sure why
+        sqlite3.register_converter('TEXT', StringType.adapt)
 
         sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
-        sqlite3.register_converter(b'NUMERIC', NumericType.convert)
+        sqlite3.register_converter('NUMERIC', NumericType.convert)
 
         sqlite3.register_adapter(bool, BooleanType.adapt)
-        sqlite3.register_converter(b'BOOLEAN', BooleanType.convert)
+        sqlite3.register_converter('BOOLEAN', BooleanType.convert)
 
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
@@ -191,7 +205,7 @@ class SQLite(SQLInterface):
             query_args.append(str(table_name))
 
         ret = self._query(query_str, query_args, **kwargs)
-        return [r[b'tbl_name'] for r in ret]
+        return [r['tbl_name'] for r in ret]
 
     def get_field_SQL(self, field_name, field):
         """
@@ -210,18 +224,18 @@ class SQLite(SQLInterface):
         if issubclass(field.type, bool):
             field_type = 'BOOLEAN'
 
-        elif issubclass(field.type, int):
-            field_type = 'INTEGER'
-            if is_pk:
-                field_type += ' PRIMARY KEY'
-
         elif issubclass(field.type, long):
             if is_pk:
                 field_type = 'INTEGER PRIMARY KEY'
             else:
                 field_type = 'BIGINT'
 
-        elif issubclass(field.type, types.StringTypes):
+        elif issubclass(field.type, int):
+            field_type = 'INTEGER'
+            if is_pk:
+                field_type += ' PRIMARY KEY'
+
+        elif issubclass(field.type, basestring):
             fo = field.options
             if field.is_ref():
                 # TODO -- 7-8-17 - this isn't a great way to do this, ideally the Field instance
@@ -316,7 +330,7 @@ class SQLite(SQLInterface):
             schema,
             name,
             self._normalize_table_name(schema),
-            ', '.join(fields)
+            ', '.join((self._normalize_name(f) for f in fields))
         )
 
         return self._query(query_str, ignore_result=True, **index_options)
@@ -330,11 +344,11 @@ class SQLite(SQLInterface):
         rs = self._query('PRAGMA index_list({})'.format(self._normalize_table_name(schema)), **kwargs)
         if rs:
             for r in rs:
-                iname = r[b'name']
+                iname = r['name']
                 ret.setdefault(iname, [])
-                indexes = self._query('PRAGMA index_info({})'.format(r[b'name']), **kwargs)
+                indexes = self._query('PRAGMA index_info({})'.format(r['name']), **kwargs)
                 for idict in indexes:
-                    ret[iname].append(idict[b'name'])
+                    ret[iname].append(idict['name'])
 
         return ret
 
@@ -383,7 +397,7 @@ class SQLite(SQLInterface):
                 #SELECT: "no such column: che"
                 try:
                     ret = self._set_all_fields(schema, **kwargs)
-                except ValueError, e:
+                except ValueError as e:
                     ret = False
             elif "no such table" in e_msg:
                 ret = self._set_all_tables(schema, **kwargs)
@@ -408,7 +422,7 @@ class SQLite(SQLInterface):
         #pout.v([dict(d) for d in fields])
 
         query_str = 'PRAGMA foreign_key_list({})'.format(table_name)
-        fks = {f[b"from"]: f for f in self._query(query_str, **kwargs)}
+        fks = {f["from"]: f for f in self._query(query_str, **kwargs)}
         #pout.v([dict(d) for d in fks.values()])
 
         pg_types = {
@@ -432,13 +446,13 @@ class SQLite(SQLInterface):
         # a value like VARCHAR[32]
         for row in fields:
             field = {
-                "name": row[b"name"],
-                "field_required": bool(row[b"notnull"]) or bool(row[b"pk"]),
-                "pk": bool(row[b"pk"]),
+                "name": row["name"],
+                "field_required": bool(row["notnull"]) or bool(row["pk"]),
+                "pk": bool(row["pk"]),
             }
 
             for tname, ty in pg_types.items():
-                if row[b"type"].startswith(tname):
+                if row["type"].startswith(tname):
                     field["field_type"] = ty
                     break
 
@@ -446,9 +460,9 @@ class SQLite(SQLInterface):
                 # we compensate for SQLite internally setting pk to int
                 field["field_type"] = long
 
-            if row[b"name"] in fks:
-                field["schema_table_name"] = fks[row[b"name"]][b"table"]
-                field["ref_table_name"] = fks[row[b"name"]][b"table"]
+            if row["name"] in fks:
+                field["schema_table_name"] = fks[row["name"]]["table"]
+                field["ref_table_name"] = fks[row["name"]]["table"]
 
             ret[field["name"]] = field
 
@@ -473,7 +487,7 @@ class SQLite(SQLInterface):
             'year': "CAST(strftime('%Y', {}) AS integer)"
         }
 
-        for k, v in field_kwargs.iteritems():
+        for k, v in field_kwargs.items():
             fstrs.append([k_opts[k].format(self._normalize_name(field_name)), self.val_placeholder, v])
 
         return fstrs

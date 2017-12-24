@@ -9,8 +9,13 @@ import sys
 import testdata
 
 from . import BaseTestCase, EnvironTestCase
-from prom.query import Query, Limit, Fields, CacheQuery
-from prom.query import Iterator, AllIterator
+from prom.query import Query, \
+    Limit, \
+    Fields, \
+    CacheQuery, \
+    Iterator, \
+    AllIterator
+from prom.compat import *
 import prom
 
 
@@ -40,6 +45,10 @@ class FieldsTest(TestCase):
 
 
 class LimitTest(TestCase):
+    def test___nonzero__(self):
+        b = Limit()
+        self.assertFalse(b)
+
     def test_offset_from_page(self):
         lc = Limit()
         lc.page = 2
@@ -612,7 +621,7 @@ class QueryTest(EnvironTestCase):
         self.assertEqual(q.fields_where[0][2], [1, 2])
 
         q = self.get_query()
-        q.in_foo(xrange(1, 3))
+        q.in_foo(range(1, 3))
         self.assertEqual(q.fields_where[0][2], [1, 2,])
 
         q = self.get_query()
@@ -973,7 +982,7 @@ class IteratorTest(BaseTestCase):
         def ifilter(o): return o.pk == 1
         l.ifilter = ifilter
         l2 = _q.copy().get()
-        self.assertEqual(len(filter(ifilter, l2)), len(list(l)))
+        self.assertEqual(len(list(filter(ifilter, l2))), len(list(l)))
 
     def test_list_compatibility(self):
         count = 3
@@ -985,10 +994,10 @@ class IteratorTest(BaseTestCase):
 
         self.assertTrue(bool(l))
         self.assertEqual(count, l.count())
-        self.assertEqual(range(1, count + 1), list(l.pk))
+        self.assertEqual(list(range(1, count + 1)), list(l.pk))
 
         l.reverse()
-        self.assertEqual(list(reversed(xrange(1, count + 1))), list(l.pk))
+        self.assertEqual(list(reversed(range(1, count + 1))), list(l.pk))
 
         r = l.pop(0)
         self.assertEqual(count, r.pk)

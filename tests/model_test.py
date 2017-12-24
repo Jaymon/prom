@@ -7,6 +7,7 @@ import datetime
 import testdata
 
 from . import BaseTestCase, EnvironTestCase
+from prom.compat import *
 from prom.model import Orm, OrmPool
 from prom.config import Field, Index
 import prom
@@ -378,7 +379,9 @@ class OrmTest(EnvironTestCase):
 
         self.assertEqual(t.foo, t2.foo)
         self.assertEqual(t.bar, t2.bar)
-        self.assertEqual(t.che, t2.che.encode('utf-8'))
+        #self.assertEqual(t.che, t2.che.encode('utf-8'))
+
+        self.assertEqual(t.che.decode("utf-8"), t2.che)
         self.assertTrue(isinstance(t.baz, int))
 
     def test_query(self):
