@@ -13,6 +13,7 @@ except ImportError as e:
     gevent = None
 
 from prom import query
+from prom.compat import *
 from prom.config import Schema, DsnConnection, Field
 from prom.interface.postgres import PostgreSQL
 import prom

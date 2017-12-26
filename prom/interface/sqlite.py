@@ -174,15 +174,16 @@ class SQLite(SQLInterface):
         self._connection.row_factory = SQLiteRowDict
         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
         self._connection.text_factory = StringType.adapt
+
         # for some reason this is needed in python 3.6 in order for saved bytes
         # to be ran through the converter, not sure why
-        sqlite3.register_converter('TEXT', StringType.adapt)
+        sqlite3.register_converter('TEXT' if not is_py2 else b'TEXT', StringType.adapt)
 
         sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
-        sqlite3.register_converter('NUMERIC', NumericType.convert)
+        sqlite3.register_converter('NUMERIC' if not is_py2 else b'NUMERIC', NumericType.convert)
 
         sqlite3.register_adapter(bool, BooleanType.adapt)
-        sqlite3.register_converter('BOOLEAN', BooleanType.convert)
+        sqlite3.register_converter('BOOLEAN' if not is_py2 else b'BOOLEAN', BooleanType.convert)
 
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html

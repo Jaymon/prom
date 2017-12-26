@@ -285,7 +285,7 @@ class PostgreSQL(SQLInterface):
         # massage the data into more readable {index_name: fields} format
         for idict in indexes:
             if idict['index_name'] not in ret:
-                ret[idict['index_name']] = map(int, idict['index_order'].split(' '))
+                ret[idict['index_name']] = list(map(int, idict['index_order'].split(' ')))
 
             i = ret[idict['index_name']].index(idict['field_num'])
             ret[idict['index_name']][i] = idict['field_name']

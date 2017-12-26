@@ -28,7 +28,7 @@ setup(
     url='http://github.com/firstopinion/{}'.format(name),
     packages=find_packages(),
     install_requires=['dsnparse'],
-    tests_require=['testdata', 'gevent', 'captain', 'psycogreen'],
+    tests_require=['testdata', 'gevent', 'captain', 'psycogreen', 'dump'],
     license="MIT",
     classifiers=[ # https://pypi.python.org/pypi?:action=list_classifiers
         'Development Status :: 4 - Beta',
@@ -40,6 +40,7 @@ setup(
         'Topic :: Software Development :: Libraries',
         'Topic :: Utilities',
         'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3.6',
     ],
     #test_suite = "{}_test".format(name),
     entry_points = {

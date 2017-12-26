@@ -13,6 +13,7 @@ from types import ModuleType
 from captain import exit as console, echo
 from captain.decorators import arg
 
+from ..compat import *
 from ..utils import get_objects
 from ..model import Orm
 from ..interface import get_interface
@@ -126,10 +127,15 @@ def run_cmd(cmd):
             stderr=subprocess.STDOUT,
         )
 
-        for line in iter(process.stdout.readline, ""):
-            #echo.out(line)
-            sys.stdout.write(line)
-            sys.stdout.flush()
+        if is_py2:
+            for line in iter(process.stdout.readline, ""):
+                sys.stdout.write(line)
+                sys.stdout.flush()
+        else:
+            for line in iter(process.stdout.readline, b""):
+                line = line.decode("utf-8")
+                sys.stdout.write(line)
+                sys.stdout.flush()
 
         process.wait()
 
