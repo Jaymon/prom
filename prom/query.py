@@ -267,8 +267,7 @@ class ResultsIterator(BaseIterator):
 
         else:
             if self.orm_class:
-                r = self.orm_class()
-                r.populate(d)
+                r = self.orm_class(d, hydrate=True)
             else:
                 r = d
 
@@ -989,8 +988,7 @@ class Query(object):
         o = self.default_val
         d = self._query('get_one')
         if d:
-            o = self.orm_class()
-            o.populate(d)
+            o = self.orm_class(d, hydrate=True)
         return o
 
     def values(self, limit=None, page=None):

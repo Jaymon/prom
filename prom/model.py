@@ -151,9 +151,24 @@ class Orm(object):
         """
         return {k:getattr(self, k, None) for k in self.schema.fields}
 
-    def __init__(self, fields=None, **fields_kwargs):
+    def __init__(self, fields=None, hydrate=False, **fields_kwargs):
+        """Create an Orm object
+
+        NOTE -- you probably shouldn't override this method since the Query methods
+        rely on this method signature to create each instance of the results
+
+        :param fields: dict, the fields in a dict
+        :param hydrate: bool, True if this should hydrate the object (usually this
+            means it has come from the db, or False if the object should be considered
+            a new object)
+        :param **fields_kwargs: dict, if you would like to pass the fields as key=val
+        """
         self.reset_modified()
-        self.modify(fields, **fields_kwargs)
+        if hydrate:
+            self.populate(fields, **fields_kwargs)
+
+        else:
+            self.modify(fields, **fields_kwargs)
 
     @classmethod
     def pool(cls, size=0):
