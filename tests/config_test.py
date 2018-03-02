@@ -4,7 +4,7 @@ import os
 
 import testdata
 
-from . import BaseTestCase
+from . import BaseTestCase, EnvironTestCase
 import prom
 from prom.model import Orm
 from prom.config import Schema, Connection, DsnConnection, Index
@@ -308,8 +308,15 @@ class ConnectionTest(BaseTestCase):
         self.assertEqual({"some_random_thing": "foo"}, c.options)
 
 
-class ObjectFieldTest(BaseTestCase):
+class ObjectFieldTest(EnvironTestCase):
     field_class = ObjectField
+
+    def get_orm(self, default=None):
+        class EnvironObjectOrm(Orm):
+            interface = self.create_interface()
+            body = self.field_class(True, default=default)
+
+        return EnvironObjectOrm()
 
     def get_sqlite_orm(self):
         class IMethodPickleOrmSQLite(Orm):
@@ -325,24 +332,21 @@ class ObjectFieldTest(BaseTestCase):
 
         return IMethodPickleOrmPostgres()
 
-    def test_imethods_pickle_sqlite(self):
-        o = self.get_sqlite_orm()
+    def test_default(self):
+        o = self.get_orm(default=dict)
+        o.body["foo"] = 1
+        self.assertEqual(1, o.body["foo"])
+
+    def test_imethods_pickle(self):
+        o = self.get_orm()
         o.body = {"foo": 1}
         o.save()
 
         o2 = type(o).query.get_pk(o.pk)
         self.assertEqual(o.body, o2.body)
 
-    def test_imethods_pickle_postgres(self):
-        o = self.get_postgres_orm()
-        o.body = {"bar": 1}
-        o.save()
-
-        o2 = type(o).query.get_pk(o.pk)
-        self.assertEqual(o.body, o2.body)
-
     def test_modify(self):
-        o = self.get_sqlite_orm()
+        o = self.get_orm()
         o.body = {"bar": 1}
         o.save()
 
@@ -353,7 +357,7 @@ class ObjectFieldTest(BaseTestCase):
         self.assertEqual(o.body, o2.body)
 
     def test_iget_iset_override(self):
-        o = self.get_sqlite_orm()
+        o = self.get_orm()
         ocls = type(o)
 
         ocls_iget = ocls.body.iget
@@ -384,7 +388,29 @@ class JsonFieldTest(ObjectFieldTest):
     field_class = JsonField
 
 
-class FieldTest(BaseTestCase):
+class FieldTest(EnvironTestCase):
+#     def test_dict_type(self):
+#         class DOrm(Orm):
+#             foo = Field(dict)
+# 
+#         o = DOrm()
+#         o.foo = {"bar": 1, "che": 2}
+#         o.save()
+
+    def test_default(self):
+        class FDefaultOrm(Orm):
+            foo = Field(int, default=0)
+            bar = Field(int)
+
+        o = FDefaultOrm()
+        foo = o.schema.foo
+        self.assertEqual(0, foo.fdefault(o, None))
+        self.assertEqual(0, o.foo)
+
+        bar = o.schema.bar
+        self.assertEqual(None, bar.fdefault(o, None))
+        self.assertEqual(None, o.bar)
+
     def test_fcrud(self):
 
         class FCrudOrm(Orm):

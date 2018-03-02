@@ -61,9 +61,6 @@ class Connection(SQLConnection, psycopg2.extensions.connection):
                     #v = v.encode(cur.connection.encoding)
                     #v = bytes(v, encoding=cur.connection.encoding)
                 return v
-#             psycopg2.extensions.register_type(
-#                 psycopg2.extensions.new_type(psycopg2.BINARY.values, "BYTES", cast_bytes)
-#             )
             psycopg2.extensions.register_type(
                 psycopg2.extensions.new_type(psycopg2.STRING.values, "STRING", normalize_str)
             )

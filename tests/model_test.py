@@ -9,7 +9,7 @@ import testdata
 from . import BaseTestCase, EnvironTestCase
 from prom.compat import *
 from prom.model import Orm, OrmPool
-from prom.config import Field, Index
+from prom.config import Field, Index, ObjectField, JsonField
 import prom
 
 
@@ -316,19 +316,21 @@ class OrmTest(EnvironTestCase):
     def test_jsonable(self):
         orm_class = self.get_orm_class()
         orm_class.dt = Field(datetime.datetime)
-        t = orm_class.hydrate(foo=1, bar="blah", dt=datetime.datetime.utcnow())
+        t = orm_class()
+        t.populate(foo=1, bar="blah", dt=datetime.datetime.utcnow())
         d = t.jsonable()
         self.assertEqual(1, d['foo'])
         self.assertEqual("blah", d['bar'])
         self.assertTrue("dt" in d)
 
-        t = orm_class.hydrate(foo=1)
+        t = orm_class()
+        t.populate(foo=1)
         d = t.jsonable()
         self.assertEqual(1, d['foo'])
         self.assertFalse("bar" in d)
 
-    def test_modify(self):
-        class TM(prom.Orm):
+    def test_modify_1(self):
+        class TM(Orm):
             table_name = self.get_table_name()
 
             bar = Field(str, True)
@@ -352,6 +354,31 @@ class OrmTest(EnvironTestCase):
         self.assertIsNone(t.pk)
         self.assertIsNone(t._created)
         self.assertIsNone(t._updated)
+
+    def test_modify_2(self):
+        class TM(Orm):
+            table_name = self.get_table_name()
+
+            foo = Field(str, False)
+            bar = JsonField(False)
+            che = ObjectField(False)
+
+        t = TM()
+        self.assertTrue(t.is_modified())
+        for k in ["bar", "che"]:
+            self.assertTrue(k in t.modified_fields)
+
+        t.bar["foo"] = 1
+        t.save()
+
+        t2 = t.query.get_pk(t.pk)
+        self.assertEqual(t.bar["foo"], t2.bar["foo"])
+
+        t2.bar["foo"] = 2
+        t2.save()
+
+        t3 = t.query.get_pk(t.pk)
+        self.assertEqual(t3.bar["foo"], t2.bar["foo"])
 
     def test_unicode(self):
         """

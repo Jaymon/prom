@@ -418,11 +418,11 @@ class SQLite(SQLInterface):
     def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given table"""
         ret = {}
-        query_str = 'PRAGMA table_info({})'.format(table_name)
+        query_str = 'PRAGMA table_info({})'.format(self._normalize_table_name(table_name))
         fields = self._query(query_str, **kwargs)
         #pout.v([dict(d) for d in fields])
 
-        query_str = 'PRAGMA foreign_key_list({})'.format(table_name)
+        query_str = 'PRAGMA foreign_key_list({})'.format(self._normalize_table_name(table_name))
         fks = {f["from"]: f for f in self._query(query_str, **kwargs)}
         #pout.v([dict(d) for d in fks.values()])
 

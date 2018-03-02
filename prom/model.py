@@ -81,13 +81,13 @@ class Orm(object):
     _updated = Field(datetime.datetime, True)
 
     @_created.isetter
-    def _created(cls, val, is_update, is_modified):
+    def _created(self, val, is_update, is_modified):
         if not is_modified and not is_update:
             val = datetime.datetime.utcnow()
         return val
 
     @_updated.isetter
-    def _updated(cls, val, is_update, is_modified):
+    def _updated(self, val, is_update, is_modified):
         if not is_modified:
             val = datetime.datetime.utcnow()
         return val
@@ -178,26 +178,6 @@ class Orm(object):
         return instance
 
     @classmethod
-    def hydrate(cls, fields=None, **fields_kwargs):
-        """
-        create an instance of cls with the passed in fields but don't set it into the db or mark the passed
-        in fields as modified, this is used by the Query class to hydrate objects
-
-        fields -- dict -- field_name keys, with their respective values
-        **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
-        """
-        fields = cls.make_dict(fields, fields_kwargs)
-        for k, field in cls.schema.fields.items():
-            fields[k] = field.iget(
-                cls,
-                fields.get(k, None)
-            )
-
-        instance = cls(fields)
-        instance.reset_modified()
-        return instance
-
-    @classmethod
     def datestamp(cls, field_val):
         """get the field_val as a string datestamp
 
@@ -217,18 +197,49 @@ class Orm(object):
 
     @classmethod
     def make_dict(cls, fields, fields_kwargs):
-        """This combines fields and fields_kwargs into one master dict, turns out
-        we want to do this more than I would've thought to keep api compatibility
-        with prom proper"""
+        """Lots of methods take a dict and key=val for fields, this combines fields
+        and fields_kwargs into one master dict, turns out we want to do this more
+        than I would've thought to keep api compatibility with prom proper
+
+        :param fields: dict, the fields in a dict
+        :param fields_kwargs: dict, if you would like to pass the fields as key=val
+            this picks those up and combines them with fields
+        :returns: dict, the combined fields
+        """
         return utils.make_dict(fields, fields_kwargs)
 
-    def populate(self, fields):
-        # if is_update is true then it will run just the fields through, if False
-        # then it will run all the fields of the Orm, not just the fields in fields
-        # dict, another name would be hydrate
+    def populate(self, fields=None, **fields_kwargs):
+        """take the passed in fields, combine them with missing fields that should
+        be there and then run all those through appropriate methods to hydrate this
+        orm.
 
-        # we need to re-run all the fields through their iget methods to mimic
-        # them freshly coming out of the db
+        The method replaces cls.hydrate() since it was becoming hard to understand
+        what was going on with all these methods that did things just a little bit
+        different.
+
+        This is used to completely set all the fields of self. If you just want
+        to set certain fields, you can use the submethod _populate
+
+        :param fields: dict, the fields in a dict
+        :param **fields_kwargs: dict, if you would like to pass the fields as key=val
+            this picks those up and combines them with fields
+        """
+
+        # this will run all the fields of the Orm, not just the fields in fields
+        # dict, another name would be hydrate
+        pop_fields = {}
+        fields = self.make_dict(fields, fields_kwargs)
+        for k in self.schema.fields.keys():
+            pop_fields[k] = fields.get(k, None)
+
+        self._populate(pop_fields)
+
+    def _populate(self, fields):
+        """this runs all the fields through their iget methods to mimic them
+        freshly coming out of the db, then resets modified
+
+        :param fields: dict, the fields that were passed in
+        """
         schema = self.schema
         for k, v in fields.items():
             fields[k] = schema.fields[k].iget(self, v)
@@ -243,10 +254,8 @@ class Orm(object):
         :returns: dict, key is field_name and val is the field value to be saved
         """
         fields = {}
-        #fields = self.get_modified()
         schema = self.schema
         for k, field in schema.fields.items():
-        #for k, v in self.fields.items():
             is_modified = k in self.modified_fields
             v = field.iset(
                 self,
@@ -273,12 +282,11 @@ class Orm(object):
 
         q = self.query
         q.set_fields(fields)
-        #q.set_fields(self.get_modified())
         pk = q.insert()
         if pk:
             fields = q.fields
             fields[schema.pk.name] = pk
-            self.populate(fields)
+            self._populate(fields)
 
         else:
             ret = False
@@ -290,7 +298,6 @@ class Orm(object):
         ret = True
         fields = self.depopulate(True)
         q = self.query
-        #q.set_fields(self.get_modified())
         q.set_fields(fields)
 
         pk = self.pk
@@ -302,7 +309,7 @@ class Orm(object):
 
         if q.update():
             fields = q.fields
-            self.populate(fields)
+            self._populate(fields)
 
         else:
             ret = False
@@ -351,23 +358,6 @@ class Orm(object):
 
         return ret
 
-    def modify_fields(self, fields=None, **fields_kwargs):
-        return self.make_dict(fields, fields_kwargs)
-
-    def get_modified(self):
-        """return the modified fields and their new values"""
-        fields = {}
-
-        for field_name in self.modified_fields:
-            fields[field_name] = getattr(self, field_name)
-
-        # compensate for us not having knowledge of certain fields changing
-        for field_name, field in self.schema.normal_fields.items():
-            if isinstance(field, ObjectField):
-                fields[field_name] = getattr(self, field_name)
-
-        return fields
-
     def is_modified(self):
         """true if a field has been changed from its original value, false otherwise"""
         return len(self.modified_fields) > 0
@@ -382,10 +372,25 @@ class Orm(object):
         """
         self.modified_fields = set()
 
+        # compensate for us not having knowledge of certain fields changing
+        for field_name, field in self.schema.normal_fields.items():
+            if isinstance(field, ObjectField):
+                self.modified_fields.add(field_name)
+
     def modify(self, fields=None, **fields_kwargs):
-        """update the fields of this instance with the values in dict fields"""
+        """update the fields of this instance with the values in dict fields
+
+        this should rarely be messed with, if you would like to manipulate the
+        fields you should override _modify()
+
+        :param fields: dict, the fields in a dict
+        :param **fields_kwargs: dict, if you would like to pass the fields as key=val
+            this picks those up and combines them with fields
+        :returns: set, all the names of the fields that were modified
+        """
         modified_fields = set()
-        fields = self.modify_fields(fields, **fields_kwargs)
+        fields = self.make_dict(fields, fields_kwargs)
+        fields = self._modify(fields)
         for field_name, field_val in fields.items():
             in_schema = field_name in self.schema.fields
             if in_schema:
@@ -393,6 +398,16 @@ class Orm(object):
                 modified_fields.add(field_name)
 
         return modified_fields
+
+    def _modify(self, fields):
+        """In child classes you should override this method to do any default 
+        customizations on the fields, so if you want to set defaults or anything
+        you should do that here
+
+        :param fields: dict, the fields that were passed in
+        :returns: dict, the fields you want to actually be modified
+        """
+        return fields
 
     def __setattr__(self, field_name, field_val):
         if field_name in self.schema.fields:

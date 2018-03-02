@@ -349,18 +349,18 @@ class Field(object):
         foo = Field(str, True)
 
         @foo.igetter
-        def foo(cls, val):
+        def foo(self, val):
             # do custom things
             return val
 
         @foo.isetter
-        def foo(cls, val, is_update, is_modified):
+        def foo(self, val, is_update, is_modified):
             # do custom things
             return val
 
     NOTE -- the iset/iget methods are different than traditional python getters
     and setters because they always need to return a value and they always take in a
-    value, and they are classmethods
+    value
 
     There are also fget/fset/fdel methods that can be set to customize behavior
     on when a value is set on a particular instance, so if you wanted to make sure
@@ -419,10 +419,10 @@ class Field(object):
         """
         create a field
 
-        field_type -- type -- the python type of the field, so for a string you would pass str, integer: int,
+        :param field_type: type, the python type of the field, so for a string you would pass str, integer: int,
             boolean: bool, float: float, big int: long
-        field_required -- boolean -- true if this field has to be there to insert
-        field_options -- dict -- everything else in key: val notation. Current options:
+        :param field_required: boolean, true if this field has to be there to insert
+        :param field_options: dict, everything else in key: val notation. Current options:
             size -- int -- the size you want the string to be, or the int to be
             min_size -- int -- the minimum size
             max_size -- int -- if you want a varchar, set this
@@ -430,7 +430,8 @@ class Field(object):
                 equal to self.set_index(field_name, [field_name], unique=True). this is a convenience option
                 to set a unique index on the field without having to add a separate index statement
             ignore_case -- boolean -- True to ignore case if this field is used in indexes
-        **field_options_kwargs -- will be combined with field_options
+            default -- mixed -- defaults to None, can be anything the db can support
+        :param **field_options_kwargs: dict, will be combined with field_options
         """
         field_options = utils.make_dict(field_options, field_options_kwargs)
         d = {}
@@ -458,25 +459,18 @@ class Field(object):
         self.fgetter(field_options.pop("fget", self.default_fget))
         self.fsetter(field_options.pop("fset", self.default_fset))
         self.fdeleter(field_options.pop("fdel", self.default_fdel))
-        #self.fdeleter(field_options.pop("fdefault", self.default_fdefault))
-
+        self.fdefaulter(field_options.pop("fdefault", self.default_fdefault))
 
         self.igetter(field_options.pop("iget", self.default_iget))
         self.isetter(field_options.pop("iset", self.default_iset))
 
         self.jsonabler(field_options.pop("jsonable", self.default_jsonable))
 
-#         self.fget = self.fgetter(field_options.pop("fget", self.default_fget))
-#         self.fset = self.fsetter(field_options.pop("fset", self.default_fset))
-#         self.fdel = self.fdeleter(field_options.pop("fdel", self.default_fdel))
-# 
-#         self.iset = self.isetter(field_options.pop("iset", self.default_iset))
-#         self.iget = self.igetter(field_options.pop("iget", self.default_iget))
-
         self.name = field_options.pop("name", "")
         # this creates a numeric dict key that can't be accessed as an attribute
         self.instance_field_name = str(id(self))
         self._type = field_type
+        self.default = field_options.pop("default", None)
         self.options = field_options
         self.required = field_required if field_required else self.is_pk()
 
@@ -489,7 +483,7 @@ class Field(object):
         return bool(self.schema)
 
     def default_fget(self, instance, val):
-        return val
+        return self.fdefault(instance, val)
 
     def default_fset(self, instance, val):
         return val
@@ -497,13 +491,33 @@ class Field(object):
     def default_fdel(self, instance, val):
         return None
 
+    def default_fdefault(self, instance, val):
+        ret = val
+        if val is None:
+            if callable(self.default):
+                ret = self.default()
+
+            elif self.default is None:
+                ret = self.default
+
+            elif isinstance(self.default, (dict, list, set, object)):
+                ret = type(self.default)()
+
+            else:
+                ret = self.default
+
+        return ret
+
     def default_iset(self, instance, val, is_update, is_modified):
         return val
 
     def default_iget(self, instance, val):
-        return val
+        return self.fdefault(instance, val)
 
     def default_jsonable(self, instance, val):
+        if val is None:
+            val = self.fdefault(instance, val)
+
         if val is not None:
             if isinstance(val, (datetime.date, datetime.datetime)):
                 val = instance.datestamp(val)
@@ -522,6 +536,11 @@ class Field(object):
     def fdeleter(self, fdel):
         """decorator for setting field's fdel function"""
         self.fdel = fdel
+        return self
+
+    def fdefaulter(self, fdefault):
+        """decorator for setting field's fdefault function"""
+        self.fdefault = fdefault
         return self
 
     def igetter(self, iget):
@@ -554,7 +573,17 @@ class Field(object):
             # class is requesting this property, so return it
             return self
 
-        return self.fget(instance, self.fval(instance))
+        raw_val = self.fval(instance)
+        ret = self.fget(instance, raw_val)
+
+        # we want to compensate for default values right here, so if the raw val
+        # is None but the new val is not then we save the returned value, this
+        # allows us to handle things like dict with no surprises
+        if raw_val is None:
+            if ret is not None:
+                instance.__dict__[self.instance_field_name] = ret
+
+        return ret
 
     def __set__(self, instance, val):
         """this is the wrapper that will actually be called when the field is
@@ -588,13 +617,17 @@ class ObjectField(Field):
     cPickle to decide, you can't pass in something like `object` without complicating 
     how foreign keys are figured out, so ultimately, I've decided to just have it be
     a separate class"""
-    def __init__(self, field_required=False):
+    def __init__(self, field_required=False, default=None):
         """
         unlike the normal Field class, you can't set any options or a type on this
         Field, because it is a pickled object, so it can't be unique, it doesn't have
         a size, etc.. Likewise, the field type is always str
         """
-        super(ObjectField, self).__init__(field_type=str, field_required=field_required)
+        super(ObjectField, self).__init__(
+            field_type=str,
+            field_required=field_required,
+            default=default,
+        )
 
     def encode(self, val):
         if val is None: return val
@@ -620,6 +653,11 @@ class ObjectField(Field):
 
 class JsonField(ObjectField):
     """Similar to ObjectField but stores json in the db"""
+    def __init__(self, field_required=False, default=dict):
+        super(JsonField, self).__init__(
+            field_required=field_required,
+            default=default,
+        )
 
     def encode(self, val):
         if val is None: return val
