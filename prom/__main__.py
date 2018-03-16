@@ -10,7 +10,7 @@ except ImportError:
         "To use the prom cli commands you need to install captain, usually this is",
         "as easy as `pip install captain`"
     ]))
-    exit()
+    exit(1)
 
 from prom.interface import get_interface
 #from prom.cli import run_cmd
@@ -20,5 +20,5 @@ from prom.cli.dump import main_restore
 
 
 if __name__ == "__main__":
-    console()
+    console(__name__)
 

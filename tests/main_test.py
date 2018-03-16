@@ -32,7 +32,7 @@ class BaseTestCase(BTC):
         if not command:
             command = self.command
         s = Script(command)
-        environ = s.env
+        environ = s.environ
 
         # we want to cleanup the environment of any rogue PROM_DSNs
         environ = {r[0]: r[1] for r in environ.items() if not r[0].startswith("PROM")}
@@ -40,7 +40,7 @@ class BaseTestCase(BTC):
         for i, inter in enumerate(self.get_interfaces()):
             environ["PROM_DSN_{}".format(i)] = inter.connection_config.dsn
 
-        s.env = environ
+        s.environ = environ
         return s
 
 
@@ -209,7 +209,7 @@ class DumpTest(BaseTestCase):
         #self.insert(_q, 10)
 
         c = self.create_script("dump")
-        c.env["PYTHONPATH"] += ":{}".format(path.directory)
+        c.environ["PYTHONPATH"] += ":{}".format(path.directory)
         directory = testdata.create_dir("dbdump")
         r = c.run("--directory={} dumpprom".format(directory))
         self.assertTrue("dumping table dp_foo")
