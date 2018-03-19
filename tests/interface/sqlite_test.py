@@ -16,6 +16,23 @@ class InterfaceSQLiteTest(BaseTestInterface):
     def create_interface(cls):
         return cls.create_sqlite_interface()
 
+    def test_get_fields_float(self):
+        sql = "\n".join([
+            "CREATE TABLE ZFOOBAR (",
+            "ZPK INTEGER PRIMARY KEY,",
+            "ZINTEGER INTEGER,",
+            "ZFLOAT FLOAT,",
+            "ZTIMESTAMP TIMESTAMP,",
+            "ZVARCHAR VARCHAR)",
+        ])
+
+        i = self.create_interface()
+        r = i.query(sql, cursor_result=True)
+        self.assertTrue(i.has_table("ZFOOBAR"))
+
+        fields = i.get_fields("ZFOOBAR")
+        self.assertEqual(float, fields["ZFLOAT"]["field_type"])
+
     def test_create_path(self):
         i = self.create_interface()
         config = i.connection_config

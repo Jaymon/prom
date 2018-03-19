@@ -430,6 +430,8 @@ class SQLite(SQLInterface):
             "INTEGER": int,
             "BIGINT": long,
             "DOUBLE PRECISION": float,
+            "FLOAT": float,
+            "REAL": float,
             "NUMERIC": decimal.Decimal,
             "BOOLEAN": bool,
             "DATE": datetime.date,

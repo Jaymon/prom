@@ -33,7 +33,10 @@ def get_field_def(field_name, field_d):
     if "ref_table_name" in field_d:
         field_type = field_d["ref_table_name"].title().replace("_", "")
     else:
-        field_type = field_d["field_type"].__name__
+        try:
+            field_type = field_d["field_type"].__name__
+        except KeyError:
+            raise ValueError("Could not find python type for field {}".format(field_name))
 
     arg_bits = [field_type, str(field_required)]
     if field_d["pk"]:

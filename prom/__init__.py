@@ -21,7 +21,7 @@ from .exception import InterfaceError, Error, UniqueError
 from . import utils
 
 
-__version__ = '0.10.3'
+__version__ = '0.10.4'
 
 
 # get rid of "No handler found" warnings (cribbed from requests)
