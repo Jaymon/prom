@@ -26,6 +26,7 @@ import os
 import decimal
 import datetime
 from distutils import dir_util
+import re
 
 # third party
 import sqlite3
@@ -49,12 +50,6 @@ class SQLiteRowDict(sqlite3.Row):
         return r
 
 
-# class LoggingCursor(sqlite3.Cursor):
-#     def execute(self, sql, args=None):
-#         #logger.debug(self.mogrify(sql, args))
-#         super(LoggingCursor, self).execute(sql, args)
-
-
 class SQLiteConnection(SQLConnection, sqlite3.Connection):
     """
     Thin wrapper around the default connection to make sure it has a similar interface
@@ -70,10 +65,42 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
         self.closed = 1
         return r
 
-#     def cursor(self, cursor_class=None):
-#         if not cursor_class:
-#             cursor_class = LoggingCursor
-#         return super(SQLiteConnection, self).cursor(cursor_class)
+
+class TimestampType(object):
+    """External sqlite3 databases can store the TIMESTAMP type as unix timestamps,
+    this caused parsing problems when pulling the values out of the db because the
+    default adapter expected TIMESTAMP to be in the form of YYYY-MM-DD HH:MM:SS.SSSSSS
+    and so it would fail to convert the DDDDDD.DDD values, this handles that conversion
+    """
+    @staticmethod
+    def adapt(val):
+        return val.isoformat(b" ") if is_py2 else val.isoformat(" ")
+
+    @staticmethod
+    def convert(val):
+        val = StringType.adapt(val)
+        if re.match("^\d+\.\d+$", val):
+            # account for unix timestamps with microseconds
+            val = datetime.datetime.fromtimestamp(float(val))
+
+        elif re.match("^\d+$", val):
+            # account for unix timestamps without microseconds
+            val = datetime.datetime.fromtimestamp(int(val))
+
+        else:
+            # this is borrowed from sqlite3.dbapi2.convert_timestamp, sadly it is
+            # burried in a function so I can't wrap it :(
+            datepart, timepart = val.split(" ")
+            year, month, day = map(int, datepart.split("-"))
+            timepart_full = timepart.split(".")
+            hours, minutes, seconds = map(int, timepart_full[0].split(":"))
+            if len(timepart_full) == 2:
+                microseconds = int('{:0<6.6}'.format(timepart_full[1]))
+            else:
+                microseconds = 0
+
+            val = datetime.datetime(year, month, day, hours, minutes, seconds, microseconds)
+        return val
 
 
 class BooleanType(object):
@@ -96,10 +123,8 @@ class NumericType(object):
         if is_py2:
             ret = decimal.Decimal(str(val))
         else:
-            if isinstance(val, bytes):
-                ret = decimal.Decimal(val.decode("utf-8"))
-            else:
-                ret = decimal.Decimal(val)
+            val = StringType.adapt(val)
+            ret = decimal.Decimal(val)
         return ret
 
 
@@ -184,6 +209,9 @@ class SQLite(SQLInterface):
 
         sqlite3.register_adapter(bool, BooleanType.adapt)
         sqlite3.register_converter('BOOLEAN' if not is_py2 else b'BOOLEAN', BooleanType.convert)
+
+        sqlite3.register_adapter(datetime.datetime, TimestampType.adapt)
+        sqlite3.register_converter('TIMESTAMP' if not is_py2 else b'TIMESTAMP', TimestampType.convert)
 
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html

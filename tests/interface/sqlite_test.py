@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
 import os
+import datetime
 
 import testdata
 
 from prom import query, InterfaceError
 from prom.interface.sqlite import SQLite
+from prom.config import Field
 from prom.compat import *
 
 from . import BaseTestInterface
@@ -15,6 +17,26 @@ class InterfaceSQLiteTest(BaseTestInterface):
     @classmethod
     def create_interface(cls):
         return cls.create_sqlite_interface()
+
+    def test_fields_timestamp(self):
+        table_name = self.get_table_name()
+        epoch = datetime.datetime(1970, 1, 1)
+        timestamp = (datetime.datetime.utcnow() - epoch).total_seconds()
+        sql = "\n".join([
+            "CREATE TABLE {} (".format(table_name),
+            "ZTIMESTAMP TIMESTAMP)",
+        ])
+
+        i = self.create_interface()
+        r = i.query(sql, cursor_result=True)
+
+        sql = "INSERT INTO {} (ZTIMESTAMP) VALUES ({:.5f})".format(table_name, timestamp)
+        r = i.query(sql, ignore_result=True)
+
+        schema = self.get_schema(table_name, ZTIMESTAMP=Field(datetime.datetime))
+        q = query.Query()
+        r = i.get_one(schema, q)
+        self.assertEqual((r["ZTIMESTAMP"] - epoch).total_seconds(), round(timestamp, 5))
 
     def test_get_fields_float(self):
         sql = "\n".join([
