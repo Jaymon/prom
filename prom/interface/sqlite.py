@@ -71,6 +71,10 @@ class TimestampType(object):
     this caused parsing problems when pulling the values out of the db because the
     default adapter expected TIMESTAMP to be in the form of YYYY-MM-DD HH:MM:SS.SSSSSS
     and so it would fail to convert the DDDDDD.DDD values, this handles that conversion
+
+    https://www.sqlite.org/lang_datefunc.html
+    the "unixepoch" modifier only works for dates between 0000-01-01 00:00:00 and
+    5352-11-01 10:52:47 (unix times of -62167219200 through 106751991167)
     """
     @staticmethod
     def adapt(val):
@@ -83,9 +87,21 @@ class TimestampType(object):
             # account for unix timestamps with microseconds
             val = datetime.datetime.fromtimestamp(float(val))
 
-        elif re.match("^\d+$", val):
+        elif re.match("^\-?\d+$", val):
             # account for unix timestamps without microseconds
-            val = datetime.datetime.fromtimestamp(int(val))
+            val = int(val)
+
+            try:
+                val = datetime.datetime.fromtimestamp(val)
+
+            except ValueError:
+                # we're hosed with this unix timestamp, but rather than error
+                # out let's go ahead and return the closest approximation we
+                # can get to the correct timestamp
+                if val > 0:
+                    val = datetime.datetime.max
+                else:
+                    val = datetime.datetime.min
 
         else:
             # this is borrowed from sqlite3.dbapi2.convert_timestamp, sadly it is

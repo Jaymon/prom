@@ -20,23 +20,31 @@ class InterfaceSQLiteTest(BaseTestInterface):
 
     def test_fields_timestamp(self):
         table_name = self.get_table_name()
+        schema = self.get_schema(table_name, ZTIMESTAMP=Field(datetime.datetime))
+        q = query.Query()
         epoch = datetime.datetime(1970, 1, 1)
         timestamp = (datetime.datetime.utcnow() - epoch).total_seconds()
-        sql = "\n".join([
-            "CREATE TABLE {} (".format(table_name),
-            "ZTIMESTAMP TIMESTAMP)",
-        ])
 
         i = self.create_interface()
-        r = i.query(sql, cursor_result=True)
+        i.set_table(schema)
 
         sql = "INSERT INTO {} (ZTIMESTAMP) VALUES ({:.5f})".format(table_name, timestamp)
         r = i.query(sql, ignore_result=True)
 
-        schema = self.get_schema(table_name, ZTIMESTAMP=Field(datetime.datetime))
-        q = query.Query()
         r = i.get_one(schema, q)
         self.assertEqual((r["ZTIMESTAMP"] - epoch).total_seconds(), round(timestamp, 5))
+
+        timestamp = -62167219200
+        sql = "INSERT INTO {} (ZTIMESTAMP) VALUES ({})".format(table_name, timestamp)
+        r = i.query(sql, ignore_result=True)
+        r = i.get_one(schema, q.offset(1))
+        self.assertEqual(r["ZTIMESTAMP"], datetime.datetime.min)
+
+        timestamp = 106751991167
+        sql = "INSERT INTO {} (ZTIMESTAMP) VALUES ({})".format(table_name, timestamp)
+        r = i.query(sql, ignore_result=True)
+        r = i.get_one(schema, q.offset(2))
+        self.assertEqual(r["ZTIMESTAMP"], datetime.datetime(5352, 11, 1, 10, 52, 47))
 
     def test_get_fields_float(self):
         sql = "\n".join([
