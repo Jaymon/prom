@@ -27,9 +27,11 @@ import decimal
 import datetime
 from distutils import dir_util
 import re
-
-# third party
 import sqlite3
+try:
+    import thread
+except ImportError:
+    thread = None
 
 # first party
 from ..exception import UniqueError
@@ -192,9 +194,11 @@ class SQLite(SQLInterface):
         options = {
             'isolation_level': None,
             'detect_types': sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
-            'factory': SQLiteConnection
+            'factory': SQLiteConnection,
+            'check_same_thread': False,
         }
-        for k in ['timeout', 'detect_types', 'isolation_level', 'check_same_thread', 'factory', 'cached_statements']:
+        option_keys = list(options.keys()) + ['timeout', 'cached_statements']
+        for k in option_keys:
             if k in connection_config.options:
                 options[k] = connection_config.options[k]
 
@@ -236,6 +240,13 @@ class SQLite(SQLInterface):
     def get_connection(self):
         if not self.connected: self.connect()
         return self._connection
+
+    def _get_thread(self):
+        if thread:
+            ret = str(thread.get_ident())
+        else:
+            ret = ""
+        return ret
 
     def _close(self):
         self._connection.close()
@@ -449,6 +460,14 @@ class SQLite(SQLInterface):
 
             elif "UNIQUE" in e_msg:
                 self.raise_error(e, e_class=UniqueError)
+
+        elif isinstance(e, sqlite3.ProgrammingError):
+            e_msg = str(e)
+            if "SQLite objects created in a thread" in e_msg:
+                # we have switched threads, so go ahead and close the connection
+                # and let the query retry
+                self.close()
+                ret = True
 
         return ret
 

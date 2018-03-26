@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
 import os
+import datetime
 
 import testdata
 
@@ -396,6 +397,15 @@ class FieldTest(EnvironTestCase):
 #         o = DOrm()
 #         o.foo = {"bar": 1, "che": 2}
 #         o.save()
+
+    def test_datetime_jsonable(self):
+        class FDatetimeOrm(Orm):
+            foo = Field(datetime.datetime)
+
+        o = FDatetimeOrm()
+        o.foo = datetime.datetime.min
+        r = o.jsonable()
+        self.assertTrue("foo" in r)
 
     def test_default(self):
         class FDefaultOrm(Orm):

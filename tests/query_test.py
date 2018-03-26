@@ -7,6 +7,7 @@ from threading import Thread
 import sys
 
 import testdata
+#from testdata.threading import Thread
 
 from . import BaseTestCase, EnvironTestCase
 from prom.query import Query, \
@@ -122,6 +123,27 @@ class QueryTest(EnvironTestCase):
 #     def setUpClass(cls):
 #         from unittest import SkipTest
 #         raise SkipTest()
+
+    def test_watch(self):
+        _q = self.get_query()
+        self.insert(_q.copy(), 5)
+        qu = queue.Queue()
+
+        def target():
+            q = _q.copy()
+            for o in q.watch(interval=0.1):
+                qu.put(o.pk)
+        t = Thread(target=target)
+        t.daemon = True
+        t.start()
+
+        testdata.wait(lambda: qu.qsize() == 5)
+
+        self.insert(_q.copy(), 2)
+        testdata.wait(lambda: qu.qsize() == 7)
+
+        self.insert(_q.copy(), 1)
+        testdata.wait(lambda: qu.qsize() == 8)
 
     def test_like(self):
         _q = self.get_query()
@@ -282,7 +304,7 @@ class QueryTest(EnvironTestCase):
         sys.modules.pop("rtfoo.rtbar.tqr2.Bar", None)
         #tqr2 = basedir.module("tqr2")
         def target():
-            q = tqr1.Foo.ref("rtfoo.rtbar.tqr2.Bar")
+            q = tqr1.Foo.query.ref("rtfoo.rtbar.tqr2.Bar")
             f = tqr1.Foo()
             q = f.query.ref("rtfoo.rtbar.tqr2.Bar")
 
@@ -630,46 +652,45 @@ class QueryTest(EnvironTestCase):
 
     def test_fields_set(self):
         q = self.get_query()
-        fields_select = ['foo', 'bar', 'che']
+        fields_select = list(q.schema.fields.keys())
         fields = dict(zip(fields_select, [None] * len(fields_select)))
         q.set_fields(*fields_select)
-        self.assertEqual(fields_select, q.fields_select.names())
+        self.assertEqual(fields_select, list(q.fields_select.names()))
         self.assertEqual(fields, q.fields)
 
         q = self.get_query()
         q.set_fields(fields)
-        self.assertEqual(fields_select, q.fields_select.names())
+        self.assertEqual(fields_select, list(q.fields_select.names()))
         self.assertEqual(fields, q.fields)
 
         q = self.get_query()
         q.set_fields(fields_select)
-        self.assertEqual(fields_select, q.fields_select.names())
+        self.assertEqual(fields_select, list(q.fields_select.names()))
         self.assertEqual(fields, q.fields)
 
         q = self.get_query()
         q.set_fields(**fields)
-        self.assertEqual(fields_select, q.fields_select.names())
+        self.assertEqual(fields_select, list(q.fields_select.names()))
         self.assertEqual(fields, q.fields)
 
     def test_fields_select(self):
         q = self.get_query()
-        fields_select = ['foo', 'bar', 'che']
-        q.select_fields(*fields_select)
-        self.assertEqual(fields_select, q.fields_select.names())
+        fields_select = list(q.schema.fields.keys())
+        q.select_fields(*fields_select[0:-1])
+        self.assertEqual(fields_select[0:-1], list(q.fields_select.names()))
 
         q = self.get_query()
         q.select_fields(fields_select)
-        self.assertEqual(fields_select, q.fields_select.names())
+        self.assertEqual(fields_select, list(q.fields_select.names()))
 
         q = self.get_query()
-        q.select_fields(fields_select, 'baz')
-        self.assertEqual(fields_select + ['baz'], q.fields_select.names())
+        q.select_fields(fields_select[0:-1], fields_select[-1])
+        self.assertEqual(fields_select, list(q.fields_select.names()))
 
         # make sure chaining works
         q = self.get_query()
-        fields_select = ['foo', 'bar', 'che']
         q.select_fields(fields_select[0]).select_fields(*fields_select[1:])
-        self.assertEqual(fields_select, q.fields_select.names())
+        self.assertEqual(fields_select, list(q.fields_select.names()))
 
     def test_child_magic(self):
 
@@ -684,23 +705,48 @@ class QueryTest(EnvironTestCase):
         with self.assertRaises(AttributeError):
             q.aksdlfjldks_foo(2)
 
-    def test__split_method(self):
+    def test__normalize_field_method(self):
+        q = self.get_query()
 
-        tests = [
-            ("get_foo", ("get", "foo")),
-            ("is_foo", ("is", "foo")),
-            ("gt_foo_bar", ("gt", "foo_bar")),
-        ]
+        method_name = "is_{}".format(testdata.random.choice(list(q.schema.fields.keys())))
+        r = q._normalize_field_method(method_name)
+        self.assertEqual("is_field", r[0].__name__)
+        self.assertTrue(r[1] in set(q.schema.fields.keys()))
+
+        with self.assertRaises(AttributeError):
+            q._normalize_field_method("is_fakdsfjadslfkfaskdhkshjakh")
+
+        with self.assertRaises(AttributeError):
+            q._normalize_field_method("testing")
 
         q = self.get_query()
         q.orm_class = None
+        tests = [
+            ("gt_foo_bar", ("gt_field", "foo_bar")),
+        ]
 
         for t in tests:
-            r = q._split_method(t[0])
-            self.assertEqual(t[1], r)
+            r = q._normalize_field_method(t[0])
+            self.assertEqual(t[1][0], r[0].__name__)
+            self.assertEqual(t[1][1], r[1])
 
-        with self.assertRaises(ValueError):
-            q._split_method("testing")
+#     def test__split_method(self):
+# 
+#         tests = [
+#             ("get_foo", ("get", "foo")),
+#             ("is_foo", ("is", "foo")),
+#             ("gt_foo_bar", ("gt", "foo_bar")),
+#         ]
+# 
+#         q = self.get_query()
+#         q.orm_class = None
+# 
+#         for t in tests:
+#             r = q._split_method(t[0])
+#             self.assertEqual(t[1], r)
+# 
+#         with self.assertRaises(ValueError):
+#             q._split_method("testing")
 
     def test_properties(self):
         q = self.get_query()
@@ -708,6 +754,7 @@ class QueryTest(EnvironTestCase):
         self.assertTrue(r)
 
         r = q.interface
+        self.assertEqual(r, q.orm_class.interface)
         self.assertTrue(r)
 
         q.orm_class = None

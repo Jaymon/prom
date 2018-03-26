@@ -25,7 +25,7 @@ setup(
     long_description=long_description,
     author='Jay Marcyes',
     author_email='jay@marcyes.com',
-    url='http://github.com/firstopinion/{}'.format(name),
+    url='http://github.com/jaymon/{}'.format(name),
     packages=find_packages(),
     install_requires=['dsnparse'],
     tests_require=['testdata', 'gevent', 'captain', 'psycogreen', 'dump'],

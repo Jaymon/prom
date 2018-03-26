@@ -13,6 +13,7 @@ import multiprocessing
 from multiprocessing import queues
 import math
 import inspect
+import time
 
 import threading
 try:
@@ -720,6 +721,7 @@ class Query(object):
                 fields = list(fields[0]) + list(fields)[1:]
 
         for field_name in fields:
+            field_name = self._normalize_field_name(field_name)
             self.select_field(field_name)
         return self
 
@@ -729,6 +731,7 @@ class Query(object):
 
         n insert/update queries, these are the fields that will be inserted/updated into the db
         """
+        field_name = self._normalize_field_name(field_name)
         self.fields_set.append(field_name, [field_name, field_val])
         return self
 
@@ -763,11 +766,13 @@ class Query(object):
         return self
 
     def is_field(self, field_name, *field_val, **field_kwargs):
+        field_name = self._normalize_field_name(field_name)
         fv = field_val[0] if field_val else None
         self.fields_where.append(field_name, ["is", field_name, fv, field_kwargs])
         return self
 
     def not_field(self, field_name, *field_val, **field_kwargs):
+        field_name = self._normalize_field_name(field_name)
         fv = field_val[0] if field_val else None
         self.fields_where.append(field_name, ["not", field_name, fv, field_kwargs])
         return self
@@ -778,21 +783,25 @@ class Query(object):
         return self
 
     def lte_field(self, field_name, *field_val, **field_kwargs):
+        field_name = self._normalize_field_name(field_name)
         fv = field_val[0] if field_val else None
         self.fields_where.append(field_name, ["lte", field_name, fv, field_kwargs])
         return self
 
     def lt_field(self, field_name, *field_val, **field_kwargs):
+        field_name = self._normalize_field_name(field_name)
         fv = field_val[0] if field_val else None
         self.fields_where.append(field_name, ["lt", field_name, fv, field_kwargs])
         return self
 
     def gte_field(self, field_name, *field_val, **field_kwargs):
+        field_name = self._normalize_field_name(field_name)
         fv = field_val[0] if field_val else None
         self.fields_where.append(field_name, ["gte", field_name, fv, field_kwargs])
         return self
 
     def gt_field(self, field_name, *field_val, **field_kwargs):
+        field_name = self._normalize_field_name(field_name)
         fv = field_val[0] if field_val else None
         self.fields_where.append(field_name, ["gt", field_name, fv, field_kwargs])
         return self
@@ -801,6 +810,7 @@ class Query(object):
         """
         field_vals -- list -- a list of field_val values
         """
+        field_name = self._normalize_field_name(field_name)
         fv = make_list(field_vals[0]) if field_vals else None
         if field_kwargs:
             for k in field_kwargs:
@@ -819,6 +829,7 @@ class Query(object):
         """
         field_vals -- list -- a list of field_val values
         """
+        field_name = self._normalize_field_name(field_name)
         fv = make_list(field_vals[0]) if field_vals else None
         if field_kwargs:
             for k in field_kwargs:
@@ -851,6 +862,7 @@ class Query(object):
         """
         if not field_val:
             raise ValueError("Cannot LIKE nothing")
+        field_name = self._normalize_field_name(field_name)
         fv = field_val[0]
         self.fields_where.append(field_name, ["like", field_name, fv, field_kwargs])
         return self
@@ -864,6 +876,7 @@ class Query(object):
         """
         if not field_val:
             raise ValueError("Cannot NOT LIKE nothing")
+        field_name = self._normalize_field_name(field_name)
         fv = field_val[0]
         self.fields_where.append(field_name, ["nlike", field_name, fv, field_kwargs])
         return self
@@ -876,6 +889,7 @@ class Query(object):
         direction -- integer -- negative for DESC, positive for ASC
         field_vals -- list -- the order the rows should be returned in
         """
+        field_name = self._normalize_field_name(field_name)
         if direction > 0:
             direction = 1
         elif direction < 0:
@@ -895,31 +909,109 @@ class Query(object):
         return self
 
     def __getattr__(self, method_name):
-        command, field_name = self._split_method(method_name)
-
+        field_method, field_name = self._normalize_field_method(method_name)
         def callback(*args, **kwargs):
-            field_method_name = "{}_field".format(command)
-            command_field_method = None
-
-            if getattr(type(self), field_method_name, None):
-                command_field_method = getattr(self, field_method_name)
-            else:
-                raise AttributeError('No "{}" method derived from "{}"'.format(field_method_name, method_name))
-
-            return command_field_method(field_name, *args, **kwargs)
-
+            return field_method(field_name, *args, **kwargs)
         return callback
 
-    def _split_method(self, method_name):
-        try:
-            command, field_name = method_name.split(u"_", 1)
-        except ValueError:
-            raise ValueError("invalid command_method: {}".format(method_name))
 
+#     def __getattr__(self, method_name):
+#         command, field_name = self._split_method(method_name)
+# 
+#         def callback(*args, **kwargs):
+#             field_method_name = "{}_field".format(command)
+#             command_field_method = None
+# 
+#             if getattr(type(self), field_method_name, None):
+#                 command_field_method = getattr(self, field_method_name)
+#             else:
+#                 raise AttributeError('No "{}" method derived from "{}"'.format(field_method_name, method_name))
+# 
+#             return command_field_method(field_name, *args, **kwargs)
+# 
+#         return callback
+
+
+#     def __getattr__(self, method_name):
+#         ret = None
+#         if method_name.startswith("_"):
+#             #ret = super(Query, self).__getattr__(method_name)
+#             try:
+#                 ret = self.__dict__[method_name]
+#             except KeyError:
+#                 raise AttributeError(method_name)
+# 
+#         else:
+#             command, field_name = self._split_method(method_name)
+#             field_method_name = "{}_field".format(command)
+#             try:
+#                 pout.v(type(self).__dict__)
+#                 command_field_method = type(self).__dict__[field_method_name]
+#             except KeyError:
+#                 raise AttributeError(field_method_name)
+#             if command_field_method:
+#                 def callback(*args, **kwargs):
+#                     return command_field_method(field_name, *args, **kwargs)
+#                 ret = callback
+# 
+#         return ret
+# 
+# 
+# 
+# 
+#         command, field_name = self._split_method(method_name)
+#         def callback(*args, **kwargs):
+#             field_method_name = "{}_field".format(command)
+#             command_field_method = None
+# 
+#             if getattr(type(self), field_method_name, None):
+#                 command_field_method = getattr(self, field_method_name)
+#             else:
+#                 raise AttributeError('No "{}" method derived from "{}"'.format(field_method_name, method_name))
+# 
+#             return command_field_method(field_name, *args, **kwargs)
+# 
+#         return callback
+
+    def _normalize_field_method(self, method_name):
+        try:
+            command, field_name = method_name.split("_", 1)
+
+        except ValueError:
+            raise AttributeError("invalid command_method: {}".format(method_name))
+
+        else:
+            field_method_name = "{}_field".format(command)
+            # you have to check methods on the actual class, and you can't just
+            # check type(self).__dict__ because it doesn't contain the whole
+            # inheritance chain
+            if getattr(type(self), field_method_name, None):
+                field_method = getattr(self, field_method_name)
+
+            else:
+                raise AttributeError('No "{}" method derived from "{}"'.format(
+                    field_method_name,
+                    method_name
+                ))
+
+            # make sure field is legit also, this will raise an attribute error
+            # if it can't find the field in the schema (and self has a schema)
+            field_name = self._normalize_field_name(field_name)
+
+        return field_method, field_name
+
+    def _normalize_field_name(self, field_name):
         # normalize the field name if we can
         schema = self.schema
         if schema:
             field_name = schema.field_name(field_name)
+        return field_name
+
+    def _split_method(self, method_name):
+        try:
+            command, field_name = method_name.split("_", 1)
+        except ValueError:
+            raise ValueError("invalid command_method: {}".format(method_name))
 
         return command, field_name
 
@@ -1180,6 +1272,26 @@ class Query(object):
 
             # faster than using any((t.is_alive() for t in mts))
             ts = [t for t in ts if t.is_alive()]
+
+    def watch(self, interval=60, cursor_field_name="pk"):
+        inter = self.interface.spawn()
+
+        # we want a new connection for this
+        try:
+            cursor_field_val = None
+            while True:
+                query = self.copy()
+                query.interface = inter
+                if cursor_field_val is not None:
+                    query.gt_field(cursor_field_name, cursor_field_val)
+
+                for instance in query.get():
+                    yield instance
+                    cursor_field_val = getattr(instance, cursor_field_name)
+
+                time.sleep(interval)
+        finally:
+            inter.close()
 
     def _query(self, method_name):
         if not self.can_get: return self.default_val
@@ -1481,6 +1593,4 @@ class CacheQuery(BaseCacheQuery):
         if self.cache_namespace.active:
             ret = super(CacheQuery, self).cache_key(method_name)
         return ret
-
-
 

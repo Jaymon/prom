@@ -2,8 +2,6 @@
 
 An opinionated lightweight orm for PostgreSQL or SQLite.
 
-Lovingly crafted for [First Opinion](http://firstopinionapp.com).
-
 Prom has been used in both single threaded and multi-threaded environments, including environments using Greenthreads.
 
 

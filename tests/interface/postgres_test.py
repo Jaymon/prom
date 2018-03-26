@@ -12,6 +12,8 @@ try:
 except ImportError as e:
     gevent = None
 
+from testdata.service import InitD
+
 from prom import query
 from prom.compat import *
 from prom.config import Schema, DsnConnection, Field
@@ -88,8 +90,7 @@ class InterfacePostgresTest(BaseTestInterface):
         d = i.get_one(s, q)
         self.assertGreater(len(d), 0)
 
-        exit_code = subprocess.check_call("sudo /etc/init.d/postgresql restart", shell=True, stdout=stdnull)
-        time.sleep(1)
+        InitD("postgresql").restart()
 
         q = query.Query()
         q.is__id(_id)
@@ -98,8 +99,9 @@ class InterfacePostgresTest(BaseTestInterface):
 
     def test_no_connection(self):
         """this will make sure prom handles it gracefully if there is no connection available ever"""
-        exit_code = subprocess.check_call("sudo /etc/init.d/postgresql stop", shell=True, stdout=stdnull)
-        time.sleep(1)
+        postgresql = InitD("postgresql")
+        postgresql.ignore_failure = False
+        postgresql.stop()
 
         try:
             i = self.create_interface()
@@ -109,8 +111,7 @@ class InterfacePostgresTest(BaseTestInterface):
                 i.get(s, q)
 
         finally:
-            exit_code = subprocess.check_call("sudo /etc/init.d/postgresql start", shell=True, stdout=stdnull)
-            time.sleep(1)
+            postgresql.start()
 
     def test__normalize_val_SQL(self):
         i = self.get_interface()

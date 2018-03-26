@@ -520,7 +520,11 @@ class Field(object):
 
         if val is not None:
             if isinstance(val, (datetime.date, datetime.datetime)):
-                val = instance.datestamp(val)
+                try:
+                    val = instance.datestamp(val)
+                except ValueError as e:
+                    # strftime can fail on dates <1900
+                    val = str(e)
         return val
 
     def fgetter(self, fget):
