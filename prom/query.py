@@ -914,65 +914,6 @@ class Query(object):
             return field_method(field_name, *args, **kwargs)
         return callback
 
-
-#     def __getattr__(self, method_name):
-#         command, field_name = self._split_method(method_name)
-# 
-#         def callback(*args, **kwargs):
-#             field_method_name = "{}_field".format(command)
-#             command_field_method = None
-# 
-#             if getattr(type(self), field_method_name, None):
-#                 command_field_method = getattr(self, field_method_name)
-#             else:
-#                 raise AttributeError('No "{}" method derived from "{}"'.format(field_method_name, method_name))
-# 
-#             return command_field_method(field_name, *args, **kwargs)
-# 
-#         return callback
-
-
-#     def __getattr__(self, method_name):
-#         ret = None
-#         if method_name.startswith("_"):
-#             #ret = super(Query, self).__getattr__(method_name)
-#             try:
-#                 ret = self.__dict__[method_name]
-#             except KeyError:
-#                 raise AttributeError(method_name)
-# 
-#         else:
-#             command, field_name = self._split_method(method_name)
-#             field_method_name = "{}_field".format(command)
-#             try:
-#                 pout.v(type(self).__dict__)
-#                 command_field_method = type(self).__dict__[field_method_name]
-#             except KeyError:
-#                 raise AttributeError(field_method_name)
-#             if command_field_method:
-#                 def callback(*args, **kwargs):
-#                     return command_field_method(field_name, *args, **kwargs)
-#                 ret = callback
-# 
-#         return ret
-# 
-# 
-# 
-# 
-#         command, field_name = self._split_method(method_name)
-#         def callback(*args, **kwargs):
-#             field_method_name = "{}_field".format(command)
-#             command_field_method = None
-# 
-#             if getattr(type(self), field_method_name, None):
-#                 command_field_method = getattr(self, field_method_name)
-#             else:
-#                 raise AttributeError('No "{}" method derived from "{}"'.format(field_method_name, method_name))
-# 
-#             return command_field_method(field_name, *args, **kwargs)
-# 
-#         return callback
-
     def _normalize_field_method(self, method_name):
         try:
             command, field_name = method_name.split("_", 1)
@@ -1006,14 +947,6 @@ class Query(object):
         if schema:
             field_name = schema.field_name(field_name)
         return field_name
-
-    def _split_method(self, method_name):
-        try:
-            command, field_name = method_name.split("_", 1)
-        except ValueError:
-            raise ValueError("invalid command_method: {}".format(method_name))
-
-        return command, field_name
 
     def limit(self, limit):
         return self.set_limit(limit)
@@ -1273,8 +1206,9 @@ class Query(object):
             # faster than using any((t.is_alive() for t in mts))
             ts = [t for t in ts if t.is_alive()]
 
-    def watch(self, interval=60, cursor_field_name="pk"):
+    def watch(self, interval=60, timeout=0, cursor_field_name="pk"):
         inter = self.interface.spawn()
+        start = time.time()
 
         # we want a new connection for this
         try:
@@ -1290,6 +1224,11 @@ class Query(object):
                     cursor_field_val = getattr(instance, cursor_field_name)
 
                 time.sleep(interval)
+                stop = time.time()
+                if timeout:
+                    if (stop - start) > timeout:
+                        break
+
         finally:
             inter.close()
 

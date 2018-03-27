@@ -195,7 +195,7 @@ class SQLite(SQLInterface):
             'isolation_level': None,
             'detect_types': sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
             'factory': SQLiteConnection,
-            'check_same_thread': False,
+            'check_same_thread': True,
         }
         option_keys = list(options.keys()) + ['timeout', 'cached_statements']
         for k in option_keys:
@@ -460,14 +460,6 @@ class SQLite(SQLInterface):
 
             elif "UNIQUE" in e_msg:
                 self.raise_error(e, e_class=UniqueError)
-
-        elif isinstance(e, sqlite3.ProgrammingError):
-            e_msg = str(e)
-            if "SQLite objects created in a thread" in e_msg:
-                # we have switched threads, so go ahead and close the connection
-                # and let the query retry
-                self.close()
-                ret = True
 
         return ret
 

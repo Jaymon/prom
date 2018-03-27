@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
-from unittest import TestCase
 import datetime
 import time
 from threading import Thread
@@ -9,7 +8,7 @@ import sys
 import testdata
 #from testdata.threading import Thread
 
-from . import BaseTestCase, EnvironTestCase
+from . import BaseTestCase, EnvironTestCase, TestCase, SkipTest
 from prom.query import Query, \
     Limit, \
     Fields, \
@@ -125,25 +124,41 @@ class QueryTest(EnvironTestCase):
 #         raise SkipTest()
 
     def test_watch(self):
+        # I was having all kinds of random errors until I skpped this test, now
+        # the tests are passing like normal, so this test is borked but I'm not
+        # sure why. Could the Thread never end? It is a daemon thread but it
+        # doesn't seem to be dying when the test is done
+        # For some reason this test causes tests further down the line to die,
+        # I have no idea why though
+        #raise SkipTest()
+        # UDPATE 2018-3-26: adding the timeout fixes the random errors
         _q = self.get_query()
         self.insert(_q.copy(), 5)
         qu = queue.Queue()
 
         def target():
             q = _q.copy()
-            for o in q.watch(interval=0.1):
+            for o in q.watch(interval=0.1, timeout=5):
                 qu.put(o.pk)
         t = Thread(target=target)
         t.daemon = True
         t.start()
 
-        testdata.wait(lambda: qu.qsize() == 5)
+        def check(total):
+            qsize = qu.qsize()
+            #pout.v(qsize)
+            return qsize == total
+
+        #testdata.wait(lambda: qu.qsize() == 5)
+        testdata.wait(check, [5])
 
         self.insert(_q.copy(), 2)
-        testdata.wait(lambda: qu.qsize() == 7)
+        #testdata.wait(lambda: qu.qsize() == 7)
+        testdata.wait(check, [7])
 
         self.insert(_q.copy(), 1)
-        testdata.wait(lambda: qu.qsize() == 8)
+        #testdata.wait(lambda: qu.qsize() == 8)
+        testdata.wait(check, [8])
 
     def test_like(self):
         _q = self.get_query()
@@ -729,24 +744,6 @@ class QueryTest(EnvironTestCase):
             r = q._normalize_field_method(t[0])
             self.assertEqual(t[1][0], r[0].__name__)
             self.assertEqual(t[1][1], r[1])
-
-#     def test__split_method(self):
-# 
-#         tests = [
-#             ("get_foo", ("get", "foo")),
-#             ("is_foo", ("is", "foo")),
-#             ("gt_foo_bar", ("gt", "foo_bar")),
-#         ]
-# 
-#         q = self.get_query()
-#         q.orm_class = None
-# 
-#         for t in tests:
-#             r = q._split_method(t[0])
-#             self.assertEqual(t[1], r)
-# 
-#         with self.assertRaises(ValueError):
-#             q._split_method("testing")
 
     def test_properties(self):
         q = self.get_query()

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
-from unittest import TestCase
+from unittest import TestCase, SkipTest
 import os
 import sys
 import random
@@ -38,6 +38,9 @@ class BaseTestCase(TestCase):
 
     connections = set()
 
+    def tearDown(self):
+        self.tearDownClass()
+
     @classmethod
     def get_interfaces(cls):
         """Return all currently configured interfaces in a list"""
@@ -54,6 +57,7 @@ class BaseTestCase(TestCase):
     def tearDownClass(cls):
         for inter in cls.connections:
             inter.close()
+        cls.connections = set()
 
     @classmethod
     def get_interface(cls):
@@ -263,12 +267,6 @@ class EnvironTestCase(BaseTestCase):
             prom.set_interface(i)
 
     @classmethod
-    def tearDownClass(cls):
-        for inter in cls.connections:
-            inter.close()
-
-
-    @classmethod
     def create_interfaces(cls):
         return [
             cls.create_environ_interface("PROM_POSTGRES_DSN"),
@@ -284,4 +282,9 @@ class EnvironTestCase(BaseTestCase):
             os.environ["PROM_DSN"] = i.connection_config.dsn
             prom.set_interface(i)
             super(EnvironTestCase, self).run(*args, **kwargs)
+
+    def countTestCases(self):
+        ret = super(EnvironTestCase, self).countTestCases()
+        multiplier = 2 # the number of interfaces returned from create_interfaces()
+        return ret * multiplier
 
