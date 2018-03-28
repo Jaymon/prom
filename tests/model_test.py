@@ -380,6 +380,23 @@ class OrmTest(EnvironTestCase):
         t3 = t.query.get_pk(t.pk)
         self.assertEqual(t3.bar["foo"], t2.bar["foo"])
 
+    def test_modify_none(self):
+        class TModifyNone(Orm):
+            table_name = self.get_table_name()
+            foo = Field(str, False)
+
+        o = TModifyNone()
+        o.foo = 1
+        o.save()
+
+        o2 = o.query.get_pk(o.pk)
+        o2.foo = None
+        o2.save()
+        self.assertIsNone(o2.foo)
+
+        o3 = o.query.get_pk(o.pk)
+        self.assertIsNone(o3.foo)
+
     def test_unicode(self):
         """
         Jarid was having encoding issues, so I'm finally making sure prom only ever

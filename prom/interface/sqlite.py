@@ -195,7 +195,7 @@ class SQLite(SQLInterface):
             'isolation_level': None,
             'detect_types': sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
             'factory': SQLiteConnection,
-            'check_same_thread': True,
+            'check_same_thread': True, # https://stackoverflow.com/a/2578401/5006
         }
         option_keys = list(options.keys()) + ['timeout', 'cached_statements']
         for k in option_keys:

@@ -432,7 +432,8 @@ class FieldTest(EnvironTestCase):
 
             @foo.fgetter
             def foo(self, v):
-                return None if v is None else v + 1
+                ret = None if v is None else v + 1
+                return ret
 
             @foo.fdeleter
             def foo(self, val):
@@ -452,7 +453,7 @@ class FieldTest(EnvironTestCase):
         del o.foo
         self.assertEqual(None, o.foo)
         pk = o.save()
-        self.assertEqual(None, o.foo)
+        self.assertEqual(1, o.foo)
 
         o.foo = 10
         self.assertEqual(11, o.foo)

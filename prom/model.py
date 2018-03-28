@@ -33,7 +33,6 @@ class OrmPool(utils.Pool):
         self.orm_class = orm_class
 
     def create_value(self, pk):
-        #pout.v("missing {}".format(pk))
         return self.orm_class.query.get_pk(pk)
 
 
@@ -272,14 +271,20 @@ class Orm(object):
         schema = self.schema
         for k, field in schema.fields.items():
             is_modified = k in self.modified_fields
+            orig_v = getattr(self, k)
             v = field.iset(
                 self,
-                getattr(self, k),
+                orig_v,
                 is_update=is_update,
                 is_modified=is_modified
             )
-            if v is not None:
-                fields[k] = v
+
+            if is_modified or v is not None:
+                if is_update and field.is_pk() and v == orig_v:
+                    continue
+
+                else:
+                    fields[k] = v
 
         if not is_update:
             for field_name in schema.required_fields.keys():
