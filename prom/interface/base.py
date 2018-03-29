@@ -610,8 +610,8 @@ class SQLInterface(Interface):
             cur = connection.cursor()
             ignore_result = query_options.get('ignore_result', False)
             count_result = query_options.get('count_result', False)
-            one_result = query_options.get('fetchone', False)
-            cur_result = query_options.get('cursor_result', False)
+            one_result = query_options.get('fetchone', query_options.get('one_result', False))
+            cursor_result = query_options.get('cursor_result', False)
 
             try:
                 if query_args:
@@ -621,7 +621,7 @@ class SQLInterface(Interface):
                     self.log(query_str)
                     cur.execute(query_str)
 
-                if cur_result:
+                if cursor_result:
                     ret = cur
 
                 elif not ignore_result:

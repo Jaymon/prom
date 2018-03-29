@@ -950,6 +950,17 @@ class QueryTest(EnvironTestCase):
 
 
 class IteratorTest(BaseTestCase):
+    def test_cursor(self):
+        count = 10
+        orm_class = self.get_orm_class()
+        self.insert(orm_class, count)
+
+        q = orm_class.query
+        it = q.cursor()
+        self.assertEqual(10, len(it))
+        with self.assertRaises(NotImplementedError):
+            it[2]
+
     def test_all_wrapper(self):
         count = 100
         orm_class = self.get_orm_class()

@@ -116,7 +116,7 @@ class Iterator(BaseIterator):
 
     fields --
         ifilter -- callback -- an iterator filter, all yielded rows will be passed
-            through this callback and skipped if ifilter(row) returns True
+            through this callback and skipped if ifilter(row) returns False
 
     examples --
         # iterate through all the primary keys of some orm
@@ -273,6 +273,26 @@ class ResultsIterator(BaseIterator):
                 r = d
 
         return r
+
+
+class CursorIterator(ResultsIterator):
+    """This is the iterator that query.cursor() uses, it is a subset of the
+    functionality of the ResultsIterator but allows you to move through huge
+    result sets"""
+    def count(self):
+        return self.results.rowcount
+
+    def __getitem__(self, k):
+        raise NotImplementedError()
+
+    def pop(self, k=-1):
+        raise NotImplementedError()
+
+    def reverse(self):
+        raise NotImplementedError()
+
+    def sort(self, *args, **kwargs):
+        raise NotImplementedError()
 
 
 class AllIterator(ResultsIterator):
@@ -972,6 +992,23 @@ class Query(object):
         self.bounds.page = page
         return self
 
+    def cursor(self, limit=None, page=None):
+        # TODO -- combine the common parts of this method and get()
+        has_more = False
+        self.bounds.paginate = True
+        limit_paginate, offset = self.bounds.get(limit, page)
+        self.default_val = []
+        results = self._query('get', cursor_result=True)
+
+        if limit_paginate:
+            self.bounds.paginate = False
+            if len(results) == limit_paginate:
+                has_more = True
+                results.pop(-1)
+
+        it = CursorIterator(results, orm_class=self.orm_class, has_more=has_more, query=self)
+        return self.iterator_class(it)
+
     def get(self, limit=None, page=None):
         """
         get results from the db
@@ -1232,11 +1269,11 @@ class Query(object):
         finally:
             inter.close()
 
-    def _query(self, method_name):
+    def _query(self, method_name, **kwargs):
         if not self.can_get: return self.default_val
         i = self.interface
         s = self.schema
-        return getattr(i, method_name)(s, self) # i.method_name(schema, query)
+        return getattr(i, method_name)(s, self, **kwargs) # i.method_name(schema, query)
 
     def copy(self):
         """nice handy wrapper around the deepcopy"""
