@@ -1002,9 +1002,10 @@ class Query(object):
 
         if limit_paginate:
             self.bounds.paginate = False
-            if len(results) == limit_paginate:
+            if results.rowcount == limit_paginate:
                 has_more = True
-                results.pop(-1)
+                # TODO -- we need to compensate for having one extra
+                #results.pop(-1)
 
         it = CursorIterator(results, orm_class=self.orm_class, has_more=has_more, query=self)
         return self.iterator_class(it)
