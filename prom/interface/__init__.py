@@ -74,6 +74,10 @@ def set_interface(interface, name=''):
 
     if not interface: raise ValueError('interface is empty')
 
+    # close down the interface before we discard it
+    if name in interfaces:
+        interfaces[name].close()
+
     interfaces[name] = interface
 
 
