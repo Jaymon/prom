@@ -19,15 +19,17 @@ class InterfaceTest(BaseTestCase):
     def test_change_interface(self):
         class InterTorm(Orm):
             connection_name = "change-interface"
+            #connection_name = ""
+            pass
 
         path = testdata.create_file("inter1.db")
-        dsn = "sqlite://{}#change-interface".format(path)
+        dsn = "sqlite://{}#{}".format(path, InterTorm.connection_name)
         configure(dsn)
         InterTorm.install()
         self.assertTrue(InterTorm.interface.has_table(InterTorm.table_name))
 
         path = testdata.create_file("inter2.db")
-        dsn = "sqlite://{}#change-interface".format(path)
+        dsn = "sqlite://{}#{}".format(path, InterTorm.connection_name)
         configure(dsn)
         self.assertFalse(InterTorm.interface.has_table(InterTorm.table_name))
 
