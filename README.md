@@ -461,6 +461,10 @@ Prom installs using pip:
 
     $ pip install prom
 
+and to install the latest and greatest:
+
+    $ pip install --upgrade git+https://github.com/Jaymon/prom#egg=prom
+
 
 ### Using for the first time
 

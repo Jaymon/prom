@@ -7,10 +7,29 @@ import testdata
 
 from prom import query, InterfaceError
 from prom.interface.sqlite import SQLite
+from prom.interface import configure
+from prom.model import Orm
 from prom.config import Field
 from prom.compat import *
 
-from . import BaseTestInterface
+from . import BaseTestInterface, BaseTestCase
+
+
+class InterfaceTest(BaseTestCase):
+    def test_change_interface(self):
+        class InterTorm(Orm):
+            connection_name = "change-interface"
+
+        path = testdata.create_file("inter1.db")
+        dsn = "sqlite://{}#change-interface".format(path)
+        configure(dsn)
+        InterTorm.install()
+        self.assertTrue(InterTorm.interface.has_table(InterTorm.table_name))
+
+        path = testdata.create_file("inter2.db")
+        dsn = "sqlite://{}#change-interface".format(path)
+        configure(dsn)
+        self.assertFalse(InterTorm.interface.has_table(InterTorm.table_name))
 
 
 class InterfaceSQLiteTest(BaseTestInterface):
