@@ -582,7 +582,8 @@ class SQLInterface(Interface):
         with self.transaction(**kwargs) as connection:
             kwargs['connection'] = connection
             for table_name in self.get_tables(**kwargs):
-                self._delete_table(table_name, **kwargs)
+                if not table_name.startswith("pg_"):
+                    self._delete_table(table_name, **kwargs)
 
         return True
 
