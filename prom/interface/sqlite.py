@@ -85,11 +85,11 @@ class TimestampType(object):
     @staticmethod
     def convert(val):
         val = StringType.adapt(val)
-        if re.match("^\d+\.\d+$", val):
+        if re.match(r"^\d+\.\d+$", val):
             # account for unix timestamps with microseconds
             val = datetime.datetime.fromtimestamp(float(val))
 
-        elif re.match("^\-?\d+$", val):
+        elif re.match(r"^\-?\d+$", val):
             # account for unix timestamps without microseconds
             val = int(val)
 

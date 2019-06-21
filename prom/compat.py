@@ -44,8 +44,9 @@ if is_py2:
 elif is_py3:
     basestring = (str, bytes)
     unicode = str
+    long = int
 
-    class long(int): pass
+    #class long(int): pass
 
     import queue
     import _thread

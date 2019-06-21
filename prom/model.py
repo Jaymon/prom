@@ -477,7 +477,8 @@ class Orm(object):
         like dictify() though, but I've already used this method in so many places
         """
         d = {}
-        for field_name, field in self.schema.normal_fields.items():
+        #for field_name, field in self.schema.normal_fields.items():
+        for field_name, field in self.schema.fields.items():
             field_val = getattr(self, field_name, None)
             field_val = field.jsonable(self, field_val)
             if field_val is not None:
