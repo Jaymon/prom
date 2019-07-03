@@ -111,6 +111,11 @@ class DsnConnectionTest(BaseTestCase):
         prom.interface.interfaces.pop('i3', None)
         prom.interface.interfaces.pop('i4', None)
 
+    def test_dsn_options_type(self):
+        dsn = "prom.interface.sqlite.SQLite:///tmp/sqlite.db?timeout=20.0"
+        c = DsnConnection(dsn)
+        self.assertTrue(isinstance(c.options["timeout"], float))
+
     def test_dsn(self):
         tests = [
             (
@@ -124,8 +129,8 @@ class DsnConnectionTest(BaseTestCase):
                     'password': "password",
                     'name': 'fragment',
                     'options': {
-                        'var': "2",
-                        'option': "1"
+                        'var': 2,
+                        'option': 1
                     }
                 }
             ),
@@ -147,15 +152,17 @@ class DsnConnectionTest(BaseTestCase):
                 }
             ),
             (
-                "prom.interface.postgres.PostgreSQL://localhost/db3?var1=1&var2=2#name",
+                "prom.interface.postgres.PostgreSQL://localhost/db3?var1=1&var2=2&var3=true&var4=False#name",
                 {
                     'interface_name': "prom.interface.postgres.PostgreSQL",
                     'database': "db3",
                     'host': "localhost",
                     'name': "name",
                     'options': {
-                        'var1': "1",
-                        'var2': "2"
+                        'var1': 1,
+                        'var2': 2,
+                        'var3': True,
+                        'var4': False
                     }
                 }
             ),
@@ -200,8 +207,8 @@ class DsnConnectionTest(BaseTestCase):
                     'database': ":memory:",
                     'name': 'fragment_name',
                     'options': {
-                        'var': "2",
-                        'option': "1"
+                        'var': 2,
+                        'option': 1
                     }
                 }
             ),
@@ -244,8 +251,8 @@ class DsnConnectionTest(BaseTestCase):
                     'host': None,
                     'database': "/abs/path/to/db/4.sqlite",
                     'options': {
-                        'var1': "1",
-                        'var2': "2"
+                        'var1': 1,
+                        'var2': 2
                     }
                 }
             ),
@@ -266,8 +273,8 @@ class DsnConnectionTest(BaseTestCase):
                     'database': "/abs/path/to/db/4.sqlite",
                     'name': "name",
                     'options': {
-                        'var1': "1",
-                        'var2': "2"
+                        'var1': 1,
+                        'var2': 2
                     }
                 }
             ),

@@ -5,13 +5,10 @@ import inspect
 import re
 import base64
 import json
-try:
-    import cPickle as pickle
-except ImportError:
-    import pickle
 
 import dsnparse
 
+from .compat import *
 from . import utils
 
 
@@ -123,7 +120,7 @@ class DsnConnection(Connection):
         d["name"] = d.pop("fragment")
         d["interface_name"] = cls.normalize_scheme(d.pop("scheme"))
         d["database"] = d.pop("path")
-        d["options"] = d.pop("query")
+        d["options"] = cls.normalize_options(d.pop("query"))
         d["host"] = d.pop("hostname")
 
         # get rid of certain values
@@ -133,17 +130,38 @@ class DsnConnection(Connection):
     @classmethod
     def normalize_scheme(cls, v):
         ret = v
-        kv = v.lower()
         d = {
             "prom.interface.sqlite.SQLite": set(["sqlite"]),
-            "prom.interface.postgres.PostgreSQL": set(["postgres", "postgresql"])
+            "prom.interface.postgres.PostgreSQL": set(["postgres", "postgresql", "psql"])
         }
+
+        kv = v.lower()
         for interface_name, vals in d.items():
-            if v in vals:
+            if kv in vals:
                 ret = interface_name
                 break
 
         return ret
+
+    @classmethod
+    def normalize_options(cls, d):
+        if not d: return d
+
+        for k, v in d.items():
+            if isinstance(v, basestring):
+                if re.match(r"^\d+\.\d+$", v):
+                    d[k] = float(v)
+
+                elif re.match(r"^\d+$", v):
+                    d[k] = int(v)
+
+                elif re.match(r"^true$", v, flags=re.I):
+                    d[k] = True
+
+                elif re.match(r"^false$", v, flags=re.I):
+                    d[k] = False
+
+        return d
 
 
 class Schema(object):

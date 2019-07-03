@@ -2,7 +2,7 @@
 from __future__ import unicode_literals, division, print_function, absolute_import
 
 try:
-    from captain import exit as console
+    from captain import exit
     from captain.decorators import arg
 
 except ImportError:
@@ -19,6 +19,10 @@ from prom.cli.dump import main_dump
 from prom.cli.dump import main_restore
 
 
+def console():
+    exit(__name__)
+
+
 if __name__ == "__main__":
-    console(__name__)
+    console()
 

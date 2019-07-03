@@ -4,6 +4,11 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 import sys
 import hashlib
 
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
+
 # shamelessly ripped from https://github.com/kennethreitz/requests/blob/master/requests/compat.py
 # Syntax sugar.
 _ver = sys.version_info
