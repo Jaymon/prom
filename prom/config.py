@@ -195,6 +195,11 @@ class Schema(object):
         return {f:v for f, v in self.normal_fields.items() if v.required}
 
     @property
+    def ref_fields(self):
+        """Return FK reference fields"""
+        return {f:v for f, v in self.normal_fields.items() if v.is_ref()}
+
+    @property
     def magic_fields(self):
         """the magic fields for the schema"""
         return {f:v for f, v in self.fields.items() if f.startswith('_')}
@@ -433,6 +438,12 @@ class Field(object):
 
         return ret
 
+    @property
+    def ref(self):
+        """Returns the FK reference orm class"""
+        schema = self.schema
+        return schema.orm_class if schema else None
+
     def __init__(self, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
         create a field
@@ -491,6 +502,7 @@ class Field(object):
         self.default = field_options.pop("default", None)
         self.options = field_options
         self.required = field_required if field_required else self.is_pk()
+        self.orm_class = None
 
     def is_pk(self):
         """return True if this field is a primary key"""
@@ -499,6 +511,9 @@ class Field(object):
     def is_ref(self):
         """return true if this field foreign key references the primary key of another orm"""
         return bool(self.schema)
+
+    def is_required(self):
+        return self.required
 
     def default_fget(self, instance, val):
         return self.fdefault(instance, val)

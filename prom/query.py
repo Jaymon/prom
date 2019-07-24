@@ -623,6 +623,7 @@ class Query(object):
         self.kwargs = kwargs
 
     def reset(self):
+        self.interface = None
         self.fields_set = self.fields_set_class()
         self.fields_where = self.fields_where_class()
         self.fields_sort = self.fields_sort_class()
@@ -635,7 +636,7 @@ class Query(object):
         # which should result in an empty set if there are no rows where che = TRUE
         self.can_get = True
 
-    def ref(self, orm_classpath, cls_pk=None):
+    def ref(self, orm_classpath):
         """
         takes a classpath to allow query-ing from another Orm class
 
@@ -645,70 +646,17 @@ class Query(object):
         module A that correspond to the object in module B, but you can't import
         module A into module B because module B already imports module A.
 
-        orm_classpath -- string -- a full python class path (eg, foo.bar.Che)
-        cls_pk -- mixed -- automatically set the where field of orm_classpath 
-            that references self.orm_class to the value in cls_pk if present
+        :param orm_classpath: string|type, a full python class path (eg, foo.bar.Che) or
+            an actual model.Orm python class
         return -- Query()
         """
         # split orm from module path
-        orm_module, orm_class = get_objects(orm_classpath)
-#         if orm_classpath.startswith("."):
-#             # we handle relative classpaths by using the orm_class and its parents
-#             # to find the relative import
-#             if self.orm_class:
-#                 try:
-#                     orm_module, orm_class = get_objects(
-#                         orm_classpath,
-#                         self.orm_class.__module__
-#                     )
-#                 except ImportError:
-#                     parents = inspect.getmro(self.orm_class)
-#                     if parents:
-#                         for pc in parents[1:-1]:
-#                             try:
-#                                 orm_module, orm_class = get_objects(
-#                                     orm_classpath,
-#                                     pc.__module__
-#                                 )
-#                             except ImportError:
-#                                 pass
-# 
-#                         if not orm_module or not orm_class:
-#                             raise ImportError(
-#                                 "Unable to resolve relative ref using {}".format(
-#                                     self.orm_class.__module__
-#                                 )
-#                             )
-# 
-#             else:
-#                 raise ImportError("trying relative ref without orm_class")
-# 
-#         else:
-#             orm_module, orm_class = get_objects(orm_classpath)
+        if isinstance(orm_classpath, basestring):
+            orm_module, orm_class = get_objects(orm_classpath)
+        else:
+            orm_class = orm_classpath
 
-
-#         if isinstance(orm_classpath, basestring):
-#             orm_module, orm_class = get_objects(orm_classpath)
-#         else:
-#             orm_module, orm_class = get_objects(orm_classpath[0], orm_classpath[1])
-
-        q = orm_class.query
-        if cls_pk:
-            found = False
-            for fn, f in orm_class.schema.fields.items():
-                cls_ref_s = f.schema
-                if cls_ref_s and self.schema == cls_ref_s:
-                    q.is_field(fn, cls_pk)
-                    found = True
-                    break
-
-            if not found:
-                raise ValueError("Did not find a foreign key field for [{}] in [{}]".format(
-                    self.orm_class.table_name,
-                    orm_class.table_name,
-                ))
-
-        return q
+        return orm_class.query
 
     def __iter__(self):
         #return self.all()
@@ -785,53 +733,52 @@ class Query(object):
 
         return self
 
-    def is_field(self, field_name, *field_val, **field_kwargs):
+    def is_field(self, field_name, field_val, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
-        fv = field_val[0] if field_val else None
-        self.fields_where.append(field_name, ["is", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["is", field_name, field_val, field_kwargs])
         return self
+    def eq_field(self, field_name, field_val, **field_kwargs):
+        return self.is_field(field_name, field_val, **field_kwargs)
 
-    def not_field(self, field_name, *field_val, **field_kwargs):
+    def not_field(self, field_name, field_val, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
-        fv = field_val[0] if field_val else None
-        self.fields_where.append(field_name, ["not", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["not", field_name, field_val, field_kwargs])
         return self
+    def ne_field(self, field_name, field_val, **field_kwargs):
+        return self.not_field(field_name, field_val, **field_kwargs)
 
     def between_field(self, field_name, low, high):
         self.gte_field(field_name, low)
         self.lte_field(field_name, high)
         return self
 
-    def lte_field(self, field_name, *field_val, **field_kwargs):
+    def lte_field(self, field_name, field_val, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
-        fv = field_val[0] if field_val else None
-        self.fields_where.append(field_name, ["lte", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["lte", field_name, field_val, field_kwargs])
         return self
 
-    def lt_field(self, field_name, *field_val, **field_kwargs):
+    def lt_field(self, field_name, field_val, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
-        fv = field_val[0] if field_val else None
-        self.fields_where.append(field_name, ["lt", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["lt", field_name, field_val, field_kwargs])
         return self
 
-    def gte_field(self, field_name, *field_val, **field_kwargs):
+    def gte_field(self, field_name, field_val, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
-        fv = field_val[0] if field_val else None
-        self.fields_where.append(field_name, ["gte", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["gte", field_name, field_val, field_kwargs])
         return self
 
-    def gt_field(self, field_name, *field_val, **field_kwargs):
+    def gt_field(self, field_name, field_val, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
-        fv = field_val[0] if field_val else None
-        self.fields_where.append(field_name, ["gt", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["gt", field_name, field_val, field_kwargs])
         return self
 
-    def in_field(self, field_name, *field_vals, **field_kwargs):
+    def in_field(self, field_name, field_vals, **field_kwargs):
         """
         field_vals -- list -- a list of field_val values
         """
         field_name = self._normalize_field_name(field_name)
-        fv = make_list(field_vals[0]) if field_vals else None
+        fv = make_list(field_vals) if field_vals else None
+        # ??? what does this do?
         if field_kwargs:
             for k in field_kwargs:
                 if not field_kwargs[k]:
@@ -845,12 +792,12 @@ class Query(object):
         self.fields_where.append(field_name, ["in", field_name, fv, field_kwargs])
         return self
 
-    def nin_field(self, field_name, *field_vals, **field_kwargs):
+    def nin_field(self, field_name, field_vals, **field_kwargs):
         """
         field_vals -- list -- a list of field_val values
         """
         field_name = self._normalize_field_name(field_name)
-        fv = make_list(field_vals[0]) if field_vals else None
+        fv = make_list(field_vals) if field_vals else None
         if field_kwargs:
             for k in field_kwargs:
                 if not field_kwargs[k]:
@@ -864,16 +811,16 @@ class Query(object):
         self.fields_where.append(field_name, ["nin", field_name, fv, field_kwargs])
         return self
 
-    def startswith_field(self, field_name, *field_val, **field_kwargs):
-        return self.like_field(field_name, u"{}%".format(field_val[0]), **field_kwargs)
+    def startswith_field(self, field_name, field_val, **field_kwargs):
+        return self.like_field(field_name, u"{}%".format(field_val), **field_kwargs)
 
-    def endswith_field(self, field_name, *field_val, **field_kwargs):
-        return self.like_field(field_name, u"%{}".format(field_val[0]), **field_kwargs)
+    def endswith_field(self, field_name, field_val, **field_kwargs):
+        return self.like_field(field_name, u"%{}".format(field_val), **field_kwargs)
 
-    def contains_field(self, field_name, *field_val, **field_kwargs):
-        return self.like_field(field_name, u"%{}%".format(field_val[0]), **field_kwargs)
+    def contains_field(self, field_name, field_val, **field_kwargs):
+        return self.like_field(field_name, u"%{}%".format(field_val), **field_kwargs)
 
-    def like_field(self, field_name, *field_val, **field_kwargs):
+    def like_field(self, field_name, field_val, **field_kwargs):
         """Perform a field_name LIKE field_val query
 
         :param field_name: string, the field we are filtering on
@@ -883,11 +830,10 @@ class Query(object):
         if not field_val:
             raise ValueError("Cannot LIKE nothing")
         field_name = self._normalize_field_name(field_name)
-        fv = field_val[0]
-        self.fields_where.append(field_name, ["like", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["like", field_name, field_val, field_kwargs])
         return self
 
-    def nlike_field(self, field_name, *field_val, **field_kwargs):
+    def nlike_field(self, field_name, field_val, **field_kwargs):
         """Perform a field_name NOT LIKE field_val query
 
         :param field_name: string, the field we are filtering on
@@ -897,8 +843,7 @@ class Query(object):
         if not field_val:
             raise ValueError("Cannot NOT LIKE nothing")
         field_name = self._normalize_field_name(field_name)
-        fv = field_val[0]
-        self.fields_where.append(field_name, ["nlike", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["nlike", field_name, field_val, field_kwargs])
         return self
 
     def sort_field(self, field_name, direction, field_vals=None):
@@ -942,18 +887,31 @@ class Query(object):
             raise AttributeError("invalid command_method: {}".format(method_name))
 
         else:
-            field_method_name = "{}_field".format(command)
-            # you have to check methods on the actual class, and you can't just
-            # check type(self).__dict__ because it doesn't contain the whole
-            # inheritance chain
-            if getattr(type(self), field_method_name, None):
-                field_method = getattr(self, field_method_name)
+            if not command:
+                raise AttributeError('Could not derive command from {}"'.format(
+                    method_name
+                ))
 
-            else:
+            field_method_name = "{}_field".format(command)
+            field_method = getattr(self, field_method_name, None)
+            if not field_method:
                 raise AttributeError('No "{}" method derived from "{}"'.format(
                     field_method_name,
                     method_name
                 ))
+
+
+            # you have to check methods on the actual class, and you can't just
+            # check type(self).__dict__ because it doesn't contain the whole
+            # inheritance chain
+#             if getattr(type(self), field_method_name, None):
+#                 field_method = getattr(self, field_method_name)
+# 
+#             else:
+#                 raise AttributeError('No "{}" method derived from "{}"'.format(
+#                     field_method_name,
+#                     method_name
+#                 ))
 
             # make sure field is legit also, this will raise an attribute error
             # if it can't find the field in the schema (and self has a schema)
@@ -1130,14 +1088,6 @@ class Query(object):
     def insert(self):
         """persist the .fields"""
         self.default_val = 0
-        #fields = self.fields
-        #fields = self.orm_class.depart(self.fields, is_update=False)
-        #self.set_fields(fields)
-        return self.interface.insert(
-            self.schema,
-            self.fields
-        )
-
         return self.interface.insert(self.schema, self.fields)
 
     def update(self):

@@ -222,6 +222,22 @@ class Orm(object):
         """
         return utils.make_dict(fields, fields_kwargs)
 
+    def fk(self, orm_class):
+        """find the field value in self that is the primary key of the passed in orm_class
+
+        :param orm_class: Orm, the fields in self will be checked until the field that
+            references Orm is found, then the value of that field will be returned
+        :returns: the self field value that is a foreign key references to orm_class
+        """
+        for field_name, field in self.schema.ref_fields.items():
+            if field.schema is orm_class.schema:
+                return getattr(self, field_name)
+
+        raise ValueError("Did not find a foreign key reference for {} in {}".format(
+            orm_class.__name__,
+            self.__class__.__name__,
+        ))
+
     def populate(self, fields=None, **fields_kwargs):
         """take the passed in fields, combine them with missing fields that should
         be there and then run all those through appropriate methods to hydrate this
@@ -299,6 +315,7 @@ class Orm(object):
 
         schema = self.schema
         fields = self.depopulate(False)
+
 
         q = self.query
         q.set_fields(fields)

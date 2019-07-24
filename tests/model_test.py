@@ -710,3 +710,39 @@ class OrmTest(EnvironTestCase):
         f.query.get_one()
         # we succeeded if no error was raised
 
+    def test_fk(self):
+        mpath = testdata.create_module(contents=[
+            "from prom import Field, Orm",
+            "",
+            "class Foo(Orm):",
+            "    pass",
+            "",
+            "class Bar(Orm):",
+            "    foo_id = Field(Foo, True)",
+            "",
+            "class Che(Orm):",
+            "    foo_id = Field(Foo, False)",
+            "    bar_id = Field(Bar, True)",
+            "",
+            "class Boo(Orm):",
+            "    pass",
+        ])
+
+        Foo = mpath.module.Foo
+        Bar = mpath.module.Bar
+        Che = mpath.module.Che
+        Boo = mpath.module.Boo
+
+        b = Bar(foo_id=5)
+        self.assertEqual(5, b.fk(Foo))
+
+        c = Che(foo_id=10, bar_id=20)
+        self.assertEqual(10, c.fk(Foo))
+        self.assertEqual(20, c.fk(Bar))
+
+        c = Che()
+        self.assertEqual(None, c.fk(Foo))
+        self.assertEqual(None, c.fk(Bar))
+        with self.assertRaises(ValueError):
+            c.fk(Boo)
+
