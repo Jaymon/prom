@@ -324,6 +324,13 @@ class Interface(object):
 
     def _delete_table(self, schema): raise NotImplementedError()
 
+    def unsafe_delete_tables(self):
+        """wrapper around delete_tables that is easier to remember but denotes the
+        same thing, I could never remember `disable_protection`
+
+        https://github.com/Jaymon/prom/issues/75"""
+        return self.delete_tables(disable_protection=True)
+
     def delete_tables(self, **kwargs):
         """
         removes all the tables from the db

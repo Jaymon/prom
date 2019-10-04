@@ -3,25 +3,29 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 import os
 import logging
 
-from .config import DsnConnection, \
-    Schema, \
-    Field, \
-    ObjectField, \
-    JsonField, \
+from .config import (
+    DsnConnection,
+    Schema,
+    Field,
+    ObjectField,
+    JsonField,
     Index
+)
 from .query import Query, CacheQuery
 from . import decorators
 from .model import Orm
-from .interface import get_interface, \
-    set_interface, \
-    get_interfaces, \
-    configure, \
+from .interface import (
+    get_interface,
+    set_interface,
+    get_interfaces,
+    configure,
     configure_environ
+)
 from .exception import InterfaceError, Error, UniqueError
 from . import utils
 
 
-__version__ = '0.10.10'
+__version__ = '1.0.0'
 
 
 # get rid of "No handler found" warnings (cribbed from requests)

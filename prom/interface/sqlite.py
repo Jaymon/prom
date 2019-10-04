@@ -124,11 +124,13 @@ class TimestampType(object):
 class BooleanType(object):
     @staticmethod
     def adapt(val):
-        return int(str(val))
+        """From python you get False and True, convert those to 1/0"""
+        return 1 if val else 0
 
     @staticmethod
     def convert(val):
-        return bool(str(val))
+        """from the db you get values like b'0' and b'1', convert those to True/False"""
+        return bool(int(val))
 
 
 class NumericType(object):

@@ -93,7 +93,7 @@ class Orm(object):
 
     @decorators.classproperty
     def table_name(cls):
-        return u"{}_{}".format(
+        return "{}_{}".format(
             cls.__module__.lower().replace(".", "_"),
             cls.__name__.lower()
         )

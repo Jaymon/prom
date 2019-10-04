@@ -169,6 +169,17 @@ class BaseTestInterface(BaseTestCase):
         self.assertFalse(i.has_table(s1))
         self.assertFalse(i.has_table(s2))
 
+    def test_field_bool(self):
+        """There was a bug where SQLite boolean field always returned True, this
+        tests to make sure that is fixed and it won't happen again"""
+        i, s = self.get_table(bar=Field(bool), che=Field(bool))
+        pk = i.insert(s, {"bar": False, "che": True})
+
+        q = query.Query().is__id(pk)
+        d = dict(i.get_one(s, q))
+        self.assertFalse(d["bar"])
+        self.assertTrue(d["che"])
+
     def test_insert(self):
         i, s = self.get_table()
         d = {

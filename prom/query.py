@@ -706,7 +706,7 @@ class Query(object):
     def set(self, fields=None, *fields_args, **fields_kwargs):
         return self.set_fields(fields, *fields_args, **fields_kwargs)
 
-    # DEPRECATED maybe? -- 3-10-2016 -- use select()
+    # DEPRECATED maybe? -- 3-10-2016 -- use set()
     def set_fields(self, fields=None, *fields_args, **fields_kwargs):
         """
         completely replaces the current .fields with fields and fields_kwargs combined
@@ -733,14 +733,14 @@ class Query(object):
 
         return self
 
-    def is_field(self, field_name, field_val, **field_kwargs):
+    def is_field(self, field_name, field_val=None, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["is", field_name, field_val, field_kwargs])
         return self
     def eq_field(self, field_name, field_val, **field_kwargs):
         return self.is_field(field_name, field_val, **field_kwargs)
 
-    def not_field(self, field_name, field_val, **field_kwargs):
+    def not_field(self, field_name, field_val=None, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["not", field_name, field_val, field_kwargs])
         return self
@@ -752,27 +752,27 @@ class Query(object):
         self.lte_field(field_name, high)
         return self
 
-    def lte_field(self, field_name, field_val, **field_kwargs):
+    def lte_field(self, field_name, field_val=None, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["lte", field_name, field_val, field_kwargs])
         return self
 
-    def lt_field(self, field_name, field_val, **field_kwargs):
+    def lt_field(self, field_name, field_val=None, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["lt", field_name, field_val, field_kwargs])
         return self
 
-    def gte_field(self, field_name, field_val, **field_kwargs):
+    def gte_field(self, field_name, field_val=None, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["gte", field_name, field_val, field_kwargs])
         return self
 
-    def gt_field(self, field_name, field_val, **field_kwargs):
+    def gt_field(self, field_name, field_val=None, **field_kwargs):
         field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["gt", field_name, field_val, field_kwargs])
         return self
 
-    def in_field(self, field_name, field_vals, **field_kwargs):
+    def in_field(self, field_name, field_vals=None, **field_kwargs):
         """
         field_vals -- list -- a list of field_val values
         """
@@ -792,7 +792,7 @@ class Query(object):
         self.fields_where.append(field_name, ["in", field_name, fv, field_kwargs])
         return self
 
-    def nin_field(self, field_name, field_vals, **field_kwargs):
+    def nin_field(self, field_name, field_vals=None, **field_kwargs):
         """
         field_vals -- list -- a list of field_val values
         """
@@ -876,10 +876,17 @@ class Query(object):
     def __getattr__(self, method_name):
         field_method, field_name = self._normalize_field_method(method_name)
         def callback(*args, **kwargs):
+            #pout.v(args, kwargs, field_method, field_name)
+            #pout.x()
             return field_method(field_name, *args, **kwargs)
         return callback
 
     def _normalize_field_method(self, method_name):
+        # infinite recursion check, if a *_field method gets in here then it
+        # doesn't exist
+        if method_name.endswith("_field"):
+            raise AttributeError(method_name)
+
         try:
             command, field_name = method_name.split("_", 1)
 
@@ -899,19 +906,6 @@ class Query(object):
                     field_method_name,
                     method_name
                 ))
-
-
-            # you have to check methods on the actual class, and you can't just
-            # check type(self).__dict__ because it doesn't contain the whole
-            # inheritance chain
-#             if getattr(type(self), field_method_name, None):
-#                 field_method = getattr(self, field_method_name)
-# 
-#             else:
-#                 raise AttributeError('No "{}" method derived from "{}"'.format(
-#                     field_method_name,
-#                     method_name
-#                 ))
 
             # make sure field is legit also, this will raise an attribute error
             # if it can't find the field in the schema (and self has a schema)

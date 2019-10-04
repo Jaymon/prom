@@ -328,7 +328,7 @@ class QueryTest(EnvironTestCase):
         t1.start()
         t1.join()
 
-    def test_query_ref(self):
+    def test_query_ref_1(self):
         testdata.create_modules({
             "qr2": "\n".join([
                 "import prom",
@@ -357,19 +357,19 @@ class QueryTest(EnvironTestCase):
 
         orm_classpath = "{}.{}".format(t2.__module__, t2.__name__)
 
-        l = list(ti1.query.ref(orm_classpath, ti12.pk).select_foo().values())
+        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti12.pk).values())
         self.assertEqual(22, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath, ti1.pk).select_foo().all().values())
+        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).all().values())
         self.assertEqual(21, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath, ti1.pk).select_foo().get().values())
+        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).get().values())
         self.assertEqual(21, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath, ti1.pk).select_foo().values())
+        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).values())
         self.assertEqual(21, l[0])
         self.assertEqual(1, len(l))
 
@@ -400,17 +400,17 @@ class QueryTest(EnvironTestCase):
         t1b = T1.create()
         t2 = T2.create(t1_id=t1a.pk)
 
-        classpath = "{}.{}".format(T3.__module__, T3.__name__)
-        with self.assertRaises(ValueError):
-            T1.query.ref(classpath, t1a.pk).count()
+#         classpath = "{}.{}".format(T3.__module__, T3.__name__)
+#         with self.assertRaises(ValueError):
+#             T1.query.ref(classpath).is_pk(t1a.pk).count()
 
 
         classpath = "{}.{}".format(T2.__module__, T2.__name__)
 
-        r = T1.query.ref(classpath, t1a.pk).count()
+        r = T1.query.ref(classpath).is_pk(t1a.pk).count()
         self.assertEqual(1, r)
 
-        r = T1.query.ref(classpath, t1b.pk).count()
+        r = T1.query.ref(classpath).is_pk(t1b.pk).count()
         self.assertEqual(0, r)
 
 

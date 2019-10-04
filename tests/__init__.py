@@ -50,7 +50,7 @@ class BaseTestCase(TestCase):
     def setUpClass(cls):
         """make sure there is a default interface for any class"""
         i = cls.get_interface()
-        i.delete_tables(disable_protection=True)
+        i.unsafe_delete_tables()
         prom.set_interface(i)
 
     @classmethod
@@ -85,14 +85,14 @@ class BaseTestCase(TestCase):
         cls.connections.add(inter)
         return inter
 
-    def get_table(self, table_name=None):
+    def get_table(self, table_name=None, **fields_or_indexes):
         """
         return an interface and schema for a table in the db
 
         return -- tuple -- interface, schema
         """
         i = self.get_interface()
-        s = self.get_schema(table_name)
+        s = self.get_schema(table_name, **fields_or_indexes)
         i.set_table(s)
         return i, s
 
