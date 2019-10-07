@@ -91,8 +91,8 @@ class MagicOrm(Orm):
                         raise_error = False
                         ret = orm_class.query.get_pk(getattr(self, field_name))
 
-                if raise_error:
-                    raise AttributeError(k)
+            if raise_error:
+                raise AttributeError(k)
 
         return ret
 

@@ -7,16 +7,6 @@ from . import TestCase, EnvironTestCase
 from prom.addon import MagicOrm
 
 
-# class O1(MagicOrm):
-#     bar = MagicOrm.Field(bool)
-#     che = MagicOrm.Field(str)
-# 
-# 
-# class O2(MagicOrm):
-#     o1_id = MagicOrm.Field(O1)
-# 
-
-
 class MagicOrmTest(EnvironTestCase):
     def create_1(self, **kwargs):
         class O1(MagicOrm):
@@ -69,3 +59,8 @@ class MagicOrmTest(EnvironTestCase):
         self.assertTrue(o.pk_name in d)
         self.assertFalse("_id" in d)
 
+    def test_attribute_error(self):
+        o = self.create_2()
+        self.assertIsNone(o.o1)
+        with self.assertRaises(AttributeError):
+            o.blahblah
