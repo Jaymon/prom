@@ -4,7 +4,7 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 import testdata
 
 from . import TestCase, EnvironTestCase
-from prom.addons import MagicOrm
+from prom.addon import MagicOrm
 
 
 # class O1(MagicOrm):
