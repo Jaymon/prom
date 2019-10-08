@@ -106,18 +106,40 @@ class TimestampType(object):
                     val = datetime.datetime.min
 
         else:
+            # ISO 8601 is not very strict with the date format and this tries to
+            # capture most of that leniency, with the one exception that the
+            # date must be in UTC
+            # https://en.wikipedia.org/wiki/ISO_8601
+            m = re.match(
+                r"^(\d{4}).?(\d{2}).?(\d{2}).(\d{2}):?(\d{2}):?(\d{2})(?:\.(\d+))?Z?$",
+                val
+            )
+
+            if m:
+                dateparts = list(map(lambda x: int(x) if x else 0, m.groups()))
+                if dateparts[6]:
+                    dateparts[6] = int('{:0<6.6}'.format(str(dateparts[6])))
+
+                val = datetime.datetime(*dateparts)
+
+            else:
+                #val = None
+                #val = datetime.datetime.min
+                raise ValueError("Cannot infer UTC datetime value from {}".format(val))
+
             # this is borrowed from sqlite3.dbapi2.convert_timestamp, sadly it is
             # burried in a function so I can't wrap it :(
-            datepart, timepart = val.split(" ")
-            year, month, day = map(int, datepart.split("-"))
-            timepart_full = timepart.split(".")
-            hours, minutes, seconds = map(int, timepart_full[0].split(":"))
-            if len(timepart_full) == 2:
-                microseconds = int('{:0<6.6}'.format(timepart_full[1]))
-            else:
-                microseconds = 0
-
-            val = datetime.datetime(year, month, day, hours, minutes, seconds, microseconds)
+            #datepart, timepart = re.search(r"\d{4}.?\d{2}.?\d
+#             datepart, timepart = val.split(" ")
+#             year, month, day = map(int, datepart.split("-"))
+#             timepart_full = timepart.split(".")
+#             hours, minutes, seconds = map(int, timepart_full[0].split(":"))
+#             if len(timepart_full) == 2:
+#                 microseconds = int('{:0<6.6}'.format(timepart_full[1]))
+#             else:
+#                 microseconds = 0
+# 
+#             val = datetime.datetime(year, month, day, hours, minutes, seconds, microseconds)
         return val
 
 

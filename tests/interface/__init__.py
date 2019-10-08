@@ -7,7 +7,7 @@ import decimal
 import datetime
 
 
-from prom import query
+from prom import query, InterfaceError
 from prom.config import Schema, Field, Index
 from prom.compat import *
 import prom
@@ -179,6 +179,108 @@ class BaseTestInterface(BaseTestCase):
         d = dict(i.get_one(s, q))
         self.assertFalse(d["bar"])
         self.assertTrue(d["che"])
+
+    def test_field_datetime(self):
+        """make sure ISO 8601 formatted datestamps can be added to the db
+
+        NOTE -- postgres actually validates the datestamp on insert, so it will 
+            reject bad datestamps on insert while sqlite will gladly insert them
+            and then it fails while pulling them out, this is not ideal
+        """
+        i, s = self.get_table(bar=Field(datetime.datetime))
+
+        dts = [
+#             { # this fails in postgres
+#                 "input": "1570565939.566850",
+#                 "output": {
+#                     "year": 2019,
+#                     "month": 10,
+#                     "day": 8,
+#                     "hour": 20,
+#                     "minute": 18,
+#                     "second": 59,
+#                     "microsecond": 566850,
+#                 }
+#             },
+            {
+                "input": "20191008T201859",
+                "output": {
+                    "year": 2019,
+                    "month": 10,
+                    "day": 8,
+                    "hour": 20,
+                    "minute": 18,
+                    "second": 59,
+                }
+            },
+            {
+                "input": "2019-10-08 20:18:59.566855Z",
+                "output": {
+                    "year": 2019,
+                    "month": 10,
+                    "day": 8,
+                    "hour": 20,
+                    "minute": 18,
+                    "second": 59,
+                    "microsecond": 566855,
+                }
+            },
+            {
+                "input": "2019-10-08T20:18:59.566855",
+                "output": {
+                    "year": 2019,
+                    "month": 10,
+                    "day": 8,
+                    "hour": 20,
+                    "minute": 18,
+                    "second": 59,
+                    "microsecond": 566855,
+                }
+            },
+            {
+                "input": "20191008T201859.566855",
+                "output": {
+                    "year": 2019,
+                    "month": 10,
+                    "day": 8,
+                    "hour": 20,
+                    "minute": 18,
+                    "second": 59,
+                    "microsecond": 566855,
+                }
+            },
+            {
+                "input": "2019-10-08 20:18:59.566Z",
+                "output": {
+                    "year": 2019,
+                    "month": 10,
+                    "day": 8,
+                    "hour": 20,
+                    "minute": 18,
+                    "second": 59,
+                    "microsecond": 566000,
+                }
+            },
+            {
+                "input": "2019-10-08 20:18:59.",
+                "output": ValueError
+            },
+        ]
+
+        for dt in dts:
+            if isinstance(dt["output"], dict):
+                pk = i.insert(s, {"bar": dt["input"]})
+                q = query.Query().is__id(pk)
+                d = dict(i.get_one(s, q))
+
+                for k, v in dt["output"].items():
+                    self.assertEqual(v, getattr(d["bar"], k))
+
+            else:
+                with self.assertRaises((dt["output"], InterfaceError)):
+                    pk = i.insert(s, {"bar": dt["input"]})
+                    q = query.Query().is__id(pk)
+                    i.get_one(s, q)
 
     def test_insert(self):
         i, s = self.get_table()
