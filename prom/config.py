@@ -210,6 +210,7 @@ class Schema(object):
 
     @property
     def pk_name(self):
+        """returns the primary key name for this schema"""
         try:
             pk_field = self.__getattr__("pk")
             return pk_field.name
@@ -303,12 +304,6 @@ class Schema(object):
 
             raise AttributeError("No {} field in schema {}".format(name, self.table_name))
 
-#     def get(self, field_name, default_value=None):
-#         try:
-#             return self.__getattr__(field_name)
-#         except AttributeError:
-#             return default_value
-
     def set_field(self, field_name, field):
         if not field_name: raise ValueError("field_name is empty")
         if field_name in self.fields: raise ValueError("{} already exists and cannot be changed".format(field_name))
@@ -351,15 +346,6 @@ class Schema(object):
         allowance for k's like "pk" which will return _id
         """
         return self.__getattr__(k).name
-
-#     def has_pk(self):
-#         """returns True if there is a primary key in this schema"""
-#         try:
-#             self.pk
-#             return True
-# 
-#         except AttributeError:
-#             return False
 
 
 class Index(object):

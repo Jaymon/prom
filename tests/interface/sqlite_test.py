@@ -198,32 +198,6 @@ class InterfaceSQLiteTest(BaseTestInterface):
             lf.save()
 
 
-    # NOTE -- the x is in front of the db so this goes last because it causes
-    # test_delete_table_ref to fail when it isn't last (not sure why)
-#     def test_xdb_deleted(self):
-#         """If the db file is deleted while this is connected anything in memory
-#         will stay in memory, so the connection has no idea that the db has been
-#         deleted, I could check for the existence of the db but it doesn't seem
-#         worth it since it will throw errors on write, but will still allow reading,
-#         this is totally an edge case"""
-#         i, s = self.get_table()
-#         path = i.connection_config.database
-#         _id = self.insert(i, s, 1)[0]
-#         d = i.get_one(s, query.Query().is__id(_id))
-#         self.assertGreater(len(d), 0)
-# 
-#         os.unlink(path)
-# 
-#         self.assertFalse(os.path.isfile(path))
-#         with self.assertRaises(InterfaceError):
-#             _id = self.insert(i, s, 1)[0]
-#         self.assertFalse(os.path.isfile(path))
-# 
-#         #d = i.get_one(s, query.Query().is__id(_id))
-#         #pout.v(dict(d))
-#         i.close()
-
-
 # not sure I'm a huge fan of this solution to remove common parent from testing queue
 # http://stackoverflow.com/questions/1323455/python-unit-test-with-base-and-sub-class
 del(BaseTestInterface)

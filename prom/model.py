@@ -71,9 +71,6 @@ class Orm(object):
     iterator_class = Iterator
     """the class this Orm will use for iterating through results returned from db"""
 
-    readonly = False
-    """Set to true to make this orm read only"""
-
     DATE_FORMAT_STR = "%Y-%m-%d"
 
     DATETIME_FORMAT_STR = "%Y-%m-%dT%H:%M:%S.%fZ"
