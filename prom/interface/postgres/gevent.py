@@ -1,20 +1,31 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
+import logging
 
 import psycogreen.gevent
+import gevent.monkey
 from gevent.queue import Queue
 import psycopg2
 from psycopg2 import extensions, OperationalError, connect
 from psycopg2.pool import AbstractConnectionPool, PoolError
 
-from .interface import get_interfaces
-from .interface.postgres import PostgreSQL
+from .. import get_interfaces
+from . import PostgreSQL
+
+
+logger = logging.getLogger(__name__)
+
 
 def patch_all(maxconn=10, **kwargs):
+    if not gevent.monkey.saved:
+        # https://github.com/gevent/gevent/blob/master/src/gevent/monkey.py
+        logger.warning("Running gevent.monkey.patch_all() since not run previously")
+        gevent.monkey.patch_all()
+
     psycogreen.gevent.patch_psycopg()
 
     kwargs.setdefault('pool_maxconn', maxconn)
-    kwargs.setdefault('pool_class', 'prom.gevent.ConnectionPool')
+    kwargs.setdefault('pool_class', '{}.ConnectionPool'.format(__name__))
     kwargs.setdefault('async', True)
     for name, interface in get_interfaces().items():
         if isinstance(interface, PostgreSQL):
@@ -26,6 +37,8 @@ class ConnectionPool(AbstractConnectionPool):
     """a gevent green thread safe connection pool
     this is based off an example found here
     https://github.com/surfly/gevent/blob/master/examples/psycopg2_pool.py
+
+    https://github.com/psycopg/psycopg2/blob/master/lib/pool.py
     """
     def __init__(self, minconn, maxconn, *args, **kwargs):
         self.size = 0
@@ -36,6 +49,7 @@ class ConnectionPool(AbstractConnectionPool):
         self._args = args
         self._kwargs = kwargs
         self._pool = Queue()
+        self._used = {} # required for interface compatibility
 
         for i in range(self.minconn):
             connection = self._connect()

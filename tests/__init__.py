@@ -213,6 +213,7 @@ class BaseTestCase(TestCase):
     def insert(self, *args, **kwargs):
         """most typically you will call this with (object, count)"""
         pks = []
+        schema = None
         if isinstance(args[0], Interface):
             interface = args[0]
             schema = args[1]
@@ -224,23 +225,27 @@ class BaseTestCase(TestCase):
 
         elif isinstance(args[0], query.Query):
             q = args[0].copy()
+            schema = q.orm_class.schema
             q.reset()
             count = args[1]
             for i in range(count):
-                fields = self.get_fields(q.orm_class.schema)
+                fields = self.get_fields(schema)
                 pks.append(q.copy().set(fields).insert())
 
         elif issubclass(args[0], Orm):
             orm_class = args[0]
+            schema = orm_class.schema
             count = args[1]
             for i in range(count):
-                fields = self.get_fields(orm_class.schema)
+                fields = self.get_fields(schema)
                 o = orm_class.create(fields)
                 pks.append(o.pk)
 
         assert count == len(pks)
+        pk_name = schema.pk_name
         for pk in pks:
-            assert pk > 0
+            if pk_name:
+                assert pk > 0
         return pks
 
     def old_insert(self, interface, schema, count, **kwargs):

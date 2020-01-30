@@ -262,17 +262,15 @@ class XInterfacePostgresGeventTest(InterfacePostgresTest):
     """this class has an X to start so that it will run last when all tests are run"""
     @classmethod
     def setUpClass(cls):
-        import gevent.monkey
-        gevent.monkey.patch_all()
-
-        import prom.gevent
-        prom.gevent.patch_all()
+        import prom.interface.postgres.gevent
+        prom.interface.postgres.gevent.patch_all()
         super(XInterfacePostgresGeventTest, cls).setUpClass()
 
     @classmethod
     def create_interface(cls):
         orig_url = os.environ["PROM_POSTGRES_DSN"]
-        os.environ["PROM_POSTGRES_DSN"] += '?async=1&pool_maxconn=3&pool_class=prom.gevent.ConnectionPool'
+        query_str = '?async=1&pool_maxconn=3&pool_class=prom.interface.postgres.gevent.ConnectionPool'
+        os.environ["PROM_POSTGRES_DSN"] += query_str
         try:
             i = super(XInterfacePostgresGeventTest, cls).create_interface()
 
@@ -291,23 +289,6 @@ class XInterfacePostgresGeventTest(InterfacePostgresTest):
         stop = time.time()
         elapsed = stop - start
         self.assertTrue(elapsed >= 2.0 and elapsed < 3.0)
-
-#    def test_monkey_patch(self):
-#        i = self.get_interface()
-#        prom.interface.set_interface(i, "foo")
-#        i = self.get_interface()
-#        prom.interface.set_interface(i, "bar")
-#
-#        for n in ['foo', 'bar']:
-#            i = prom.interface.get_interface(n)
-#            start = time.time()
-#            for _ in range(4):
-#                gevent.spawn(i.query, 'select pg_sleep(1)')
-#
-#            gevent.wait()
-#            stop = time.time()
-#            elapsed = stop - start
-#            self.assertTrue(elapsed >= 1.0 and elapsed < 2.0)
 
     def test_concurrent_error_recovery(self):
         """when recovering from an error in a green thread environment one thread

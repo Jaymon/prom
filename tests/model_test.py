@@ -72,6 +72,19 @@ class OrmTest(EnvironTestCase):
 #         o2 = o.query.get_pk(o.pk)
 #         pout.v(o2.fields)
 
+    def test_no_pk(self):
+        orm_class = self.get_orm_class()
+        orm_class._id = None
+
+        pks = self.insert(orm_class, 1)
+
+        om1 = orm_class.query.get_one()
+        om2 = orm_class.query.is_foo(om1.foo).get_one()
+        self.assertEqual(om1.foo, om2.foo)
+
+    def test_readonly(self):
+        pass
+
     def test_create_pk(self):
         """there was a bug that if you set the pk then it wouldn't set the updated
         or created datestamps, this makes sure that is fixed"""
@@ -306,7 +319,7 @@ class OrmTest(EnvironTestCase):
         t3 = orm_class(foo=1)
         self.assertEqual(1, t3.foo)
         self.assertEqual(None, t3.bar)
-        t3.set()
+        t3.save()
         self.assertEqual(1, t3.foo)
         self.assertEqual(None, t3.bar)
         t3 = orm_class.query.get_pk(t3.pk)
@@ -609,14 +622,14 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(t.fields, t2.fields)
         self.assertEqual(t.modified_fields, t2.modified_fields)
 
-        t.set()
+        t.save()
         p = pickle.dumps(t)
         t2 = pickle.loads(p)
         self.assertEqual(t.fields, t2.fields)
         self.assertEqual(t.modified_fields, t2.modified_fields)
 
         t2.foo += 1
-        t2.set()
+        t2.save()
 
         t3 = PickleOrm.query.get_pk(t2.pk)
         self.assertEqual(t3.fields, t2.fields)

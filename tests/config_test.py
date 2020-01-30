@@ -116,6 +116,11 @@ class DsnConnectionTest(BaseTestCase):
         c = DsnConnection(dsn)
         self.assertTrue(isinstance(c.options["timeout"], float))
 
+    def test_readonly(self):
+        dsn = "SQLite:///tmp/sqlite.db?readonly=1"
+        c = DsnConnection(dsn)
+        self.assertTrue(c.readonly)
+
     def test_dsn(self):
         tests = [
             (

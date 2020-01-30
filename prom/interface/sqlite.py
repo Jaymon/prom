@@ -260,6 +260,7 @@ class SQLite(SQLInterface):
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
         self._query('PRAGMA foreign_keys = ON', ignore_result=True);
+        self.readonly(self.connection_config.readonly)
 
     def get_connection(self):
         if not self.connected: self.connect()
@@ -275,6 +276,13 @@ class SQLite(SQLInterface):
     def _close(self):
         self._connection.close()
         self._connection = None
+
+    def _readonly(self, readonly):
+        self._query(
+            # https://stackoverflow.com/a/49630725/5006
+            'PRAGMA query_only = {}'.format("ON" if readonly else "OFF"),
+            ignore_result=True
+        )
 
     def _get_tables(self, table_name, **kwargs):
         query_str = 'SELECT tbl_name FROM sqlite_master WHERE type = ?'
@@ -452,7 +460,7 @@ class SQLite(SQLInterface):
 
         ret = self._query(query_str, query_vals, cursor_result=True, **kwargs)
 
-        pk_name = schema.pk.name
+        pk_name = schema.pk_name
         # http://stackoverflow.com/questions/6242756/
         # could also do _query('SELECT last_insert_rowid()')
         return ret.lastrowid if pk_name not in fields else fields[pk_name]

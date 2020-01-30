@@ -18,10 +18,10 @@ import psycopg2.extras
 import psycopg2.extensions
 
 # first party
-from .base import SQLInterface, SQLConnection
-from ..compat import *
-from ..utils import get_objects
-from ..exception import UniqueError
+from ..base import SQLInterface, SQLConnection
+from ...compat import *
+from ...utils import get_objects
+from ...exception import UniqueError
 
 
 # class LoggingCursor(psycopg2.extras.RealDictCursor):
@@ -132,12 +132,20 @@ class PostgreSQL(SQLInterface):
 
     def get_connection(self):
         if not self.connected: self.connect()
+
+        connection = None
         if self._connection:
             self.log("getting sync connection")
-            return self._connection
-        connection = self.connection_pool.getconn()
-        self.log("getting async connection {}", id(connection))
+            connection = self._connection
 
+        else:
+            connection = self.connection_pool.getconn()
+            self.log("getting async connection {}", id(connection))
+
+        # change the connection readonly status if they don't match
+        if connection.readonly != self.connection_config.readonly:
+            # https://www.psycopg.org/docs/connection.html#connection.readonly
+            connection.readonly = self.connection_config.readonly
         return connection
 
     def _close(self):
@@ -146,6 +154,11 @@ class PostgreSQL(SQLInterface):
             self._connection.close()
             self._connection = None
             self.connection_pool = None
+
+    def _readonly(self, readonly):
+        """readonly setting is handled when you grab the connection from get_connection()
+        so this method does nothing"""
+        pass
 
     def _get_tables(self, table_name, **kwargs):
         query_str = 'SELECT tablename FROM pg_tables WHERE tableowner = %s'
@@ -314,10 +327,6 @@ class PostgreSQL(SQLInterface):
         return self.query(query_str, ignore_result=True, **index_options)
 
     def _insert(self, schema, fields, **kwargs):
-
-        # get the primary key
-        pk_name = schema.pk.name
-
         field_formats = []
         field_names = []
         query_vals = []
@@ -326,15 +335,26 @@ class PostgreSQL(SQLInterface):
             field_formats.append(self.val_placeholder)
             query_vals.append(field_val)
 
-        query_str = 'INSERT INTO {} ({}) VALUES ({}) RETURNING {}'.format(
-            self._normalize_table_name(schema),
-            ', '.join(field_names),
-            ', '.join(field_formats),
-            self._normalize_name(pk_name),
-        )
+        pk_name = schema.pk_name
+        if pk_name:
+            query_str = 'INSERT INTO {} ({}) VALUES ({}) RETURNING {}'.format(
+                self._normalize_table_name(schema),
+                ', '.join(field_names),
+                ', '.join(field_formats),
+                self._normalize_name(pk_name),
+            )
+            ret = self.query(query_str, *query_vals, **kwargs)
+            ret = ret[0][pk_name]
 
-        ret = self.query(query_str, *query_vals, **kwargs)
-        return ret[0][pk_name]
+        else:
+            query_str = 'INSERT INTO {} ({}) VALUES ({})'.format(
+                self._normalize_table_name(schema),
+                ', '.join(field_names),
+                ', '.join(field_formats),
+            )
+            ret = self.query(query_str, *query_vals, ignore_result=True, **kwargs)
+
+        return ret
 
     def _normalize_field_SQL(self, schema, field_name, symbol):
         format_field_name = self._normalize_name(field_name)

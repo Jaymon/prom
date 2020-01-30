@@ -528,12 +528,12 @@ class QueryTest(EnvironTestCase):
         t = tclass()
         t.foo = 1
         t.bar = "bar1"
-        t.set()
+        t.save()
 
         t2 = tclass()
         t2.foo = 2
         t2.bar = "bar2"
-        t2.set()
+        t2.save()
 
         pks = [t.pk, t2.pk]
 

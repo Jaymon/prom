@@ -39,6 +39,9 @@ class Connection(object):
     password = ""
     """the password for the username"""
 
+    readonly = False
+    """Set to true to make the connection readonly"""
+
     options = None
     """any other db options, these can be interface implementation specific"""
 
@@ -122,9 +125,11 @@ class DsnConnection(Connection):
         d["database"] = d.pop("path")
         d["options"] = cls.normalize_options(d.pop("query"))
         d["host"] = d.pop("hostname")
+        d["readonly"] = bool(d["options"].pop("readonly", cls.readonly))
 
         # get rid of certain values
         d.pop("params", None)
+        d.pop("query_str", None)
         return d
 
     @classmethod
@@ -171,7 +176,6 @@ class Schema(object):
     the table schema definition includes the table name, the fields the table has, and
     the indexes that are on the table
     """
-
     instances = {}
     """class variable, holds different schema instances for various orms"""
 
@@ -186,7 +190,7 @@ class Schema(object):
 
     @property
     def normal_fields(self):
-        """fields that aren't magic (eg, aren't _id, _created, _updated)"""
+        """fields that aren't magic (eg, don't start with an underscore)"""
         return {f:v for f, v in self.fields.items() if not f.startswith('_')}
 
     @property
@@ -203,6 +207,16 @@ class Schema(object):
     def magic_fields(self):
         """the magic fields for the schema"""
         return {f:v for f, v in self.fields.items() if f.startswith('_')}
+
+    @property
+    def pk_name(self):
+        try:
+            pk_field = self.__getattr__("pk")
+            return pk_field.name
+
+        except AttributeError:
+            pk_field = None
+            return None
 
     @classmethod
     def get_instance(cls, orm_class):
@@ -282,12 +296,18 @@ class Schema(object):
             return self.fields[name]
 
         else:
-            if name == u"pk":
+            if name == "pk":
                 for field_name, field in self.fields.items():
                     if field.options.get('pk', False):
                         return field
 
             raise AttributeError("No {} field in schema {}".format(name, self.table_name))
+
+#     def get(self, field_name, default_value=None):
+#         try:
+#             return self.__getattr__(field_name)
+#         except AttributeError:
+#             return default_value
 
     def set_field(self, field_name, field):
         if not field_name: raise ValueError("field_name is empty")
@@ -331,6 +351,15 @@ class Schema(object):
         allowance for k's like "pk" which will return _id
         """
         return self.__getattr__(k).name
+
+#     def has_pk(self):
+#         """returns True if there is a primary key in this schema"""
+#         try:
+#             self.pk
+#             return True
+# 
+#         except AttributeError:
+#             return False
 
 
 class Index(object):

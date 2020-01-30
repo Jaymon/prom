@@ -169,6 +169,20 @@ class BaseTestInterface(BaseTestCase):
         self.assertFalse(i.has_table(s1))
         self.assertFalse(i.has_table(s2))
 
+    def test_readonly(self):
+        i = self.get_interface()
+        i.readonly(True)
+
+        s = self.get_schema()
+
+        with self.assertRaises(InterfaceError):
+            i.set_table(s)
+        self.assertFalse(i.has_table(s))
+
+        i.readonly(False)
+        i.set_table(s)
+        self.assertTrue(i.has_table(s))
+
     def test_field_bool(self):
         """There was a bug where SQLite boolean field always returned True, this
         tests to make sure that is fixed and it won't happen again"""

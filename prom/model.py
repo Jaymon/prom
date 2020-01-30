@@ -71,6 +71,9 @@ class Orm(object):
     iterator_class = Iterator
     """the class this Orm will use for iterating through results returned from db"""
 
+    readonly = False
+    """Set to true to make this orm read only"""
+
     DATE_FORMAT_STR = "%Y-%m-%d"
 
     DATETIME_FORMAT_STR = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -128,7 +131,8 @@ class Orm(object):
     @property
     def pk(self):
         """wrapper method to return the primary key, None if the primary key is not set"""
-        return getattr(self, self.schema.pk.name, None)
+        pk_name = self.schema.pk_name
+        return getattr(self, pk_name, None) if pk_name else None
 
     @property
     def created(self):
@@ -322,7 +326,9 @@ class Orm(object):
         pk = q.insert()
         if pk:
             fields = q.fields
-            fields[schema.pk.name] = pk
+            pk_name = schema.pk_name
+            if pk_name:
+                fields[pk_name] = pk
             self._populate(fields)
 
         else:
@@ -353,7 +359,6 @@ class Orm(object):
 
         return ret
 
-    def set(self): return self.save()
     def save(self):
         """
         persist the fields in this object into the db, this will update if _id is set, otherwise
@@ -365,7 +370,8 @@ class Orm(object):
 
         # we will only use the primary key if it hasn't been modified
         pk = None
-        if self.schema.pk.name not in self.modified_fields:
+        pk_name = self.schema.pk_name
+        if pk_name not in self.modified_fields:
             pk = self.pk
 
         if pk:
@@ -448,7 +454,7 @@ class Orm(object):
 
     def __setattr__(self, field_name, field_val):
         if field_name in self.schema.fields:
-            if field_name == self.schema.pk.name:
+            if self.schema.fields[field_name].is_pk():
                 # we mark everything as dirty because the primary key has changed
                 # and so a new row would be inserted into the db
                 self.modified_fields.add(field_name)

@@ -214,6 +214,19 @@ class Interface(object):
 
     def _close(self): raise NotImplementedError()
 
+    def readonly(self, readonly=True):
+        """Make the connection read only (pass in True) or read/write (pass in False)
+
+        :param readonly: boolean, True if this connection should be readonly, False
+            if the connection should be read/write
+        """
+        self.connection_config.readonly = readonly
+
+        if self.connected:
+            self._readonly(readonly)
+
+    def _readonly(self, readonly): raise NotImplementedError()
+
     def query(self, query_str, *query_args, **query_options):
         """
         run a raw query on the db
@@ -307,6 +320,11 @@ class Interface(object):
             return self._get_tables(str(table_name), **kwargs)
 
     def _get_tables(self, table_name, **kwargs): raise NotImplementedError()
+
+    def unsafe_delete_table(self, schema, **kwargs):
+        """wrapper around delete_table that matches the *_tables variant and denotes
+        that this is a serious operation"""
+        return self.delete_table(schema, **kwargs)
 
     def delete_table(self, schema, **kwargs):
         """
