@@ -85,7 +85,7 @@ class TimestampType(object):
     @staticmethod
     def convert(val):
         val = StringType.adapt(val)
-        if re.match(r"^\d+\.\d+$", val):
+        if re.match(r"^\-?\d+\.\d+$", val):
             # account for unix timestamps with microseconds
             val = datetime.datetime.fromtimestamp(float(val))
 
@@ -116,30 +116,35 @@ class TimestampType(object):
             )
 
             if m:
-                dateparts = list(map(lambda x: int(x) if x else 0, m.groups()))
-                if dateparts[6]:
-                    dateparts[6] = int('{:0<6.6}'.format(str(dateparts[6])))
-
+                parsed_dateparts = m.groups()
+                dateparts = list(map(lambda x: int(x) if x else 0, parsed_dateparts[:6]))
                 val = datetime.datetime(*dateparts)
 
+                if parsed_dateparts[6]:
+                    ms_len = len(parsed_dateparts[6])
+                    if ms_len >= 3:
+                        millis = parsed_dateparts[6][:3]
+                        micros = parsed_dateparts[6][3:] or 0
+
+                    else:
+                        millis = parsed_dateparts[6] or 0
+                        micros = 0
+
+                    # make sure each part is 3 digits by zero padding on the right
+                    if millis:
+                        millis = "{:0<3.3}".format(millis)
+                    if micros:
+                        micros = "{:0<3.3}".format(micros)
+
+                    pout.v(millis, micros)
+                    val += datetime.timedelta(
+                        milliseconds=int(millis),
+                        microseconds=int(micros)
+                    )
+
             else:
-                #val = None
-                #val = datetime.datetime.min
                 raise ValueError("Cannot infer UTC datetime value from {}".format(val))
 
-            # this is borrowed from sqlite3.dbapi2.convert_timestamp, sadly it is
-            # burried in a function so I can't wrap it :(
-            #datepart, timepart = re.search(r"\d{4}.?\d{2}.?\d
-#             datepart, timepart = val.split(" ")
-#             year, month, day = map(int, datepart.split("-"))
-#             timepart_full = timepart.split(".")
-#             hours, minutes, seconds = map(int, timepart_full[0].split(":"))
-#             if len(timepart_full) == 2:
-#                 microseconds = int('{:0<6.6}'.format(timepart_full[1]))
-#             else:
-#                 microseconds = 0
-# 
-#             val = datetime.datetime(year, month, day, hours, minutes, seconds, microseconds)
         return val
 
 

@@ -6,13 +6,101 @@ import datetime
 import testdata
 
 from prom import query, InterfaceError
-from prom.interface.sqlite import SQLite
+from prom.interface.sqlite import SQLite, TimestampType
 from prom.interface import configure
 from prom.model import Orm
 from prom.config import Field
 from prom.compat import *
 
 from . import BaseTestInterface, BaseTestCase
+
+
+class TimestampTypeTest(BaseTestCase):
+    def test_convert(self):
+        s = "2020-03-25T19:34:05.00005Z"
+        dt = TimestampType.convert(s)
+        self.assertEqual(50, dt.microsecond)
+        self.assertEqual("2020-03-25T19:34:05.000050Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+
+        s = "2020-03-25T19:34:05.05Z"
+        dt = TimestampType.convert(s)
+        self.assertEqual(50000, dt.microsecond)
+        self.assertEqual("2020-03-25T19:34:05.050000Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+
+        s = "2020-03-25T19:34:05.0506Z"
+        dt = TimestampType.convert(s)
+        self.assertEqual(50600, dt.microsecond)
+        self.assertEqual("2020-03-25T19:34:05.050600Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+
+        s = "2020-03-25T19:34:05.050060Z"
+        dt = TimestampType.convert(s)
+        self.assertEqual(50060, dt.microsecond)
+        self.assertEqual("2020-03-25T19:34:05.050060Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+
+        s = "2020-03-25T19:34:05.000057Z"
+        dt = TimestampType.convert(s)
+        self.assertEqual(57, dt.microsecond)
+        self.assertEqual("2020-03-25T19:34:05.000057Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+
+        s = "2020-03-25T19:34:05.057Z"
+        dt = TimestampType.convert(s)
+        self.assertEqual(57000, dt.microsecond)
+        self.assertEqual("2020-03-25T19:34:05.057000Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+
+        s = "2020-03-25T19:34:05.057035Z"
+        dt = TimestampType.convert(s)
+        self.assertEqual(57035, dt.microsecond)
+        self.assertEqual("2020-03-25T19:34:05.057035Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+
+
+
+
+
+        return
+
+
+        s = "2020-03-25T19:34:05.057035Z"
+        dt = TimestampType.convert(s)
+        pout.v(dt)
+        pout.v(dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+
+        s = "2020-03-25T19:34:05.057Z"
+        dt = TimestampType.convert(s)
+        pout.v(dt)
+        pout.v(dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+
+        return
+
+
+
+
+#         pout.b()
+#         dt = datetime.datetime(2020, 3, 25, 19, 34, 5, 05735)
+#         pout.v(dt)
+#         dt = datetime.datetime(2020, 3, 25, 19, 34, 5, 057350)
+#         pout.v(dt)
+
+        #dt = datetime.datetime(2020, 3, 25, 19, 34, 5) + datetime.timedelta(microseconds=1000000 - (1000000 - 57350))
+
+        pout.b(s)
+        #dt = datetime.datetime(2020, 3, 25, 19, 34, 5) + datetime.timedelta(milliseconds=57, microseconds=35)
+        dt = datetime.datetime(2020, 3, 25, 19, 34, 5, 57035)
+        pout.v(dt)
+        pout.v(dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        return
+
+
+
+        dt = datetime.datetime(2020, 3, 25, 19, 34, 5) + datetime.timedelta(seconds=0.057350)
+        pout.v(dt)
+
+        dt = datetime.datetime(2020, 3, 25, 19, 34, 5)
+        epoch = datetime.datetime(1970, 1, 1)
+        ts = int((dt - epoch).total_seconds())
+        f = float("{}.057350".format(ts))
+        pout.v(f)
+        dt = datetime.datetime.fromtimestamp(f)
+        pout.v(dt)
 
 
 class InterfaceTest(BaseTestCase):
