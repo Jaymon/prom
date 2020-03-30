@@ -120,6 +120,7 @@ class TimestampType(object):
                 dateparts = list(map(lambda x: int(x) if x else 0, parsed_dateparts[:6]))
                 val = datetime.datetime(*dateparts)
 
+                # account for ms with leading zeros
                 if parsed_dateparts[6]:
                     ms_len = len(parsed_dateparts[6])
                     if ms_len >= 3:
@@ -136,7 +137,6 @@ class TimestampType(object):
                     if micros:
                         micros = "{:0<3.3}".format(micros)
 
-                    pout.v(millis, micros)
                     val += datetime.timedelta(
                         milliseconds=int(millis),
                         microseconds=int(micros)

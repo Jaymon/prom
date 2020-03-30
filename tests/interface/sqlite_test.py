@@ -53,57 +53,8 @@ class TimestampTypeTest(BaseTestCase):
         self.assertEqual("2020-03-25T19:34:05.057035Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
 
-
-
-
-        return
-
-
-        s = "2020-03-25T19:34:05.057035Z"
-        dt = TimestampType.convert(s)
-        pout.v(dt)
-        pout.v(dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
-
-        s = "2020-03-25T19:34:05.057Z"
-        dt = TimestampType.convert(s)
-        pout.v(dt)
-        pout.v(dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
-
-        return
-
-
-
-
-#         pout.b()
-#         dt = datetime.datetime(2020, 3, 25, 19, 34, 5, 05735)
-#         pout.v(dt)
-#         dt = datetime.datetime(2020, 3, 25, 19, 34, 5, 057350)
-#         pout.v(dt)
-
-        #dt = datetime.datetime(2020, 3, 25, 19, 34, 5) + datetime.timedelta(microseconds=1000000 - (1000000 - 57350))
-
-        pout.b(s)
-        #dt = datetime.datetime(2020, 3, 25, 19, 34, 5) + datetime.timedelta(milliseconds=57, microseconds=35)
-        dt = datetime.datetime(2020, 3, 25, 19, 34, 5, 57035)
-        pout.v(dt)
-        pout.v(dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
-        return
-
-
-
-        dt = datetime.datetime(2020, 3, 25, 19, 34, 5) + datetime.timedelta(seconds=0.057350)
-        pout.v(dt)
-
-        dt = datetime.datetime(2020, 3, 25, 19, 34, 5)
-        epoch = datetime.datetime(1970, 1, 1)
-        ts = int((dt - epoch).total_seconds())
-        f = float("{}.057350".format(ts))
-        pout.v(f)
-        dt = datetime.datetime.fromtimestamp(f)
-        pout.v(dt)
-
-
 class InterfaceTest(BaseTestCase):
+    """This is testing the actual interface, not the db connection or anything"""
     def test_change_interface(self):
         class InterTorm(Orm):
             connection_name = "change-interface"
@@ -127,7 +78,7 @@ class InterfaceSQLiteTest(BaseTestInterface):
     def create_interface(cls):
         return cls.create_sqlite_interface()
 
-    def test_fields_timestamp(self):
+    def test_field_timestamp(self):
         table_name = self.get_table_name()
         schema = self.get_schema(table_name, ZTIMESTAMP=Field(datetime.datetime))
         q = query.Query()

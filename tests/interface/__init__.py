@@ -204,6 +204,19 @@ class BaseTestInterface(BaseTestCase):
         i, s = self.get_table(bar=Field(datetime.datetime))
 
         dts = [
+            {
+                "input": "2020-03-25T19:34:05.05Z",
+                "output": {
+                    "microsecond": 50000
+                }
+            },
+            {
+                "input": "2019-10-08 20:18:59.00005",
+                "output": {
+                    "microsecond": 50
+                }
+            },
+
 #             { # this fails in postgres
 #                 "input": "1570565939.566850",
 #                 "output": {
@@ -216,6 +229,7 @@ class BaseTestInterface(BaseTestCase):
 #                     "microsecond": 566850,
 #                 }
 #             },
+
             {
                 "input": "20191008T201859",
                 "output": {
