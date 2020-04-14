@@ -85,6 +85,15 @@ class OrmTest(EnvironTestCase):
     def test_readonly(self):
         pass
 
+    def test_int_pk(self):
+        """Postgres was returning longs for primary keys in py2.7, this was different
+        behavior than SQLite and python 3, which returns int since 2.7+ transparently
+        handles ints of arbitrary size, this makes sure that ints are returned for
+        primary key"""
+        orm_class = self.get_orm_class()
+        o = orm_class.create(foo=1, bar="1")
+        self.assertTrue(isinstance(o.pk, int))
+
     def test_create_pk(self):
         """there was a bug that if you set the pk then it wouldn't set the updated
         or created datestamps, this makes sure that is fixed"""

@@ -50,6 +50,19 @@ class Connection(SQLConnection, psycopg2.extensions.connection):
             psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, self)
             psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, self)
 
+            # return ints for any long values, this normalizes with SQLite and 
+            # python 2.7+ transparently handles really large integer values
+            # with no long needed (long doesn't even exist in python 3+)
+            def normalize_long(v, cur):
+                return v if v is None else int(v)
+            psycopg2.extensions.register_type(
+                psycopg2.extensions.new_type(
+                    psycopg2.extensions.LONGINTEGER.values,
+                    b"LONGINTEGER",
+                    normalize_long
+                )
+            )
+
         else:
             def normalize_str(v, cur):
                 if isinstance(v, str) and v.startswith("\\x"):
@@ -197,7 +210,6 @@ class PostgreSQL(SQLInterface):
     def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given schema"""
         ret = {}
-        query_str = []
         query_args = ['f', table_name]
 
         # I had to brush up on my join knowledge while writing this query
@@ -211,31 +223,32 @@ class PostgreSQL(SQLInterface):
         # another approach
         # http://dba.stackexchange.com/questions/22362/how-do-i-list-all-columns-for-a-specified-table
         # http://gis.stackexchange.com/questions/94049/how-to-get-the-data-type-of-each-column-from-a-postgis-table
-        query_str.append('SELECT')
-        query_str.append(',  '.join([
-            'a.attnum',
-            'a.attname',
-            'a.attnotnull',
-            't.typname',
-            'i.indisprimary',
-            #'s.conname',
-            #'pg_get_constraintdef(s.oid, true) as condef',
-            'c.relname AS confrelname',
-        ]))
-        query_str.append('FROM')
-        query_str.append('  pg_attribute a')
-        query_str.append('JOIN pg_type t ON a.atttypid = t.oid')
-        query_str.append('LEFT JOIN pg_index i ON a.attrelid = i.indrelid')
-        query_str.append('  AND a.attnum = any(i.indkey)')
-        query_str.append('LEFT JOIN pg_constraint s ON a.attrelid = s.conrelid')
-        query_str.append('  AND s.contype = {} AND a.attnum = any(s.conkey)'.format(self.val_placeholder))
-        query_str.append('LEFT JOIN pg_class c ON s.confrelid = c.oid')
-        query_str.append('WHERE')
-        query_str.append('  a.attrelid = {}::regclass'.format(self.val_placeholder))
-        query_str.append('  AND a.attisdropped = False')
-        query_str.append('  AND a.attnum > 0')
-        query_str.append('ORDER BY a.attnum ASC')
-
+        query_str = [
+            'SELECT',
+            ',  '.join([
+                'a.attnum',
+                'a.attname',
+                'a.attnotnull',
+                't.typname',
+                'i.indisprimary',
+                #'s.conname',
+                #'pg_get_constraintdef(s.oid, true) as condef',
+                'c.relname AS confrelname',
+            ]),
+            'FROM',
+            '  pg_attribute a',
+            'JOIN pg_type t ON a.atttypid = t.oid',
+            'LEFT JOIN pg_index i ON a.attrelid = i.indrelid',
+            '  AND a.attnum = any(i.indkey)',
+            'LEFT JOIN pg_constraint s ON a.attrelid = s.conrelid',
+            '  AND s.contype = {} AND a.attnum = any(s.conkey)'.format(self.val_placeholder),
+            'LEFT JOIN pg_class c ON s.confrelid = c.oid',
+            'WHERE',
+            '  a.attrelid = {}::regclass'.format(self.val_placeholder),
+            '  AND a.attisdropped = False',
+            '  AND a.attnum > 0',
+            'ORDER BY a.attnum ASC',
+        ]
         query_str = os.linesep.join(query_str)
         fields = self.query(query_str, *query_args, **kwargs)
 
@@ -277,17 +290,18 @@ class PostgreSQL(SQLInterface):
     def _get_indexes(self, schema, **kwargs):
         """return all the indexes for the given schema"""
         ret = {}
-        query_str = []
-        query_str.append('SELECT')
-        query_str.append('  tbl.relname AS table_name, i.relname AS index_name, a.attname AS field_name,')
-        query_str.append('  ix.indkey AS index_order, a.attnum AS field_num')
-        query_str.append('FROM')
-        query_str.append('  pg_class tbl, pg_class i, pg_index ix, pg_attribute a')
-        query_str.append('WHERE')
-        query_str.append('  tbl.oid = ix.indrelid AND i.oid = ix.indexrelid AND a.attrelid = tbl.oid')
-        query_str.append('  AND a.attnum = ANY(ix.indkey) AND tbl.relkind = %s AND tbl.relname = %s')
-        query_str.append('ORDER BY')
-        query_str.append('  tbl.relname, i.relname')
+        query_str = [
+            'SELECT',
+            '  tbl.relname AS table_name, i.relname AS index_name, a.attname AS field_name,',
+            '  ix.indkey AS index_order, a.attnum AS field_num',
+            'FROM',
+            '  pg_class tbl, pg_class i, pg_index ix, pg_attribute a',
+            'WHERE',
+            '  tbl.oid = ix.indrelid AND i.oid = ix.indexrelid AND a.attrelid = tbl.oid',
+            '  AND a.attnum = ANY(ix.indkey) AND tbl.relkind = %s AND tbl.relname = %s',
+            'ORDER BY',
+            '  tbl.relname, i.relname',
+        ]
         query_str = os.linesep.join(query_str)
 
         indexes = self.query(query_str, 'r', str(schema), **kwargs)
