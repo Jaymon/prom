@@ -268,7 +268,7 @@ class ResultsIterator(BaseIterator):
 
         else:
             if self.orm_class:
-                r = self.orm_class(d, hydrate=True)
+                r = self.orm_class.populated(d)
             else:
                 r = d
 
@@ -679,10 +679,6 @@ class Query(object):
         return self.set_field(field_name, None)
 
     def select(self, *fields):
-        return self.select_fields(*fields)
-
-    # DEPRECATED maybe? -- 3-10-2016 -- use select()
-    def select_fields(self, *fields):
         """set multiple fields to be selected"""
         if fields:
             if not isinstance(fields[0], basestring): 
@@ -692,6 +688,7 @@ class Query(object):
             field_name = self._normalize_field_name(field_name)
             self.select_field(field_name)
         return self
+    select_fields = select # DEPRECATED maybe? -- 3-10-2016 -- use select()
 
     def set_field(self, field_name, field_val=None):
         """
@@ -699,15 +696,12 @@ class Query(object):
 
         n insert/update queries, these are the fields that will be inserted/updated into the db
         """
-        field_name = self._normalize_field_name(field_name)
+        field_name, field_val = self._normalize_field(field_name, field_val)
+        #field_name = self._normalize_field_name(field_name)
         self.fields_set.append(field_name, [field_name, field_val])
         return self
 
     def set(self, fields=None, *fields_args, **fields_kwargs):
-        return self.set_fields(fields, *fields_args, **fields_kwargs)
-
-    # DEPRECATED maybe? -- 3-10-2016 -- use set()
-    def set_fields(self, fields=None, *fields_args, **fields_kwargs):
         """
         completely replaces the current .fields with fields and fields_kwargs combined
         """
@@ -733,15 +727,29 @@ class Query(object):
 
         return self
 
+    # DEPRECATED maybe? -- 3-10-2016 -- use set()
+    def set_fields(self, fields=None, *fields_args, **fields_kwargs):
+        return self.set(fields, *fields_args, **fields_kwargs)
+
     def is_field(self, field_name, field_val=None, **field_kwargs):
-        field_name = self._normalize_field_name(field_name)
+        field_name, field_val = self._normalize_field(
+            field_name,
+            field_val=field_val,
+            field_kwargs=field_kwargs,
+        )
+        #field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["is", field_name, field_val, field_kwargs])
         return self
     def eq_field(self, field_name, field_val, **field_kwargs):
         return self.is_field(field_name, field_val, **field_kwargs)
 
     def not_field(self, field_name, field_val=None, **field_kwargs):
-        field_name = self._normalize_field_name(field_name)
+        field_name, field_val = self._normalize_field(
+            field_name,
+            field_val=field_val,
+            field_kwargs=field_kwargs,
+        )
+        #field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["not", field_name, field_val, field_kwargs])
         return self
     def ne_field(self, field_name, field_val, **field_kwargs):
@@ -753,22 +761,42 @@ class Query(object):
         return self
 
     def lte_field(self, field_name, field_val=None, **field_kwargs):
-        field_name = self._normalize_field_name(field_name)
+        field_name, field_val = self._normalize_field(
+            field_name,
+            field_val=field_val,
+            field_kwargs=field_kwargs,
+        )
+        #field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["lte", field_name, field_val, field_kwargs])
         return self
 
     def lt_field(self, field_name, field_val=None, **field_kwargs):
-        field_name = self._normalize_field_name(field_name)
+        field_name, field_val = self._normalize_field(
+            field_name,
+            field_val=field_val,
+            field_kwargs=field_kwargs,
+        )
+        #field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["lt", field_name, field_val, field_kwargs])
         return self
 
     def gte_field(self, field_name, field_val=None, **field_kwargs):
-        field_name = self._normalize_field_name(field_name)
+        field_name, field_val = self._normalize_field(
+            field_name,
+            field_val=field_val,
+            field_kwargs=field_kwargs,
+        )
+        #field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["gte", field_name, field_val, field_kwargs])
         return self
 
     def gt_field(self, field_name, field_val=None, **field_kwargs):
-        field_name = self._normalize_field_name(field_name)
+        field_name, field_val = self._normalize_field(
+            field_name,
+            field_val=field_val,
+            field_kwargs=field_kwargs,
+        )
+        #field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["gt", field_name, field_val, field_kwargs])
         return self
 
@@ -776,7 +804,7 @@ class Query(object):
         """
         field_vals -- list -- a list of field_val values
         """
-        field_name = self._normalize_field_name(field_name)
+        #field_name = self._normalize_field_name(field_name)
         fv = make_list(field_vals) if field_vals else None
         # ??? what does this do?
         if field_kwargs:
@@ -789,6 +817,11 @@ class Query(object):
         else:
             if not fv: self.can_get = False
 
+        field_name, fv = self._normalize_field(
+            field_name,
+            field_vals=fv,
+            field_kwargs=field_kwargs,
+        )
         self.fields_where.append(field_name, ["in", field_name, fv, field_kwargs])
         return self
 
@@ -796,7 +829,7 @@ class Query(object):
         """
         field_vals -- list -- a list of field_val values
         """
-        field_name = self._normalize_field_name(field_name)
+        #field_name = self._normalize_field_name(field_name)
         fv = make_list(field_vals) if field_vals else None
         if field_kwargs:
             for k in field_kwargs:
@@ -808,6 +841,11 @@ class Query(object):
         else:
             if not fv: self.can_get = False
 
+        field_name, fv = self._normalize_field(
+            field_name,
+            field_vals=fv,
+            field_kwargs=field_kwargs,
+        )
         self.fields_where.append(field_name, ["nin", field_name, fv, field_kwargs])
         return self
 
@@ -829,7 +867,12 @@ class Query(object):
         """
         if not field_val:
             raise ValueError("Cannot LIKE nothing")
-        field_name = self._normalize_field_name(field_name)
+        field_name, field_val = self._normalize_field(
+            field_name,
+            field_val=field_val,
+            field_kwargs=field_kwargs,
+        )
+        #field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["like", field_name, field_val, field_kwargs])
         return self
 
@@ -842,7 +885,12 @@ class Query(object):
         """
         if not field_val:
             raise ValueError("Cannot NOT LIKE nothing")
-        field_name = self._normalize_field_name(field_name)
+        field_name, field_val = self._normalize_field(
+            field_name,
+            field_val=field_val,
+            field_kwargs=field_kwargs,
+        )
+        #field_name = self._normalize_field_name(field_name)
         self.fields_where.append(field_name, ["nlike", field_name, field_val, field_kwargs])
         return self
 
@@ -854,7 +902,7 @@ class Query(object):
         direction -- integer -- negative for DESC, positive for ASC
         field_vals -- list -- the order the rows should be returned in
         """
-        field_name = self._normalize_field_name(field_name)
+        #field_name = self._normalize_field_name(field_name)
         if direction > 0:
             direction = 1
         elif direction < 0:
@@ -862,7 +910,11 @@ class Query(object):
         else:
             raise ValueError("direction {} is undefined".format(direction))
 
-        self.fields_sort.append(field_name, [direction, field_name, list(field_vals) if field_vals else field_vals])
+        field_name, field_val = self._normalize_field(
+            field_name,
+            field_vals=list(field_vals) if field_vals else field_vals,
+        )
+        self.fields_sort.append(field_name, [direction, field_name, field_vals])
         return self
 
     def asc_field(self, field_name, field_vals=None):
@@ -920,29 +972,41 @@ class Query(object):
             field_name = schema.field_name(field_name)
         return field_name
 
-    def limit(self, limit):
-        return self.set_limit(limit)
+    def _normalize_field_value(self, field_name, field_val):
+        schema = self.schema
+        if schema:
+            field = getattr(schema, field_name)
+            field_val = field.iquery(field_val)
+        return field_val
 
-    # DEPRECATED maybe? -- 3-10-2016 -- use limit()
-    def set_limit(self, limit):
+    def _normalize_field(self, field_name, field_val=None, field_vals=None, field_kwargs=None):
+        field_name = self._normalize_field_name(field_name)
+
+        if field_val:
+            field_val = self._normalize_field_value(field_name, field_val)
+
+        if field_vals:
+            for i in range(len(field_vals)):
+                field_vals[i] = self._normalize_field_value(field_name, field_vals[i])
+
+            field_val = field_vals
+
+        return field_name, field_val
+
+    def limit(self, limit):
         self.bounds.limit = limit
         return self
+    set_limit = limit # DEPRECATED maybe? -- 3-10-2016 -- use limit()
 
     def offset(self, offset):
-        return self.set_offset(offset)
-
-    # DEPRECATED maybe? -- 3-10-2016 -- use offset()
-    def set_offset(self, offset):
         self.bounds.offset = offset
         return self
+    set_offset = offset # DEPRECATED maybe? -- 3-10-2016 -- use offset()
 
     def page(self, page):
-        return self.set_page(page)
-
-    # DEPRECATED maybe? -- 3-10-2016 -- use page()
-    def set_page(self, page):
         self.bounds.page = page
         return self
+    set_page = page # DEPRECATED maybe? -- 3-10-2016 -- use page()
 
     def cursor(self, limit=None, page=None):
         # TODO -- combine the common parts of this method and get()
@@ -1003,7 +1067,7 @@ class Query(object):
         o = self.default_val
         d = self._query('get_one')
         if d:
-            o = self.orm_class(d, hydrate=True)
+            o = self.orm_class.populated(d)
         return o
 
     def values(self, limit=None, page=None):

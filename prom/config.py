@@ -5,11 +5,15 @@ import inspect
 import re
 import base64
 import json
+import logging
 
 import dsnparse
 
 from .compat import *
 from . import utils
+
+
+logger = logging.getLogger(__name__)
 
 
 class Connection(object):
@@ -506,7 +510,14 @@ class Field(object):
         self.fdefaulter(field_options.pop("fdefault", self.default_fdefault))
 
         self.igetter(field_options.pop("iget", self.default_iget))
-        self.isetter(field_options.pop("iset", self.default_iset))
+        self.isaver(field_options.pop("isave", self.default_isave))
+        self.imodifier(field_options.pop("imodify", self.default_imodify))
+        self.imodify_inserter(field_options.pop("imodify_insert", self.default_imodify_insert))
+        self.imodify_updater(field_options.pop("imodify_update", self.default_imodify_update))
+        self.idefaulter(field_options.pop("idefault", self.default_idefault))
+        self.idefault_inserter(field_options.pop("idefault_insert", self.default_idefault_insert))
+        self.idefault_updater(field_options.pop("idefault_update", self.default_idefault_update))
+        self.iquerier(field_options.pop("iquery", self.default_iquery))
 
         self.jsonabler(field_options.pop("jsonable", self.default_jsonable))
 
@@ -556,55 +567,154 @@ class Field(object):
 
         return ret
 
-    def default_iset(self, instance, val, is_update, is_modified):
+    def default_isave(self, instance, val, is_update, is_modified):
+        if is_modified:
+            val = self.imodify(instance, val)
+            if is_update:
+                val = self.imodify_update(instance, val)
+
+            else:
+                val = self.imodify_insert(instance, val)
+
+        else:
+            val = self.idefault(instance, val)
+            if is_update:
+                val = self.idefault_update(instance, val)
+
+            else:
+                val = self.idefault_insert(instance, val)
+
+        return val
+
+    def default_idefault(self, instance, val):
+        return val
+
+    def default_idefault_insert(self, instance, val):
+        return val
+
+    def default_idefault_update(self, instance, val):
+        return val
+
+    def default_imodify(self, instance, val):
+        return val
+
+    def default_imodify_insert(self, instance, val):
+        return val
+
+    def default_imodify_update(self, instance, val):
         return val
 
     def default_iget(self, instance, val):
         return self.fdefault(instance, val)
+
+    def default_iquery(self, val):
+        return val
 
     def default_jsonable(self, instance, val):
         if val is None:
             val = self.fdefault(instance, val)
 
         if val is not None:
-            if isinstance(val, (datetime.date, datetime.datetime)):
+            format_str = ""
+            if isinstance(val, datetime.date):
+                format_str = "%Y-%m-%d"
+            elif isinstance(val, datetime.datetime):
+                format_str = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+            if format_str:
                 try:
-                    val = instance.datestamp(val)
+                    val = datetime.datetime.strftime(val, format_str)
                 except ValueError as e:
                     # strftime can fail on dates <1900
-                    val = str(e)
+                    # Note that Python 2.7, 3.0 and 3.1 have errors before the year 1900,
+                    # Python 3.2 has errors before the year 1000. Additionally, pre-3.2
+                    # versions interpret years between 0 and 99 as between 1969 and 2068.
+                    # Python versions from 3.3 onward support all positive years in
+                    # datetime (and negative years in time.strftime), and time.strftime
+                    # doesn't do any mapping of years between 0 and 99.
+                    # https://stackoverflow.com/a/32206673/5006
+                    logger.exception(e)
+                    val = str(val)
+
         return val
 
-    def fgetter(self, fget):
+    def fgetter(self, v):
         """decorator for setting field's fget function"""
-        self.fget = fget
+        self.fget = v
         return self
 
-    def fsetter(self, fset):
+    def fsetter(self, v):
         """decorator for setting field's fset function"""
-        self.fset = fset
+        self.fset = v
         return self
 
-    def fdeleter(self, fdel):
+    def fdeleter(self, v):
         """decorator for setting field's fdel function"""
-        self.fdel = fdel
+        self.fdel = v
         return self
 
-    def fdefaulter(self, fdefault):
-        """decorator for setting field's fdefault function"""
-        self.fdefault = fdefault
+    def fdefaulter(self, v):
+        """decorator for returning the field's default value
+
+        decorator for setting field's fdefault function"""
+        self.fdefault = v
         return self
 
-    def igetter(self, iget):
-        self.iget = iget
+    def igetter(self, v):
+        """decorator for the method called when a field is pulled from the database"""
+        self.iget = v
         return self
 
-    def isetter(self, iset):
-        self.iset = iset
+    def isaver(self, v):
+        """decorator for the method called when a field is saved into the database"""
+        self.isave = v
         return self
 
-    def jsonabler(self, jsonable):
-        self.jsonable = jsonable
+    def imodifier(self, v):
+        """decorator for the method called when an insert/update database query is going
+        to be used and that field has been modified"""
+        self.imodify = v
+        return self
+
+    def imodify_inserter(self, v):
+        """decorator for the method called when an insert database query is going
+        to be used and that field has been modified"""
+        self.imodify_insert = v
+        return self
+
+    def imodify_updater(self, v):
+        """decorator for the method called when an update database query is going
+        to be used and that field has been modified"""
+        self.imodify_update = v
+        return self
+
+    def idefaulter(self, v):
+        """decorator for the method called when an update/insert database query is going
+        to be used and that field hasn't been touched"""
+        self.idefault = v
+        return self
+
+    def idefault_inserter(self, v):
+        """decorator for the method called when an update/insert database query is going
+        to be used and that field hasn't been touched"""
+        self.idefault_insert = v
+        return self
+
+    def idefault_updater(self, v):
+        """decorator for the method called when an update/insert database query is going
+        to be used and that field hasn't been touched"""
+        self.idefault_update = v
+        return self
+
+    def iquerier(self, v):
+        """decorator for the method called when this field is used in a SELECT query"""
+        self.iquery = v
+        return self
+
+    def jsonabler(self, v):
+        """Decorator for the method called for a field when an Orm's .jsonable method
+        is called"""
+        self.jsonable = v
 
     def fval(self, instance):
         """return the raw value that this property is holding internally for instance"""
@@ -689,12 +799,12 @@ class ObjectField(Field):
         if val is None: return val
         return pickle.loads(base64.b64decode(val))
 
-    def isetter(self, iset):
-        def master_iset(cls, val, is_update, is_modified):
-            v = iset(cls, val, is_update, is_modified)
+    def isaver(self, isave):
+        def master_isave(cls, val, is_update, is_modified):
+            v = isave(cls, val, is_update, is_modified)
             return self.encode(val)
             #return iset(cls, v, is_update, is_modified)
-        return super(ObjectField, self).isetter(master_iset)
+        return super(ObjectField, self).isaver(master_isave)
 
     def igetter(self, iget):
         def master_iget(cls, val):
@@ -718,15 +828,4 @@ class JsonField(ObjectField):
     def decode(self, val):
         if val is None: return val
         return json.loads(val)
-
-
-
-#     def default_iset(self, classtype, val, is_update, is_modified):
-#         if val is None: return val
-#         return json.dumps(val)
-# 
-#     def default_iget(self, classtype, val):
-#         if val is None: return val
-#         return json.loads(val)
-# 
 

@@ -369,24 +369,24 @@ class ObjectFieldTest(EnvironTestCase):
         o2 = type(o).query.get_pk(o.pk)
         self.assertEqual(o.body, o2.body)
 
-    def test_iget_iset_override(self):
+    def test_iget_isave_override(self):
         o = self.get_orm()
         ocls = type(o)
 
         ocls_iget = ocls.body.iget
-        ocls_iset = ocls.body.iset
+        ocls_isave = ocls.body.isave
 
         @ocls.body.igetter
         def body(cls, field_val):
             self.assertTrue(isinstance(field_val, dict))
             return field_val
 
-        @ocls.body.isetter
+        @ocls.body.isaver
         def body(cls, field_val, *args, **kwargs):
             self.assertTrue(isinstance(field_val, dict))
             return field_val
 
-        o.body = {"bar": 1, "igetter": 0, "isetter": 0}
+        o.body = {"bar": 1, "igetter": 0, "isaver": 0}
         o.save()
         self.assertTrue(isinstance(o.body, dict))
 
@@ -394,7 +394,7 @@ class ObjectFieldTest(EnvironTestCase):
         self.assertTrue(isinstance(o2.body, dict))
 
         ocls.body.iget = ocls_iget
-        ocls.body.iset = ocls_iset
+        ocls.body.isave = ocls_isave
 
 
 class JsonFieldTest(ObjectFieldTest):
@@ -410,7 +410,32 @@ class FieldTest(EnvironTestCase):
 #         o.foo = {"bar": 1, "che": 2}
 #         o.save()
 
-    def test_datetime_jsonable(self):
+    def test_imodify(self):
+        instance = None
+
+        def iinsert(instance, v):
+            return v + 1
+
+        f = Field(int, imodify=iinsert)
+
+        v = f.imodify(instance, 100)
+        self.assertEqual(101, v)
+
+        v = f.isave(instance, 100, is_update=False, is_modified=True)
+        self.assertEqual(101, v)
+
+        f = Field(int)
+        @f.imodifier
+        def iinsert(instance, v):
+            return v + 2
+        v = f.imodify(instance, 100)
+        self.assertEqual(102, v)
+
+        f = Field(int, True, imodify=lambda instance, v: v + 3 )
+        v = f.imodify(instance, 100)
+        self.assertEqual(103, v)
+
+    def test_datetime_jsonable_1(self):
         class FDatetimeOrm(Orm):
             foo = Field(datetime.datetime)
 
@@ -418,6 +443,14 @@ class FieldTest(EnvironTestCase):
         o.foo = datetime.datetime.min
         r = o.jsonable()
         self.assertTrue("foo" in r)
+
+    def test_datetime_jsonable_2(self):
+
+        instance = None
+        f = Field(datetime.datetime)
+        v = f.jsonable(instance, datetime.datetime(1800, 1, 1))
+        pout.v(v)
+
 
     def test_default(self):
         class FDefaultOrm(Orm):
@@ -478,7 +511,7 @@ class FieldTest(EnvironTestCase):
         class ICrudOrm(Orm):
             foo = Field(int)
 
-            @foo.isetter
+            @foo.isaver
             def foo(self, v, is_update, is_modified):
                 if is_modified:
                     v = v + 1

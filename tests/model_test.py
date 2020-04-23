@@ -143,7 +143,7 @@ class OrmTest(EnvironTestCase):
         class FOFieldISetOrm(Orm):
             table_name = "FOFieldISetOrm_table"
             foo = Field(int)
-            @foo.isetter
+            @foo.isaver
             def foo(cls, val, is_update, is_modified):
                 val = 100 if is_update else 10
                 return val
@@ -183,7 +183,7 @@ class OrmTest(EnvironTestCase):
             table_name = "IGetSetInsertUpdateOrm_table"
             #interface = self.get_interface()
             foo = Field(str)
-            @foo.isetter
+            @foo.isaver
             def foo(self, val, is_update, is_modified):
                 if val is None: return val
                 return json.dumps(val)
