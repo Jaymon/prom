@@ -768,3 +768,31 @@ class OrmTest(EnvironTestCase):
         with self.assertRaises(ValueError):
             c.fk(Boo)
 
+    def test_subquery(self):
+        count = 10
+        mpath = testdata.create_module(contents=[
+            "from prom import Field, Orm",
+            "",
+            "class Foo(Orm):",
+            "    pass",
+            "",
+            "class Bar(Orm):",
+            "    foo_id = Field(Foo, True)",
+        ])
+
+        Foo = mpath.module.Foo
+        Bar = mpath.module.Bar
+
+        foo_ids = self.insert(Foo, count)
+        for foo_id in foo_ids:
+            Bar.create(foo_id=foo_id)
+
+        q = Bar.query.in_foo_id(Foo.query.select_pk())
+        self.assertEqual(count, len(q.get()))
+
+        q = Bar.query.in_foo_id(Foo.query.select_pk().gt_pk(count + 10000))
+        self.assertEqual(0, len(q.get()))
+
+        q = Bar.query.is_foo_id(Foo.query.select_pk().limit(1))
+        self.assertEqual(1, len(q.get()))
+

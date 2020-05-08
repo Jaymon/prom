@@ -85,13 +85,13 @@ class BaseTestCase(TestCase):
         cls.connections.add(inter)
         return inter
 
-    def get_table(self, table_name=None, **fields_or_indexes):
+    def get_table(self, table_name=None, interface=None, **fields_or_indexes):
         """
         return an interface and schema for a table in the db
 
         return -- tuple -- interface, schema
         """
-        i = self.get_interface()
+        i = interface or self.get_interface()
         s = self.get_schema(table_name, **fields_or_indexes)
         i.set_table(s)
         return i, s

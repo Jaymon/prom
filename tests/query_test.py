@@ -492,12 +492,13 @@ class QueryTest(EnvironTestCase):
         day = int(dt.strftime('%d'))
 
         q = _q.copy()
-        q.is__created(day=day)
+        q.in__created(day=day)
         r = q.get()
         self.assertEqual(1, len(r))
+        return
 
         q = _q.copy()
-        q.in__created(day=day)
+        q.is__created(day=day)
         r = q.get()
         self.assertEqual(1, len(r))
 

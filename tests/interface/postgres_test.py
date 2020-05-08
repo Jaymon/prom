@@ -164,30 +164,6 @@ class InterfacePostgresTest(BaseTestInterface):
         with self.assertRaises(KeyError):
             fstr, fargs = i._normalize_val_SQL(s, {'symbol': 'IN', 'list': True}, 'ts', None, kwargs)
 
-    def test__id_insert(self):
-        """this fails, so you should be really careful if you set _id and make sure you
-        set the auto-increment appropriately"""
-        return 
-        interface, schema = self.get_table()
-        start = 5
-        stop = 10
-        for i in xrange(start, stop):
-            q = query.Query()
-            q.set_fields({
-                '_id': i,
-                'foo': i,
-                'bar': 'v{}'.format(i)
-            })
-            d = interface.set(schema, q)
-
-        for i in xrange(0, stop):
-            q = query.Query()
-            q.set_fields({
-                'foo': stop + 1,
-                'bar': 'v{}'.format(stop + 1)
-            })
-            d = interface.set(schema, q)
-
     def test_no_db_error(self):
         # we want to replace the db with a bogus db error
         i, s = self.get_table()
@@ -200,6 +176,53 @@ class InterfacePostgresTest(BaseTestInterface):
         }
         with self.assertRaises(prom.InterfaceError):
             rd = i.insert(s, fields)
+
+#     def test_subquery(self):
+#         i = self.get_interface()
+#         s1 = self.get_schema()
+#         s2 = self.get_schema(s1_id=Field(s1, True))
+# 
+# #         import random
+# # 
+# #         for n in range(1, 15000):
+# #             fields = {
+# #                 'foo': n,
+# #                 'bar': '{}'.format(n),
+# #             }
+# #             pk = i.insert(s1, fields)
+# # #             if random.randint(0, 1):
+# # #                 time.sleep(0.1)
+# # 
+# #         c = i.query("SELECT count(*) FROM {} WHERE _id IN (SELECT _id from {} WHERE foo>0)".format(
+# #             s1,
+# #             s1
+# #         ), count_query=True)
+# #         pout.v(c)
+# #         return
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+#         #i, s = self.get_table()
+# 
+#         for n in range(1, 1500):
+#             fields = {
+#                 'foo': n,
+#                 'bar': '{}'.format(n),
+#             }
+#             pk = i.insert(s1, fields)
+#             i.insert(s2, {"s1_id": pk})
+# 
+# 
+#         c = i.query("SELECT count(*) FROM {} WHERE _id IN (SELECT s1_id from {} WHERE _id>0)".format(
+#             s1,
+#             s2
+#         ), count_query=True)
+#         pout.v(c)
+
 
 
 class InterfacePGBouncerTest(InterfacePostgresTest):

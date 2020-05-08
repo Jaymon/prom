@@ -408,7 +408,7 @@ class Interface(object):
     @reconnecting()
     def insert(self, schema, fields, **kwargs):
         """
-        Persist d into the db
+        Persist fields into the db
 
         schema -- Schema()
         fields -- dict -- the values to persist
@@ -708,7 +708,7 @@ class SQLInterface(Interface):
                 raise ValueError('Field {} does not support extended kwarg values'.format(field_name))
 
         else:
-            if is_list:
+            if is_list and not isinstance(field_val, Query):
                 field_name, format_val_str = self._normalize_field_SQL(schema, field_name, symbol)
                 format_str = '{} {} ({})'.format(
                     field_name,
@@ -727,12 +727,31 @@ class SQLInterface(Interface):
                     field_name,
                     symbol
                 )
-                format_str = '{} {} {}'.format(
-                    field_name,
-                    symbol,
-                    format_val_str
-                )
-                format_args.append(field_val)
+
+                if isinstance(field_val, Query):
+                    subquery_schema = field_val.schema
+                    if not subquery_schema:
+                        raise ValueError("{} subquery has no schema".format(field_name))
+
+                    subquery_sql, subquery_args = self.get_SQL(
+                        field_val.schema,
+                        field_val
+                    )
+
+                    format_str = '{} {} ({})'.format(
+                        field_name,
+                        symbol,
+                        subquery_sql
+                    )
+                    format_args.extend(subquery_args)
+
+                else:
+                    format_str = '{} {} {}'.format(
+                        field_name,
+                        symbol,
+                        format_val_str
+                    )
+                    format_args.append(field_val)
 
         return format_str, format_args
 

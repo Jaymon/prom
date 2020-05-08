@@ -800,14 +800,19 @@ class Query(object):
         self.fields_where.append(field_name, ["gt", field_name, field_val, field_kwargs])
         return self
 
-    def in_field(self, field_name, field_vals=None, **field_kwargs):
+    def in_field(self, field_name, field_val=None, **field_kwargs):
         """
-        field_vals -- list -- a list of field_val values
+        :param field_val: list, a list of field_val values
         """
-        #field_name = self._normalize_field_name(field_name)
-        fv = make_list(field_vals) if field_vals else None
+        is_list = False
+        if not isinstance(field_val, self.__class__):
+            field_val = make_list(field_val) if field_val else []
+            is_list = True
         # ??? what does this do?
         if field_kwargs:
+            # this normalizes the values of the kwargs so the interface can
+            # treat all the values like a list regardless of you passing in
+            # kwargs or field_val
             for k in field_kwargs:
                 if not field_kwargs[k]:
                     raise ValueError("Cannot IN an empty list")
@@ -815,23 +820,29 @@ class Query(object):
                 field_kwargs[k] = make_list(field_kwargs[k])
 
         else:
-            if not fv: self.can_get = False
+            if not field_val: self.can_get = False
 
-        field_name, fv = self._normalize_field(
+        field_name, field_val = self._normalize_field(
             field_name,
-            field_vals=fv,
+            field_val=field_val,
             field_kwargs=field_kwargs,
+            is_list=is_list,
         )
-        self.fields_where.append(field_name, ["in", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["in", field_name, field_val, field_kwargs])
         return self
 
-    def nin_field(self, field_name, field_vals=None, **field_kwargs):
+    def nin_field(self, field_name, field_val=None, **field_kwargs):
         """
-        field_vals -- list -- a list of field_val values
+        :param field_val: list, a list of field_val values
         """
-        #field_name = self._normalize_field_name(field_name)
-        fv = make_list(field_vals) if field_vals else None
+        if not isinstance(field_val, self.__class__):
+            field_val = make_list(field_val) if field_val else []
+            is_list = True
+
         if field_kwargs:
+            # this normalizes the values of the kwargs so the interface can
+            # treat all the values like a list regardless of you passing in
+            # kwargs or field_val
             for k in field_kwargs:
                 if not field_kwargs[k]:
                     raise ValueError("Cannot IN an empty list")
@@ -839,14 +850,15 @@ class Query(object):
                 field_kwargs[k] = make_list(field_kwargs[k])
 
         else:
-            if not fv: self.can_get = False
+            if not field_val: self.can_get = False
 
         field_name, fv = self._normalize_field(
             field_name,
-            field_vals=fv,
+            field_val=field_val,
             field_kwargs=field_kwargs,
+            is_list=is_list,
         )
-        self.fields_where.append(field_name, ["nin", field_name, fv, field_kwargs])
+        self.fields_where.append(field_name, ["nin", field_name, field_val, field_kwargs])
         return self
 
     def startswith_field(self, field_name, field_val, **field_kwargs):
@@ -894,15 +906,14 @@ class Query(object):
         self.fields_where.append(field_name, ["nlike", field_name, field_val, field_kwargs])
         return self
 
-    def sort_field(self, field_name, direction, field_vals=None):
+    def sort_field(self, field_name, direction, field_val=None):
         """
         sort this query by field_name in directrion
 
-        field_name -- string -- the field to sort on
-        direction -- integer -- negative for DESC, positive for ASC
-        field_vals -- list -- the order the rows should be returned in
+        :param field_name: string, the field to sort on
+        :param direction: integer, negative for DESC, positive for ASC
+        :param field_val: list, the order the rows should be returned in
         """
-        #field_name = self._normalize_field_name(field_name)
         if direction > 0:
             direction = 1
         elif direction < 0:
@@ -912,24 +923,23 @@ class Query(object):
 
         field_name, field_val = self._normalize_field(
             field_name,
-            field_vals=list(field_vals) if field_vals else field_vals,
+            field_val=list(field_val) if field_val else field_val,
         )
-        self.fields_sort.append(field_name, [direction, field_name, field_vals])
+        self.fields_sort.append(field_name, [direction, field_name, field_val])
         return self
 
-    def asc_field(self, field_name, field_vals=None):
-        self.sort_field(field_name, 1, field_vals)
+    def asc_field(self, field_name, field_val=None):
+        self.sort_field(field_name, 1, field_val)
         return self
 
-    def desc_field(self, field_name, field_vals=None):
-        self.sort_field(field_name, -1, field_vals)
+    def desc_field(self, field_name, field_val=None):
+        self.sort_field(field_name, -1, field_val)
         return self
 
     def __getattr__(self, method_name):
         field_method, field_name = self._normalize_field_method(method_name)
         def callback(*args, **kwargs):
             #pout.v(args, kwargs, field_method, field_name)
-            #pout.x()
             return field_method(field_name, *args, **kwargs)
         return callback
 
@@ -979,17 +989,15 @@ class Query(object):
             field_val = field.iquery(field_val)
         return field_val
 
-    def _normalize_field(self, field_name, field_val=None, field_vals=None, field_kwargs=None):
+    def _normalize_field(self, field_name, field_val, field_kwargs=None, is_list=False):
         field_name = self._normalize_field_name(field_name)
 
-        if field_val:
+        if is_list:
+            for i in range(len(field_val)):
+                field_val[i] = self._normalize_field_value(field_name, field_val[i])
+
+        else:
             field_val = self._normalize_field_value(field_name, field_val)
-
-        if field_vals:
-            for i in range(len(field_vals)):
-                field_vals[i] = self._normalize_field_value(field_name, field_vals[i])
-
-            field_val = field_vals
 
         return field_name, field_val
 
