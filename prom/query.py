@@ -805,7 +805,7 @@ class Query(object):
         :param field_val: list, a list of field_val values
         """
         is_list = False
-        if not isinstance(field_val, self.__class__):
+        if not isinstance(field_val, Query):
             field_val = make_list(field_val) if field_val else []
             is_list = True
         # ??? what does this do?
@@ -835,7 +835,7 @@ class Query(object):
         """
         :param field_val: list, a list of field_val values
         """
-        if not isinstance(field_val, self.__class__):
+        if not isinstance(field_val, Query):
             field_val = make_list(field_val) if field_val else []
             is_list = True
 
