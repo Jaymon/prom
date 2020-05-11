@@ -410,6 +410,18 @@ class FieldTest(EnvironTestCase):
 #         o.foo = {"bar": 1, "che": 2}
 #         o.save()
 
+    def test_iquery(self):
+
+        class IqueryOrm(Orm):
+            foo = Field(int)
+
+            @foo.iquerier
+            def foo(query, v):
+                return 10
+
+        q = IqueryOrm.query.is_foo("foo")
+        self.assertEqual(10, q.fields_where.fields[0][2])
+
     def test_imodify(self):
         instance = None
 

@@ -986,7 +986,7 @@ class Query(object):
         schema = self.schema
         if schema:
             field = getattr(schema, field_name)
-            field_val = field.iquery(field_val)
+            field_val = field.iquery(self, field_val)
         return field_val
 
     def _normalize_field(self, field_name, field_val, field_kwargs=None, is_list=False):

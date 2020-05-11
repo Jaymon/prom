@@ -607,7 +607,7 @@ class Field(object):
     def default_iget(self, instance, val):
         return self.fdefault(instance, val)
 
-    def default_iquery(self, val):
+    def default_iquery(self, instance, val):
         return val
 
     def default_jsonable(self, instance, val):
