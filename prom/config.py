@@ -616,14 +616,16 @@ class Field(object):
 
         if val is not None:
             format_str = ""
-            if isinstance(val, datetime.date):
-                format_str = "%Y-%m-%d"
-            elif isinstance(val, datetime.datetime):
+
+            if isinstance(val, datetime.datetime):
                 format_str = "%Y-%m-%dT%H:%M:%S.%fZ"
+            elif isinstance(val, datetime.date):
+                format_str = "%Y-%m-%d"
 
             if format_str:
                 try:
                     val = datetime.datetime.strftime(val, format_str)
+
                 except ValueError as e:
                     # strftime can fail on dates <1900
                     # Note that Python 2.7, 3.0 and 3.1 have errors before the year 1900,
@@ -633,8 +635,31 @@ class Field(object):
                     # datetime (and negative years in time.strftime), and time.strftime
                     # doesn't do any mapping of years between 0 and 99.
                     # https://stackoverflow.com/a/32206673/5006
-                    logger.exception(e)
-                    val = str(val)
+                    logger.warning(e, exc_info=True)
+
+                    # we correct this issue by just giving it a dumb year,
+                    # creating the timestamp and then replacing the year, we can
+                    # do this semi-confidently because our format_str doesn't have
+                    # day of the week (eg, Monday), we account for leap years
+                    # just in case
+                    orig_year = val.year
+                    if (orig_year % 4) == 0:
+                        if (orig_year % 100) == 0:
+                            if (orig_year % 400) == 0:
+                                placeholder_year = 2000
+
+                            else:
+                                placeholder_year = 1900
+
+                        else:
+                            placeholder_year = 2012
+
+                    else:
+                        placeholder_year = 1997
+
+                    dt = val.replace(year=placeholder_year)
+                    val = datetime.datetime.strftime(dt, format_str)
+                    val = re.sub(r"^{}".format(placeholder_year), str(orig_year), val)
 
         return val
 

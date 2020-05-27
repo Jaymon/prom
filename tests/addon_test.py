@@ -64,3 +64,23 @@ class MagicOrmTest(EnvironTestCase):
         self.assertIsNone(o.o1)
         with self.assertRaises(AttributeError):
             o.blahblah
+
+    def test___getattr___error(self):
+        class O4(MagicOrm):
+            @property
+            def foo(self):
+                raise KeyError("This error should not be buried")
+
+        o = O4()
+        with self.assertRaises(KeyError):
+            o.foo
+
+        class O3(MagicOrm):
+            @property
+            def foo(self):
+                raise ValueError("This error should not be buried")
+
+        o = O3()
+        with self.assertRaises(ValueError):
+            o.foo
+

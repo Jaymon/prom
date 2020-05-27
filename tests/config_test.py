@@ -457,12 +457,10 @@ class FieldTest(EnvironTestCase):
         self.assertTrue("foo" in r)
 
     def test_datetime_jsonable_2(self):
-
         instance = None
         f = Field(datetime.datetime)
         v = f.jsonable(instance, datetime.datetime(1800, 1, 1))
-        pout.v(v)
-
+        self.assertEqual("1800-01-01T00:00:00.000000Z", v)
 
     def test_default(self):
         class FDefaultOrm(Orm):

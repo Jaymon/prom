@@ -59,7 +59,7 @@ class MagicOrm(Orm):
                 the pk value for other orm then you can just omit the _id suffix
                 and it will fetch the actual instance from the other orm (eg, if
                 you have .foo_id and do .foo it will return the Foo instance with
-                pk == .foo_id)
+                instance.pk == self.foo_id)
         """
         if k.startswith("is_"):
             field_name = k[3:]
