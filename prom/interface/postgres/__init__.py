@@ -253,6 +253,7 @@ class PostgreSQL(SQLInterface):
         fields = self.query(query_str, *query_args, **kwargs)
 
         pg_types = {
+            "float4": float,
             "float8": float,
             "timestamp": datetime.datetime,
             "int2": int,
