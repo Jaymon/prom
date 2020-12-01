@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
-from unittest import TestCase, SkipTest
 import os
 import sys
 import random
@@ -12,6 +11,7 @@ import tempfile
 from uuid import uuid4
 
 import testdata
+from testdata import TestCase, SkipTest
 
 from prom import query
 from prom.compat import *
@@ -21,6 +21,7 @@ from prom.interface.postgres import PostgreSQL
 from prom.interface.sqlite import SQLite
 from prom.interface.base import Interface
 from prom.interface import get_interfaces
+from prom.utils import make_dict
 import prom
 
 
@@ -119,6 +120,20 @@ class BaseTestCase(TestCase):
         t = orm_class(**fields)
         return t
 
+    def find_orm_class(self, v):
+        if issubclass(v, Orm):
+            orm_class = v
+
+        elif isinstance(v, query.Query):
+            orm_class = v.orm_class
+
+        else:
+            orm_class = getattr(v, "orm_class", None)
+            if not orm_class:
+                raise ValueError("Could not find Orm class")
+
+        return orm_class
+
     def get_schema(self, table_name=None, **fields_or_indexes):
         if not fields_or_indexes:
             fields_or_indexes.setdefault("foo", Field(int, True))
@@ -132,6 +147,23 @@ class BaseTestCase(TestCase):
             **fields_or_indexes
         )
         return s
+
+    def find_schema(self, v):
+        if isinstance(v, Schema):
+            schema = v
+
+        elif isinstance(v, query.Query):
+            schema = v.orm_class.schema
+
+        elif issubclass(v, Orm):
+            schema = v.schema
+
+        else:
+            schema = getattr(v, "schema", None)
+            if not schema:
+                raise ValueError("Could not find Schema")
+
+        return schema
 
     def get_schema_all(self, inter=None):
         """return a schema that has a field for all supported standard field types"""
@@ -213,40 +245,92 @@ class BaseTestCase(TestCase):
     def insert(self, *args, **kwargs):
         """most typically you will call this with (object, count)"""
         pks = []
-        schema = None
-        if isinstance(args[0], Interface):
-            interface = args[0]
-            schema = args[1]
+        if len(args) == 3:
+            o = (interface, schema)
             count = args[2]
 
-            for i in range(count):
-                fields = self.get_fields(schema)
-                pks.append(interface.insert(schema, fields, **kwargs))
+        else:
+            o = args[0]
+            count = args[1]
 
-        elif isinstance(args[0], query.Query):
-            q = args[0].copy()
+        for i in range(count):
+            pks.append(self.insert_fields(o))
+
+        return pks
+#         pks = []
+#         schema = None
+#         if isinstance(args[0], Interface):
+#             interface = args[0]
+#             schema = args[1]
+#             count = args[2]
+# 
+#             for i in range(count):
+#                 fields = self.get_fields(schema)
+#                 pks.append(interface.insert(schema, fields, **kwargs))
+# 
+#         elif isinstance(args[0], query.Query):
+#             q = args[0].copy()
+#             schema = q.orm_class.schema
+#             q.reset()
+#             count = args[1]
+#             for i in range(count):
+#                 fields = self.get_fields(schema)
+#                 pks.append(q.copy().set(fields).insert())
+# 
+#         elif issubclass(args[0], Orm):
+#             orm_class = args[0]
+#             schema = orm_class.schema
+#             count = args[1]
+#             for i in range(count):
+#                 fields = self.get_fields(schema)
+#                 o = orm_class.create(fields)
+#                 pks.append(o.pk)
+# 
+#         assert count == len(pks)
+#         pk_name = schema.pk_name
+#         for pk in pks:
+#             if pk_name:
+#                 assert pk > 0
+#         return pks
+
+    def insert_fields(self, o, fields=None, **fields_kwargs):
+        fields = make_dict(fields, fields_kwargs)
+
+        if isinstance(o, query.Query):
+            q = o.copy()
             schema = q.orm_class.schema
             q.reset()
-            count = args[1]
-            for i in range(count):
-                fields = self.get_fields(schema)
-                pks.append(q.copy().set(fields).insert())
+            fields = self.get_fields(schema, **fields)
+            pk = q.copy().set(fields).insert()
 
-        elif issubclass(args[0], Orm):
-            orm_class = args[0]
-            schema = orm_class.schema
-            count = args[1]
-            for i in range(count):
-                fields = self.get_fields(schema)
+        elif isinstance(o, tuple):
+            interface, schema = o
+            fields = self.get_fields(schema, **fields)
+            pk = interface.insert(schema, fields)
+
+        else:
+            orm_class = None
+            if isinstance(o, Orm):
+                orm_class = type(o)
+                schema = orm_class.schema
+
+            elif issubclass(o, Orm):
+                orm_class = o
+                schema = orm_class.schema
+
+            if orm_class:
+                fields = self.get_fields(schema, **fields)
                 o = orm_class.create(fields)
-                pks.append(o.pk)
+                pk = o.pk
 
-        assert count == len(pks)
+            else:
+                raise ValueError("couldn't insert for object {}".format(o))
+
         pk_name = schema.pk_name
-        for pk in pks:
-            if pk_name:
-                assert pk > 0
-        return pks
+        if pk_name:
+            assert pk > 0
+
+        return pk
 
     def old_insert(self, interface, schema, count, **kwargs):
         """insert count rows into schema using interface"""
@@ -275,7 +359,7 @@ class EnvironTestCase(BaseTestCase):
     def create_interfaces(cls):
         return [
             cls.create_environ_interface("PROM_POSTGRES_DSN"),
-            cls.create_environ_interface("PROM_SQLITE_DSN")
+            #cls.create_environ_interface("PROM_SQLITE_DSN")
         ]
 
     @classmethod

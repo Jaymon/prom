@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
 
-from . import decorators
-from .model import Orm
-from .config import (
+from .. import decorators
+from ..model import Orm
+from ..config import (
     Field,
     ObjectField,
     JsonField,

@@ -12,6 +12,7 @@ from ..query import Query
 from ..exception import InterfaceError
 from ..decorators import reconnecting
 from ..compat import *
+from ..utils import make_list
 
 
 logger = logging.getLogger(__name__)
@@ -540,6 +541,18 @@ class Interface(object):
 
     def _delete(self, schema, query, **kwargs): raise NotImplementedError()
 
+    def render(self, schema, query, **kwargs):
+        """Render the query in a way that the interface can interpret it
+
+        so in a SQL interface, this would render SQL, this is mainly used for
+        debugging
+
+        :param query: Query, the Query instance to render
+        :param **kwargs: any named arguments
+        :returns: mixed
+        """
+        raise NotImplementedError()
+
     def spawn(self):
         """Return a new instance of this Interface with the same connection configuration
 
@@ -675,12 +688,14 @@ class SQLInterface(Interface):
     def _normalize_field_SQL(self, schema, field_name, symbol):
         return self._normalize_name(field_name), self.val_placeholder
 
-    def _normalize_val_SQL(self, schema, symbol_map, field_name, field_val, field_kwargs=None):
-
+    def _normalize_val_SQL(self, schema, symbol_map, field):
         format_str = ''
         format_args = []
         symbol = symbol_map['symbol']
-        is_list = symbol_map.get('list', False)
+        is_list = field.is_list
+        field_name = field.name
+        field_val = field.value
+        field_kwargs = field.kwargs
 
         if field_kwargs:
             # kwargs take precedence because None is a perfectly valid field_val
@@ -691,8 +706,13 @@ class SQLInterface(Interface):
                     if format_str:
                         format_str += ' AND '
 
-
                     if is_list:
+                        # you can pass in things like day=..., month=... to
+                        # date fields, this converts those values to lists to
+                        # make sure we can handle something like in_foo(day=1)
+                        # and in_foo(day=[1, 2, 3]) the same way
+                        farg = make_list(farg)
+
                         format_str += '{} {} ({})'.format(
                             fname,
                             symbol,
@@ -709,6 +729,7 @@ class SQLInterface(Interface):
 
         else:
             if is_list and not isinstance(field_val, Query):
+                field_val = make_list(field_val) if field_val else []
                 field_name, format_val_str = self._normalize_field_SQL(schema, field_name, symbol)
                 format_str = '{} {} ({})'.format(
                     field_name,
@@ -789,8 +810,8 @@ class SQLInterface(Interface):
         symbol_map = {
             'in': {'symbol': 'IN', 'list': True},
             'nin': {'symbol': 'NOT IN', 'list': True},
-            'is': {'symbol': '=', 'none_symbol': 'IS'},
-            'not': {'symbol': '!=', 'none_symbol': 'IS NOT'},
+            'eq': {'symbol': '=', 'none_symbol': 'IS'},
+            'ne': {'symbol': '!=', 'none_symbol': 'IS NOT'},
             'gt': {'symbol': '>'},
             'gte': {'symbol': '>='},
             'lt': {'symbol': '<'},
@@ -808,9 +829,13 @@ class SQLInterface(Interface):
             query_str.append('SELECT')
             select_fields = query.fields_select
             if select_fields:
-                distinct = "DISTINCT " if select_fields.options.get("unique", False) else ""
-                select_fields_str = distinct + ',{}'.format(os.linesep).join(
-                    (self._normalize_name(f) for f in select_fields.names())
+                distinct_fields = select_fields.options.get(
+                    "distinct",
+                    select_fields.options.get("unique", False)
+                )
+                distinct = "DISTINCT " if distinct_fields else ""
+                select_fields_str = distinct + ",\n".join(
+                    (self._normalize_name(f.name) for f in select_fields)
                 )
             else:
                 select_fields_str = "*"
@@ -832,17 +857,20 @@ class SQLInterface(Interface):
 
                 field_str = ''
                 field_args = []
-                sd = symbol_map[field[0]]
+                sd = symbol_map[field.operator]
 
-                # field[0], field[1], field[2], field[3]
-                _, field_name, field_val, field_kwargs = field
                 field_str, field_args = self._normalize_val_SQL(
                     schema,
                     sd,
-                    field_name,
-                    field_val,
-                    field_kwargs
+                    field,
                 )
+#                 field_str, field_args = self._normalize_val_SQL(
+#                     schema,
+#                     sd,
+#                     field.name,
+#                     field.value,
+#                     field.options,
+#                 )
 
                 query_str.append('  {}'.format(field_str))
                 query_args.extend(field_args)
@@ -851,14 +879,14 @@ class SQLInterface(Interface):
             query_sort_str = []
             query_str.append('ORDER BY')
             for field in query.fields_sort:
-                sort_dir_str = 'ASC' if field[0] > 0 else 'DESC'
-                if field[2]:
-                    field_sort_str, field_sort_args = self._normalize_sort_SQL(field[1], field[2], sort_dir_str)
+                sort_dir_str = 'ASC' if field.direction > 0 else 'DESC'
+                if field.value:
+                    field_sort_str, field_sort_args = self._normalize_sort_SQL(field.name, field.value, sort_dir_str)
                     query_sort_str.append(field_sort_str)
                     query_args.extend(field_sort_args)
 
                 else:
-                    query_sort_str.append('  {} {}'.format(field[1], sort_dir_str))
+                    query_sort_str.append('  {} {}'.format(field.name, sort_dir_str))
 
             query_str.append(',{}'.format(os.linesep).join(query_sort_str))
 
@@ -870,7 +898,7 @@ class SQLInterface(Interface):
                 offset
             ))
 
-        query_str = os.linesep.join(query_str)
+        query_str = "\n".join(query_str)
         return query_str, query_args
 
     def handle_error(self, schema, e, **kwargs):
@@ -952,6 +980,27 @@ class SQLInterface(Interface):
             ret = 0
 
         return ret
+
+    def render(self, schema, query, **kwargs):
+        """Render the query
+
+        :param schema: Schema, the query schema
+        :param query: Query, the query to render
+        :param **kwargs: named arguments
+            placeholders: boolean, True if place holders should remain
+        :returns: string if placeholders is False, (string, list) if placeholders is True
+        """
+        sql, sql_args = self.get_SQL(schema, query)
+        placeholders = kwargs.get("placeholders", kwargs.get("placeholder", False))
+
+        if not placeholders:
+            for sql_arg in sql_args:
+                sa = String(sql_arg)
+                if not sa.isnumeric():
+                    sa = "'{}'".format(sa)
+                sql = sql.replace(self.val_placeholder, sa, 1)
+
+        return (sql, sql_args) if placeholders else sql
 
     def _set_all_fields(self, schema, **kwargs):
         """

@@ -12,8 +12,6 @@ try:
 except ImportError as e:
     gevent = None
 
-from testdata.service import InitD
-
 from prom import query
 from prom.compat import *
 from prom.config import Schema, DsnConnection, Field
@@ -21,20 +19,7 @@ from prom.interface.postgres import PostgreSQL
 import prom
 import prom.interface
 
-from . import BaseTestInterface
-
-
-stdnull = open(os.devnull, 'w') # used to suppress subprocess calls
-
-
-def has_spiped():
-    ret = False
-    try:
-        c = subprocess.check_call("which spiped", shell=True, stdout=stdnull)
-        ret = True
-    except subprocess.CalledProcessError:
-        ret = False
-    return ret
+from . import BaseTestInterface, testdata
 
 
 class InterfacePostgresTest(BaseTestInterface):
@@ -90,7 +75,8 @@ class InterfacePostgresTest(BaseTestInterface):
         d = i.get_one(s, q)
         self.assertGreater(len(d), 0)
 
-        InitD("postgresql").restart()
+        testdata.stop_service("postgresql")
+        testdata.start_service("postgresql")
 
         q = query.Query()
         q.is__id(_id)
@@ -99,9 +85,7 @@ class InterfacePostgresTest(BaseTestInterface):
 
     def test_no_connection(self):
         """this will make sure prom handles it gracefully if there is no connection available ever"""
-        postgresql = InitD("postgresql")
-        postgresql.ignore_failure = False
-        postgresql.stop()
+        postgresql = testdata.stop_service("postgresql", ignore_failure=False)
 
         try:
             i = self.create_interface()
@@ -225,6 +209,7 @@ class InterfacePostgresTest(BaseTestInterface):
 
 
 
+@skipIf("PROM_PGBOUNCER_DSN" not in os.environ, "Skipping PGBouncer tests because not configured")
 class InterfacePGBouncerTest(InterfacePostgresTest):
     @classmethod
     def create_interface(cls):
@@ -246,38 +231,6 @@ class InterfacePGBouncerTest(InterfacePostgresTest):
         finally:
             subprocess.check_call("sudo start pgbouncer", shell=True, stdout=stdnull)
             time.sleep(1)
-
-    @skipIf(not has_spiped(), "No Spiped installed")
-    def test_dropped_pipe(self):
-        """handle a secured pipe like spiped or stunnel restarting while there were
-        active connections
-
-        NOTE -- currently this is very specific to our environment, this test will most
-        likely always be skipped unless you're testing on our Vagrant box
-        """
-        # TODO -- make this more reproducible outside of our environment
-        i, s = self.get_table()
-        _id = self.insert(i, s, 1)[0]
-        q = query.Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
-        self.assertGreater(len(d), 0)
-
-        exit_code = subprocess.check_call("sudo restart spiped-pg-server", shell=True, stdout=stdnull)
-        time.sleep(1)
-
-        q = query.Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
-        self.assertGreater(len(d), 0)
-
-        exit_code = subprocess.check_call("sudo restart spiped-pg-client", shell=True, stdout=stdnull)
-        time.sleep(1)
-
-        q = query.Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
-        self.assertGreater(len(d), 0)
 
 
 @skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")

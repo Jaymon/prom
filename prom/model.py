@@ -4,6 +4,8 @@ import inspect
 import sys
 import datetime
 
+from datatypes.collections import Pool
+
 # first party
 from .query import Query, Iterator
 from . import decorators, utils
@@ -12,7 +14,7 @@ from .config import Schema, Field, ObjectField, Index
 from .compat import *
 
 
-class OrmPool(utils.Pool):
+class OrmPool(Pool):
     """
     Create a pool of Orm instances, which is just a dict of primary_key -> Orm instance
     mappings
@@ -22,18 +24,20 @@ class OrmPool(utils.Pool):
     Foos have the same bar_id, but you only want to pull the Bar instance from
     the db once, this allows you to easily do that
 
-    example --
+    :Example:
         bar_pool = Bar.pool(500) # keep the pool contained to the last 500 Bar instances
         for f in Foo.query.all():
             b = bar_pool[f.bar_id]
             print "Foo {} loves Bar {}".format(f.pk, b.pk)
     """
-    def __init__(self, orm_class, size=0):
-        super(OrmPool, self).__init__(size=size)
+    def __init__(self, orm_class, maxsize=0):
+        super(OrmPool, self).__init__(maxsize=maxsize)
         self.orm_class = orm_class
 
-    def create_value(self, pk):
-        return self.orm_class.query.get_pk(pk)
+    def __missing__(self, pk):
+        o = self.orm_class.query.get_pk(pk)
+        self[pk] = o
+        return o
 
 
 class Orm(object):
@@ -160,13 +164,13 @@ class Orm(object):
             self.modify(fields)
 
     @classmethod
-    def pool(cls, size=0):
+    def pool(cls, maxsize=0):
         """
         return a new OrmPool instance
 
         return -- OrmPool -- the orm pool instance will be tied to this Orm
         """
-        return OrmPool(orm_class=cls, size=size)
+        return OrmPool(orm_class=cls, maxsize=maxsize)
 
     @classmethod
     def create(cls, fields=None, **fields_kwargs):
@@ -309,16 +313,16 @@ class Orm(object):
         schema = self.schema
         fields = self.depopulate(False)
 
-
         q = self.query
-        q.set_fields(fields)
+        q.set(fields)
         pk = q.insert()
         if pk:
-            fields = q.fields
+            fields = q.fields_set.fields
             pk_name = schema.pk_name
             if pk_name:
                 fields[pk_name] = pk
-            self.populate_fields(fields)
+                self.populate_fields(fields)
+            self.reset_modified()
 
         else:
             ret = False
@@ -330,7 +334,7 @@ class Orm(object):
         ret = True
         fields = self.depopulate(True)
         q = self.query
-        q.set_fields(fields)
+        q.set(fields)
 
         pk = self.pk
         if pk:
@@ -340,8 +344,9 @@ class Orm(object):
             raise ValueError("You cannot update without a primary key")
 
         if q.update():
-            fields = q.fields
+            fields = q.fields_set.fields
             self.populate_fields(fields)
+            self.reset_modified()
 
         else:
             ret = False

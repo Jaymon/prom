@@ -4,22 +4,18 @@ Classes and stuff that handle querying the interface for a passed in Orm class
 """
 from __future__ import unicode_literals, division, print_function, absolute_import
 import copy
-from collections import defaultdict, Mapping
+from collections import defaultdict, Mapping, OrderedDict
 import datetime
 import logging
 import os
 from contextlib import contextmanager
-import multiprocessing
-from multiprocessing import queues
 import math
 import inspect
 import time
+import re
+import thread
 
-import threading
-try:
-    import thread
-except ImportError:
-    thread = None
+from decorators import deprecated
 
 from . import decorators
 from .utils import make_list, get_objects, make_dict, make_hash
@@ -401,70 +397,12 @@ class AllIterator(ResultsIterator):
         return super(AllIterator, self).values()
 
 
-class Fields(object):
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.fields = []
-        self.fields_map = defaultdict(list)
-        self.options = {}
-
-    def append(self, field_name, field_args):
-        index = len(self.fields)
-        self.fields.append(field_args)
-        self.fields_map[field_name].append(index)
-
-    def __iter__(self):
-        for field in self.fields:
-            yield field
-
-    def names(self):
-        return [f[0] for f in self]
-
-    def __nonzero__(self):
-        return bool(self.fields)
-
-    def __len__(self):
-        return len(self.fields)
-
-    def __getitem__(self, index):
-        return self.fields[index]
-
-    def has(self, field_name):
-        return field_name in self.fields_map
-
-    def __contains__(self, field_name):
-        return self.has(field_name)
-
-    def get(self, field_name):
-        fields = []
-        for index in self.fields_map.get(field_name, []):
-            fields.append(self.fields[index])
-
-        return fields
-
-    def __str__(self):
-        return "{}-{}".format(self.fields, self.options)
 
 
-class FieldsWhere(Fields):
-    """A wrapper around the Fields class that assures fields are only set once, unless
-    they are less than or greater than settings"""
-    def append(self, field_name, field_args):
-        if field_name in self.fields_map:
-            cmd_old = self.fields[self.fields_map[field_name][0]][0]
-            cmd_new = field_args[0]
-            if cmd_old and cmd_new:
-                if not cmd_old.startswith("gt") and not cmd_old.startswith("lt"):
-                    raise ValueError("Field {} has already been set".format(field_name))
-                elif not cmd_new.startswith("gt") and not cmd_new.startswith("lt"):
-                    raise ValueError("Field {} has already been set".format(field_name))
-
-        return super(FieldsWhere, self).append(field_name, field_args)
 
 
-class Limit(object):
+
+class Bounds(object):
 
     @property
     def limit(self):
@@ -561,18 +499,110 @@ class Limit(object):
         return "limit: {}, offset: {}".format(self.limit, self.offset)
 
 
+
+
+
+
+class Field(object):
+    @property
+    def schema(self):
+        return self.query.schema if self.query else None
+
+    def __init__(self, query, field_name, field_val=None, **kwargs):
+        self.query = query
+        self.operator = kwargs.pop("operator", None)
+        self.is_list = kwargs.pop("is_list", False)
+        self.direction = kwargs.pop("direction", None)
+        self.kwargs = kwargs
+
+        self.set_name(field_name)
+        self.set_value(field_val)
+
+    def set_name(self, field_name):
+        field_name, function_name = self.parse(field_name, self.schema)
+        self.function_name = function_name
+        self.name = field_name
+
+    def set_value(self, field_val):
+        if not isinstance(field_val, Query):
+            if self.is_list:
+                if field_val:
+                    field_val = make_list(field_val)
+                    for i in range(len(field_val)):
+                        field_val[i] = self.iquery(field_val[i])
+
+            else:
+                field_val = self.iquery(field_val)
+
+        self.value = field_val
+
+    def iquery(self, field_val):
+        query = self.query
+        schema = self.schema
+        if query and schema:
+            schema_field = getattr(schema, self.name)
+            field_val = schema_field.iquery(query, field_val)
+        return field_val
+
+    def parse(self, field_name, schema):
+        function_name = ""
+        if schema:
+            function_name = ""
+            m = re.match(r"^([^\(]+)\(([^\)]+)\)$", field_name)
+            if m:
+                function_name = m.group(1)
+                field_name = m.group(2)
+
+            field_name = schema.field_name(field_name)
+
+        return field_name, function_name
+
+
+class Fields(list):
+    @property
+    def fields(self):
+        """Returns a dict of field_name: field_value"""
+        ret = {}
+        for f in self:
+            ret[f.name] = f.value
+        return ret
+
+    def __init__(self):
+        self.field_names = defaultdict(list)
+        self.options = {}
+
+    def names(self):
+        return self.field_names.keys()
+
+    def append(self, field):
+        index = len(self)
+        super(Fields, self).append(field)
+        self.field_names[field.name].append(index)
+
+    def __contains__(self, field_name):
+        return field_name in self.field_names
+
+    def __setitem__(self, *args, **kwargs):
+        raise NotImplementedError()
+    __delitem__ = __setitem__
+
+
+
+
 class Query(object):
     """
     Handle standard query creation and allow interface querying
 
     example --
         q = Query(orm_class)
-        q.is_foo(1).desc_bar().set_limit(10).set_page(2).get()
+        q.is_foo(1).desc_bar().limit(10).page(2).get()
     """
+    field_class = Field
     fields_set_class = Fields
-    fields_where_class = FieldsWhere
+    fields_select_class = Fields
+    fields_where_class = Fields
     fields_sort_class = Fields
-    bounds_class = Limit
+    bounds_class = Bounds
 
     @property
     def interface(self):
@@ -604,27 +634,18 @@ class Query(object):
         if not self.orm_class: return None
         return self.orm_class.iterator_class if self.orm_class else Iterator
 
-    @property
-    def fields(self):
-        return dict(self.fields_set)
-
-    @property
-    def fields_select(self):
-        return self.fields_set
-        #return [select_field for select_field, _ in self.fields_set]
-
-    def __init__(self, orm_class=None, *args, **kwargs):
+    def __init__(self, orm_class=None, **kwargs):
 
         # needed to use the db querying methods like get(), if you just want to build
         # a query then you don't need to bother passing this in
         self.orm_class = orm_class
         self.reset()
-        self.args = args
         self.kwargs = kwargs
 
     def reset(self):
         self.interface = None
         self.fields_set = self.fields_set_class()
+        self.fields_select = self.fields_select_class()
         self.fields_where = self.fields_where_class()
         self.fields_sort = self.fields_sort_class()
         self.bounds = self.bounds_class()
@@ -666,249 +687,65 @@ class Query(object):
         # returns a generator, not sure what's up
         return self.get() if self.bounds else self.all().__iter__()
 
-    def unique_field(self, field_name):
-        """set a unique field to be selected, this is automatically called when you do unique_FIELDNAME(...)"""
-        self.fields_set.options["unique"] = True
-        return self.select_field(field_name)
+    def find_operation_method(self, method_name):
+        """Given a method name like <OPERATOR>_<FIELD_NAME> or <FIELD_NAME>_<OPERATOR>,
+        split those into <OPERATOR> and <FIELD_NAME> if there is an existing
+        <OPERATOR>_field method that exists
 
-    def unique(self, field_name):
-        return self.unique_field(field_name)
+        So, for example, gt_foo(<VALUE>) would be split to gt <OPERATOR> and foo
+        <FIELD_NAME> so self.gt_field("foo", ...) could be called
 
-    def select_field(self, field_name):
-        """set a field to be selected, this is automatically called when you do unique_FIELDNAME(...)"""
-        return self.set_field(field_name, None)
-
-    def select(self, *fields):
-        """set multiple fields to be selected"""
-        if fields:
-            if not isinstance(fields[0], basestring): 
-                fields = list(fields[0]) + list(fields)[1:]
-
-        for field_name in fields:
-            field_name = self._normalize_field_name(field_name)
-            self.select_field(field_name)
-        return self
-    select_fields = select # DEPRECATED maybe? -- 3-10-2016 -- use select()
-
-    def set_field(self, field_name, field_val=None):
+        :returns: tuple, (<OPERATOR>, <FIELD_NAME>)
         """
-        set a field into .fields attribute
+        # infinite recursion check, if a *_field method gets in here then it
+        # doesn't exist
+        if method_name.endswith("_field"):
+            raise AttributeError(method_name)
 
-        n insert/update queries, these are the fields that will be inserted/updated into the db
-        """
-        field_name, field_val = self._normalize_field(field_name, field_val)
-        #field_name = self._normalize_field_name(field_name)
-        self.fields_set.append(field_name, [field_name, field_val])
-        return self
+        try:
+            # check for <OPERATOR>_<FIELD_NAME>
+            operator, field_name = method_name.split("_", 1)
 
-    def set(self, fields=None, *fields_args, **fields_kwargs):
-        """
-        completely replaces the current .fields with fields and fields_kwargs combined
-        """
-        if fields_args:
-            fields = [fields]
-            fields.extend(fields_args)
-            for field_name in fields:
-                self.set_field(field_name)
-
-        elif fields_kwargs:
-            fields = make_dict(fields, fields_kwargs)
-            for field_name, field_val in fields.items():
-                self.set_field(field_name, field_val)
+        except ValueError:
+            raise AttributeError("invalid operator method: {}".format(method_name))
 
         else:
-            if isinstance(fields, Mapping):
-                for field_name, field_val in fields.items():
-                    self.set_field(field_name, field_val)
+            if not operator:
+                raise AttributeError('Could not derive command from {}"'.format(
+                    method_name
+                ))
 
-            else:
-                for field_name in fields:
-                    self.set_field(field_name)
+            operator_method_name = "{}_field".format(operator)
+            operator_method = getattr(self, operator_method_name, None)
+            if not operator_method:
+                # let's try reversing the split, so <FIELD_NAME>_<OPERATOR>
+                field_name, operator = method_name.rsplit("_", 1)
+                operator_method_name = "{}_field".format(operator)
+                operator_method = getattr(self, operator_method_name, None)
 
+            if not operator_method:
+                raise AttributeError('No "{}" method derived from "{}"'.format(
+                    operator_method_name,
+                    method_name
+                ))
+
+        return operator_method, field_name
+
+    def create_field(self, field_name, field_val=None, **kwargs):
+        f = self.field_class(self, field_name, field_val, **kwargs)
+        return f
+
+    def append_operation(self, operator, field_name, field_val=None, **kwargs):
+        kwargs["operator"] = operator
+        f = self.create_field(field_name, field_val, **kwargs)
+        self.fields_where.append(f)
         return self
 
-    # DEPRECATED maybe? -- 3-10-2016 -- use set()
-    def set_fields(self, fields=None, *fields_args, **fields_kwargs):
-        return self.set(fields, *fields_args, **fields_kwargs)
-
-    def is_field(self, field_name, field_val=None, **field_kwargs):
-        field_name, field_val = self._normalize_field(
-            field_name,
-            field_val=field_val,
-            field_kwargs=field_kwargs,
-        )
-        #field_name = self._normalize_field_name(field_name)
-        self.fields_where.append(field_name, ["is", field_name, field_val, field_kwargs])
-        return self
-    def eq_field(self, field_name, field_val, **field_kwargs):
-        return self.is_field(field_name, field_val, **field_kwargs)
-
-    def not_field(self, field_name, field_val=None, **field_kwargs):
-        field_name, field_val = self._normalize_field(
-            field_name,
-            field_val=field_val,
-            field_kwargs=field_kwargs,
-        )
-        #field_name = self._normalize_field_name(field_name)
-        self.fields_where.append(field_name, ["not", field_name, field_val, field_kwargs])
-        return self
-    def ne_field(self, field_name, field_val, **field_kwargs):
-        return self.not_field(field_name, field_val, **field_kwargs)
-
-    def between_field(self, field_name, low, high):
-        self.gte_field(field_name, low)
-        self.lte_field(field_name, high)
-        return self
-
-    def lte_field(self, field_name, field_val=None, **field_kwargs):
-        field_name, field_val = self._normalize_field(
-            field_name,
-            field_val=field_val,
-            field_kwargs=field_kwargs,
-        )
-        #field_name = self._normalize_field_name(field_name)
-        self.fields_where.append(field_name, ["lte", field_name, field_val, field_kwargs])
-        return self
-
-    def lt_field(self, field_name, field_val=None, **field_kwargs):
-        field_name, field_val = self._normalize_field(
-            field_name,
-            field_val=field_val,
-            field_kwargs=field_kwargs,
-        )
-        #field_name = self._normalize_field_name(field_name)
-        self.fields_where.append(field_name, ["lt", field_name, field_val, field_kwargs])
-        return self
-
-    def gte_field(self, field_name, field_val=None, **field_kwargs):
-        field_name, field_val = self._normalize_field(
-            field_name,
-            field_val=field_val,
-            field_kwargs=field_kwargs,
-        )
-        #field_name = self._normalize_field_name(field_name)
-        self.fields_where.append(field_name, ["gte", field_name, field_val, field_kwargs])
-        return self
-
-    def gt_field(self, field_name, field_val=None, **field_kwargs):
-        field_name, field_val = self._normalize_field(
-            field_name,
-            field_val=field_val,
-            field_kwargs=field_kwargs,
-        )
-        #field_name = self._normalize_field_name(field_name)
-        self.fields_where.append(field_name, ["gt", field_name, field_val, field_kwargs])
-        return self
-
-    def in_field(self, field_name, field_val=None, **field_kwargs):
-        """
-        :param field_val: list, a list of field_val values
-        """
-        is_list = False
-        if not isinstance(field_val, Query):
-            field_val = make_list(field_val) if field_val else []
-            is_list = True
-        # ??? what does this do?
-        if field_kwargs:
-            # this normalizes the values of the kwargs so the interface can
-            # treat all the values like a list regardless of you passing in
-            # kwargs or field_val
-            for k in field_kwargs:
-                if not field_kwargs[k]:
-                    raise ValueError("Cannot IN an empty list")
-
-                field_kwargs[k] = make_list(field_kwargs[k])
-
-        else:
-            if not field_val: self.can_get = False
-
-        field_name, field_val = self._normalize_field(
-            field_name,
-            field_val=field_val,
-            field_kwargs=field_kwargs,
-            is_list=is_list,
-        )
-        self.fields_where.append(field_name, ["in", field_name, field_val, field_kwargs])
-        return self
-
-    def nin_field(self, field_name, field_val=None, **field_kwargs):
-        """
-        :param field_val: list, a list of field_val values
-        """
-        if not isinstance(field_val, Query):
-            field_val = make_list(field_val) if field_val else []
-            is_list = True
-
-        if field_kwargs:
-            # this normalizes the values of the kwargs so the interface can
-            # treat all the values like a list regardless of you passing in
-            # kwargs or field_val
-            for k in field_kwargs:
-                if not field_kwargs[k]:
-                    raise ValueError("Cannot IN an empty list")
-
-                field_kwargs[k] = make_list(field_kwargs[k])
-
-        else:
-            if not field_val: self.can_get = False
-
-        field_name, fv = self._normalize_field(
-            field_name,
-            field_val=field_val,
-            field_kwargs=field_kwargs,
-            is_list=is_list,
-        )
-        self.fields_where.append(field_name, ["nin", field_name, field_val, field_kwargs])
-        return self
-
-    def startswith_field(self, field_name, field_val, **field_kwargs):
-        return self.like_field(field_name, u"{}%".format(field_val), **field_kwargs)
-
-    def endswith_field(self, field_name, field_val, **field_kwargs):
-        return self.like_field(field_name, u"%{}".format(field_val), **field_kwargs)
-
-    def contains_field(self, field_name, field_val, **field_kwargs):
-        return self.like_field(field_name, u"%{}%".format(field_val), **field_kwargs)
-
-    def like_field(self, field_name, field_val, **field_kwargs):
-        """Perform a field_name LIKE field_val query
-
-        :param field_name: string, the field we are filtering on
-        :param field_val: string, the like query: %val, %val%, val%
-        :returns: self, for fluid interface
-        """
-        if not field_val:
-            raise ValueError("Cannot LIKE nothing")
-        field_name, field_val = self._normalize_field(
-            field_name,
-            field_val=field_val,
-            field_kwargs=field_kwargs,
-        )
-        #field_name = self._normalize_field_name(field_name)
-        self.fields_where.append(field_name, ["like", field_name, field_val, field_kwargs])
-        return self
-
-    def nlike_field(self, field_name, field_val, **field_kwargs):
-        """Perform a field_name NOT LIKE field_val query
-
-        :param field_name: string, the field we are filtering on
-        :param field_val: string, the like query: %val, %val%, val%
-        :returns: self, for fluid interface
-        """
-        if not field_val:
-            raise ValueError("Cannot NOT LIKE nothing")
-        field_name, field_val = self._normalize_field(
-            field_name,
-            field_val=field_val,
-            field_kwargs=field_kwargs,
-        )
-        #field_name = self._normalize_field_name(field_name)
-        self.fields_where.append(field_name, ["nlike", field_name, field_val, field_kwargs])
-        return self
-
-    def sort_field(self, field_name, direction, field_val=None):
+    def append_sort(self, direction, field_name, field_val=None, **kwargs):
         """
         sort this query by field_name in directrion
+
+        used to be named sort_field
 
         :param field_name: string, the field to sort on
         :param direction: integer, negative for DESC, positive for ASC
@@ -921,100 +758,159 @@ class Query(object):
         else:
             raise ValueError("direction {} is undefined".format(direction))
 
-        field_name, field_val = self._normalize_field(
-            field_name,
-            field_val=list(field_val) if field_val else field_val,
-        )
-        self.fields_sort.append(field_name, [direction, field_name, field_val])
+        kwargs["direction"] = direction
+        kwargs["is_list"] = True
+        f = self.create_field(field_name, field_val, **kwargs)
+        self.fields_sort.append(f)
+        return self
+
+    def distinct(self, *field_names):
+        self.fields_select.options["distinct"] = True
+        return self.select(*field_names)
+
+    def select_field(self, field_name):
+        """set a field to be selected, this is automatically called when you do select_FIELDNAME(...)"""
+        field = self.create_field(field_name)
+        self.fields_select.append(field)
+        return self
+
+    def select(self, *field_names):
+        """set multiple fields to be selected"""
+        for field_name in make_list(field_names):
+            self.select_field(field_name)
+        return self
+
+    def set_field(self, field_name, field_val):
+        """
+        set a field into .fields_set attribute
+
+        In insert/update queries, these are the fields that will be inserted/updated into the db
+        """
+        field = self.create_field(field_name, field_val)
+        self.fields_set.append(field)
+        return self
+
+    def set(self, fields=None, **fields_kwargs):
+        """
+        completely replaces the current .fields with fields and fields_kwargs combined
+        """
+        fields = make_dict(fields, fields_kwargs)
+        for field_name, field_val in fields.items():
+            self.set_field(field_name, field_val)
+        return self
+
+    def is_field(self, field_name, field_val=None, **field_kwargs):
+        return self.append_operation("eq", field_name, field_val, **field_kwargs)
+    def eq_field(self, field_name, field_val, **field_kwargs):
+        return self.is_field(field_name, field_val, **field_kwargs)
+
+    def not_field(self, field_name, field_val=None, **field_kwargs):
+        return self.append_operation("ne", field_name, field_val, **field_kwargs)
+    def ne_field(self, field_name, field_val, **field_kwargs):
+        return self.not_field(field_name, field_val, **field_kwargs)
+
+    def between_field(self, field_name, low, high):
+        self.gte_field(field_name, low)
+        self.lte_field(field_name, high)
+        return self
+
+    def lte_field(self, field_name, field_val=None, **field_kwargs):
+        return self.append_operation("lte", field_name, field_val, **field_kwargs)
+
+    def lt_field(self, field_name, field_val=None, **field_kwargs):
+        return self.append_operation("lt", field_name, field_val, **field_kwargs)
+
+    def gte_field(self, field_name, field_val=None, **field_kwargs):
+        return self.append_operation("gte", field_name, field_val, **field_kwargs)
+
+    def gt_field(self, field_name, field_val=None, **field_kwargs):
+        return self.append_operation("gt", field_name, field_val, **field_kwargs)
+
+    def in_field(self, field_name, field_val=None, **field_kwargs):
+        """
+        :param field_val: list, a list of field_val values
+        """
+        if not field_val and not field_kwargs:
+            self.can_get = False
+
+        field_kwargs["is_list"] = True
+        return self.append_operation("in", field_name, field_val, **field_kwargs)
+
+    def nin_field(self, field_name, field_val=None, **field_kwargs):
+        """
+        :param field_val: list, a list of field_val values
+        """
+        if not field_val:
+            self.can_get = False
+
+        field_kwargs["is_list"] = True
+        return self.append_operation("nin", field_name, field_val, **field_kwargs)
+
+    def startswith_field(self, field_name, field_val, **field_kwargs):
+        return self.like_field(field_name, "{}%".format(field_val), **field_kwargs)
+
+    def endswith_field(self, field_name, field_val, **field_kwargs):
+        return self.like_field(field_name, "%{}".format(field_val), **field_kwargs)
+
+    def contains_field(self, field_name, field_val, **field_kwargs):
+        return self.like_field(field_name, "%{}%".format(field_val), **field_kwargs)
+
+    def like_field(self, field_name, field_val, **field_kwargs):
+        """Perform a field_name LIKE field_val query
+
+        :param field_name: string, the field we are filtering on
+        :param field_val: string, the like query: %val, %val%, val%
+        :returns: self, for fluid interface
+        """
+        if not field_val:
+            raise ValueError("Cannot LIKE nothing")
+        return self.append_operation("like", field_name, field_val, **field_kwargs)
+
+    def nlike_field(self, field_name, field_val, **field_kwargs):
+        """Perform a field_name NOT LIKE field_val query
+
+        :param field_name: string, the field we are filtering on
+        :param field_val: string, the like query: %val, %val%, val%
+        :returns: self, for fluid interface
+        """
+        if not field_val:
+            raise ValueError("Cannot NOT LIKE nothing")
+        return self.append_operation("nlike", field_name, field_val, **field_kwargs)
+
+    def asc(self, *field_names):
+        for field_name in field_names:
+            self.asc_field(field_name)
         return self
 
     def asc_field(self, field_name, field_val=None):
-        self.sort_field(field_name, 1, field_val)
+        return self.append_sort(1, field_name, field_val)
+
+    def desc(self, *field_names):
+        for field_name in field_names:
+            self.desc_field(field_name)
         return self
 
     def desc_field(self, field_name, field_val=None):
-        self.sort_field(field_name, -1, field_val)
-        return self
+        return self.append_sort(-1, field_name, field_val)
 
     def __getattr__(self, method_name):
-        field_method, field_name = self._normalize_field_method(method_name)
+        field_method, field_name = self.find_operation_method(method_name)
         def callback(*args, **kwargs):
             #pout.v(args, kwargs, field_method, field_name)
             return field_method(field_name, *args, **kwargs)
         return callback
 
-    def _normalize_field_method(self, method_name):
-        # infinite recursion check, if a *_field method gets in here then it
-        # doesn't exist
-        if method_name.endswith("_field"):
-            raise AttributeError(method_name)
-
-        try:
-            command, field_name = method_name.split("_", 1)
-
-        except ValueError:
-            raise AttributeError("invalid command_method: {}".format(method_name))
-
-        else:
-            if not command:
-                raise AttributeError('Could not derive command from {}"'.format(
-                    method_name
-                ))
-
-            field_method_name = "{}_field".format(command)
-            field_method = getattr(self, field_method_name, None)
-            if not field_method:
-                raise AttributeError('No "{}" method derived from "{}"'.format(
-                    field_method_name,
-                    method_name
-                ))
-
-            # make sure field is legit also, this will raise an attribute error
-            # if it can't find the field in the schema (and self has a schema)
-            field_name = self._normalize_field_name(field_name)
-
-        return field_method, field_name
-
-    def _normalize_field_name(self, field_name):
-        # normalize the field name if we can
-        schema = self.schema
-        if schema:
-            field_name = schema.field_name(field_name)
-        return field_name
-
-    def _normalize_field_value(self, field_name, field_val):
-        schema = self.schema
-        if schema:
-            field = getattr(schema, field_name)
-            field_val = field.iquery(self, field_val)
-        return field_val
-
-    def _normalize_field(self, field_name, field_val, field_kwargs=None, is_list=False):
-        field_name = self._normalize_field_name(field_name)
-
-        if is_list:
-            for i in range(len(field_val)):
-                field_val[i] = self._normalize_field_value(field_name, field_val[i])
-
-        else:
-            field_val = self._normalize_field_value(field_name, field_val)
-
-        return field_name, field_val
-
     def limit(self, limit):
         self.bounds.limit = limit
         return self
-    set_limit = limit # DEPRECATED maybe? -- 3-10-2016 -- use limit()
 
     def offset(self, offset):
         self.bounds.offset = offset
         return self
-    set_offset = offset # DEPRECATED maybe? -- 3-10-2016 -- use offset()
 
     def page(self, page):
         self.bounds.page = page
         return self
-    set_page = page # DEPRECATED maybe? -- 3-10-2016 -- use page()
 
     def cursor(self, limit=None, page=None):
         # TODO -- combine the common parts of this method and get()
@@ -1078,6 +974,7 @@ class Query(object):
             o = self.orm_class.populated(d)
         return o
 
+    @deprecated("see list item 1 in issue 24")
     def values(self, limit=None, page=None):
         """
         convenience method to get just the values from the query (same as get().values())
@@ -1086,6 +983,7 @@ class Query(object):
         """
         return self.get(limit=limit, page=page).values()
 
+    @deprecated("see list item 1 in issue 24")
     def value(self):
         """convenience method to just get one value or tuple of values for the query"""
         field_vals = None
@@ -1103,21 +1001,25 @@ class Query(object):
 
         return field_vals
 
+    @deprecated("see list item 1 in issue 24, and I don't think this is used enough to be officially supported")
     def pks(self, limit=None, page=None):
         """convenience method for setting select_pk().values() since this is so common"""
-        self.fields_set.reset()
+        #self.fields_set.reset()
         return self.select_pk().values(limit, page)
 
+    @deprecated("see list item 1 in issue 24, and I don't think this is used enough to be officially supported")
     def pk(self):
         """convenience method for setting select_pk().value() since this is so common"""
-        self.fields_set.reset()
+        #self.fields_set.reset()
         return self.select_pk().value()
 
+    @deprecated("see issue 112")
     def get_pks(self, field_vals):
         """convenience method for running in__id([...]).get() since this is so common"""
         field_name = self.schema.pk.name
         return self.in_field(field_name, field_vals).get()
 
+    @deprecated("see issue 112")
     def get_pk(self, field_val):
         """convenience method for running is_pk(_id).get_one() since this is so common"""
         field_name = self.schema.pk.name
@@ -1154,7 +1056,7 @@ class Query(object):
     def insert(self):
         """persist the .fields"""
         self.default_val = 0
-        return self.interface.insert(self.schema, self.fields)
+        return self.interface.insert(self.schema, self.fields_set.fields)
 
     def update(self):
         """persist the .fields using .fields_where"""
@@ -1164,7 +1066,7 @@ class Query(object):
         #self.set_fields(fields)
         return self.interface.update(
             self.schema,
-            self.fields,
+            self.fields_set.fields,
             self
         )
         #return self._query('update')
@@ -1173,6 +1075,14 @@ class Query(object):
         """remove fields matching the where criteria"""
         self.default_val = None
         return self._query('delete')
+
+    def render(self, **kwargs):
+        """Render the query
+
+        :returns: string, the rendered query, this is not assured to be a valid query
+            but is handy for quickly debugging what the query roughly looks like
+        """
+        return self.interface.render(self.schema, self, **kwargs)
 
     def raw(self, query_str, *query_args, **query_options):
         """
@@ -1190,101 +1100,6 @@ class Query(object):
         """
         i = self.interface
         return i.query(query_str, *query_args, **query_options)
-
-    def reduce(self, target_map, target_reduce, threads=0):
-        """map/reduce this query among a bunch of processes
-
-        :param target_map: callable, this function will be called once for each 
-            row this query pulls out of the db, if you want something about the row
-            to be seen by the target_reduce function return that value from this function
-            and it will be queued for the target_reduce function to process it
-        :param target_reduce: callable, this function will be called for any non 
-            None value that the target_map function returns
-        :param threads: integer, if not passed in this will be pegged to how many
-            cpus python detects, which is almost always what you want
-        """
-        if not threads:
-            threads = multiprocessing.cpu_count()
-
-        # we subtract one for the main process
-        map_threads = threads - 1 if threads > 1 else 1
-
-        q = self.copy()
-        limit = q.bounds.limit
-        offset = q.bounds.offset
-
-        total_count = limit if limit else q.count()
-        limit_count = int(math.ceil(float(total_count) / float(map_threads)))
-        logger.info("{} processes will handle {} rows each for a total of {}".format(
-            map_threads,
-            limit_count,
-            total_count
-        ))
-
-        queue = multiprocessing.JoinableQueue()
-
-        # close all open db global connections just in case, because we can't be sure
-        # what the target_map methods are going to do, we want them to re-open connections
-        # that they need
-        interfaces = get_interfaces()
-        for name, inter in interfaces.items():
-            inter.close()
-
-        # just in case we also close the query connection since it can in theory
-        # be non-global
-        q.interface.close()
-
-        ts = []
-        for page in range(map_threads):
-            q = self.copy()
-            q.limit(limit_count).offset(offset + (limit_count * page))
-            t = ReduceThread(
-                target=target_map,
-                query=q,
-                queue=queue,
-            )
-            t.start()
-            ts.append(t)
-
-        while ts or not queue.empty():
-            try:
-                val = queue.get(True, 1.0)
-                target_reduce(val)
-
-            except queues.Empty:
-                pass
-
-            else:
-                queue.task_done()
-
-            # faster than using any((t.is_alive() for t in mts))
-            ts = [t for t in ts if t.is_alive()]
-
-    def watch(self, interval=60, timeout=0, cursor_field_name="pk"):
-        inter = self.interface.spawn()
-        start = time.time()
-
-        # we want a new connection for this
-        try:
-            cursor_field_val = None
-            while True:
-                query = self.copy()
-                query.interface = inter
-                if cursor_field_val is not None:
-                    query.gt_field(cursor_field_name, cursor_field_val)
-
-                for instance in query.get():
-                    yield instance
-                    cursor_field_val = getattr(instance, cursor_field_name)
-
-                time.sleep(interval)
-                stop = time.time()
-                if timeout:
-                    if (stop - start) > timeout:
-                        break
-
-        finally:
-            inter.close()
 
     def _query(self, method_name, **kwargs):
         if not self.can_get: return self.default_val
@@ -1304,47 +1119,12 @@ class Query(object):
                 setattr(instance, key, copy.deepcopy(val, memodict))
         return instance
 
+    def __unicode__(self):
+        return self.render()
 
-class ReduceThread(multiprocessing.Process):
-    """Runs one of the reduce processes created in Query.reduce()
-
-    You probably don't need to worry about this class
-    """
-    def __init__(self, target, query, queue):
-
-        name = "Reduce-{}to{}".format(
-            query.bounds.offset,
-            query.bounds.offset + query.bounds.limit
-        )
-
-        logger.debug("Starting process: {}".format(name))
-
-        def wrapper_target(target, query, queue):
-            # create a new connection just for this thread
-            #query.interface = query.interface.spawn()
-            for orm in query.all():
-                val = target(orm)
-                if val:
-                    try:
-                        # queue size taps out at 32767, booooo
-                        # http://stackoverflow.com/questions/5900985/multiprocessing-queue-maxsize-limit-is-32767
-                        #queue.put_nowait(val)
-                        queue.put(val, True, 1.0)
-                    except queues.Full as e:
-                        logger.exception(e)
-                        #queue.close()
-                        # If we ever hit a full queue you lose a ton of data but if you
-                        # don't call this method then the process just hangs
-                        queue.cancel_join_thread()
-                        break
-
-            query.interface.close()
-
-        super(ReduceThread, self).__init__(target=wrapper_target, name=name, kwargs={
-            "target": target,
-            "query": query,
-            "queue": queue,
-        })
+    def __str__(self):
+        ret = self.__unicode__()
+        return ByteString(ret) if is_py2 else ret
 
 
 class BaseCacheQuery(Query):

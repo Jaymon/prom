@@ -35,23 +35,23 @@ class OrmPoolTest(BaseTestCase):
         self.assertEqual(pks[0], o.pk)
 
         pool[pks[1]]
-        self.assertEqual([2], pool.pq.keys())
+        self.assertEqual([2], list(pool.pq.keys()))
 
         pool[pks[0]]
-        self.assertEqual([1], pool.pq.keys())
+        self.assertEqual([1], list(pool.pq.keys()))
 
         pool[pks[1]]
-        self.assertEqual([2], pool.pq.keys())
+        self.assertEqual([2], list(pool.pq.keys()))
 
         pool[pks[0]]
-        self.assertEqual([1], pool.pq.keys())
+        self.assertEqual([1], list(pool.pq.keys()))
 
         pool = OrmPool(orm_class, len(pks) - 1)
         for pk in pks:
             o = pool[pk]
             self.assertEqual(pk, o.pk)
 
-        self.assertEqual(pool.pq.keys()[0], pks[1])
+        self.assertEqual(list(pool.pq.keys())[0], pks[1])
 
 
 class OrmTest(EnvironTestCase):

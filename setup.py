@@ -45,7 +45,7 @@ setup(
     #test_suite = "{}_test".format(name),
     entry_points = {
         'console_scripts': [
-            '{} = {}.__main__:console'.format(name, name),
+            # '{} = {}.__main__:console'.format(name, name),
         ],
     },
 )
