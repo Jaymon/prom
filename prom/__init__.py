@@ -11,7 +11,7 @@ from .config import (
     JsonField,
     Index
 )
-from .query import Query, CacheQuery
+from .query import Query
 from . import decorators
 from .model import Orm
 from .interface import (

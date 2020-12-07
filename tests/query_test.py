@@ -14,7 +14,6 @@ from prom.query import (
     Bounds,
     Field,
     Fields,
-    CacheQuery,
     Iterator,
     AllIterator,
 )
@@ -1083,72 +1082,5 @@ class IteratorTest(BaseTestCase):
         i = q.get(0, 0)
         self.assertFalse(i.has_more)
 
-
-class CacheQueryTest(QueryTest):
-    def setUp(self):
-        CacheQuery.cached = {} # clear cache between tests
-        super(CacheQueryTest, self).setUp()
-
-    def get_orm_class(self, *args, **kwargs):
-        orm_class = super(CacheQueryTest, self).get_orm_class(*args, **kwargs)
-        orm_class.query_class = CacheQuery
-        orm_class.query_class.cache_activate(True)
-        return orm_class
-
-    def test_cache_hit(self):
-        orm_class = self.get_orm_class()
-        self.insert(orm_class, 10)
-
-        start = time.time()
-        q = orm_class.query
-        ref_pks = q.pks()
-        stop = time.time()
-        ref_duration = stop - start
-
-        self.assertEqual(10, len(ref_pks))
-        self.assertFalse(q.cache_hit)
-
-        ref_pks = list(ref_pks)
-        for x in range(10):
-            start = time.time()
-            q = orm_class.query
-            pks = q.pks()
-            stop = time.time()
-            duration = stop - start
-            #self.assertLess(duration, ref_duration)
-            self.assertTrue(q.cache_hit)
-            self.assertEqual(ref_pks, list(pks))
-
-    def test_cache_contextmanager(self):
-        orm_class = self.get_orm_class()
-        orm_class.query_class.cache_activate(False)
-        self.insert(orm_class, 10)
-
-        with orm_class.query.cache(60):
-            self.assertTrue(orm_class.query_class.cache_namespace.active)
-
-        self.assertFalse(orm_class.query_class.cache_namespace.active)
-
-    def test_cache_threading(self):
-
-        orm_class = self.get_orm_class()
-        orm_class.query_class.cache_activate(False)
-
-        def one():
-            with orm_class.query.cache():
-                time.sleep(0.5)
-                self.assertTrue(orm_class.query_class.cache_namespace.active)
-
-        for x in range(500):
-            self.assertFalse(orm_class.query_class.cache_namespace.active)
-
-        t1 = Thread(target=one)
-        t1.start()
-        t1.join()
-
-        self.assertFalse(orm_class.query_class.cache_namespace.active)
-
-        #pout.v(orm_class.query.cache_namespace)
-        #pout.v(orm_class.query.cache_namespace)
 
 
