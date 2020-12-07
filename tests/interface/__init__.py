@@ -325,7 +325,7 @@ class BaseTestInterface(BaseTestCase):
 #         i, s = self.get_table()
 #         q = query.Query()
 # 
-#         q.set_fields({
+#         q.set({
 #             'foo': 1,
 #             'bar': 'this is the value',
 #         })
@@ -355,7 +355,7 @@ class BaseTestInterface(BaseTestCase):
         self.assertTrue('ASC' in sql)
         self.assertTrue('DESC' in sql)
 
-        q.set_limit(222).set_offset(111)
+        q.limit(222).offset(111)
 
         sql, sql_args = i.get_SQL(s, q)
         self.assertTrue('LIMIT' in sql)
@@ -382,21 +382,21 @@ class BaseTestInterface(BaseTestCase):
         """make sure get_one() works as expected when an offset is set"""
         i, s = self.get_table()
         q = query.Query()
-        q.set_fields({
+        q.set({
             'foo': 1,
             'bar': 'v1',
         })
-        pk = i.insert(s, q.fields)
+        pk = i.insert(s, q.fields_set.fields)
 
         q = query.Query()
-        q.set_fields({
+        q.set({
             'foo': 2,
             'bar': 'v2',
         })
-        pk2 = i.insert(s, q.fields)
+        pk2 = i.insert(s, q.fields_set.fields)
 
         q = query.Query()
-        q.desc__id().set_offset(1)
+        q.desc__id().offset(1)
         d = i.get_one(s, q)
         self.assertEqual(d['_id'], pk)
 
@@ -407,22 +407,22 @@ class BaseTestInterface(BaseTestCase):
         self.assertEqual(d['_id'], pk2)
 
         q = query.Query()
-        q.desc__id().set_offset(2)
+        q.desc__id().offset(2)
         d = i.get_one(s, q)
         self.assertEqual({}, d)
 
         q = query.Query()
-        q.desc__id().set_offset(1).set_limit(5)
+        q.desc__id().offset(1).limit(5)
         d = i.get_one(s, q)
         self.assertEqual(d['_id'], pk)
 
         q = query.Query()
-        q.desc__id().set_page(2)
+        q.desc__id().page(2)
         d = i.get_one(s, q)
         self.assertEqual(d['_id'], pk)
 
         q = query.Query()
-        q.desc__id().set_page(2).set_limit(5)
+        q.desc__id().page(2).limit(5)
         d = i.get_one(s, q)
         self.assertEqual({}, d)
 
@@ -437,7 +437,7 @@ class BaseTestInterface(BaseTestCase):
         for d in l:
             self.assertTrue(d[s._id.name] in _ids)
 
-        q.set_limit(2)
+        q.limit(2)
         l = i.get(s, q)
         self.assertEqual(2, len(l))
         for d in l:
@@ -458,10 +458,10 @@ class BaseTestInterface(BaseTestCase):
         _ids = self.insert(i, s, 12)
 
         q = query.Query()
-        q.set_limit(5)
+        q.limit(5)
         count = 0
         for p in range(1, 5):
-            q.set_page(p)
+            q.page(p)
             l = i.get(s, q)
             for d in l:
                 self.assertTrue(d[s._id.name] in _ids)
@@ -534,7 +534,7 @@ class BaseTestInterface(BaseTestCase):
             'foo': 2,
             'bar': 'value 2',
         }
-        q.set_fields(d)
+        q.set(d)
         q.is__id(pk)
 
         row_count = i.update(s, d, q)
@@ -658,7 +658,7 @@ class BaseTestInterface(BaseTestCase):
         i, s = self.get_table()
         s.set_field("che", Field(str, True))
         q = query.Query()
-        q.set_fields({
+        q.set({
             'foo': 1,
             'bar': 'v1',
             'che': "this field will cause the query to fail",
@@ -964,46 +964,46 @@ class BaseTestInterface(BaseTestCase):
 
         for x in range(2, 9):
             q3 = q.copy()
-            rows = list(q3.select_foo().asc_foo().set_limit(1).set_page(x).values())
+            rows = list(q3.select_foo().asc_foo().limit(1).page(x).values())
             #pout.v(x, foos[x], rows[0])
             self.assertEqual(foos[x - 1], rows[0])
 
             q3 = q.copy()
-            row = q3.select_foo().asc_foo().set_limit(1).set_page(x).value()
+            row = q3.select_foo().asc_foo().limit(1).page(x).value()
             self.assertEqual(foos[x - 1], row)
 
             q3 = q.copy()
-            row = q3.select_foo().asc_foo().set_limit(1).set_page(x).value()
+            row = q3.select_foo().asc_foo().limit(1).page(x).value()
             self.assertEqual(foos[x - 1], row)
 
             q3 = q.copy()
-            rows = list(q3.select_foo().in_foo(foos).asc_foo(foos).set_limit(1).set_page(x).values())
+            rows = list(q3.select_foo().in_foo(foos).asc_foo(foos).limit(1).page(x).values())
             self.assertEqual(foos[x - 1], rows[0])
 
             q3 = q.copy()
-            row = q3.select_foo().in_foo(foos).asc_foo(foos).set_limit(1).set_page(x).value()
+            row = q3.select_foo().in_foo(foos).asc_foo(foos).limit(1).page(x).value()
             self.assertEqual(foos[x - 1], row)
 
         for x in range(1, 9):
             q3 = q.copy()
-            rows = list(q3.select_foo().asc_foo().set_limit(x).set_offset(x).values())
+            rows = list(q3.select_foo().asc_foo().limit(x).offset(x).values())
             #pout.v(x, foos[x], rows[0])
             self.assertEqual(foos[x], rows[0])
 
             q3 = q.copy()
-            row = q3.select_foo().asc_foo().set_limit(x).set_offset(x).value()
+            row = q3.select_foo().asc_foo().limit(x).offset(x).value()
             self.assertEqual(foos[x], row)
 
             q3 = q.copy()
-            row = q3.select_foo().asc_foo().set_limit(x).set_offset(x).value()
+            row = q3.select_foo().asc_foo().limit(x).offset(x).value()
             self.assertEqual(foos[x], row)
 
             q3 = q.copy()
-            rows = list(q3.select_foo().in_foo(foos).asc_foo(foos).set_limit(1).set_offset(x).values())
+            rows = list(q3.select_foo().in_foo(foos).asc_foo(foos).limit(1).offset(x).values())
             self.assertEqual(foos[x], rows[0])
 
             q3 = q.copy()
-            row = q3.select_foo().in_foo(foos).asc_foo(foos).set_limit(1).set_offset(x).value()
+            row = q3.select_foo().in_foo(foos).asc_foo(foos).limit(1).offset(x).value()
             self.assertEqual(foos[x], row)
 
     def test_sort_list(self):
@@ -1067,7 +1067,9 @@ class BaseTestInterface(BaseTestCase):
         i, s = self.get_table()
         _id = None
         with i.transaction() as connection:
-            _id = self.insert(i, s, 1, connection=connection)[0]
+            fields = self.get_fields(s)
+            _id = i.insert(s, fields, connection=connection)
+            #_id = self.insert(i, s, 1, connection=connection)[0]
 
         self.assertTrue(_id)
 
@@ -1078,7 +1080,9 @@ class BaseTestInterface(BaseTestCase):
 
         with self.assertRaises(RuntimeError):
             with i.transaction() as connection:
-                _id = self.insert(i, s, 1, connection=connection)[0]
+                fields = self.get_fields(s)
+                _id = i.insert(s, fields, connection=connection)
+                #_id = self.insert(i, s, 1, connection=connection)[0]
                 raise RuntimeError("this should fail")
 
         q = query.Query()

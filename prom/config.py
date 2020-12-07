@@ -225,6 +225,14 @@ class Schema(object):
 
     @classmethod
     def get_instance(cls, orm_class):
+        """return a Schema singleton instance for the given orm_class
+
+        if there isn't already an instance in cache then a new instance will be
+        created. If a Schema instance is already in cache then it will be returned
+
+        :param orm_class: Orm, the class to create the schema for
+        :returns: Schema
+        """
         table_name = orm_class.table_name
         if table_name not in cls.instances:
             s = cls(table_name)
@@ -266,7 +274,7 @@ class Schema(object):
         """
         self.fields = {}
         self.indexes = {}
-        self.table_name = str(table_name)
+        self.table_name = String(table_name)
 
         for name, val in fields_or_indexes.items():
             self.set(name, val)
@@ -350,6 +358,39 @@ class Schema(object):
         allowance for k's like "pk" which will return _id
         """
         return self.__getattr__(k).name
+
+    def create_orm(self, orm_class=None):
+        """If you have a schema but don't have an Orm for it, you can call this method
+        and have an orm_class created that will have the fields and table_name of this
+        schema
+
+        :param orm_class: Orm, if you want your generated class to have a certain
+            parent class you can pass in the parent class you want
+        :returns: Orm, your child orm populated with information from this schema
+        """
+        if not orm_class:
+            from .model import Orm # avoid circular dependency
+            orm_class = Orm
+
+        child_class = type(
+            ByteString(self.table_name),
+            (orm_class,),
+            {"table_name": self.table_name, "schema": self}
+        )
+
+        # clear all the Field and Index properties in anticipation of adding the
+        # fields from the Schema
+        for klass in inspect.getmro(child_class):
+            for k, v in vars(klass).items():
+                if isinstance(v, (Field, Index)):
+                    #setattr(child_class, k, property(lambda: AttributeError))
+                    setattr(child_class, k, None)
+                    #delattr(child_class, k)
+
+        for field_name, field in self:
+            setattr(child_class, field_name, field)
+
+        return child_class
 
 
 class Index(object):

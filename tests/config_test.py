@@ -90,9 +90,24 @@ class SchemaTest(BaseTestCase):
         s = self.get_schema()
         self.assertEqual(s._id, s.pk)
 
+    def test_create_orm_1(self):
+        s = self.get_schema()
+        o = s.create_orm()
+        self.assertEqual(s, o.schema)
+        self.assertEqual(s.table_name, o.table_name)
+        self.assertEqual(s.fields.keys(), o().fields.keys())
+
+    def test_create_orm_2(self):
+        self.assertTrue(hasattr(Orm, "_id"))
+
+        s = self.get_schema(_id=None)
+        o = s.create_orm()
+
+        self.assertEqual(None, o._id)
+        self.assertTrue(hasattr(Orm, "_id"))
+
 
 class DsnConnectionTest(BaseTestCase):
-
     def test_environ(self):
         os.environ['PROM_DSN'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i0"
         os.environ['PROM_DSN_1'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i1"
@@ -420,7 +435,7 @@ class FieldTest(EnvironTestCase):
                 return 10
 
         q = IqueryOrm.query.is_foo("foo")
-        self.assertEqual(10, q.fields_where.fields[0][2])
+        self.assertEqual(10, q.fields_where[0].value)
 
     def test_imodify(self):
         instance = None

@@ -106,14 +106,20 @@ class BaseTestCase(TestCase):
 
     def get_orm_class(self, table_name=None):
         tn = self.get_table_name(table_name)
-        class Torm(Orm):
-            table_name = tn
-            interface = self.get_interface()
-            foo = Field(int, True)
-            bar = Field(str, True)
-            ifoobar = Index("foo", "bar")
 
-        return Torm
+        orm_class = type(
+            ByteString(tn),
+            (Orm,),
+            {
+                "table_name": tn,
+                "interface": self.get_interface(),
+                "foo": Field(int, True),
+                "bar": Field(str, True),
+                "ifoobar": Index("foo", "bar"),
+            }
+        )
+
+        return orm_class
 
     def get_orm(self, table_name=None, **fields):
         orm_class = self.get_orm_class(table_name)
@@ -142,6 +148,11 @@ class BaseTestCase(TestCase):
 
         fields_or_indexes.setdefault("_id", Field(long, True, pk=True))
 
+        # remove any None values
+        for k in list(fields_or_indexes.keys()):
+            if not fields_or_indexes[k]:
+                fields_or_indexes.pop(k)
+
         s = Schema(
             self.get_table_name(table_name),
             **fields_or_indexes
@@ -167,6 +178,8 @@ class BaseTestCase(TestCase):
 
     def get_schema_all(self, inter=None):
         """return a schema that has a field for all supported standard field types"""
+
+        # this is for foreign key fields
         orm_class = self.get_orm_class()
         if inter:
             orm_class.interface = inter
@@ -246,7 +259,8 @@ class BaseTestCase(TestCase):
         """most typically you will call this with (object, count)"""
         pks = []
         if len(args) == 3:
-            o = (interface, schema)
+            #o = (interface, schema)
+            o = (args[0], args[1])
             count = args[2]
 
         else:

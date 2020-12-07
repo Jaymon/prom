@@ -13,6 +13,7 @@ except ImportError as e:
     gevent = None
 
 from prom import query
+from prom.query import Query, Field as QueryField
 from prom.compat import *
 from prom.config import Schema, DsnConnection, Field
 from prom.interface.postgres import PostgreSQL
@@ -60,7 +61,7 @@ class InterfacePostgresTest(BaseTestInterface):
             'six': 4000000000,
         }
         pk = i.insert(s, d)
-        q = query.Query()
+        q = Query()
         q.is__id(pk)
         odb = i.get_one(s, q)
         for k, v in d.items():
@@ -70,7 +71,7 @@ class InterfacePostgresTest(BaseTestInterface):
         """make sure interface can recover if the db disconnects mid script execution"""
         i, s = self.get_table()
         _id = self.insert(i, s, 1)[0]
-        q = query.Query()
+        q = Query()
         q.is__id(_id)
         d = i.get_one(s, q)
         self.assertGreater(len(d), 0)
@@ -78,7 +79,7 @@ class InterfacePostgresTest(BaseTestInterface):
         testdata.stop_service("postgresql")
         testdata.start_service("postgresql")
 
-        q = query.Query()
+        q = Query()
         q.is__id(_id)
         d = i.get_one(s, q)
         self.assertGreater(len(d), 0)
@@ -86,67 +87,61 @@ class InterfacePostgresTest(BaseTestInterface):
     def test_no_connection(self):
         """this will make sure prom handles it gracefully if there is no connection available ever"""
         postgresql = testdata.stop_service("postgresql", ignore_failure=False)
+        time.sleep(1)
 
         try:
             i = self.create_interface()
             s = self.get_schema()
-            q = query.Query()
+            q = Query()
             with self.assertRaises(prom.InterfaceError):
                 i.get(s, q)
 
         finally:
             postgresql.start()
 
-    def test__normalize_val_SQL(self):
+    def test__normalize_val_SQL_eq(self):
         i = self.get_interface()
         s = Schema(
             "fake_table_name",
             ts=Field(datetime.datetime, True)
         )
+        orm_class = s.create_orm()
 
-        #kwargs = dict(day=int(datetime.datetime.utcnow().strftime('%d')))
-        kwargs = dict(day=10)
-        fstr, fargs = i._normalize_val_SQL(s, {'symbol': '='}, 'ts', None, kwargs)
-        self.assertEqual('EXTRACT(DAY FROM "ts") = %s', fstr)
+        fstr, fargs = orm_class.query.is_ts(day=10).render(placeholder=True)
+        self.assertTrue('EXTRACT(DAY FROM "ts") = %s' in fstr)
         self.assertEqual(10, fargs[0])
 
-        kwargs = dict(day=11, hour=12)
-        fstr, fargs = i._normalize_val_SQL(s, {'symbol': '='}, 'ts', None, kwargs)
-        self.assertEqual('EXTRACT(DAY FROM "ts") = %s AND EXTRACT(HOUR FROM "ts") = %s', fstr)
+        fstr, fargs = orm_class.query.is_ts(day=11, hour=12).render(placeholder=True)
+        self.assertTrue('EXTRACT(DAY FROM "ts") = %s AND EXTRACT(HOUR FROM "ts") = %s' in fstr)
         self.assertEqual(11, fargs[0])
         self.assertEqual(12, fargs[1])
 
-        fstr, fargs = i._normalize_val_SQL(s, {'symbol': '=', 'none_symbol': 'IS'}, 'ts', None)
-        self.assertEqual('"ts" IS %s', fstr)
+        fstr, fargs = orm_class.query.is_ts(None).render(placeholder=True)
+        self.assertTrue('"ts" IS %s' in fstr)
 
-        fstr, fargs = i._normalize_val_SQL(s, {'symbol': '!=', 'none_symbol': 'IS NOT'}, 'ts', None)
-        self.assertEqual('"ts" IS NOT %s', fstr)
+        fstr, fargs = orm_class.query.not_ts(None).render(placeholder=True)
+        self.assertTrue('"ts" IS NOT %s' in fstr)
 
-        kwargs = dict(bogus=5)
         with self.assertRaises(KeyError):
-            fstr, fargs = i._normalize_val_SQL(s, {'symbol': '='}, 'ts', None, kwargs)
+            fstr, fargs = orm_class.query.is_ts(bogus=5).render(placeholder=True)
 
-    def test__normalize_val_SQL_with_list(self):
+    def test__normalize_val_SQL_in(self):
         i = self.get_interface()
         s = Schema(
             "fake_table_name",
             ts=Field(datetime.datetime, True)
         )
+        orm_class = s.create_orm()
 
-        kwargs = dict(day=[10])
-        fstr, fargs = i._normalize_val_SQL(s, {'symbol': 'IN', 'list': True}, 'ts', None, kwargs)
-        self.assertEqual('EXTRACT(DAY FROM "ts") IN (%s)', fstr)
-        self.assertEqual(kwargs['day'], fargs)
+        fstr, fargs = orm_class.query.in_ts(day=10).render(placeholder=True)
+        self.assertTrue('EXTRACT(DAY FROM "ts") IN (%s)' in fstr)
 
-        kwargs = dict(day=[11, 13], hour=[12])
-        fstr, fargs = i._normalize_val_SQL(s, {'symbol': 'IN', 'list': True}, 'ts', None, kwargs)
-        self.assertEqual('EXTRACT(DAY FROM "ts") IN (%s, %s) AND EXTRACT(HOUR FROM "ts") IN (%s)', fstr)
-        self.assertEqual(kwargs['day'], fargs[0:2])
-        self.assertEqual(kwargs['hour'], fargs[2:])
+        fstr, fargs = orm_class.query.in_ts(day=[11, 13], hour=12).render(placeholder=True)
+        self.assertTrue('EXTRACT(DAY FROM "ts") IN (%s, %s) AND EXTRACT(HOUR FROM "ts") IN (%s)' in fstr)
+        self.assertEqual([11, 13, 12], fargs)
 
-        kwargs = dict(bogus=[5])
         with self.assertRaises(KeyError):
-            fstr, fargs = i._normalize_val_SQL(s, {'symbol': 'IN', 'list': True}, 'ts', None, kwargs)
+            fstr, fargs = orm_class.query.in_ts(bogus=5).render(placeholder=True)
 
     def test_no_db_error(self):
         # we want to replace the db with a bogus db error
@@ -279,7 +274,7 @@ class XInterfacePostgresGeventTest(InterfacePostgresTest):
 
         gevent.wait()
 
-        q = query.Query()
+        q = Query()
         r = list(i.get(s, q))
         self.assertEqual(2, len(r))
 
@@ -287,7 +282,7 @@ class XInterfacePostgresGeventTest(InterfacePostgresTest):
         i = self.get_interface()
         s = self.get_schema()
 
-        q = query.Query()
+        q = Query()
         l = i.get(s, q)
         self.assertEqual([], l)
 
