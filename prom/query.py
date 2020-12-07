@@ -397,11 +397,6 @@ class AllIterator(ResultsIterator):
         return super(AllIterator, self).values()
 
 
-
-
-
-
-
 class Bounds(object):
 
     @property
@@ -499,10 +494,6 @@ class Bounds(object):
         return "limit: {}, offset: {}".format(self.limit, self.offset)
 
 
-
-
-
-
 class Field(object):
     @property
     def schema(self):
@@ -587,13 +578,11 @@ class Fields(list):
     __delitem__ = __setitem__
 
 
-
-
 class Query(object):
     """
     Handle standard query creation and allow interface querying
 
-    example --
+    :example:
         q = Query(orm_class)
         q.is_foo(1).desc_bar().limit(10).page(2).get()
     """

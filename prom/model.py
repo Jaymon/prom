@@ -44,7 +44,8 @@ class Orm(object):
     """
     this is the parent class of any model Orm class you want to create that can access the db
 
-    example -- create a user class
+    :example:
+        # create a user class
 
         import prom
 
