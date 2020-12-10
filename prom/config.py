@@ -49,12 +49,6 @@ class Connection(object):
     options = None
     """any other db options, these can be interface implementation specific"""
 
-#     @property
-#     def interface_class(self):
-#         """Return the configured interface class object that can be used to create new instances"""
-#         interface_module, interface_class = utils.get_objects(self.interface_name)
-#         return interface_class
-
     @property
     def interface(self):
         """Return a new Interface instance using this configuration"""
@@ -65,7 +59,7 @@ class Connection(object):
         """
         set all the values by passing them into this constructor, any unrecognized kwargs get put into .options
 
-        example --
+        :example:
             c = Connection(
                 host="127.0.0.1",
                 database="dbname",
@@ -73,10 +67,9 @@ class Connection(object):
                 some_random_thing="foo"
             )
 
-            print c.port # 5000
-            print c.options # {"some_random_thing": "foo"}
+            print(c.port) # 5000
+            print(c.options) # {"some_random_thing": "foo"}
         """
-
         kwargs = utils.make_dict(fields, fields_kwargs)
         if "interface_name" not in kwargs:
             raise ValueError("no interface_name passed into Connection")
@@ -88,7 +81,6 @@ class Connection(object):
                 setattr(self, key, val)
             else:
                 self.options[key] = val
-
 
         interface_module, interface_class = utils.get_objects(self.interface_name)
         self.interface_class = interface_class
@@ -380,12 +372,16 @@ class Schema(object):
 
         # clear all the Field and Index properties in anticipation of adding the
         # fields from the Schema
+        seen_properties = set()
         for klass in inspect.getmro(child_class):
             for k, v in vars(klass).items():
-                if isinstance(v, (Field, Index)):
-                    #setattr(child_class, k, property(lambda: AttributeError))
-                    setattr(child_class, k, None)
-                    #delattr(child_class, k)
+                if k not in seen_properties:
+                    if isinstance(v, (Field, Index)):
+                        #setattr(child_class, k, property(lambda: AttributeError))
+                        setattr(child_class, k, None)
+                        #delattr(child_class, k)
+
+                    seen_properties.add(k)
 
         for field_name, field in self:
             setattr(child_class, field_name, field)
@@ -468,13 +464,23 @@ class Field(object):
     NOTE -- the fget/fset/fdel methods are different than traditional python getters
     and setters because they always need to return a value and they always take in a
     value
+
+    https://docs.python.org/2/howto/descriptor.html
     """
+
+    type = None
+
+    required = False
+
+
+
     @property
     def schema(self):
         """return the schema instance if this is reference to another table"""
         if not hasattr(self, "_schema"):
             ret = None
-            o = self._type
+            #o = self._type
+            o = self.type
             if isinstance(o, type):
                 ret = getattr(o, "schema", None)
 
@@ -489,9 +495,18 @@ class Field(object):
 
         return self._schema
 
+#     @property
+#     def type(self):
+#         ret = self._type
+#         if not isinstance(ret, type) or hasattr(ret, "schema"):
+#             s = self.schema
+#             ret = s.pk.type
+# 
+#         return ret
+
     @property
-    def type(self):
-        ret = self._type
+    def interface_type(self):
+        ret = self.type
         if not isinstance(ret, type) or hasattr(ret, "schema"):
             s = self.schema
             ret = s.pk.type
@@ -523,6 +538,7 @@ class Field(object):
         :param **field_options_kwargs: dict, will be combined with field_options
         """
         field_options = utils.make_dict(field_options, field_options_kwargs)
+
         d = {}
 
         min_size = field_options.pop("min_size", -1)
@@ -542,34 +558,24 @@ class Field(object):
                 d['min_size'] = min_size
                 d['max_size'] = max_size
 
-        field_options.setdefault("unique", False)
         field_options.update(d)
 
-        self.fgetter(field_options.pop("fget", self.default_fget))
-        self.fsetter(field_options.pop("fset", self.default_fset))
-        self.fdeleter(field_options.pop("fdel", self.default_fdel))
-        self.fdefaulter(field_options.pop("fdefault", self.default_fdefault))
-
-        self.igetter(field_options.pop("iget", self.default_iget))
-        self.isaver(field_options.pop("isave", self.default_isave))
-        self.imodifier(field_options.pop("imodify", self.default_imodify))
-        self.imodify_inserter(field_options.pop("imodify_insert", self.default_imodify_insert))
-        self.imodify_updater(field_options.pop("imodify_update", self.default_imodify_update))
-        self.idefaulter(field_options.pop("idefault", self.default_idefault))
-        self.idefault_inserter(field_options.pop("idefault_insert", self.default_idefault_insert))
-        self.idefault_updater(field_options.pop("idefault_update", self.default_idefault_update))
-        self.iquerier(field_options.pop("iquery", self.default_iquery))
-
-        self.jsonabler(field_options.pop("jsonable", self.default_jsonable))
+        field_options.setdefault("unique", False)
 
         self.name = field_options.pop("name", "")
         # this creates a numeric dict key that can't be accessed as an attribute
         self.instance_field_name = str(id(self))
-        self._type = field_type
+        #self._type = field_type
+        self.type = field_type
         self.default = field_options.pop("default", None)
+        self.orm_class = field_options.pop("orm_class", None)
+
+        for k in list(field_options.keys()):
+            if hasattr(self, k):
+                setattr(self, k, field_options.pop(k))
+
         self.options = field_options
-        self.required = field_required if field_required else self.is_pk()
-        self.orm_class = None
+        self.required = field_required or self.is_pk()
 
     def is_pk(self):
         """return True if this field is a primary key"""
@@ -582,33 +588,39 @@ class Field(object):
     def is_required(self):
         return self.required
 
-    def default_fget(self, instance, val):
+    def fget(self, instance, val):
         return self.fdefault(instance, val)
 
-    def default_fset(self, instance, val):
+    def fgetter(self, v):
+        """decorator for setting field's fget function"""
+        self.fget = v
+        return self
+
+    def iget(self, instance, val):
+        return self.fdefault(instance, val)
+
+    def igetter(self, v):
+        """decorator for the method called when a field is pulled from the database"""
+        self.iget = v
+        return self
+
+    def fset(self, instance, val):
         return val
 
-    def default_fdel(self, instance, val):
+    def fsetter(self, v):
+        """decorator for setting field's fset function"""
+        self.fset = v
+        return self
+
+    def fdel(self, instance, val):
         return None
 
-    def default_fdefault(self, instance, val):
-        ret = val
-        if val is None:
-            if callable(self.default):
-                ret = self.default()
+    def fdeleter(self, v):
+        """decorator for setting field's fdel function"""
+        self.fdel = v
+        return self
 
-            elif self.default is None:
-                ret = self.default
-
-            elif isinstance(self.default, (dict, list, set, object)):
-                ret = type(self.default)()
-
-            else:
-                ret = self.default
-
-        return ret
-
-    def default_isave(self, instance, val, is_update, is_modified):
+    def isave(self, instance, val, is_update, is_modified):
         if is_modified:
             val = self.imodify(instance, val)
             if is_update:
@@ -627,31 +639,98 @@ class Field(object):
 
         return val
 
-    def default_idefault(self, instance, val):
+    def isaver(self, v):
+        """decorator for the method called when a field is saved into the database"""
+        self.isave = v
+        return self
+
+    def fdefault(self, instance, val):
+        ret = val
+        if val is None:
+            if callable(self.default):
+                ret = self.default()
+
+            elif self.default is None:
+                ret = self.default
+
+            elif isinstance(self.default, (dict, list, set, object)):
+                ret = type(self.default)()
+
+            else:
+                ret = self.default
+
+        return ret
+
+    def fdefaulter(self, v):
+        """decorator for returning the field's default value
+
+        decorator for setting field's fdefault function"""
+        self.fdefault = v
+        return self
+
+    def idefault(self, instance, val):
         return val
 
-    def default_idefault_insert(self, instance, val):
+    def idefaulter(self, v):
+        """decorator for the method called when an update/insert database query is going
+        to be used and that field hasn't been touched"""
+        self.idefault = v
+        return self
+
+    def idefault_insert(self, instance, val):
         return val
 
-    def default_idefault_update(self, instance, val):
+    def idefault_inserter(self, v):
+        """decorator for the method called when an insert database query is going
+        to be used and that field hasn't been touched"""
+        self.idefault_insert = v
+        return self
+
+    def idefault_update(self, instance, val):
         return val
 
-    def default_imodify(self, instance, val):
+    def idefault_updater(self, v):
+        """decorator for the method called when an update database query is going
+        to be used and that field hasn't been touched"""
+        self.idefault_update = v
+        return self
+
+    def imodify(self, instance, val):
         return val
 
-    def default_imodify_insert(self, instance, val):
+    def imodifier(self, v):
+        """decorator for the method called when an insert/update database query is going
+        to be used and that field has been modified"""
+        self.imodify = v
+        return self
+
+    def imodify_insert(self, instance, val):
         return val
 
-    def default_imodify_update(self, instance, val):
+    def imodify_inserter(self, v):
+        """decorator for the method called when an insert database query is going
+        to be used and that field has been modified"""
+        self.imodify_insert = v
+        return self
+
+    def imodify_update(self, instance, val):
         return val
 
-    def default_iget(self, instance, val):
-        return self.fdefault(instance, val)
+    def imodify_updater(self, v):
+        """decorator for the method called when an update database query is going
+        to be used and that field has been modified"""
+        self.imodify_update = v
+        return self
 
-    def default_iquery(self, instance, val):
+    def iquery(self, instance, val):
         return val
 
-    def default_jsonable(self, instance, val):
+    def iquerier(self, v):
+        """decorator for the method called when this field is used in a SELECT query"""
+        self.iquery = v
+        return self
+
+    def jsonable(self, instance, val):
         if val is None:
             val = self.fdefault(instance, val)
 
@@ -703,79 +782,6 @@ class Field(object):
                     val = re.sub(r"^{}".format(placeholder_year), str(orig_year), val)
 
         return val
-
-    def fgetter(self, v):
-        """decorator for setting field's fget function"""
-        self.fget = v
-        return self
-
-    def fsetter(self, v):
-        """decorator for setting field's fset function"""
-        self.fset = v
-        return self
-
-    def fdeleter(self, v):
-        """decorator for setting field's fdel function"""
-        self.fdel = v
-        return self
-
-    def fdefaulter(self, v):
-        """decorator for returning the field's default value
-
-        decorator for setting field's fdefault function"""
-        self.fdefault = v
-        return self
-
-    def igetter(self, v):
-        """decorator for the method called when a field is pulled from the database"""
-        self.iget = v
-        return self
-
-    def isaver(self, v):
-        """decorator for the method called when a field is saved into the database"""
-        self.isave = v
-        return self
-
-    def imodifier(self, v):
-        """decorator for the method called when an insert/update database query is going
-        to be used and that field has been modified"""
-        self.imodify = v
-        return self
-
-    def imodify_inserter(self, v):
-        """decorator for the method called when an insert database query is going
-        to be used and that field has been modified"""
-        self.imodify_insert = v
-        return self
-
-    def imodify_updater(self, v):
-        """decorator for the method called when an update database query is going
-        to be used and that field has been modified"""
-        self.imodify_update = v
-        return self
-
-    def idefaulter(self, v):
-        """decorator for the method called when an update/insert database query is going
-        to be used and that field hasn't been touched"""
-        self.idefault = v
-        return self
-
-    def idefault_inserter(self, v):
-        """decorator for the method called when an update/insert database query is going
-        to be used and that field hasn't been touched"""
-        self.idefault_insert = v
-        return self
-
-    def idefault_updater(self, v):
-        """decorator for the method called when an update/insert database query is going
-        to be used and that field hasn't been touched"""
-        self.idefault_update = v
-        return self
-
-    def iquerier(self, v):
-        """decorator for the method called when this field is used in a SELECT query"""
-        self.iquery = v
-        return self
 
     def jsonabler(self, v):
         """Decorator for the method called for a field when an Orm's .jsonable method
@@ -865,18 +871,12 @@ class ObjectField(Field):
         if val is None: return val
         return pickle.loads(base64.b64decode(val))
 
-    def isaver(self, isave):
-        def master_isave(cls, val, is_update, is_modified):
-            v = isave(cls, val, is_update, is_modified)
-            return self.encode(val)
-            #return iset(cls, v, is_update, is_modified)
-        return super(ObjectField, self).isaver(master_isave)
 
-    def igetter(self, iget):
-        def master_iget(cls, val):
-            v = self.decode(val)
-            return iget(cls, v)
-        return super(ObjectField, self).igetter(master_iget)
+    def isave(self, instance, val, is_update, is_modified):
+        return self.encode(val)
+
+    def iget(self, instance, val):
+        return self.decode(val)
 
 
 class JsonField(ObjectField):

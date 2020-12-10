@@ -161,8 +161,10 @@ class Orm(object):
         self.reset_modified()
 
         fields = self.make_dict(fields, fields_kwargs)
-        if fields:
-            self.modify(fields)
+        self.modify(fields)
+
+        self._interface_pk = None
+        self._interface_hydrate = False
 
     @classmethod
     def pool(cls, maxsize=0):
@@ -187,7 +189,8 @@ class Orm(object):
         return instance
 
     @classmethod
-    def populated(cls, fields=None, **fields_kwargs):
+    def hydrate(cls, fields=None, **fields_kwargs):
+        # TODO -- I think we can merge repopulate and populate into this method
         """return a populated instance with the present fields
 
         NOTE -- you probably shouldn't override this method since the Query methods
@@ -198,7 +201,15 @@ class Orm(object):
         :returns: an instance of this class with populated fields
         """
         instance = cls()
-        instance.populate(fields, **fields_kwargs)
+
+        # combine the passed in fields with the defined fields, set any missing
+        # fields to None
+        pop_fields = {}
+        fields = cls.make_dict(fields, fields_kwargs)
+        for k in instance.schema.fields.keys():
+            pop_fields[k] = fields.get(k, None)
+
+        instance.from_interface(pop_fields)
         return instance
 
     @classmethod
@@ -230,31 +241,20 @@ class Orm(object):
             self.__class__.__name__,
         ))
 
-    def populate(self, fields=None, **fields_kwargs):
-        """take the passed in fields, combine them with missing fields that should
-        be there and then run all those through appropriate methods to hydrate this
-        orm.
+    def is_hydrated(self):
+        """return True if this orm was populated from the interface/db"""
+        return self._interface_hydrate
 
-        The method replaces cls.hydrate() since it was becoming hard to understand
-        what was going on with all these methods that did things just a little bit
-        different.
+    def is_update(self):
+        """Return True if .save() will perform an interface update"""
+        pk = self._interface_pk
+        return pk is not None
 
-        This is used to completely set all the fields of self. If you just want
-        to populate certain fields, you can use the submethod populate_fields
+    def is_insert(self):
+        """Return True if .save() will perform an interface insert"""
+        return not self.is_update()
 
-        :param fields: dict, the fields in a dict that will be combined with all the
-            fields of the Orm
-        :param **fields_kwargs: dict, if you would like to pass the fields as key=val
-            this picks those up and combines them with fields
-        """
-        pop_fields = {}
-        fields = self.make_dict(fields, fields_kwargs)
-        for k in self.schema.fields.keys():
-            pop_fields[k] = fields.get(k, None)
-
-        self.populate_fields(pop_fields)
-
-    def populate_fields(self, fields):
+    def from_interface(self, fields):
         """this runs all the fields through their iget methods to mimic them
         freshly coming out of the db, then resets modified
 
@@ -273,12 +273,18 @@ class Orm(object):
         for field_name in fields.keys():
             self.reset_modified(field_name)
 
-    def depopulate(self, is_update):
+        # this marks that this was repopulated from the interface (database)
+        self._interface_pk = self.pk
+        self._interface_hydrate = True
+
+
+    def to_interface(self):
         """Get all the fields that need to be saved
 
         :param is_udpate: bool, True if update query, False if insert
         :returns: dict, key is field_name and val is the field value to be saved
         """
+        is_update = self.is_update()
         fields = {}
         schema = self.schema
         for k, field in schema.fields.items():
@@ -294,11 +300,7 @@ class Orm(object):
             # if v has a value or it's been modified (even if it doesn't have a
             # value) then we will probably want to pass the value onto the db
             if is_modified or v is not None:
-                if is_update and field.is_pk() and v == orig_v:
-                    continue
-
-                else:
-                    fields[k] = v
+                fields[k] = v
 
         if not is_update:
             for field_name in schema.required_fields.keys():
@@ -312,7 +314,7 @@ class Orm(object):
         ret = True
 
         schema = self.schema
-        fields = self.depopulate(False)
+        fields = self.to_interface()
 
         q = self.query
         q.set(fields)
@@ -322,7 +324,7 @@ class Orm(object):
             pk_name = schema.pk_name
             if pk_name:
                 fields[pk_name] = pk
-                self.populate_fields(fields)
+                self.from_interface(fields)
             self.reset_modified()
 
         else:
@@ -333,20 +335,21 @@ class Orm(object):
     def update(self):
         """re-persist the updated field values of this orm that has a primary key"""
         ret = True
-        fields = self.depopulate(True)
+        fields = self.to_interface()
+
         q = self.query
         q.set(fields)
 
-        pk = self.pk
+        pk = self._interface_pk
         if pk:
             q.is_field(self.schema.pk.name, pk)
 
         else:
-            raise ValueError("You cannot update without a primary key")
+            raise ValueError("Cannot update an unhydrated orm instance")
 
         if q.update():
             fields = q.fields_set.fields
-            self.populate_fields(fields)
+            self.from_interface(fields)
             self.reset_modified()
 
         else:
@@ -363,12 +366,7 @@ class Orm(object):
         """
         ret = False
 
-        # we will only use the primary key if it hasn't been modified
-        pk = None
-        pk_name = self.schema.pk_name
-        if pk_name not in self.modified_fields:
-            pk = self.pk
-
+        pk = self._interface_pk
         if pk:
             ret = self.update()
         else:
@@ -380,7 +378,7 @@ class Orm(object):
         """delete the object from the db if pk is set"""
         ret = False
         q = self.query
-        pk = self.pk
+        pk = self._interface_pk
         if pk:
             pk_name = self.schema.pk.name
             self.query.is_field(pk_name, pk).delete()
@@ -392,9 +390,20 @@ class Orm(object):
                 if getattr(self, field_name, None) != None:
                     self.modified_fields.add(field_name)
 
+            self._interface_pk = None
+            self._interface_hydrate = False
+
             ret = True
 
         return ret
+
+    def requery(self):
+        """Fetch this orm from the db again (ie, re-query the row from the db and
+        return a new Orm instance with the columns from that row)"""
+        pk = self._interface_pk
+        if not pk:
+            raise ValueError("Unable to refetch orm via pk")
+        return self.query.get_pk(pk)
 
     def is_modified(self):
         """true if a field has been changed from its original value, false otherwise"""
@@ -437,6 +446,19 @@ class Orm(object):
         modified_fields = set()
         fields = self.make_dict(fields, fields_kwargs)
         fields = self.modify_fields(fields)
+
+#         for field_name, field in self.schema.fields:
+#             if field_name in fields:
+#                 setattr(self, field_name, field_val)
+#                 modified_fields.add(field_name)
+# 
+#             else:
+#                 setattr(self, field_name, None)
+# 
+# 
+# 
+# 
+
         for field_name, field_val in fields.items():
             in_schema = field_name in self.schema.fields
             if in_schema:

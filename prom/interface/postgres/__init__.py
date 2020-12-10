@@ -327,7 +327,7 @@ class PostgreSQL(SQLInterface):
         index_fields = []
         for field_name in fields:
             field = schema.fields[field_name]
-            if issubclass(field.type, basestring):
+            if issubclass(field.interface_type, basestring):
                 if field.options.get('ignore_case', False):
                     field_name = 'UPPER({})'.format(self._normalize_name(field_name))
             index_fields.append(field_name)
@@ -437,18 +437,19 @@ class PostgreSQL(SQLInterface):
         return -- string -- the field type (eg, foo BOOL NOT NULL)
         """
         field_type = ""
+        interface_type = field.interface_type
         is_pk = field.options.get('pk', False)
 
-        if issubclass(field.type, bool):
+        if issubclass(interface_type, bool):
             field_type = 'BOOL'
 
-        elif issubclass(field.type, long):
+        elif issubclass(interface_type, long):
             if is_pk:
                 field_type = 'BIGSERIAL PRIMARY KEY'
             else:
                 field_type = 'BIGINT'
 
-        elif issubclass(field.type, int):
+        elif issubclass(interface_type, int):
             #size = 2147483647
             if is_pk:
                 field_type = 'BIGSERIAL PRIMARY KEY'
@@ -468,7 +469,7 @@ class PostgreSQL(SQLInterface):
                     else:
                         field_type = 'INTEGER'
 
-        elif issubclass(field.type, basestring):
+        elif issubclass(interface_type, basestring):
             fo = field.options
             if field.is_ref():
                 ref_s = field.schema
@@ -484,27 +485,27 @@ class PostgreSQL(SQLInterface):
             if is_pk:
                 field_type += ' PRIMARY KEY'
 
-        elif issubclass(field.type, datetime.datetime):
+        elif issubclass(interface_type, datetime.datetime):
             # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
             field_type = 'TIMESTAMP WITHOUT TIME ZONE'
 
-        elif issubclass(field.type, datetime.date):
+        elif issubclass(interface_type, datetime.date):
             field_type = 'DATE'
 
-        elif issubclass(field.type, float):
+        elif issubclass(interface_type, float):
             field_type = 'REAL'
             size = field.options.get('size', field.options.get('max_size', 0))
             if size > 6:
                 field_type = 'DOUBLE PRECISION'
 
-        elif issubclass(field.type, decimal.Decimal):
+        elif issubclass(interface_type, decimal.Decimal):
             field_type = 'NUMERIC'
 
-        elif issubclass(field.type, bytearray):
+        elif issubclass(interface_type, bytearray):
             field_type = 'BLOB'
 
         else:
-            raise ValueError('unknown python type: {}'.format(field.type.__name__))
+            raise ValueError('unknown python type: {}'.format(interface_type.__name__))
 
         if not is_pk:
             if field.required:

@@ -72,6 +72,41 @@ class OrmTest(EnvironTestCase):
 #         o2 = o.query.get_pk(o.pk)
 #         pout.v(o2.fields)
 
+    def test_hydrate_1(self):
+        """make sure you can add/update and change the primary key and all of that
+        works as expected"""
+        orm_class = self.get_orm_class()
+
+        o = orm_class(foo=1, bar="1")
+
+        o.save()
+        self.assertLess(0, o.pk)
+
+        with self.assertRaises(orm_class.interface.UniqueError):
+            o2 = orm_class(_id=o.pk, foo=2, bar="2")
+            o2.save()
+
+        o3 = o.query.get_pk(o.pk)
+        self.assertTrue(o3.is_hydrated())
+
+        o3._id = o.pk + 1
+        self.assertNotEqual(o.pk, o3.pk)
+
+        o3.save()
+        o4 = o3.query.get_pk(o3.pk)
+        self.assertEqual(o3.pk, o4.pk)
+        self.assertNotEqual(o.pk, o3.pk)
+
+    def test_hydrate_2(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, True),
+            bar=Field(str, default=lambda *_, **__: "lambda bar"),
+        )
+
+        o = orm_class.hydrate(foo=1)
+        pout.v(o.fields)
+
+
     def test_no_pk(self):
         orm_class = self.get_orm_class()
         orm_class._id = None
@@ -103,9 +138,13 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(pk, o.pk)
 
     def test_change_pk(self):
+
+        # create a row at pk 1
         orm_class = self.get_orm_class()
         o = orm_class.create(foo=1, bar="one")
         self.assertEqual(1, o.pk)
+
+        # move that row to pk 2
         o._id = 2
         o.save()
 
@@ -116,17 +155,16 @@ class OrmTest(EnvironTestCase):
         o2.foo = 11
         o2.save()
 
-        # now move it back to 1
+        # now move it back to pk 1
         o2._id = 1
-        with self.assertRaises(prom.InterfaceError):
-            o2.save()
-        # remove the original role
-        orm_class.query.is_pk(1).delete()
         o2.save()
 
         o3 = o.query.get_pk(o2.pk)
         for k in o2.schema.fields.keys():
             self.assertEqual(getattr(o2, k), getattr(o3, k))
+
+        # we should only have 1 row in the db, our row we've changed from 1 -> 2 -> 1
+        self.assertEqual(1, o2.query.count())
 
     def test_overrides(self):
         class FOIndexOverride(Orm):
@@ -339,15 +377,16 @@ class OrmTest(EnvironTestCase):
         orm_class = self.get_orm_class()
         orm_class.dt = Field(datetime.datetime)
         t = orm_class()
-        t.populate(foo=1, bar="blah", dt=datetime.datetime.utcnow())
+        t.hydrate(foo=1, bar="blah", dt=datetime.datetime.utcnow())
         d = t.jsonable()
         self.assertEqual(1, d['foo'])
         self.assertEqual("blah", d['bar'])
         self.assertTrue("dt" in d)
 
         t = orm_class()
-        t.populate(foo=1)
+        t.hydrate(foo=1)
         d = t.jsonable()
+        pout.v(d)
         self.assertEqual(1, d['foo'])
         self.assertFalse("bar" in d)
 

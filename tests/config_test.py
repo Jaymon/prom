@@ -417,6 +417,36 @@ class JsonFieldTest(ObjectFieldTest):
 
 
 class FieldTest(EnvironTestCase):
+
+    def test_class_override(self):
+        class COOrm(Orm):
+            class foo(Field):
+                type = int
+
+                def fget(self, o, v):
+                    print("fget")
+                    return v
+
+                def iget(self, o, v):
+                    print("iget")
+                    return v
+
+                def fset(self, o, v):
+                    print("fset")
+                    return v
+
+                def fdel(self, o, v):
+                    print("fdel")
+                    return v
+
+                def iquery(self, q, v):
+                    print("iquery")
+                    return v
+
+                def jsonable(self, o, v):
+                    print("jsonable")
+                    return v
+
 #     def test_dict_type(self):
 #         class DOrm(Orm):
 #             foo = Field(dict)

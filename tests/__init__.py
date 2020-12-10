@@ -104,19 +104,31 @@ class BaseTestCase(TestCase):
             "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
         )
 
-    def get_orm_class(self, table_name=None):
+    def get_orm_class(self, table_name=None, **properties):
         tn = self.get_table_name(table_name)
+
+        properties["table_name"] = tn
+
+        if "interface" not in properties:
+            properties["interface"] = self.get_interface()
+
+        has_field = False
+        for v in properties.values():
+            if isinstance(v, Field):
+                has_field = True
+                break
+
+        if not has_field:
+            properties.update({
+                "foo": Field(int, True),
+                "bar": Field(str, True),
+                "ifoobar": Index("foo", "bar"),
+            })
 
         orm_class = type(
             ByteString(tn),
             (Orm,),
-            {
-                "table_name": tn,
-                "interface": self.get_interface(),
-                "foo": Field(int, True),
-                "bar": Field(str, True),
-                "ifoobar": Index("foo", "bar"),
-            }
+            properties,
         )
 
         return orm_class

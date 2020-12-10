@@ -264,7 +264,7 @@ class ResultsIterator(BaseIterator):
 
         else:
             if self.orm_class:
-                r = self.orm_class.populated(d)
+                r = self.orm_class.hydrate(d)
             else:
                 r = d
 
@@ -960,7 +960,7 @@ class Query(object):
         o = self.default_val
         d = self._query('get_one')
         if d:
-            o = self.orm_class.populated(d)
+            o = self.orm_class.hydrate(d)
         return o
 
     @deprecated("see list item 1 in issue 24")

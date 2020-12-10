@@ -9,7 +9,7 @@ import uuid as uuidgen
 
 # first party
 from ..query import Query
-from ..exception import InterfaceError
+from ..exception import InterfaceError, UniqueError
 from ..decorators import reconnecting
 from ..compat import *
 from ..utils import make_list
@@ -139,6 +139,9 @@ class Interface(object):
 
     connection_config = None
     """a config.Connection() instance"""
+
+    InterfaceError = InterfaceError
+    UniqueError = UniqueError
 
     @classmethod
     def configure(cls, connection_config):
