@@ -137,10 +137,17 @@ class BoundsTest(TestCase):
 
 
 class QueryTest(EnvironTestCase):
-#     @classmethod
-#     def setUpClass(cls):
-#         from unittest import SkipTest
-#         raise SkipTest()
+    def test_schemas(self):
+        Foo = self.get_orm_class()
+        Bar = self.get_orm_class()
+
+        bar_q = Bar.query.select_foo()
+        foo_q = Foo.query.select_pk().in_foo(bar_q)
+
+        schemas = foo_q.schemas
+        self.assertEqual(2, len(schemas))
+        self.assertEqual(Foo.schema, schemas[0])
+        self.assertEqual(String(Bar.schema), String(schemas[1]))
 
     def test_render(self):
         q = self.get_query()

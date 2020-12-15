@@ -99,10 +99,6 @@ class Connection(object):
 
     def _transaction_failing(self, name): pass
 
-#     def cursor(self, *args, **kwargs):
-#         pout.v("in transaction? {}".format(self.in_transaction()))
-#         return super(Connection, self).cursor(*args, **kwargs)
-
 
 class SQLConnection(Connection):
     def _transaction_start(self):
@@ -490,7 +486,7 @@ class Interface(object):
 
             except Exception as e:
                 exc_info = sys.exc_info()
-                if self.handle_error(schema, e, **kwargs):
+                if self.handle_error(schema, e, query=query, **kwargs):
                     ret = callback(schema, query, *args, **kwargs)
                 else:
                     self.raise_error(e, exc_info)
@@ -903,23 +899,30 @@ class SQLInterface(Interface):
         if not connection: return False
 
         ret = False
-        if connection.closed == 0: # connection is open
-            if isinstance(e, InterfaceError):
-                # unwind to the first error
-                while isinstance(e, InterfaceError):
-                    e = e.e
-
-                ret = self._handle_error(schema, e, **kwargs)
-
-            else:
-                ret = self._handle_error(schema, e, **kwargs)
-
-        else:
+        if connection.closed:
             # we are unsure of the state of everything since this connection has
             # closed, go ahead and close out this interface and allow this query
             # to fail, but subsequent queries should succeed
             self.close()
             ret = True
+
+        else:
+            # connection is open
+            if isinstance(e, InterfaceError):
+                # unwind to the original error
+                while isinstance(e, InterfaceError):
+                    e = e.e
+
+            query = kwargs.get("query", None)
+            schemas = query.schemas if query else []
+            if schemas:
+                ret = True
+                for s in query.schemas:
+                    ret = self._handle_error(s, e, **kwargs)
+                    if not ret:
+                        break
+            else:
+                ret = self._handle_error(schema, e, **kwargs)
 
         return ret
 

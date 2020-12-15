@@ -625,6 +625,28 @@ class Query(object):
         return self.orm_class.schema
 
     @property
+    def schemas(self):
+        """Find and return all the schemas that are needed for this query to complete
+        successfully
+
+        Another way to put this is all the schemas this query touches
+
+        :returns: list, a list of Schema instances
+        """
+        schemas = []
+        s = self.schema
+        if s:
+            schemas.append(s)
+
+        for f in self.fields_where:
+            if isinstance(f.value, Query):
+                s = f.value.schema
+                if s:
+                    schemas.append(s)
+
+        return schemas
+
+    @property
     def iterator_class(self):
         if not self.orm_class: return None
         return self.orm_class.iterator_class if self.orm_class else Iterator

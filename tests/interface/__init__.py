@@ -674,6 +674,14 @@ class BaseTestInterface(BaseTestCase):
         ret = i._set_all_fields(s)
         self.assertTrue(ret)
 
+    def test_handle_error_subquery(self):
+        Foo = self.get_orm_class()
+        Bar = self.get_orm_class()
+
+        bar_q = Bar.query.select_foo()
+        foo_ids = list(Foo.query.select_pk().in_foo(bar_q).values())
+        self.assertEqual([], foo_ids) # no error means it worked
+
     def test_handle_error_column(self):
         i, s = self.get_table()
         s.set_field("che", Field(str, True)) # it's required
