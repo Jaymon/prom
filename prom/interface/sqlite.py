@@ -313,22 +313,23 @@ class SQLite(SQLInterface):
         """
         field_type = ""
         is_pk = field.options.get('pk', False)
+        interface_type = field.interface_type
 
-        if issubclass(field.type, bool):
+        if issubclass(interface_type, bool):
             field_type = 'BOOLEAN'
 
-        elif issubclass(field.type, long):
+        elif issubclass(interface_type, long):
             if is_pk:
                 field_type = 'INTEGER PRIMARY KEY'
             else:
                 field_type = 'BIGINT'
 
-        elif issubclass(field.type, int):
+        elif issubclass(interface_type, int):
             field_type = 'INTEGER'
             if is_pk:
                 field_type += ' PRIMARY KEY'
 
-        elif issubclass(field.type, basestring):
+        elif issubclass(interface_type, basestring):
             fo = field.options
             if field.is_ref():
                 # TODO -- 7-8-17 - this isn't a great way to do this, ideally the Field instance
@@ -354,27 +355,27 @@ class SQLite(SQLInterface):
             if is_pk:
                 field_type += ' PRIMARY KEY'
 
-        elif issubclass(field.type, datetime.datetime):
+        elif issubclass(interface_type, datetime.datetime):
             #field_type = 'DATETIME'
             field_type = 'TIMESTAMP'
 
-        elif issubclass(field.type, datetime.date):
+        elif issubclass(interface_type, datetime.date):
             field_type = 'DATE'
 
-        elif issubclass(field.type, float):
+        elif issubclass(interface_type, float):
             field_type = 'REAL'
             size = field.options.get('size', field.options.get('max_size', 0))
             if size > 6:
                 field_type = 'DOUBLE PRECISION'
 
-        elif issubclass(field.type, decimal.Decimal):
+        elif issubclass(interface_type, decimal.Decimal):
             field_type = 'NUMERIC'
 
-        elif issubclass(field.type, bytearray):
+        elif issubclass(interface_type, bytearray):
             field_type = 'BLOB'
 
         else:
-            raise ValueError('unknown python type: {}'.format(field.type.__name__))
+            raise ValueError('Unknown python type: {}'.format(interface_type.__name__))
 
         if field.required:
             field_type += ' NOT NULL'

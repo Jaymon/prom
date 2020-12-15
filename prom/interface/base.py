@@ -35,7 +35,7 @@ class Connection(object):
         """generate a random transaction name for use in start_transaction() and
         fail_transaction()"""
         name = uuidgen.uuid4()
-        return "p{}".format(str(name.hex))
+        return "p{}".format(str(name)[-5:])
 
     def in_transaction(self):
         """return true if currently in a transaction"""
@@ -64,10 +64,10 @@ class Connection(object):
 
     def _transaction_started(self, name): pass
 
-    def transaction_stop(self):
+    def transaction_stop(self, name):
         """stop/commit a transaction if ready"""
         if self.transaction_count > 0:
-            logger.debug("{}. Stop transaction".format(self.transaction_count))
+            logger.debug("{}. Stop transaction {}".format(self.transaction_count, name))
             if self.transaction_count == 1:
                 self._transaction_stop()
 
@@ -263,7 +263,7 @@ class Interface(object):
             connection.transaction_start(name)
             try:
                 yield connection
-                connection.transaction_stop()
+                connection.transaction_stop(name)
 
             except Exception as e:
                 connection.transaction_fail(name)
@@ -430,7 +430,8 @@ class Interface(object):
             except Exception as e:
                 exc_info = sys.exc_info()
                 if self.handle_error(schema, e, **kwargs):
-                    r = self._insert(schema, fields, **kwargs)
+                    with self.transaction(**kwargs):
+                        r = self._insert(schema, fields, **kwargs)
                 else:
                     self.raise_error(e, exc_info)
 
@@ -867,13 +868,6 @@ class SQLInterface(Interface):
                     sd,
                     field,
                 )
-#                 field_str, field_args = self._normalize_val_SQL(
-#                     schema,
-#                     sd,
-#                     field.name,
-#                     field.value,
-#                     field.options,
-#                 )
 
                 query_str.append('  {}'.format(field_str))
                 query_args.extend(field_args)
@@ -910,9 +904,12 @@ class SQLInterface(Interface):
 
         ret = False
         if connection.closed == 0: # connection is open
-            #connection.transaction_stop()
             if isinstance(e, InterfaceError):
-                ret = self._handle_error(schema, e.e, **kwargs)
+                # unwind to the first error
+                while isinstance(e, InterfaceError):
+                    e = e.e
+
+                ret = self._handle_error(schema, e, **kwargs)
 
             else:
                 ret = self._handle_error(schema, e, **kwargs)

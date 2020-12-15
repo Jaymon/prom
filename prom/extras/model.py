@@ -16,14 +16,6 @@ class MagicOrm(Orm):
 
     https://github.com/Jaymon/prom/issues/78
     """
-
-    # These just make it easier to define fields and indexes by just importing
-    # MagicOrm
-    Field = Field
-    ObjectField = ObjectField
-    JsonField = JsonField
-    Index = Index
-
     def __pout__(self):
         """This just makes the object easier to digest in pout.v() calls
 

@@ -42,31 +42,57 @@ class OrmPool(Pool):
 
 class Orm(object):
     """
-    this is the parent class of any model Orm class you want to create that can access the db
+    this is the parent class of any Orm child class you want to create that can access the db
 
     :example:
-        # create a user class
+        from prom import Orm, Field
 
-        import prom
+        # create a simple class using standard fields
+        class Foo(Orm):
+            table_name = "<TABLE NAME>"
 
-        class User(prom.Orm):
-            table_name = "user_table_name"
+            bar = Field(int, True, max_size=512, default=0, unique=True)
+            che = prom.Field(str, True)
 
-            username = prom.Field(str, True, unique=True) # set a unique index on user
-            password = prom.Field(str, True)
-            email = prom.Field(str, True)
+            index_barche = prom.Index('bar', 'che')
 
-            index_email = prom.Index('email') # set a normal index on email
+        # create a more complex class using a field override
+        class Foo2(Orm):
+            table_name = "<TABLE NAME>"
 
-        # create a user
-        u = User(username='foo', password='awesome_and_secure_pw_hash', email='foo@bar.com')
-        u.set()
+            class bar(Field):
+                type = int
+                required = True
+                options = {
+                    "default": 0,
+                    "unique": True,
+                    "max_size": 512,
+                }
 
-        # query for our new user
-        u = User.query.is_username('foo').get_one()
-        print u.username # foo
+                def fget(self, orm, v):
+                    print("fget")
+                    return v
+
+                def iget(self, orm, v):
+                    print("iget")
+                    return v
+
+                def fset(self, orm, v):
+                    print("fset")
+                    return v
+
+                def fdel(self, orm, v):
+                    print("fdel")
+                    return v
+
+                def iquery(self, query, v):
+                    print("iquery")
+                    return v
+
+                def jsonable(self, orm, v):
+                    print("jsonable")
+                    return v
     """
-
     connection_name = ""
     """the name of the connection to use to retrieve the interface"""
 
@@ -77,20 +103,20 @@ class Orm(object):
     """the class this Orm will use for iterating through results returned from db"""
 
     _id = Field(long, True, pk=True)
-    _created = Field(datetime.datetime, True, idefault_insert=lambda *_, **__: datetime.datetime.utcnow())
-    _updated = Field(datetime.datetime, True, idefault=lambda *_, **__: datetime.datetime.utcnow())
 
-#     @_created.isetter
-#     def _created(self, val, is_update, is_modified):
-#         if not is_modified and not is_update:
-#             val = datetime.datetime.utcnow()
-#         return val
-# 
-#     @_updated.isetter
-#     def _updated(self, val, is_update, is_modified):
-#         if not is_modified:
-#             val = datetime.datetime.utcnow()
-#         return val
+    class _created(Field):
+        type = datetime.datetime
+        required = True
+
+        def iset(self, orm, val):
+            return datetime.datetime.utcnow() if orm.is_insert() else val
+
+    class _updated(Field):
+        type = datetime.datetime
+        required = True
+
+        def iset(self, orm, val):
+            return datetime.datetime.utcnow()
 
     @decorators.classproperty
     def table_name(cls):
@@ -115,13 +141,13 @@ class Orm(object):
 
     @decorators.classproperty
     def query(cls):
-        """
-        return a new Query instance ready to make a db call using the child class
+        """return a new Query instance ready to make a db call using the child class
 
-        example -- fluid interface
+        :example:
+            # fluid interface
             results = Orm.query.is_foo('value').desc_bar().get()
 
-        return -- Query() -- every time this is called a new query instance is created using cls.query_class
+        :returns: Query, every time this is called a new query instance is created using cls.query_class
         """
         query_class = cls.query_class
         return query_class(orm_class=cls)
@@ -152,20 +178,6 @@ class Orm(object):
         """
         return {k:getattr(self, k, None) for k in self.schema.fields}
 
-    def __init__(self, fields=None, **fields_kwargs):
-        """Create an Orm object
-
-        :param fields: dict, the fields in a dict
-        :param **fields_kwargs: dict, if you would like to pass the fields as key=val
-        """
-        self.reset_modified()
-
-        fields = self.make_dict(fields, fields_kwargs)
-        self.modify(fields)
-
-        self._interface_pk = None
-        self._interface_hydrate = False
-
     @classmethod
     def pool(cls, maxsize=0):
         """
@@ -190,7 +202,6 @@ class Orm(object):
 
     @classmethod
     def hydrate(cls, fields=None, **fields_kwargs):
-        # TODO -- I think we can merge repopulate and populate into this method
         """return a populated instance with the present fields
 
         NOTE -- you probably shouldn't override this method since the Query methods
@@ -201,15 +212,8 @@ class Orm(object):
         :returns: an instance of this class with populated fields
         """
         instance = cls()
-
-        # combine the passed in fields with the defined fields, set any missing
-        # fields to None
-        pop_fields = {}
         fields = cls.make_dict(fields, fields_kwargs)
-        for k in instance.schema.fields.keys():
-            pop_fields[k] = fields.get(k, None)
-
-        instance.from_interface(pop_fields)
+        instance.from_interface(fields)
         return instance
 
     @classmethod
@@ -225,8 +229,41 @@ class Orm(object):
         """
         return utils.make_dict(fields, fields_kwargs)
 
+    def __init__(self, fields=None, **fields_kwargs):
+        """Create an Orm object
+
+        :param fields: dict, the fields in a dict
+        :param **fields_kwargs: dict, if you would like to pass the fields as key=val
+        """
+        self.reset_modified()
+
+        fields = self.make_dict(fields, fields_kwargs)
+        fields = self.modify_fields(fields)
+
+        for field_name, field in self.schema.fields.items():
+            if field_name in fields:
+                field_val = fields[field_name]
+
+            else:
+                field_val = field.fdefault(self, None)
+
+            setattr(self, field_name, field_val)
+
+        self._interface_pk = None
+        self._interface_hydrate = False
+
     def fk(self, orm_class):
         """find the field value in self that is the primary key of the passed in orm_class
+
+        :example:
+            class Foo(Orm):
+                pass
+
+            class Bar(Orm):
+                foo_id = Field(Foo)
+
+            b = Bar(foo_id=1)
+            print(b.fk(Foo)) # 1
 
         :param orm_class: Orm, the fields in self will be checked until the field that
             references Orm is found, then the value of that field will be returned
@@ -277,7 +314,6 @@ class Orm(object):
         self._interface_pk = self.pk
         self._interface_hydrate = True
 
-
     def to_interface(self):
         """Get all the fields that need to be saved
 
@@ -288,24 +324,20 @@ class Orm(object):
         fields = {}
         schema = self.schema
         for k, field in schema.fields.items():
-            is_modified = k in self.modified_fields
-            orig_v = getattr(self, k)
-            v = field.isave(
-                self,
-                orig_v,
-                is_update=is_update,
-                is_modified=is_modified
-            )
+            v = field.iset(self, getattr(self, k))
+            is_modified = self.is_modified(k)
 
             # if v has a value or it's been modified (even if it doesn't have a
             # value) then we will probably want to pass the value onto the db
             if is_modified or v is not None:
                 fields[k] = v
 
-        if not is_update:
-            for field_name in schema.required_fields.keys():
-                if field_name not in fields:
-                    raise KeyError("Missing required field {}".format(field_name))
+            if v is None and field.is_required():
+                if field.is_pk() and v == self._interface_pk:
+                    fields.pop(k, None)
+
+                else:
+                    raise KeyError("Missing required field {}".format(k))
 
         return fields
 
@@ -402,12 +434,20 @@ class Orm(object):
         return a new Orm instance with the columns from that row)"""
         pk = self._interface_pk
         if not pk:
-            raise ValueError("Unable to refetch orm via pk")
-        return self.query.get_pk(pk)
+            raise ValueError("Unable to refetch orm via hydrated primary key")
+        return self.query.pk(pk)
 
-    def is_modified(self):
-        """true if a field has been changed from its original value, false otherwise"""
-        return len(self.modified_fields) > 0
+    def is_modified(self, field_name=""):
+        """true if a field, or any field, has been changed from its original value, false otherwise
+
+        :param field_name: string, the name of the field you want to check for modification
+        :returns: bool
+        """
+        if field_name:
+            ret = field_name in self.modified_fields
+        else:
+            ret = len(self.modified_fields) > 0
+        return ret
 
     def reset_modified(self, field_name=""):
         """
@@ -443,29 +483,17 @@ class Orm(object):
             this picks those up and combines them with fields
         :returns: set, all the names of the fields that were modified
         """
-        modified_fields = set()
+        modified_fields = set(self.modified_fields)
+
         fields = self.make_dict(fields, fields_kwargs)
         fields = self.modify_fields(fields)
-
-#         for field_name, field in self.schema.fields:
-#             if field_name in fields:
-#                 setattr(self, field_name, field_val)
-#                 modified_fields.add(field_name)
-# 
-#             else:
-#                 setattr(self, field_name, None)
-# 
-# 
-# 
-# 
 
         for field_name, field_val in fields.items():
             in_schema = field_name in self.schema.fields
             if in_schema:
                 setattr(self, field_name, field_val)
-                modified_fields.add(field_name)
 
-        return modified_fields
+        return self.modified_fields - modified_fields
 
     def modify_fields(self, fields):
         """In child classes you should override this method to do any default 
@@ -479,15 +507,7 @@ class Orm(object):
 
     def __setattr__(self, field_name, field_val):
         if field_name in self.schema.fields:
-            if self.schema.fields[field_name].is_pk():
-                # we mark everything as dirty because the primary key has changed
-                # and so a new row would be inserted into the db
-                self.modified_fields.add(field_name)
-                self.modified_fields.update(self.schema.normal_fields.keys())
-
-            else:
-                self.modified_fields.add(field_name)
-
+            self.modified_fields.add(field_name)
         super(Orm, self).__setattr__(field_name, field_val)
 
     def __delattr__(self, field_name):

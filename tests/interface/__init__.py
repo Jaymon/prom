@@ -36,13 +36,15 @@ class BaseTestInterface(BaseTestCase):
 
     def test_transaction_error(self):
         i = self.get_interface()
-        with self.assertRaises(StopIteration):
-            with i.transaction():
-                raise StopIteration()
+        if is_py2:
+            with self.assertRaises(StopIteration):
+                with i.transaction():
+                    raise StopIteration()
 
-#        with self.assertRaises(RuntimeError):
-#            with i.transaction():
-#                raise RuntimeError()
+        else:
+            with self.assertRaises(RuntimeError):
+                with i.transaction():
+                    raise RuntimeError()
 
     def test_set_table(self):
         i = self.get_interface()
@@ -85,7 +87,7 @@ class BaseTestInterface(BaseTestCase):
             three=Field(decimal.Decimal),
             four=Field(float, True, size=10),
             six=Field(long, True,),
-            seven=Field(int, False, ref=s_ref),
+            seven=Field(s_ref, False),
             eight=Field(datetime.datetime),
             nine=Field(datetime.date),
         )
@@ -650,7 +652,7 @@ class BaseTestInterface(BaseTestCase):
 
         for field_name, field in s:
             field2 = fields[field_name]
-            self.assertEqual(field.type, field2["field_type"])
+            self.assertEqual(field.interface_type, field2["field_type"])
             self.assertEqual(field.is_pk(), field2["pk"])
             self.assertEqual(field.required, field2["field_required"], field_name)
 
@@ -858,7 +860,7 @@ class BaseTestInterface(BaseTestCase):
             table_name_2,
             _id=Field(int, pk=True),
             bar=Field(int, True),
-            s_pk=Field(int, True, ref=s1),
+            s_pk=Field(s1, True),
         )
         i.set_table(s2)
 

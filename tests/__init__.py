@@ -126,7 +126,7 @@ class BaseTestCase(TestCase):
             })
 
         orm_class = type(
-            ByteString(tn),
+            ByteString(tn) if is_py2 else String(tn),
             (Orm,),
             properties,
         )
@@ -243,26 +243,26 @@ class BaseTestCase(TestCase):
         for k, v in schema.fields.items():
             if v.is_pk(): continue
 
-            if issubclass(v.type, basestring):
+            if issubclass(v.interface_type, basestring):
                 fields[k] = testdata.get_words()
 
-            elif issubclass(v.type, int):
+            elif issubclass(v.interface_type, int):
                 fields[k] = testdata.get_int32()
 
-            elif issubclass(v.type, long):
+            elif issubclass(v.interface_type, long):
                 fields[k] = testdata.get_int64()
 
-            elif issubclass(v.type, datetime.datetime):
+            elif issubclass(v.interface_type, datetime.datetime):
                 fields[k] = testdata.get_past_datetime()
 
-            elif issubclass(v.type, float):
+            elif issubclass(v.interface_type, float):
                 fields[k] = testdata.get_float()
 
-            elif issubclass(v.type, bool):
+            elif issubclass(v.interface_type, bool):
                 fields[k] = True if random.randint(0, 1) == 1 else False
 
             else:
-                raise ValueError("{}".format(v.type))
+                raise ValueError("{}".format(v.interface_type))
 
         fields.update(field_kwargs)
         return fields

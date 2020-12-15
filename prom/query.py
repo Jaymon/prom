@@ -13,7 +13,6 @@ import math
 import inspect
 import time
 import re
-import thread
 
 from decorators import deprecated
 
@@ -563,7 +562,14 @@ class Fields(list):
         self.options = {}
 
     def names(self):
-        return self.field_names.keys()
+        """Return all the field names in the order the were first seen"""
+        ret = []
+        seen = set()
+        for f in self:
+            if f.name not in seen:
+                ret.append(f.name)
+                seen.add(f.name)
+        return ret
 
     def append(self, field):
         index = len(self)

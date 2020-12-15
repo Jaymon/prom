@@ -72,6 +72,26 @@ class OrmTest(EnvironTestCase):
 #         o2 = o.query.get_pk(o.pk)
 #         pout.v(o2.fields)
 
+    def test_created_updated(self):
+        orm_class = self.get_orm_class()
+
+        now = datetime.datetime.utcnow()
+
+        o = orm_class(foo=1, bar="1")
+        self.assertIsNone(o._created)
+        self.assertIsNone(o._updated)
+
+        o.save()
+        self.assertLess(now, o._created)
+        self.assertLess(now, o._updated)
+
+        _created = o._created
+        _updated = o._updated
+        o.foo=2
+        o.save()
+        self.assertEqual(_created, o._created)
+        self.assertLess(_updated, o._updated)
+
     def test_hydrate_1(self):
         """make sure you can add/update and change the primary key and all of that
         works as expected"""
@@ -104,7 +124,7 @@ class OrmTest(EnvironTestCase):
         )
 
         o = orm_class.hydrate(foo=1)
-        pout.v(o.fields)
+        self.assertEqual("lambda bar", o.bar)
 
 
     def test_no_pk(self):
@@ -116,9 +136,6 @@ class OrmTest(EnvironTestCase):
         om1 = orm_class.query.get_one()
         om2 = orm_class.query.is_foo(om1.foo).get_one()
         self.assertEqual(om1.foo, om2.foo)
-
-    def test_readonly(self):
-        pass
 
     def test_int_pk(self):
         """Postgres was returning longs for primary keys in py2.7, this was different
@@ -181,9 +198,9 @@ class OrmTest(EnvironTestCase):
         class FOFieldISetOrm(Orm):
             table_name = "FOFieldISetOrm_table"
             foo = Field(int)
-            @foo.isaver
-            def foo(cls, val, is_update, is_modified):
-                val = 100 if is_update else 10
+            @foo.isetter
+            def foo(self, val):
+                val = 100 if self.is_update() else 10
                 return val
 
         #o = FOFieldISetOrm(foo=1)
@@ -221,8 +238,8 @@ class OrmTest(EnvironTestCase):
             table_name = "IGetSetInsertUpdateOrm_table"
             #interface = self.get_interface()
             foo = Field(str)
-            @foo.isaver
-            def foo(self, val, is_update, is_modified):
+            @foo.isetter
+            def foo(self, val):
                 if val is None: return val
                 return json.dumps(val)
 
@@ -376,17 +393,14 @@ class OrmTest(EnvironTestCase):
     def test_jsonable(self):
         orm_class = self.get_orm_class()
         orm_class.dt = Field(datetime.datetime)
-        t = orm_class()
-        t.hydrate(foo=1, bar="blah", dt=datetime.datetime.utcnow())
+        t = orm_class.hydrate(foo=1, bar="blah", dt=datetime.datetime.utcnow())
         d = t.jsonable()
         self.assertEqual(1, d['foo'])
         self.assertEqual("blah", d['bar'])
         self.assertTrue("dt" in d)
 
-        t = orm_class()
-        t.hydrate(foo=1)
+        t = orm_class.hydrate(foo=1)
         d = t.jsonable()
-        pout.v(d)
         self.assertEqual(1, d['foo'])
         self.assertFalse("bar" in d)
 
@@ -591,6 +605,38 @@ class OrmTest(EnvironTestCase):
         t = orm_class(foo=1)
         self.assertTrue('foo' in t.modified_fields)
         self.assertEqual(1, t.foo)
+
+    def test___init___default_fset(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, default=5),
+            bar=Field(int, fset=lambda o, v: 6 if v is None else v),
+            che=Field(int)
+        )
+
+        o = orm_class()
+        self.assertEqual(5, o.foo)
+        self.assertEqual(6, o.bar)
+        self.assertIsNone(o.che)
+
+        o.modify(che=7)
+        self.assertEqual(5, o.foo)
+        self.assertEqual(6, o.bar)
+        self.assertEqual(7, o.che)
+
+        o = orm_class(foo=1)
+        self.assertEqual(1, o.foo)
+        self.assertEqual(6, o.bar)
+        self.assertIsNone(o.che)
+
+        o.modify(che=7, bar=8)
+        self.assertEqual(1, o.foo)
+        self.assertEqual(8, o.bar)
+        self.assertEqual(7, o.che)
+
+        o = orm_class(foo=1, bar=2, che=3)
+        self.assertEqual(1, o.foo)
+        self.assertEqual(2, o.bar)
+        self.assertEqual(3, o.che)
 
     def test_save(self):
         orm_class = self.get_orm_class()

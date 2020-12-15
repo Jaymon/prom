@@ -95,10 +95,11 @@ class DsnConnection(Connection):
 
         <full.python.path.InterfaceClass>://<username>:<password>@<host>:<port>/<database>?<options=val&query=string>#<name>
 
-    This is useful to allow connections coming in through environment variables as described
-    http://www.12factor.net/backing-services
+    This is useful to allow connections coming in through environment variables as described in :
+        http://www.12factor.net/backing-services
 
-    It tooks its inspiration from this project https://github.com/kennethreitz/dj-database-url
+    It tooks its inspiration from this project:
+        https://github.com/kennethreitz/dj-database-url
 
     http://en.wikipedia.org/wiki/Connection_string
     http://en.wikipedia.org/wiki/Data_source_name
@@ -175,7 +176,7 @@ class Schema(object):
     instances = {}
     """class variable, holds different schema instances for various orms"""
 
-    table_name = u""
+    table_name = ""
     """string -- set the table name for this schema instance"""
 
     fields = None
@@ -228,13 +229,21 @@ class Schema(object):
         table_name = orm_class.table_name
         if table_name not in cls.instances:
             s = cls(table_name)
+            s.orm_class = orm_class
+
             seen_properties = set()
             for klass in inspect.getmro(orm_class)[:-1]:
                 for k, v in vars(klass).items():
                     if k not in seen_properties:
                         if isinstance(v, (Field, Index)):
-                            v.orm_class = orm_class
                             s.set(k, v)
+
+                        elif isinstance(v, type):
+                            # We've defined a Field class inline of the Orm, so
+                            # we want to instantiate it
+                            if issubclass(v, Field):
+                                s.set(k, v(v.type, v.required, v.options))
+
                         seen_properties.add(k)
 
             #s.orm_class = orm_class
@@ -242,18 +251,16 @@ class Schema(object):
 
         else:
             s = cls.instances[table_name]
+            s.orm_class = orm_class
 
-        s.orm_class = orm_class
         return s
 
     def __init__(self, table_name, **fields_or_indexes):
-        """
-        create an instance
+        """Create an instance
 
         every Orm should have a .schema attribute that is an instance of this class
 
-        example --
-
+        :example:
             schema = Schema(
                 "table_name"
                 field1=Field(int, True),
@@ -261,12 +268,14 @@ class Schema(object):
                 index_fields=Index("field1", "field2")
             )
 
-        table_name -- string -- the table name
-        **fields_or_indexes -- a dict of field name or index keys with tuple values, see __getattr__ for more details
+        :param table_name: string, the table name
+        :param **fields_or_indexes: a dict of field name or index keys with tuple values,
+            see __getattr__ for more details
         """
         self.fields = {}
         self.indexes = {}
         self.table_name = String(table_name)
+        self.orm_class = None
 
         for name, val in fields_or_indexes.items():
             self.set(name, val)
@@ -314,6 +323,8 @@ class Schema(object):
         if not isinstance(field, Field): raise ValueError("{} is not a Field instance".format(type(field)))
 
         field.name = field_name
+        field.orm_class = self.orm_class
+
         if field.options['unique']:
             self.set_index(field_name, Index(field_name, unique=True))
 
@@ -339,6 +350,8 @@ class Schema(object):
         if not isinstance(index, Index): raise ValueError("{} is not an Index instance".format(type(index)))
 
         index.name = index_name
+        index.orm_class = self.orm_class
+
         self.indexes[index_name] = index
         return self
 
@@ -365,7 +378,7 @@ class Schema(object):
             orm_class = Orm
 
         child_class = type(
-            ByteString(self.table_name),
+            ByteString(self.table_name) if is_py2 else String(self.table_name),
             (orm_class,),
             {"table_name": self.table_name, "schema": self}
         )
@@ -380,6 +393,9 @@ class Schema(object):
                         #setattr(child_class, k, property(lambda: AttributeError))
                         setattr(child_class, k, None)
                         #delattr(child_class, k)
+
+                    elif isinstance(v, type) and issubclass(v, Field):
+                        setattr(child_class, k, None)
 
                     seen_properties.add(k)
 
@@ -433,7 +449,7 @@ class Field(object):
             return val
 
         @foo.isetter
-        def foo(self, val, is_update, is_modified):
+        def foo(self, val):
             # do custom things
             return val
 
@@ -442,7 +458,7 @@ class Field(object):
     value
 
     There are also fget/fset/fdel methods that can be set to customize behavior
-    on when a value is set on a particular instance, so if you wanted to make sure
+    on when a value is set on a particular orm instance, so if you wanted to make sure
     that bar was always an int when it is set, you could:
 
         bar = Field(int, True)
@@ -469,10 +485,14 @@ class Field(object):
     """
 
     type = None
+    """The python type of this field (eg, str, int, Orm)"""
 
     required = False
+    """True if this field is required"""
 
-
+    options = None
+    """In the instance, this will be a dict of key/val pairs containing extra information
+    about the field"""
 
     @property
     def schema(self):
@@ -495,17 +515,9 @@ class Field(object):
 
         return self._schema
 
-#     @property
-#     def type(self):
-#         ret = self._type
-#         if not isinstance(ret, type) or hasattr(ret, "schema"):
-#             s = self.schema
-#             ret = s.pk.type
-# 
-#         return ret
-
     @property
     def interface_type(self):
+        """Returns the type that will be used in the interface to create the table"""
         ret = self.type
         if not isinstance(ret, type) or hasattr(ret, "schema"):
             s = self.schema
@@ -586,25 +598,49 @@ class Field(object):
         return bool(self.schema)
 
     def is_required(self):
+        """Return True if this field is required to save into the interface"""
         return self.required
 
-    def fget(self, instance, val):
-        return self.fdefault(instance, val)
+    def fget(self, orm, val):
+        """Called anytime the field is accessed through the Orm (eg, Orm.foo)
+
+        :param orm: Orm, the Orm instance the field is being accessed on
+        :param val: mixed, the current value of the field
+        :returns: mixed
+        """
+        return val
 
     def fgetter(self, v):
         """decorator for setting field's fget function"""
         self.fget = v
         return self
 
-    def iget(self, instance, val):
-        return self.fdefault(instance, val)
+    def iget(self, orm, val):
+        """Called anytime the field is being returned from the interface to the orm
+
+        think of this as when the orm receives the field value from the interface
+
+        :param orm: Orm
+        :param val: mixed, the current value of the field
+        :returns: mixed
+        """
+        return val
 
     def igetter(self, v):
         """decorator for the method called when a field is pulled from the database"""
         self.iget = v
         return self
 
-    def fset(self, instance, val):
+    def fset(self, orm, val):
+        """This is called on Orm instantiation and any time field is set (eg Orm.foo = ...)
+
+        on Orm creation val will be None if the field wasn't pass to Orm.__init__ otherwise
+        it will be the value passed into Orm.__init__
+
+        :param orm: Orm, the Orm instance the field is being set on
+        :param val: mixed, the current value of the field
+        :returns: mixed
+        """
         return val
 
     def fsetter(self, v):
@@ -612,7 +648,24 @@ class Field(object):
         self.fset = v
         return self
 
-    def fdel(self, instance, val):
+    def iset(self, orm, val):
+        """Called anytime the field is being fetched to send to the interface
+
+        think of this as when the interface is going to get the field value
+
+        :param orm: Orm
+        :param val: mixed, the current value of the field
+        :returns: mixed
+        """
+        return val
+
+    def isetter(self, v):
+        """decorator for setting field's fset function"""
+        self.iset = v
+        return self
+
+
+    def fdel(self, orm, val):
         return None
 
     def fdeleter(self, v):
@@ -620,31 +673,19 @@ class Field(object):
         self.fdel = v
         return self
 
-    def isave(self, instance, val, is_update, is_modified):
-        if is_modified:
-            val = self.imodify(instance, val)
-            if is_update:
-                val = self.imodify_update(instance, val)
+    def fdefault(self, orm, val):
+        """On a new Orm instantiation, this will be called with val=None and will
+        if val=None then this will decide how to use self.default to set the default
+        value of the field
 
-            else:
-                val = self.imodify_insert(instance, val)
+        usually you won't need to override this method because you can just pass
+        default into the field instantiation and it will get automatically used
+        in this method
 
-        else:
-            val = self.idefault(instance, val)
-            if is_update:
-                val = self.idefault_update(instance, val)
-
-            else:
-                val = self.idefault_insert(instance, val)
-
-        return val
-
-    def isaver(self, v):
-        """decorator for the method called when a field is saved into the database"""
-        self.isave = v
-        return self
-
-    def fdefault(self, instance, val):
+        :param orm: Orm, the Orm instance being created
+        :param val: mixed, the current value of the field (usually None)
+        :returns: mixed
+        """
         ret = val
         if val is None:
             if callable(self.default):
@@ -653,7 +694,7 @@ class Field(object):
             elif self.default is None:
                 ret = self.default
 
-            elif isinstance(self.default, (dict, list, set, object)):
+            elif isinstance(self.default, (dict, list, set)):
                 ret = type(self.default)()
 
             else:
@@ -668,61 +709,17 @@ class Field(object):
         self.fdefault = v
         return self
 
-    def idefault(self, instance, val):
-        return val
+    def iquery(self, query, val):
+        """This will be called when setting the field onto a query instance
 
-    def idefaulter(self, v):
-        """decorator for the method called when an update/insert database query is going
-        to be used and that field hasn't been touched"""
-        self.idefault = v
-        return self
+        :example:
+            o = Orm(foo=1)
+            o.query.eq_foo(1) # iquery called here
 
-    def idefault_insert(self, instance, val):
-        return val
-
-    def idefault_inserter(self, v):
-        """decorator for the method called when an insert database query is going
-        to be used and that field hasn't been touched"""
-        self.idefault_insert = v
-        return self
-
-    def idefault_update(self, instance, val):
-        return val
-
-    def idefault_updater(self, v):
-        """decorator for the method called when an update database query is going
-        to be used and that field hasn't been touched"""
-        self.idefault_update = v
-        return self
-
-    def imodify(self, instance, val):
-        return val
-
-    def imodifier(self, v):
-        """decorator for the method called when an insert/update database query is going
-        to be used and that field has been modified"""
-        self.imodify = v
-        return self
-
-    def imodify_insert(self, instance, val):
-        return val
-
-    def imodify_inserter(self, v):
-        """decorator for the method called when an insert database query is going
-        to be used and that field has been modified"""
-        self.imodify_insert = v
-        return self
-
-    def imodify_update(self, instance, val):
-        return val
-
-    def imodify_updater(self, v):
-        """decorator for the method called when an update database query is going
-        to be used and that field has been modified"""
-        self.imodify_update = v
-        return self
-
-    def iquery(self, instance, val):
+        :param query: Query
+        :param val: mixed, the fields value
+        :returns: mixed
+        """
         return val
 
     def iquerier(self, v):
@@ -730,9 +727,9 @@ class Field(object):
         self.iquery = v
         return self
 
-    def jsonable(self, instance, val):
+    def jsonable(self, orm, val):
         if val is None:
-            val = self.fdefault(instance, val)
+            val = self.fdefault(orm, val)
 
         if val is not None:
             format_str = ""
@@ -787,54 +784,55 @@ class Field(object):
         """Decorator for the method called for a field when an Orm's .jsonable method
         is called"""
         self.jsonable = v
+        return self
 
-    def fval(self, instance):
-        """return the raw value that this property is holding internally for instance"""
+    def fval(self, orm):
+        """return the raw value that this property is holding internally for the orm instance"""
         try:
-            val = instance.__dict__[self.instance_field_name]
+            val = orm.__dict__[self.instance_field_name]
         except KeyError as e:
             #raise AttributeError(str(e))
             val = None
 
         return val
 
-    def __get__(self, instance, classtype=None):
+    def __get__(self, orm, classtype=None):
         """This is the wrapper that will actually be called when the field is
         fetched from the instance, this is a little different than Python's built-in
         @property fget method because it will pull the value from a shadow variable in
         the instance and then call fget"""
-        if instance is None:
+        if orm is None:
             # class is requesting this property, so return it
             return self
 
-        raw_val = self.fval(instance)
-        ret = self.fget(instance, raw_val)
+        raw_val = self.fval(orm)
+        ret = self.fget(orm, raw_val)
 
         # we want to compensate for default values right here, so if the raw val
         # is None but the new val is not then we save the returned value, this
         # allows us to handle things like dict with no surprises
         if raw_val is None:
             if ret is not None:
-                instance.__dict__[self.instance_field_name] = ret
+                orm.__dict__[self.instance_field_name] = ret
 
         return ret
 
-    def __set__(self, instance, val):
+    def __set__(self, orm, val):
         """this is the wrapper that will actually be called when the field is
         set on the instance, your fset method must return the value you want set,
         this is different than Python's built-in @property setter because the
         fset method *NEEDS* to return something"""
-        val = self.fset(instance, val)
-        instance.__dict__[self.instance_field_name] = val
+        val = self.fset(orm, val)
+        orm.__dict__[self.instance_field_name] = val
 
-    def __delete__(self, instance):
+    def __delete__(self, orm):
         """the wrapper for when the field is deleted, for the most part the default
         fdel will almost never be messed with, this is different than Python's built-in
         @property deleter because the fdel method *NEEDS* to return something and it
         accepts the current value as an argument"""
-        val = self.fdel(instance, self.fval(instance))
-        instance.__dict__[self.instance_field_name] = val
-        #self.__set__(instance, val)
+        val = self.fdel(orm, self.fval(orm))
+        orm.__dict__[self.instance_field_name] = val
+        #self.__set__(orm, val)
 
 
 class ObjectField(Field):
@@ -871,11 +869,10 @@ class ObjectField(Field):
         if val is None: return val
         return pickle.loads(base64.b64decode(val))
 
-
-    def isave(self, instance, val, is_update, is_modified):
+    def iset(self, orm, val):
         return self.encode(val)
 
-    def iget(self, instance, val):
+    def iget(self, orm, val):
         return self.decode(val)
 
 

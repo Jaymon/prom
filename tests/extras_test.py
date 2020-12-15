@@ -3,6 +3,7 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 import time
 from threading import Thread
 
+from prom.config import Field
 from prom.extras.model import MagicOrm
 from prom.extras.query import CacheQuery
 from . import TestCase, EnvironTestCase, testdata
@@ -14,8 +15,8 @@ class MagicOrmTest(EnvironTestCase):
         class O1(MagicOrm):
             table_name = self.get_table_name("o1_magicorm")
             interface = self.get_interface()
-            bar = MagicOrm.Field(bool)
-            che = MagicOrm.Field(str)
+            bar = Field(bool)
+            che = Field(str)
 
         return O1(**kwargs)
 
@@ -24,7 +25,7 @@ class MagicOrmTest(EnvironTestCase):
         class O2(MagicOrm):
             table_name = self.get_table_name("o2_magicorm")
             interface = self.get_interface()
-            o1_id = MagicOrm.Field(o1.__class__)
+            o1_id = Field(o1.__class__)
 
         return O2(**kwargs)
 

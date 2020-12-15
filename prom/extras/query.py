@@ -13,7 +13,7 @@ import math
 import inspect
 import time
 import re
-import thread
+import threading
 
 from ..compat import *
 from ..utils import make_hash
@@ -150,7 +150,7 @@ class CacheNamespace(defaultdict):
     @property
     def process_id(self):
         ret = ""
-        if thread:
+        if threading:
             f = getattr(os, 'getpid', None)
             if f:
                 ret = str(f())
@@ -159,8 +159,8 @@ class CacheNamespace(defaultdict):
     @property
     def thread_id(self):
         ret = ""
-        if thread:
-            ret = str(thread.get_ident())
+        if threading:
+            ret = str(threading.current_thread().ident)
         return ret
 
     def __init__(self):

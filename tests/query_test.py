@@ -52,35 +52,14 @@ class FieldsTest(BaseTestCase):
         fs.append(Field(q, "foo", 1))
         self.assertTrue(fs)
 
+    def test_names(self):
+        q = self.get_query()
+        fs = Fields()
 
-
-
-
-
-#     def test___missing__(self):
-#         fs = Fields()
-#         fs["foo"] = ["foo", 1]
-#         self.assertTrue("foo" in fs)
-# 
-#     def test___contains__(self):
-#         fs = Fields()
-#         fs.append("foo", ["foo", 1])
-#         fs.append("foo", ["foo", 2])
-#         self.assertTrue("foo" in fs)
-#         self.assertFalse("bar" in fs)
-# 
-#     def test_get(self):
-#         fs = Fields()
-#         fs.append("foo", ["foo", 1])
-#         self.assertEqual(1, len(fs.get("foo")))
-# 
-#         fs.append("foo", ["foo", 2])
-#         self.assertEqual(2, len(fs.get("foo")))
-# 
-#         fs.append("bar", ["bar", "one"])
-#         self.assertEqual(1, len(fs.get("bar")))
-#         self.assertEqual(1, len(fs.get("bar")))
-#         self.assertEqual(2, len(fs.get("foo")))
+        fs.append(Field(q, "foo", None))
+        fs.append(Field(q, "bar", None))
+        fs.append(Field(q, "foo", None))
+        self.assertEqual(["foo", "bar"], list(fs.names()))
 
 
 class BoundsTest(TestCase):
@@ -720,27 +699,27 @@ class QueryTest(EnvironTestCase):
         self.assertEqual((0, 0), q.bounds.get())
 
     def test_insert_and_update(self):
-        IUTorm = self.get_orm_class()
-        q = IUTorm.query
-        o = IUTorm(foo=1, bar="value 1")
-        fields = o.depopulate(is_update=False)
+        orm_class = self.get_orm_class()
+        q = orm_class.query
+        o = orm_class(foo=1, bar="value 1")
+        fields = o.to_interface()
         pk = q.copy().set(fields).insert()
         o = q.copy().get_pk(pk)
         self.assertLess(0, pk)
         self.assertTrue(o._created)
         self.assertTrue(o._updated)
 
-        o = IUTorm(_id=o.pk, foo=2, bar="value 2", _created=fields["_created"])
-        fields = o.depopulate(is_update=True)
+        fields["foo"] = 2
+        fields["bar"] = "value 2"
         row_count = q.copy().set(fields).is_pk(pk).update()
         self.assertEqual(1, row_count)
 
-        #time.sleep(0.1)
         o2 = q.copy().get_pk(pk)
+
         self.assertEqual(2, o2.foo)
         self.assertEqual("value 2", o2.bar)
         self.assertEqual(o._created, o2._created)
-        self.assertNotEqual(o._updated, o2._updated)
+        self.assertEqual(o._updated, o2._updated)
 
     def test_update_bubble_up(self):
         """
@@ -1011,9 +990,10 @@ class IteratorTest(BaseTestCase):
         g = _q.copy().select_bar().select_foo().get().values()
         icount = 0
         for v in g:
+            pout.v(v)
             icount += 1
-            self.assertTrue(isinstance(v[0], int))
-            self.assertTrue(isinstance(v[1], basestring))
+            self.assertTrue(isinstance(v[0], basestring))
+            self.assertTrue(isinstance(v[1], int))
         self.assertEqual(count, icount)
 
         i = _q.copy().get()

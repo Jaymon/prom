@@ -40,7 +40,7 @@ setup(
         'Topic :: Software Development :: Libraries',
         'Topic :: Utilities',
         'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3',
     ],
     #test_suite = "{}_test".format(name),
     entry_points = {

@@ -389,15 +389,15 @@ class ObjectFieldTest(EnvironTestCase):
         ocls = type(o)
 
         ocls_iget = ocls.body.iget
-        ocls_isave = ocls.body.isave
+        ocls_iset = ocls.body.iset
 
         @ocls.body.igetter
         def body(cls, field_val):
             self.assertTrue(isinstance(field_val, dict))
             return field_val
 
-        @ocls.body.isaver
-        def body(cls, field_val, *args, **kwargs):
+        @ocls.body.isetter
+        def body(cls, field_val):
             self.assertTrue(isinstance(field_val, dict))
             return field_val
 
@@ -409,7 +409,7 @@ class ObjectFieldTest(EnvironTestCase):
         self.assertTrue(isinstance(o2.body, dict))
 
         ocls.body.iget = ocls_iget
-        ocls.body.isave = ocls_isave
+        ocls.body.iset = ocls_iset
 
 
 class JsonFieldTest(ObjectFieldTest):
@@ -417,46 +417,33 @@ class JsonFieldTest(ObjectFieldTest):
 
 
 class FieldTest(EnvironTestCase):
+    def test_iget(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, iget=lambda o, v: bool(v))
+        )
 
-    def test_class_override(self):
-        class COOrm(Orm):
-            class foo(Field):
-                type = int
+        o = orm_class()
 
-                def fget(self, o, v):
-                    print("fget")
-                    return v
+        o.from_interface({"foo": 1})
+        self.assertTrue(o.foo)
+        self.assertTrue(isinstance(o.foo, bool))
 
-                def iget(self, o, v):
-                    print("iget")
-                    return v
+    def test_iset(self):
+        dt = datetime.datetime.utcnow()
+        orm_class = self.get_orm_class(
+            foo=Field(int, iset=lambda o, v: datetime.datetime.utcnow())
+        )
 
-                def fset(self, o, v):
-                    print("fset")
-                    return v
+        o = orm_class()
+        self.assertIsNone(o.foo)
 
-                def fdel(self, o, v):
-                    print("fdel")
-                    return v
+        fields = o.to_interface()
+        self.assertLess(dt, fields["foo"])
 
-                def iquery(self, q, v):
-                    print("iquery")
-                    return v
-
-                def jsonable(self, o, v):
-                    print("jsonable")
-                    return v
-
-#     def test_dict_type(self):
-#         class DOrm(Orm):
-#             foo = Field(dict)
-# 
-#         o = DOrm()
-#         o.foo = {"bar": 1, "che": 2}
-#         o.save()
+        fields2 = o.to_interface()
+        self.assertLess(fields["foo"], fields2["foo"])
 
     def test_iquery(self):
-
         class IqueryOrm(Orm):
             foo = Field(int)
 
@@ -466,31 +453,6 @@ class FieldTest(EnvironTestCase):
 
         q = IqueryOrm.query.is_foo("foo")
         self.assertEqual(10, q.fields_where[0].value)
-
-    def test_imodify(self):
-        instance = None
-
-        def iinsert(instance, v):
-            return v + 1
-
-        f = Field(int, imodify=iinsert)
-
-        v = f.imodify(instance, 100)
-        self.assertEqual(101, v)
-
-        v = f.isave(instance, 100, is_update=False, is_modified=True)
-        self.assertEqual(101, v)
-
-        f = Field(int)
-        @f.imodifier
-        def iinsert(instance, v):
-            return v + 2
-        v = f.imodify(instance, 100)
-        self.assertEqual(102, v)
-
-        f = Field(int, True, imodify=lambda instance, v: v + 3 )
-        v = f.imodify(instance, 100)
-        self.assertEqual(103, v)
 
     def test_datetime_jsonable_1(self):
         class FDatetimeOrm(Orm):
@@ -539,10 +501,8 @@ class FieldTest(EnvironTestCase):
             def foo(self, val):
                 return None
 
-        o = FCrudOrm()
+        o = FCrudOrm(foo=0)
 
-        self.assertEqual(None, o.foo)
-        o.foo = 0
         self.assertEqual(1, o.foo)
         self.assertEqual(1, o.foo)
 
@@ -566,11 +526,9 @@ class FieldTest(EnvironTestCase):
         class ICrudOrm(Orm):
             foo = Field(int)
 
-            @foo.isaver
-            def foo(self, v, is_update, is_modified):
-                if is_modified:
-                    v = v + 1
-                elif is_update:
+            @foo.isetter
+            def foo(self, v):
+                if self.is_update():
                     v = v - 1
                 else:
                     v = 0
@@ -592,10 +550,10 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(5, o.foo)
 
         o.save()
-        self.assertEqual(600, o.foo)
+        self.assertEqual(400, o.foo)
 
         o2 = o.query.get_pk(o.pk)
-        self.assertEqual(600, o2.foo)
+        self.assertEqual(400, o2.foo)
 
 
     def test_fdeleter(self):
@@ -649,7 +607,7 @@ class FieldTest(EnvironTestCase):
         from ref import Foo, Bar
 
         self.assertTrue(isinstance(Bar.schema.fields['foo_id'].schema, Schema))
-        self.assertTrue(issubclass(Bar.schema.fields['foo_id'].type, long))
+        self.assertTrue(issubclass(Bar.schema.fields['foo_id'].interface_type, long))
 
     def test_string_ref(self):
         testdata.create_modules({
@@ -673,9 +631,9 @@ class FieldTest(EnvironTestCase):
         from stringref.bar import Bar
 
         self.assertTrue(isinstance(Foo.schema.fields['bar_id'].schema, Schema))
-        self.assertTrue(issubclass(Foo.schema.fields['bar_id'].type, long))
+        self.assertTrue(issubclass(Foo.schema.fields['bar_id'].interface_type, long))
         self.assertTrue(isinstance(Bar.schema.fields['foo_id'].schema, Schema))
-        self.assertTrue(issubclass(Bar.schema.fields['foo_id'].type, long))
+        self.assertTrue(issubclass(Bar.schema.fields['foo_id'].interface_type, long))
 
     def test___init__(self):
         f = Field(str, True)

@@ -21,7 +21,7 @@ import psycopg2.extensions
 from ..base import SQLInterface, SQLConnection
 from ...compat import *
 from ...utils import get_objects
-from ...exception import UniqueError
+from ...exception import UniqueError, InterfaceError
 
 
 # class LoggingCursor(psycopg2.extras.RealDictCursor):
@@ -531,8 +531,9 @@ class PostgreSQL(SQLInterface):
 
     def _handle_error(self, schema, e, **kwargs):
         ret = False
+
         if isinstance(e, psycopg2.ProgrammingError):
-            e_msg = str(e)
+            e_msg = String(e)
             if "does not exist" in e_msg:
                 if "column" in e_msg:
                     #INSERT: 'column "cancelled_date" of relation "chat_followup" does not exist'
