@@ -213,11 +213,10 @@ class Schema(object):
         """returns the primary key name for this schema"""
         try:
             pk_field = self.__getattr__("pk")
-            return pk_field.name
-
+            pk_name = pk_field.name
         except AttributeError:
-            pk_field = None
-            return None
+            pk_name = None
+        return pk_name
 
     @classmethod
     def get_instance(cls, orm_class):
@@ -606,11 +605,13 @@ class Field(object):
 
         self.name = field_options.pop("name", "")
         # this creates a numeric dict key that can't be accessed as an attribute
-        self.instance_field_name = str(id(self))
+        self.instance_field_name = "{}{}".format(self.name, id(self))
         #self._type = field_type
         self.type = field_type
         self.default = field_options.pop("default", None)
         self.orm_class = field_options.pop("orm_class", None)
+        self.help = field_options.pop("help", "")
+        self.choices = field_options.pop("choices", set())
 
         for k in list(field_options.keys()):
             if hasattr(self, k):
@@ -671,6 +672,9 @@ class Field(object):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
+        if val is not None and self.choices:
+            if val not in self.choices:
+                raise ValueError("Value {} not in {} value choices".format(val, self.name))
         return val
 
     def fsetter(self, v):

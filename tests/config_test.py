@@ -442,6 +442,33 @@ class JsonFieldTest(ObjectFieldTest):
 
 
 class FieldTest(EnvironTestCase):
+    def test_help(self):
+        help_str = "this is the foo field"
+        orm_class = self.get_orm_class(
+            foo=Field(int, help=help_str)
+        )
+
+        f = orm_class.schema.foo
+        self.assertEqual(help_str, f.help)
+
+    def test_choices(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, choices=set([1, 2, 3]))
+        )
+        o = orm_class()
+
+        for x in range(1, 4):
+            o.foo = x
+            self.assertEqual(x, o.foo)
+
+        o.foo = 1
+        with self.assertRaises(ValueError):
+            o.foo = 4
+        self.assertEqual(1, o.foo)
+
+        o.foo = None
+        self.assertEqual(None, o.foo)
+
     def test_iget(self):
         orm_class = self.get_orm_class(
             foo=Field(int, iget=lambda o, v: bool(v))
