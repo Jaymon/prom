@@ -459,25 +459,6 @@ class QueryTest(EnvironTestCase):
         self.assertEqual(o.foo, v[0])
         self.assertEqual(o.bar, v[1])
 
-    def test_values_query(self):
-        _q = self.get_query()
-
-        count = 2
-        pks = self.insert(_q, count)
-
-        vals = _q.copy().select_foo().values()
-        self.assertEqual(count, len(vals))
-        for v in vals:
-            self.assertTrue(isinstance(v, int))
-
-        vals = _q.copy().select_foo().select_bar().values()
-        self.assertEqual(count, len(vals))
-        for v in vals:
-            self.assertTrue(isinstance(v, list))
-
-        vals = _q.copy().select_foo().limit(1).values()
-        self.assertEqual(1, len(vals))
-
     def test_pk(self):
         orm_class = self.get_orm_class()
         v = orm_class.query.select_pk().one()
@@ -789,6 +770,33 @@ class QueryTest(EnvironTestCase):
         self.assertNotEqual(id(q1), id(q2))
         self.assertNotEqual(id(q1.fields_where), id(q2.fields_where))
         self.assertNotEqual(id(q1.bounds), id(q2.bounds))
+
+    def test_values_query(self):
+        _q = self.get_query()
+
+        count = 2
+        pks = self.insert(_q, count)
+
+        vals = _q.copy().select_foo().values()
+        self.assertEqual(count, len(vals))
+        for v in vals:
+            self.assertTrue(isinstance(v, int))
+
+        vals = _q.copy().select_foo().select_bar().values()
+        self.assertEqual(count, len(vals))
+        for v in vals:
+            self.assertTrue(isinstance(v, list))
+
+        vals = _q.copy().select_foo().limit(1).values()
+        self.assertEqual(1, len(vals))
+
+    def test_count(self):
+        orm_class = self.get_orm_class()
+        self.insert(orm_class, 10)
+
+        self.assertEqual(5, orm_class.query.offset(5).count())
+        self.assertEqual(5, orm_class.query.limit(5).count())
+        self.assertEqual(10, orm_class.query.count())
 
 
 class IteratorTest(BaseTestCase):

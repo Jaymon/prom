@@ -427,6 +427,21 @@ class PostgreSQL(SQLInterface):
 
         return fstrs
 
+    def _normalize_bounds_SQL(self, bounds, sql_options):
+        offset = bounds.offset
+        if sql_options.get('one_query', False):
+            limit = 1
+
+        else:
+            limit, offset = bounds.get()
+            if not bounds.has_limit():
+                limit = "ALL"
+
+        return 'LIMIT {} OFFSET {}'.format(
+            limit,
+            offset
+        )
+
     def get_field_SQL(self, field_name, field):
         """
         returns the SQL for a given field with full type information
@@ -438,7 +453,7 @@ class PostgreSQL(SQLInterface):
         """
         field_type = ""
         interface_type = field.interface_type
-        is_pk = field.options.get('pk', False)
+        is_pk = field.is_pk()
 
         if issubclass(interface_type, bool):
             field_type = 'BOOL'

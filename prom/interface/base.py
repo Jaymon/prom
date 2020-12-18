@@ -816,6 +816,9 @@ class SQLInterface(Interface):
         """
         return '"{}"'.format(name)
 
+    def _normalize_bounds_SQL(self, bounds):
+        raise NotImplemented()
+
     def get_SQL(self, schema, query, **sql_options):
         """
         convert the query instance into SQL
@@ -905,19 +908,7 @@ class SQLInterface(Interface):
             query_str.append(',{}'.format(os.linesep).join(query_sort_str))
 
         if query.bounds:
-            offset = query.bounds.offset
-            if sql_options.get('one_query', False):
-                limit = 1
-                offset = query.bounds.offset
-
-            else:
-                limit, offset = query.bounds.get()
-
-            #limit = 1 if sql_options.get('one_query', False) else query.bounds.limit
-            query_str.append('LIMIT {} OFFSET {}'.format(
-                limit,
-                offset
-            ))
+            query_str.append(self._normalize_bounds_SQL(query.bounds, sql_options))
 
         query_str = "\n".join(query_str)
         return query_str, query_args

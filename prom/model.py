@@ -441,7 +441,7 @@ class Orm(object):
         pk = self._interface_pk
         if not pk:
             raise ValueError("Unable to refetch orm via hydrated primary key")
-        return self.query.pk(pk)
+        return self.query.eq_pk(pk).one()
 
     def is_modified(self, field_name=""):
         """true if a field, or any field, has been changed from its original value, false otherwise

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
+import decimal
 import datetime
 import inspect
 import re
@@ -515,34 +516,79 @@ class Field(object):
 
     @property
     def schema(self):
-        """return the schema instance if this is reference to another table"""
+        """return the schema instance if this is reference to another table
+
+        see .set_type() for an explanation on why we defer figuring this out until now
+        """
         if not hasattr(self, "_schema"):
-            ret = None
-            #o = self._type
-            o = self.type
-            if isinstance(o, type):
-                ret = getattr(o, "schema", None)
+            field_type = self.original_type
+            module, klass = utils.get_objects(field_type)
+            schema = klass.schema
+            if not schema:
+                raise ValueError("Field type {} is not an Orm class".format(field_type))
 
-            elif isinstance(o, Schema):
-                ret = o
-
-            else:
-                module, klass = utils.get_objects(o)
-                ret = klass.schema
-
-            self._schema = ret
+            self._schema = schema
 
         return self._schema
+
+
+
+
+
+
+#     @property
+#     def schema(self):
+#         """return the schema instance if this is reference to another table"""
+#         if not hasattr(self, "_schema"):
+#             ret = None
+#             #o = self._type
+#             o = self.type
+#             if isinstance(o, type):
+#                 ret = getattr(o, "schema", None)
+# 
+#             elif isinstance(o, Schema):
+#                 ret = o
+# 
+#             else:
+#                 module, klass = utils.get_objects(o)
+#                 ret = klass.schema
+# 
+#             self._schema = ret
+# 
+#         return self._schema
+
+
+    @property
+    def type(self):
+        """Return the actual type this field should be
+
+        see .set_type() for an explanation on why we defer this until here
+        """
+        ret = self.original_type
+        if self.is_serialized():
+            ret = str
+
+        else:
+            s = self.schema
+            if s:
+                ret = s.pk.type
+
+        return ret
 
     @property
     def interface_type(self):
         """Returns the type that will be used in the interface to create the table"""
-        ret = self.type
-        if not isinstance(ret, type) or hasattr(ret, "schema"):
-            s = self.schema
-            ret = s.pk.type
+        return self.type
 
-        return ret
+#     @property
+#     def interface_type(self):
+#         """Returns the type that will be used in the interface to create the table"""
+#         ret = self.type
+#         if not isinstance(ret, type) or hasattr(ret, "schema"):
+#             s = self.schema
+#             ret = s.pk.type
+# 
+#         return ret
 
     @property
     def ref(self):
@@ -580,6 +626,30 @@ class Field(object):
         """
         field_options = utils.make_dict(field_options, field_options_kwargs)
 
+        d = self.get_size(field_options)
+        field_options.update(d)
+
+        field_options.setdefault("unique", False)
+
+        self.name = field_options.pop("name", "")
+        # this creates a numeric dict key that can't be accessed as an attribute
+        self.instance_field_name = "{}{}".format(self.name, id(self))
+        self.default = field_options.pop("default", None)
+        self.orm_class = field_options.pop("orm_class", None)
+        self.help = field_options.pop("help", "")
+        self.choices = field_options.pop("choices", set())
+
+        self.set_type(field_type, field_options)
+
+        for k in list(field_options.keys()):
+            if hasattr(self, k):
+                setattr(self, k, field_options.pop(k))
+
+        self.options = field_options
+        self.required = field_required or self.is_pk()
+
+    def get_size(self, field_options):
+        """Figure out if this field has any size information"""
         d = {}
 
         min_size = field_options.pop("min_size", -1)
@@ -599,26 +669,77 @@ class Field(object):
                 d['min_size'] = min_size
                 d['max_size'] = max_size
 
-        field_options.update(d)
+        return d
 
-        field_options.setdefault("unique", False)
+    def set_type(self, field_type, field_options):
+        """Try to infer as much about the type as can be inferred at this moment
 
-        self.name = field_options.pop("name", "")
-        # this creates a numeric dict key that can't be accessed as an attribute
-        self.instance_field_name = "{}{}".format(self.name, id(self))
-        #self._type = field_type
-        self.type = field_type
-        self.default = field_options.pop("default", None)
-        self.orm_class = field_options.pop("orm_class", None)
-        self.help = field_options.pop("help", "")
-        self.choices = field_options.pop("choices", set())
+        Because the Field support string classpaths (eg, "modname.Classname") we can't
+        figure everything out in this method, so we figure out as much as we can
+        and then defer everything else to the .type and .schema properties, this
+        allows the parser to hopefully finish loading the modules before we have to
+        parse the classpath to find the foreign key schema
 
-        for k in list(field_options.keys()):
-            if hasattr(self, k):
-                setattr(self, k, field_options.pop(k))
+        :param field_type: mixed, the field type passed into __init__
+        :param field_options: dict, the options passed into __init__
+        """
+        std_types = (
+            bool,
+            long,
+            int,
+            float,
+            bytearray,
+            decimal.Decimal,
+            datetime.datetime,
+            datetime.date,
+        )
+        if is_py2:
+            std_types = (basestring,) + std_types
+        else:
+            std_types = basestring + std_types
 
-        self.options = field_options
-        self.required = field_required or self.is_pk()
+        json_types = (
+            dict,
+            list,
+        )
+
+        pickle_types = (
+            set,
+        )
+
+        self.original_type = field_type
+        self.serializer = ""
+
+        if isinstance(field_type, type):
+            if issubclass(field_type, std_types):
+                self._schema = None
+
+            elif issubclass(field_type, json_types):
+                self._schema = None
+                self.serializer = field_options.pop("serializer", "json")
+
+            elif issubclass(field_type, pickle_types):
+                self._schema = None
+                self.serializer = field_options.pop("serializer", "pickle")
+
+            else:
+                schema = getattr(field_type, "schema", None)
+                if schema:
+                    self._schema = schema
+
+                else:
+                    # We have just some random class that isn't an Orm
+                    self.serializer = field_options.pop("serializer", "pickle")
+                    self._schema = None
+
+        elif isinstance(field_type, Schema):
+            self._schema = field_type
+
+        else:
+            # check if field_type is a string classpath so we have to defer
+            # setting the type
+            if not isinstance(field_type, basestring):
+                raise ValueError("Unknown field type {}".format(field_type))
 
     def is_pk(self):
         """return True if this field is a primary key"""
@@ -631,6 +752,10 @@ class Field(object):
     def is_required(self):
         """Return True if this field is required to save into the interface"""
         return self.required
+
+    def is_serialized(self):
+        """Return True if this field should be serialized"""
+        return True if self.serializer else False
 
     def fget(self, orm, val):
         """Called anytime the field is accessed through the Orm (eg, Orm.foo)
@@ -655,6 +780,8 @@ class Field(object):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
+        if self.is_serialized():
+            val = self.decode(val)
         return val
 
     def igetter(self, v):
@@ -691,6 +818,8 @@ class Field(object):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
+        if self.is_serialized():
+            val = self.encode(val)
         return val
 
     def isetter(self, v):
@@ -819,6 +948,30 @@ class Field(object):
         is called"""
         self.jsonable = v
         return self
+
+    def encode(self, val):
+        if val is None: return val
+
+        if self.serializer == "pickle":
+            return base64.b64encode(pickle.dumps(val, pickle.HIGHEST_PROTOCOL))
+
+        elif self.serializer == "json":
+            return json.dumps(val)
+
+        else:
+            raise ValueError("Unknown serializer {}".format(self.serializer))
+
+    def decode(self, val):
+        if val is None: return val
+
+        if self.serializer == "pickle":
+            return pickle.loads(base64.b64decode(val))
+
+        elif self.serializer == "json":
+            return json.loads(val)
+
+        else:
+            raise ValueError("Unknown serializer {}".format(self.serializer))
 
     def fval(self, orm):
         """return the raw value that this property is holding internally for the orm instance"""

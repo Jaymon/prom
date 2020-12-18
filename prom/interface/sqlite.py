@@ -611,3 +611,18 @@ class SQLite(SQLInterface):
         query_sort_str = "\n".join(query_sort_str)
         return query_sort_str, query_args
 
+    def _normalize_bounds_SQL(self, bounds, sql_options):
+        offset = bounds.offset
+        if sql_options.get('one_query', False):
+            limit = 1
+
+        else:
+            limit, offset = bounds.get()
+            if not bounds.has_limit():
+                limit = -1
+
+        return 'LIMIT {} OFFSET {}'.format(
+            limit,
+            offset
+        )
+

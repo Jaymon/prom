@@ -2,6 +2,7 @@
 from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import datetime
+import decimal
 
 import testdata
 
@@ -103,7 +104,7 @@ class SchemaTest(BaseTestCase):
             s.faosdfjadkfljlk_does_not_exist
 
     def test_aliases_created_updated(self):
-        orm_class = self.get_orm()
+        orm_class = self.get_orm_class()
         s = orm_class.schema
 
         self.assertEqual(s._created, s.created)
@@ -451,6 +452,74 @@ class FieldTest(EnvironTestCase):
         f = orm_class.schema.foo
         self.assertEqual(help_str, f.help)
 
+    def test_type_std(self):
+        std_types = (
+            bool,
+            long,
+            int,
+            float,
+            bytearray,
+            decimal.Decimal,
+            datetime.datetime,
+            datetime.date,
+        )
+        if is_py2:
+            std_types = (basestring,) + std_types
+        else:
+            std_types = basestring + std_types
+
+        for field_type in std_types:
+            f = Field(field_type)
+            self.assertEqual(field_type, f.type)
+            self.assertEqual(field_type, f.interface_type)
+            self.assertIsNone(f.schema)
+            self.assertFalse(f.is_serialized())
+
+    def test_type_json(self):
+        json_types = (
+            dict,
+            list,
+        )
+
+        for field_type in json_types:
+            f = Field(field_type)
+            self.assertEqual(field_type, f.original_type)
+            self.assertEqual(str, f.interface_type)
+            self.assertEqual(str, f.type)
+            self.assertIsNone(f.schema)
+            self.assertTrue(f.is_serialized())
+
+    def test_type_pickle(self):
+        class Foo(object): pass
+        pickle_types = (
+            set,
+            Foo,
+        )
+
+        for field_type in pickle_types:
+            f = Field(field_type)
+            self.assertEqual(field_type, f.original_type)
+            self.assertEqual(str, f.interface_type)
+            self.assertEqual(str, f.type)
+            self.assertIsNone(f.schema)
+            self.assertTrue(f.is_serialized())
+
+    def test_type_fk(self):
+        orm_class = self.get_orm_class()
+
+        f = Field(orm_class)
+        self.assertEqual(orm_class, f.original_type)
+        self.assertEqual(long, f.interface_type)
+        self.assertEqual(long, f.type)
+        self.assertIsNotNone(f.schema)
+        self.assertFalse(f.is_serialized())
+
+    def test_serialize(self):
+        orm_class = self.get_orm_class(
+            foo=Field(dict, json=False)
+        )
+
+
     def test_choices(self):
         orm_class = self.get_orm_class(
             foo=Field(int, choices=set([1, 2, 3]))
@@ -699,4 +768,51 @@ class FieldTest(EnvironTestCase):
         self.assertTrue(issubclass(f.type, int))
         self.assertEqual(f.options['max_length'], 100)
 
+
+class SerializedFieldTest(EnvironTestCase):
+    field_class = ObjectField
+
+    def get_orm(self, field_type=dict, default=None):
+        orm_class = self.get_orm_class(
+            body=Field(field_type, default=default)
+        )
+        return orm_class()
+
+    def test_default(self):
+        o = self.get_orm(default=dict)
+        o.body["foo"] = 1
+        self.assertEqual(1, o.body["foo"])
+
+    def test_imethods_pickle(self):
+        o = self.get_orm()
+        o.body = {"foo": 1}
+        o.save()
+
+        o2 = o.requery()
+        self.assertEqual(o.body, o2.body)
+
+    def test_modify(self):
+        o = self.get_orm()
+        o.body = {"bar": 1}
+        o.save()
+
+        o.body["che"] = 2
+        o.save()
+
+        o2 = o.requery()
+        self.assertEqual(o.body, o2.body)
+
+    def test_other_types(self):
+        types = (
+            list,
+            set
+        )
+
+        for field_type in types:
+            o = self.get_orm(field_type)
+            o.body = field_type(range(100))
+            o.save()
+
+            o2 = o.requery()
+            self.assertEqual(o.body, o2.body)
 

@@ -385,7 +385,7 @@ class EnvironTestCase(BaseTestCase):
     def create_interfaces(cls):
         return [
             cls.create_environ_interface("PROM_POSTGRES_DSN"),
-            #cls.create_environ_interface("PROM_SQLITE_DSN")
+            cls.create_environ_interface("PROM_SQLITE_DSN")
         ]
 
     @classmethod

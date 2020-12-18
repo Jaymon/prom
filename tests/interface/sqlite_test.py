@@ -222,20 +222,6 @@ class InterfaceSQLiteTest(BaseTestInterface):
         _id = self.insert(i, s, 1)[0]
         self.assertTrue(_id)
 
-    def test_list_field(self):
-        from prom import Field, Orm
-        class ListFieldOrm(Orm):
-            interface = self.get_interface()
-            foo = Field(list)
-
-        with self.assertRaises(ValueError):
-            ListFieldOrm.install()
-
-        lf = ListFieldOrm()
-        lf.foo = [testdata.get_words(), testdata.get_words()]
-        with self.assertRaises(ValueError):
-            lf.save()
-
 
 # not sure I'm a huge fan of this solution to remove common parent from testing queue
 # http://stackoverflow.com/questions/1323455/python-unit-test-with-base-and-sub-class

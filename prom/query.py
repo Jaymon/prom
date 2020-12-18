@@ -854,14 +854,33 @@ class Query(object):
     def count(self):
         """return the count of the criteria"""
 
-        # count queries shouldn't care about sorting
+        # sorting shouldn't matter for a count query
         fields_sort = self.fields_sort
         self.fields_sort = self.fields_sort_class()
+
+        # more than one selected field will cause the count query to error out
+        fields_select = self.fields_select
+        self.fields_select = self.fields_select_class()
+
+        # setting bounds causes count(*) to return 0 in both Postgres and SQLite
+        bounds = self.bounds
+        self.bounds = self.bounds_class()
 
         ret = self.execute('count')
 
         # restore previous values now that count is done
         self.fields_sort = fields_sort
+        self.fields_select = fields_select
+        self.bounds = bounds
+
+        # now we are going to compensate for the bounds being set
+        if self.bounds:
+            offset = self.bounds.offset
+            ret -= offset
+            if self.bounds.has_limit():
+                limit = self.bounds.limit
+                if ret > limit:
+                    ret = limit
 
         return ret
 
