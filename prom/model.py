@@ -107,6 +107,9 @@ class Orm(object):
     class _created(Field):
         type = datetime.datetime
         required = True
+        options = {
+            "aliases": ["created"],
+        }
 
         def iset(self, orm, val):
             return datetime.datetime.utcnow() if orm.is_insert() else val
@@ -114,6 +117,9 @@ class Orm(object):
     class _updated(Field):
         type = datetime.datetime
         required = True
+        options = {
+            "aliases": ["updated"],
+        }
 
         def iset(self, orm, val):
             return datetime.datetime.utcnow()

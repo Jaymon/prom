@@ -185,6 +185,9 @@ class Schema(object):
     indexes = None
     """dict -- all the indexes this schema will have"""
 
+    lookup = None
+    """dict -- field information lookup table, basically an internal cache"""
+
     @property
     def normal_fields(self):
         """fields that aren't magic (eg, don't start with an underscore)"""
@@ -276,6 +279,10 @@ class Schema(object):
         self.indexes = {}
         self.table_name = String(table_name)
         self.orm_class = None
+        self.lookup = {
+            "names": {},
+            "pk": None,
+        }
 
         for name, val in fields_or_indexes.items():
             self.set(name, val)
@@ -306,16 +313,22 @@ class Schema(object):
 
         return -- string -- the string value of the attribute name, eg, self.foo returns "foo"
         """
-        if name in self.fields:
-            return self.fields[name]
+        try:
+            return self.lookup["names"][name]
 
-        else:
-            if name == "pk":
-                for field_name, field in self.fields.items():
-                    if field.options.get('pk', False):
-                        return field
-
+        except KeyError:
             raise AttributeError("No {} field in schema {}".format(name, self.table_name))
+
+#         if name in self.fields:
+#             return self.fields[name]
+# 
+#         else:
+#             if name == "pk":
+#                 for field_name, field in self.fields.items():
+#                     if field.options.get('pk', False):
+#                         return field
+# 
+#             raise AttributeError("No {} field in schema {}".format(name, self.table_name))
 
     def set_field(self, field_name, field):
         if not field_name: raise ValueError("field_name is empty")
@@ -329,6 +342,14 @@ class Schema(object):
             self.set_index(field_name, Index(field_name, unique=True))
 
         self.fields[field_name] = field
+
+        for fn in field.names:
+            self.lookup["names"][fn] = field
+
+        if field.is_pk():
+            self.lookup["pk"] = field
+            self.lookup["names"]["pk"] = field
+
         return self
 
     def set_index(self, index_name, index):
@@ -483,7 +504,6 @@ class Field(object):
 
     https://docs.python.org/2/howto/descriptor.html
     """
-
     type = None
     """The python type of this field (eg, str, int, Orm)"""
 
@@ -530,6 +550,16 @@ class Field(object):
         """Returns the FK reference orm class"""
         schema = self.schema
         return schema.orm_class if schema else None
+
+    @property
+    def names(self):
+        names = []
+        if self.name:
+            names.append(self.name)
+
+        names.extend(self.options.get("names", []))
+        names.extend(self.options.get("aliases", []))
+        return names
 
     def __init__(self, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
