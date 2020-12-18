@@ -15,7 +15,7 @@ from prom.query import (
     Field,
     Fields,
     Iterator,
-    AllIterator,
+    #AllIterator,
 )
 from prom.compat import *
 import prom
@@ -123,7 +123,7 @@ class BoundsTest(TestCase):
 
         lc.limit = 10
         lc.paginate = True
-        self.assertEqual(11, lc.limit)
+        self.assertEqual(11, lc.limit_paginate)
         self.assertEqual((11, 0), lc.get())
 
         lc.page = 3
@@ -240,7 +240,7 @@ class QueryTest(EnvironTestCase):
         self.insert(_q, 5)
 
         q = _q.copy()
-        vals = list(q.between_pk(2, 4).pks())
+        vals = list(q.select_pk().between_pk(2, 4))
         self.assertEqual(3, len(vals))
         for v in vals:
             self.assertTrue(v >= 2 and v <= 4)
@@ -309,23 +309,23 @@ class QueryTest(EnvironTestCase):
 
         orm_classpath = "{}.{}".format(t2.__module__, t2.__name__)
 
-        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti12.pk).values())
+        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti12.pk).get())
         self.assertEqual(22, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).all().values())
+        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).get())
         self.assertEqual(21, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).get().values())
+        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).get())
         self.assertEqual(21, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).values())
+        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).get())
         self.assertEqual(21, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath).select_foo().all().values())
+        l = list(ti1.query.ref(orm_classpath).select_foo().get())
         self.assertEqual(2, len(l))
 
     def test_query_ref_2(self):
@@ -475,28 +475,28 @@ class QueryTest(EnvironTestCase):
         for v in vals:
             self.assertTrue(isinstance(v, list))
 
-        vals = _q.copy().select_foo().values(limit=1)
+        vals = _q.copy().select_foo().limit(1).values()
         self.assertEqual(1, len(vals))
 
     def test_pk(self):
         orm_class = self.get_orm_class()
-        v = orm_class.query.pk()
+        v = orm_class.query.select_pk().one()
         self.assertEqual(None, v)
         count = 2
         self.insert(orm_class, count)
 
-        v = orm_class.query.asc_pk().pk()
+        v = orm_class.query.select_pk().asc_pk().one()
         self.assertEqual(1, v)
 
     def test_pks(self):
         orm_class = self.get_orm_class()
         q = self.get_query()
-        v = list(orm_class.query.pks())
+        v = list(orm_class.query.select_pk().get())
         self.assertEqual(0, len(v))
         count = 2
         self.insert(orm_class, count)
 
-        v = list(orm_class.query.pks())
+        v = list(orm_class.query.select_pk().get())
         self.assertEqual(2, len(v))
 
     def test___iter__(self):
@@ -544,7 +544,7 @@ class QueryTest(EnvironTestCase):
     def test_in_field(self):
         q = self.get_query()
         q.in_foo([])
-        self.assertFalse(q.can_get)
+        self.assertEqual([], list(q.get()))
 
         q = self.get_query()
         q.in_foo([1, 2])
@@ -768,32 +768,15 @@ class QueryTest(EnvironTestCase):
             self.assertTrue(o._id in _ids)
             self.assertFalse(o.is_modified())
 
-    def test_get_one(self):
+    def test_one(self):
         TestGetOneTorm = self.get_orm_class()
         _ids = self.insert(TestGetOneTorm, 2)
 
         q = TestGetOneTorm.query
-        o = q.get_one()
+        o = q.one()
         self.assertEqual(type(o), TestGetOneTorm)
         self.assertTrue(o._id in _ids)
         self.assertFalse(o.is_modified())
-
-    def test_first_and_last(self):
-        tclass = self.get_orm_class()
-        first_pk = self.insert(tclass, 1)[0]
-
-        t = tclass.query.first()
-        self.assertEqual(first_pk, t.pk)
-
-        t = tclass.query.last()
-        self.assertEqual(first_pk, t.pk)
-
-        last_pk = self.insert(tclass, 1)[0]
-        t = tclass.query.first()
-        self.assertEqual(first_pk, t.pk)
-
-        t = tclass.query.last()
-        self.assertEqual(last_pk, t.pk)
 
     def test_copy(self):
         q1 = self.get_query()
@@ -809,62 +792,87 @@ class QueryTest(EnvironTestCase):
 
 
 class IteratorTest(BaseTestCase):
-    def test_cursor(self):
+    def get_iterator(self, count=5, limit=5, page=0):
+        q = self.get_query()
+        self.insert(q, count)
+        i = q.limit(limit).page(page).get()
+        return i
+
+    def test___init__(self):
         count = 10
         orm_class = self.get_orm_class()
         self.insert(orm_class, count)
 
-        q = orm_class.query
-        it = q.cursor()
-        self.assertEqual(10, len(it))
-        with self.assertRaises(NotImplementedError):
-            it[2]
+        q = orm_class.query.gt_pk(5)
 
-    def test_all_wrapper(self):
-        count = 100
+        it = Iterator(q)
+        self.assertLess(0, len(it))
+
+        for o in it:
+            self.assertLess(5, o.pk)
+
+    def test___getitem___slicing(self):
+        count = 10
+        orm_class = self.get_orm_class()
+        pks = self.insert(orm_class, count)
+
+        it = orm_class.query.select_pk().asc_pk().get()
+
+        list(it[-5:6])
+        return
+
+        self.assertEqual(pks[-5:6], list(it[-5:6]))
+        self.assertEqual(pks[2:5], list(it[2:5]))
+
+        self.assertEqual(pks[2:], list(it[2:]))
+        self.assertEqual(pks[:2], list(it[:2]))
+
+        with self.assertRaises(ValueError):
+            it[1:2:2]
+
+    def test___getitem___positive_index(self):
+        count = 10
+        orm_class = self.get_orm_class()
+        pks = self.insert(orm_class, count)
+
+        q = orm_class.query.asc_pk()
+        it = Iterator(q)
+
+        self.assertEqual(pks[0], it[0].pk)
+        self.assertEqual(pks[-1], it[len(pks) - 1].pk)
+        with self.assertRaises(IndexError):
+            it[len(pks)]
+
+        q = orm_class.query.offset(4).limit(2).asc_pk()
+        it = Iterator(q)
+        self.assertEqual(pks[4], it[0].pk)
+        self.assertEqual(pks[5], it[1].pk)
+        with self.assertRaises(IndexError):
+            it[3]
+
+    def test___getitem___negative_index(self):
+        count = 10
+        orm_class = self.get_orm_class()
+        pks = self.insert(orm_class, count)
+
+        q = orm_class.query.asc_pk()
+        it = Iterator(q)
+
+        self.assertEqual(it[-1].pk, pks[-1])
+        self.assertEqual(it[-2].pk, pks[-2])
+        with self.assertRaises(IndexError):
+            it[-(len(pks) + 5)]
+
+    def test_copy(self):
+        count = 10
         orm_class = self.get_orm_class()
         self.insert(orm_class, count)
 
-        q = orm_class.query
-        ait = AllIterator(q, chunk_limit=10)
-        it = Iterator(ait)
-
-        icount = 0
-        for o in it:
-            icount += 1
-        self.assertEqual(count, icount)
-
-        q = orm_class.query.limit(20)
-        ait = AllIterator(q, chunk_limit=10)
-        it = Iterator(ait)
-        pks = []
-        for o in it:
-            pks.append(o.pk)
-        self.assertEqual(20, len(pks))
-
-        q = orm_class.query.limit(20).offset(10)
-        ait = AllIterator(q, chunk_limit=10)
-        it = Iterator(ait)
-        pks2 = []
-        for o in it:
-            pks2.append(o.pk)
-        self.assertEqual(20, len(pks))
-
-        self.assertNotEqual(pks, pks2)
-
-        q = orm_class.query.limit(20).offset(90)
-        ait = AllIterator(q, chunk_limit=10)
-        it = Iterator(ait)
-        pks = []
-        for o in it:
-            pks.append(o.pk)
-        self.assertEqual(10, len(pks))
-
-    def get_iterator(self, count=5, limit=5, page=0):
-        q = self.get_query()
-        self.insert(q, count)
-        i = q.get(limit, page)
-        return i
+        q = orm_class.query.asc_pk()
+        it1 = Iterator(q)
+        it2 = it1.copy()
+        it2.reverse()
+        self.assertNotEqual(list(v for v in it1), list(v for v in it2))
 
     def test_custom(self):
         """make sure setting a custom Iterator class works normally and wrapped
@@ -876,10 +884,9 @@ class IteratorTest(BaseTestCase):
         self.assertEqual(count, len(list(orm_class.query.get())))
 
         class CustomIterator(Iterator):
-            def _filtered(self, o):
+            def ifilter(self, o):
                 return not o.pk == 1
         orm_class.iterator_class = CustomIterator
-
 
         self.assertEqual(count - 1, len(list(orm_class.query.get())))
         self.assertEqual(count - 1, len(list(orm_class.query.all())))
@@ -898,51 +905,30 @@ class IteratorTest(BaseTestCase):
         l2 = _q.copy().get()
         self.assertEqual(len(list(filter(ifilter, l2))), len(list(l)))
 
-    def test_list_compatibility(self):
-        count = 3
-        _q = self.get_query()
-        self.insert(_q, count)
-
-        q = _q.copy()
-        l = q.get()
-
-        self.assertTrue(bool(l))
-        self.assertEqual(count, l.count())
-        self.assertEqual(list(range(1, count + 1)), list(l.pk))
-
-        l.reverse()
-        self.assertEqual(list(reversed(range(1, count + 1))), list(l.pk))
-
-        r = l.pop(0)
-        self.assertEqual(count, r.pk)
-
-        r = l.pop()
-        self.assertEqual(1, r.pk)
-
-        pop_count = 0
-        while l:
-            pop_count += 1
-            l.pop()
-        self.assertGreater(pop_count, 0)
-
-    def test_all_pop(self):
-        """due to the nature of the all iterator, it makes no sense to support pop()"""
-        with self.assertRaises(NotImplementedError):
-            q = self.get_query().all().pop()
-
-    def test_all_len(self):
+    def test_reverse(self):
+        """Iterator.reverse() reverses the iterator in place"""
         count = 10
-        q = self.get_query()
-        self.insert(q, count)
-        g = q.select_foo().desc_bar().limit(5).offset(1).all()
-        self.assertEqual(count, len(g))
+        orm_class = self.get_orm_class()
+        pks = self.insert(orm_class, count)
+        pks.reverse()
 
-    def test_all(self):
+        q = orm_class.query.asc_pk()
+        it = Iterator(q)
+        it.reverse()
+        for i, o in enumerate(it):
+            self.assertEqual(pks[i], o.pk)
+
+        q = orm_class.query.asc_pk()
+        it = Iterator(q)
+        for i, o in enumerate(reversed(it)):
+            self.assertEqual(pks[i], o.pk)
+
+    def test_all_1(self):
         count = 15
         q = self.get_query()
-        self.insert(q, count)
+        pks = self.insert(q, count)
+        self.assertLess(0, len(pks))
         g = q.all()
-        g.chunk_limit = 5
 
         self.assertEqual(1, g[0].pk)
         self.assertEqual(2, g[1].pk)
@@ -981,31 +967,25 @@ class IteratorTest(BaseTestCase):
         with self.assertRaises(IndexError):
             g[6]
 
-
     def test_values(self):
         count = 5
         _q = self.get_query()
         self.insert(_q, count)
 
-        g = _q.copy().select_bar().get().values()
+        g = _q.copy().select_bar().get()
         icount = 0
         for v in g:
             self.assertTrue(isinstance(v, basestring))
             icount += 1
         self.assertEqual(count, icount)
 
-        g = _q.copy().select_bar().select_foo().get().values()
+        g = _q.copy().select_bar().select_foo().get()
         icount = 0
         for v in g:
-            pout.v(v)
             icount += 1
             self.assertTrue(isinstance(v[0], basestring))
             self.assertTrue(isinstance(v[1], int))
         self.assertEqual(count, icount)
-
-        i = _q.copy().get()
-        with self.assertRaises(ValueError):
-            g = i.values()
 
     def test___iter__(self):
         count = 5
@@ -1022,19 +1002,17 @@ class IteratorTest(BaseTestCase):
             rcount += 1
         self.assertEqual(count, rcount)
 
-    def test___getitem__(self):
-        count = 5
-        i = self.get_iterator(count)
-        for x in range(count):
-            self.assertEqual(i[x].pk, i.results[x].pk)
-
-        with self.assertRaises(IndexError):
-            i[count + 1]
-
     def test___len__(self):
         count = 5
         i = self.get_iterator(count)
         self.assertEqual(len(i), count)
+
+        orm_class = i.orm_class
+
+        i = orm_class.query.limit(3).get()
+        self.assertEqual(3, len(i))
+
+
 
     def test___getattr__(self):
         count = 5
@@ -1055,19 +1033,34 @@ class IteratorTest(BaseTestCase):
         limit = 3
         count = 5
         q = self.get_query()
-        self.insert(q.orm_class, count)
+        pks = self.insert(q.orm_class, count)
+        self.assertEqual(count, len(pks))
 
-        i = q.get(limit, 0)
-        self.assertTrue(i.has_more)
+        i = q.limit(limit).page(0).get()
+        self.assertTrue(i.has_more())
+        return
 
-        i = q.get(limit, 2)
-        self.assertFalse(i.has_more)
+        i = q.limit(limit).page(3).get()
+        self.assertFalse(i.has_more())
 
-        i = q.get(limit, 1)
-        self.assertTrue(i.has_more)
+        i = q.limit(limit).page(1).get()
+        self.assertTrue(i.has_more())
 
-        i = q.get(0, 0)
-        self.assertFalse(i.has_more)
+        i = q.limit(0).page(0).get()
+        self.assertFalse(i.has_more())
+
+    def test_has_more_limit(self):
+        limit = 4
+        count = 10
+        q = self.get_query()
+        pks = self.insert(q, count)
+
+        it = q.select_pk().limit(limit).asc_pk().get()
+        self.assertEqual(pks[:limit], list(it))
+
+
+
+
 
 
 

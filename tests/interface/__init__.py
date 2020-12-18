@@ -40,7 +40,6 @@ class BaseTestInterface(BaseTestCase):
             with self.assertRaises(StopIteration):
                 with i.transaction():
                     raise StopIteration()
-
         else:
             with self.assertRaises(RuntimeError):
                 with i.transaction():
@@ -56,13 +55,6 @@ class BaseTestInterface(BaseTestCase):
 
         r = i.has_table(str(s))
         self.assertTrue(r)
-
-        # make sure it persists
-        # TODO -- this should only be tested in postgres, the SQLite :memory: db
-        # goes away when the connections is closed
-#        i.close()
-#        i = self.get_interface()
-#        self.assertTrue(i.has_table(str(s)))
 
         # make sure known indexes are there
         indexes = i.get_indexes(s)
@@ -969,6 +961,7 @@ class BaseTestInterface(BaseTestCase):
         self.insert(q.orm_class.interface, q.orm_class.schema, 10)
 
         q2 = q.copy()
+
         foos = list(q2.select_foo().asc__id().values())
         foos.sort()
 

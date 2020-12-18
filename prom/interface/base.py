@@ -634,6 +634,7 @@ class SQLInterface(Interface):
         ret = self.query(query_str, *query_args, count_result=True, **kwargs)
         return ret
 
+    # TODO -- rename to execute to match up with cursor interface
     def _query(self, query_str, query_args=None, **query_options):
         """
         **query_options -- dict
@@ -664,23 +665,20 @@ class SQLInterface(Interface):
 
                 elif not ignore_result:
                     if one_result:
-                        ret = self._normalize_result_dict(cur.fetchone())
+                        # https://www.psycopg.org/docs/cursor.html#cursor.fetchone
+                        ret = cur.fetchone()
                     elif count_result:
+                        # https://www.psycopg.org/docs/cursor.html#cursor.rowcount
                         ret = cur.rowcount
                     else:
-                        ret = self._normalize_result_list(cur.fetchall())
+                        # https://www.psycopg.org/docs/cursor.html#cursor.fetchall
+                        ret = cur.fetchall()
 
             except Exception as e:
                 self.log(e)
                 raise
 
             return ret
-
-    def _normalize_result_dict(self, row):
-        return row
-
-    def _normalize_result_list(self, rows):
-        return rows
 
     def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
@@ -731,12 +729,35 @@ class SQLInterface(Interface):
             if is_list and not isinstance(field_val, Query):
                 field_val = make_list(field_val) if field_val else []
                 field_name, format_val_str = self._normalize_field_SQL(schema, field_name, symbol)
-                format_str = '{} {} ({})'.format(
-                    field_name,
-                    symbol,
-                    ', '.join([format_val_str] * len(field_val))
-                )
-                format_args.extend(field_val)
+                if field_val:
+                    format_str = '{} {} ({})'.format(
+                        field_name,
+                        symbol,
+                        ', '.join([format_val_str] * len(field_val))
+                    )
+                    format_args.extend(field_val)
+
+                else:
+                    # field value is empty, so we need to customize the SQL to
+                    # compensate for the empty set since SQL doesn't like empty
+                    # sets
+                    #
+                    # the idea here is this is a condition that will
+                    # automatically cause the query to fail but not necessarily be an error, 
+                    # the best example is the IN (...) queries, if you do self.in_foo([]).get()
+                    # that will fail because the list was empty, but a value error shouldn't
+                    # be raised because a common case is: self.if_foo(Bar.query.is_che(True).pks).get()
+                    # which should result in an empty set if there are no rows where che = TRUE
+                    #
+                    # https://stackoverflow.com/a/58078468/5006
+                    if symbol == "IN":
+                        format_str = '{} <> {}'.format(field_name, field_name)
+
+                    elif symbol == "NOT IN":
+                        format_str = '{} = {}'.format(field_name, field_name)
+
+                    else:
+                        raise ValueError("Unsure what to do here")
 
             else:
                 # special handling for NULL
@@ -885,7 +906,14 @@ class SQLInterface(Interface):
 
         if query.bounds:
             offset = query.bounds.offset
-            limit = 1 if sql_options.get('one_query', False) else query.bounds.limit
+            if sql_options.get('one_query', False):
+                limit = 1
+                offset = query.bounds.offset
+
+            else:
+                limit, offset = query.bounds.get()
+
+            #limit = 1 if sql_options.get('one_query', False) else query.bounds.limit
             query_str.append('LIMIT {} OFFSET {}'.format(
                 limit,
                 offset

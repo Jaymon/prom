@@ -52,6 +52,16 @@ class SQLiteRowDict(sqlite3.Row):
         return r
 
 
+# class SQLiteCursor(sqlite3.Cursor):
+#     """This is only here so Iterator can set .__next__ to .next if py2, this can
+#     be removed once py2 support is dropped
+# 
+#     https://stackoverflow.com/a/23684258/5006
+#     """
+#     def __next__(self):
+#         return self.next()
+
+
 class SQLiteConnection(SQLConnection, sqlite3.Connection):
     """
     Thin wrapper around the default connection to make sure it has a similar interface
@@ -66,6 +76,9 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
         r = super(SQLiteConnection, self).close(*args, **kwargs)
         self.closed = 1
         return r
+
+#     def cursor(self):
+#         return super(SQLiteConnection, self).cursor(SQLiteCursor)
 
 
 class TimestampType(object):

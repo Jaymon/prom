@@ -15,6 +15,7 @@ import time
 import re
 
 from decorators import deprecated
+from datatypes.collections import ListIterator
 
 from . import decorators
 from .utils import make_list, get_objects, make_dict, make_hash
@@ -25,85 +26,7 @@ from .compat import *
 logger = logging.getLogger(__name__)
 
 
-class BaseIterator(object):
-    """The base interface for the iterators
-
-    it acts as much like a list as possible to make using it as seemless as can be
-
-    http://docs.python.org/2/library/stdtypes.html#iterator-types
-    """
-    def reset(self):
-        raise NotImplementedError()
-
-    def next(self):
-        raise NotImplementedError()
-
-    def __next__(self):
-        """needed for py3 api compatibility"""
-        return self.next()
-
-    def values(self):
-        """
-        similar to the dict.values() method, this will only return the selected fields
-        in a tuple
-
-        return -- self -- each iteration will return just the field values in
-            the order they were selected, if you only selected one field, than just that field
-            will be returned, if you selected multiple fields than a tuple of the fields in
-            the order you selected them will be returned
-        """
-        raise NotImplementedError()
-
-    def __iter__(self):
-        self.reset()
-        return self
-
-    def __nonzero__(self):
-        return True if self.count() else False
-
-    def __len__(self):
-        return self.count()
-
-    def count(self):
-        """list interface compatibility"""
-        raise NotImplementedError()
-
-    def __getitem__(self, k):
-        raise NotImplementedError()
-
-    def pop(self, k=-1):
-        """list interface compatibility"""
-        raise NotImplementedError()
-
-    def reverse(self):
-        """list interface compatibility"""
-        raise NotImplementedError()
-
-    def __reversed__(self):
-        self.reverse()
-        return self
-
-    def sort(self, *args, **kwargs):
-        """list interface compatibility"""
-        raise NotImplementedError()
-
-    def __getattr__(self, k):
-        """
-        this allows you to focus in on certain fields of results
-
-        It's just an easier way of doing: (getattr(x, k, None) for x in self)
-        """
-        raise NotImplementedError()
-
-    def create_generator(self):
-        """put all the pieces together to build a generator of the results"""
-        raise NotImplementedError()
-
-    def _get_result(self, d):
-        raise NotImplementedError()
-
-
-class Iterator(BaseIterator):
+class Iterator(ListIterator):
     """The main iterator for all query methods that return iterators
 
     This is returned from the Query.get() and Query.all() methods, this is also
@@ -118,289 +41,193 @@ class Iterator(BaseIterator):
         for pk in SomeOrm.query.all().pk:
             print pk
     """
-    def __init__(self, results):
-        """
-        restults -- BaseIterator|AllIterator -- this wraps another iterator and 
-        adds filtering capabilities, this is here to allow the Query all() and get()
-        methods to return the same base class so it can be extended
+    @property
+    def orm_class(self):
+        return self.query.orm_class
 
-        see -- https://github.com/firstopinion/prom/issues/25
+    def __init__(self, query):
+        """create an iterator for a query
+
+        :param query: Query, the query instance that produced this iterator
         """
-        self.results = results
-        self.ifilter = None # https://docs.python.org/2/library/itertools.html#itertools.ifilter
+        self.query = query
+
+        if query._ifilter:
+            self.ifilter = query._ifilter # https://docs.python.org/2/library/itertools.html#itertools.ifilter
+
         self.reset()
 
-    def reset(self):
-        self.results.reset()
+    def has_more(self):
+        """Return true if there are more results for this query if the query didn't
+        have a LIMIT clause
 
-    def next(self):
-        o = self.results.next()
-        while not self._filtered(o):
-            o = self.results.next()
-        return o
-
-    def values(self):
-        return self.results.values()
-
-    def count(self):
-        return self.results.count()
-
-    def __getitem__(self, k):
-        return self.results[k]
-
-    def pop(self, k=-1):
-        return self.results.pop(k)
-
-    def reverse(self):
-        return self.results.reverse()
-
-    def sort(self, *args, **kwargs):
-        return self.results.sort()
-
-    def __getattr__(self, k):
-        return getattr(self.results, k)
-
-    def _filtered(self, o):
-        """run orm o through the filter, if True then orm o should be included"""
-        return self.ifilter(o) if self.ifilter else True
-
-
-class ResultsIterator(BaseIterator):
-    """
-    smartly iterate through a result set
-
-    this is returned from the Query.get() and it acts as much
-    like a list as possible to make using it as seemless as can be
-
-    fields --
-        has_more -- boolean -- True if there are more results in the db, false otherwise
-
-    examples --
-        # iterate through all the primary keys of some orm
-        for pk in SomeOrm.query.get().pk:
-            print pk
-    """
-    def __init__(self, results, orm_class=None, has_more=False, query=None):
+        :returns: boolean, True if this query could've returned more results
         """
-        create a result set iterator
+        ret = False
+        if self.query.bounds.has_more():
+            cursor = self.cursor()
+            ret = self.query.bounds.limit_paginate == cursor.rowcount
+        return ret
 
-        results -- list -- the list of results
-        orm_class -- Orm -- the Orm class that each row in results should be wrapped with
-        has_more -- boolean -- True if there are more results
-        query -- Query -- the query instance that produced this iterator
-        """
-        self.results = results
-        self.orm_class = orm_class
-        self.has_more = has_more
-        self.query = query.copy()
-        self._values = False
-        self.reset()
+    def cursor(self):
+        cursor = getattr(self, "_cursor", None)
+        if not cursor:
+            cursor = self.query.cursor()
+            self._cursor = cursor
+            self._cursor_i = 0
+            self.field_names = self.query.fields_select.names()
+
+        return cursor
 
     def reset(self):
-        self.iresults = self.create_generator()
-
-    def next(self):
-        if is_py2:
-            return self.iresults.next()
-        else:
-            return self.iresults.__next__()
-
-    def values(self):
-        self._values = True
-        self.field_names = self.query.fields_select.names()
-        self.fcount = len(self.field_names)
-        if not self.fcount:
-            raise ValueError("no select fields were set, so cannot iterate values")
-
-        return self
+        """put all the pieces together to build a generator of the results"""
+        self._cursor = None
+        self._cursor_i = 0
 
     def __iter__(self):
         self.reset()
         return self
 
-    def __nonzero__(self):
-        return True if self.count() else False
+    def next(self):
+        cursor = self.cursor()
 
-    def __len__(self):
-        return self.count()
+        if is_py2:
+            cursor_next = cursor.next
+        else:
+            cursor_next = cursor.__next__
+
+        # if we have paginated the results we have to account for requesting the
+        # one extra row to see if we have more results waiting
+        if self.query.bounds.has_more():
+            #if cursor.rownumber == self.query.bounds.limit:
+            if self._cursor_i == self.query.bounds.limit:
+                raise StopIteration()
+
+        o = self.hydrate(cursor_next())
+        self._cursor_i += 1
+        while not self.ifilter(o):
+            o = self.hydrate(cursor_next())
+            self._cursor_i += 1
+        return o
 
     def count(self):
-        return len(self.results)
+        cursor = self.cursor()
+        count = cursor.rowcount
 
-    def __getitem__(self, k):
-        k = int(k)
-        return self._get_result(self.results[k])
-
-    def pop(self, k=-1):
-        k = int(k)
-        return self._get_result(self.results.pop(k))
-
-    def reverse(self):
-        self.results.reverse()
-        self.reset()
-
-    def __reversed__(self):
-        self.reverse()
-        return self
-
-    def sort(self, *args, **kwargs):
-        self.results.sort(*args, **kwargs)
-        self.reset()
-
-    def __getattr__(self, k):
-        field_name = self.orm_class.schema.field_name(k)
-        return (getattr(r, field_name, None) for r in self)
-
-    def create_generator(self):
-        """put all the pieces together to build a generator of the results"""
-        return (self._get_result(d) for d in self.results)
-
-    def _get_result(self, d):
-        r = None
-        if self._values:
-            field_vals = [d.get(fn, None) for fn in self.field_names]
-            r = field_vals if self.fcount > 1 else field_vals[0]
+        if count >= 0:
+            # compensate for having pulled one extra row
+            if self.query.bounds.has_more() and self.query.bounds.limit_paginate == count:
+                count -= 1
 
         else:
-            if self.orm_class:
-                r = self.orm_class.hydrate(d)
+            # we couldn't get the rowcount from the cursor for some reason, so
+            # we will need to query for it
+            count = self.query.copy().count()
+
+        return count
+
+    def __getitem__(self, i):
+        it = self.copy()
+        q = it.query
+
+        b = q.bounds
+        limit = b.limit if b.has_limit() else self.count()
+        b = Bounds(limit=limit, offset=q.bounds.offset)
+
+        if isinstance(i, slice):
+            if i.step:
+                raise ValueError("slice stepping is not supported")
+
+            if i.start:
+                start = b.find_offset(i.start)
+            else:
+                start = b.offset
+
+            if i.stop:
+                stop = b.find_offset(i.stop)
+            else:
+                stop = b.limit
+
+            q.limit(stop - start).offset(start)
+            it.query = q
+            return it
+
+        else:
+            offset = b.find_offset(i)
+
+            o = q.offset(offset).one()
+            if o is None:
+                raise IndexError("Iterator index {} out of range".format(i))
+
+            return o
+
+    def copy(self):
+        q = self.query.copy()
+        return type(self)(q)
+
+    def reverse(self):
+        for f in self.query.fields_sort:
+            f.direction = -f.direction
+        self.reset()
+
+    def __getattr__(self, field_name):
+        """If you have a set of results and just want to grab a certain field then
+        you can do that
+
+        :example:
+            it = FooOrm.query.limit(10).get()
+            it.pk # get all the primary keys from the results
+
+        :param field_name: string, the field name you want the values of
+        :returns: generator, the field_name values
+        """
+        it = self.copy()
+        it.query.fields_select.clear()
+        it.query.select_field(field_name)
+        return it
+        #return (getattr(o, k) for o in self)
+
+    def ifilter(self, o):
+        """run o through the filter, if True then orm o should be included
+
+        NOTE -- The ifilter callback needs to account for non Orm instance values of o
+
+        :param o: Orm|mixed, usually an Orm instance but can also be a tuple or single value
+        :returns: boolean, True if o should be filtered
+        """
+        return o
+
+    def hydrate(self, d):
+        """Prepare the raw dict d returned from the interface cursor to be returned
+        by higher level objects, this will usually mean hydrating an Orm instance
+        or stuff like that
+
+        :param d: dict, the raw dict cursor result returned from the interface
+        :returns: mixed, usually an Orm instance populated with d but can also be
+            a tuple if the query selected more than one field. If the query selected
+            one field then just that value will be returned
+        """
+        r = None
+        if self.field_names:
+            field_vals = [d.get(fn, None) for fn in self.field_names]
+            r = field_vals if len(self.field_names) > 1 else field_vals[0]
+
+        else:
+            orm_class = self.orm_class
+            if orm_class:
+                r = orm_class.hydrate(d)
             else:
                 r = d
 
         return r
 
 
-class CursorIterator(ResultsIterator):
-    """This is the iterator that query.cursor() uses, it is a subset of the
-    functionality of the ResultsIterator but allows you to move through huge
-    result sets"""
-    def count(self):
-        return self.results.rowcount
-
-    def __getitem__(self, k):
-        raise NotImplementedError()
-
-    def pop(self, k=-1):
-        raise NotImplementedError()
-
-    def reverse(self):
-        raise NotImplementedError()
-
-    def sort(self, *args, **kwargs):
-        raise NotImplementedError()
-
-
-class AllIterator(ResultsIterator):
-    """
-    Similar to Iterator, but will chunk up results and make another query for the next
-    chunk of results until there are no more results of the passed in Query(), so you
-    can just iterate through every row of the db without worrying about pulling too
-    many rows at one time
-    """
-    def __init__(self, query, chunk_limit=5000):
-
-        # decide how many results we are going to iterate through
-        limit, offset = query.bounds.get()
-        if not limit: limit = 0
-        if limit and limit < chunk_limit:
-            chunk_limit = limit
-
-        self.chunk_limit = chunk_limit
-        self.limit = limit
-        self.offset = offset
-        self._iter_count = 0 # internal counter of how many rows iterated
-
-        super(AllIterator, self).__init__(results=[], orm_class=query.orm_class, query=query)
-
-    def __getitem__(self, k):
-        v = None
-        k = int(k)
-        lower_bound = self.offset
-        upper_bound = lower_bound + self.chunk_limit
-        if k >= lower_bound and k < upper_bound:
-            # k should be in this result set
-            i = k - lower_bound
-            v = self.results[i]
-
-        else:
-            limit = self.limit
-            if not limit or k < limit:
-                # k is not in here, so let's just grab it
-                q = self.query.copy()
-                orm = q.set_offset(k).get_one()
-                if orm:
-                    v = self._get_result(orm.fields)
-                else:
-                    raise IndexError("results index out of range")
-
-            else:
-                raise IndexError("results index {} out of limit {} range".format(k, limit))
-
-        return v
-
-    def pop(self, k=-1):
-        raise NotImplementedError("{}.pop() is not supported".format(self.__class__.__name__))
-
-    def count(self):
-        ret = 0
-        if self.results.has_more:
-            # we need to do a count query
-            q = self.query.copy()
-            q.limit(0).offset(0)
-            ret = q.count()
-        else:
-            ret = (self.offset - self.start_offset) + len(self.results)
-
-        return ret
-
-    def next(self):
-        if self.limit and (self._iter_count >= self.limit):
-            raise StopIteration("iteration exceeded limit")
-
-        try:
-            ret = self.results.next()
-            self._iter_count += 1
-
-        except StopIteration:
-            if self.results.has_more:
-                self.offset += self.chunk_limit
-                self._set_results()
-                ret = self.next()
-            else:
-                raise
-
-        return ret
-
-    def _set_results(self):
-        self.results = self.query.offset(self.offset).limit(self.chunk_limit).get()
-        if self._values:
-            self.results = self.results.values()
-
-    def reset(self):
-        set_results = False
-        if hasattr(self, 'start_offset'):
-            set_results = self.offset != self.start_offset
-        else:
-            self.start_offset = self.offset
-            set_results = True
-
-        if set_results:
-            self.offset = self.start_offset
-            self._set_results()
-
-        else:
-            self.results.reset()
-
-    def values(self):
-        self.results = self.results.values()
-        return super(AllIterator, self).values()
-
-
 class Bounds(object):
 
     @property
     def limit(self):
-        l = self.limit_paginate if self.paginate else self._limit
+        l = self._limit
+        #l = self.limit_paginate if self.paginate else self._limit
         return l if l else 0
 
     @limit.setter
@@ -463,21 +290,27 @@ class Bounds(object):
     def page(self):
         self._page = None
 
-    def __init__(self):
+    def __init__(self, limit=None, page=None, offset=None):
         self.paginate = False
-        self._limit = None
-        self._offset = None
-        self._page = None
+        self._limit = limit
+        self._offset = offset
+        self._page = page
 
-    def set(self, limit=None, page=None):
+    def set(self, limit=None, page=None, offset=None):
         if limit is not None:
             self.limit = limit
+
         if page is not None:
+            if offset:
+                raise ValueError("Cannot pass in both offset and page")
             self.page = page
 
-    def get(self, limit=None, page=None):
-        self.set(limit, page)
-        return (self.limit, self.offset)
+        if offset is not None:
+            self.offset = offset
+
+    def get(self):
+        limit = self.limit_paginate if self.paginate else self.limit
+        return (limit, self.offset)
 
     def __bool__(self):
         return self.limit > 0 or self.offset > 0
@@ -489,8 +322,45 @@ class Bounds(object):
     def has_limit(self):
         return self.limit > 0
 
+    def has_more(self):
+        """Returns True if the current bounds are set up to query one extra row in order
+        to make pagination easier (to know if there should be a next link)
+
+        :returns: boolean
+        """
+        return self.has_limit() and self.paginate
+
+    def has_pages(self):
+        return self.has_more()
+
+    def is_paginated(self):
+        return self.has_more()
+
     def __str__(self):
         return "limit: {}, offset: {}".format(self.limit, self.offset)
+
+    def find_offset(self, i):
+        """Given an index i, use the current offset and limit to find the correct
+        offset i would be
+
+        :param i: int, the index used to find the new offset
+        :returns: int, the new offset
+        """
+        if i >= 0:
+            offset = self.offset + i
+            if self.has_limit():
+                maximum_offset = self.limit + self.offset
+                if offset > maximum_offset:
+                    raise IndexError("Iterator index {} out of range".format(i))
+
+        else:
+            limit = self.limit
+            offset = limit + i
+
+            if offset < 0:
+                raise IndexError("Iterator index {} out of range".format(i))
+
+        return offset
 
 
 class Field(object):
@@ -502,7 +372,7 @@ class Field(object):
         self.query = query
         self.operator = kwargs.pop("operator", None)
         self.is_list = kwargs.pop("is_list", False)
-        self.direction = kwargs.pop("direction", None)
+        self.direction = kwargs.pop("direction", None) # 1 = ASC, -1 = DESC
         self.kwargs = kwargs
 
         self.set_name(field_name)
@@ -558,8 +428,9 @@ class Fields(list):
         return ret
 
     def __init__(self):
-        self.field_names = defaultdict(list)
-        self.options = {}
+        self.clear()
+        #self.field_names = defaultdict(list)
+        #self.options = {}
 
     def names(self):
         """Return all the field names in the order the were first seen"""
@@ -583,6 +454,11 @@ class Fields(list):
         raise NotImplementedError()
     __delitem__ = __setitem__
 
+    def clear(self):
+        self.field_names = defaultdict(list)
+        self.options = {}
+        self[:]
+
 
 class Query(object):
     """
@@ -598,6 +474,7 @@ class Query(object):
     fields_where_class = Fields
     fields_sort_class = Fields
     bounds_class = Bounds
+    iterator_class = Iterator
 
     @property
     def interface(self):
@@ -646,11 +523,6 @@ class Query(object):
 
         return schemas
 
-    @property
-    def iterator_class(self):
-        if not self.orm_class: return None
-        return self.orm_class.iterator_class if self.orm_class else Iterator
-
     def __init__(self, orm_class=None, **kwargs):
 
         # needed to use the db querying methods like get(), if you just want to build
@@ -661,18 +533,12 @@ class Query(object):
 
     def reset(self):
         self.interface = None
+        self._ifilter = None
         self.fields_set = self.fields_set_class()
         self.fields_select = self.fields_select_class()
         self.fields_where = self.fields_where_class()
         self.fields_sort = self.fields_sort_class()
         self.bounds = self.bounds_class()
-        # the idea here is to set this to False if there is a condition that will
-        # automatically cause the query to fail but not necessarily be an error, 
-        # the best example is the IN (...) queries, if you do self.in_foo([]).get()
-        # that will fail because the list was empty, but a value error shouldn't
-        # be raised because a common case is: self.if_foo(Bar.query.is_che(True).pks).get()
-        # which should result in an empty set if there are no rows where che = TRUE
-        self.can_get = True
 
     def ref(self, orm_classpath):
         """
@@ -697,12 +563,7 @@ class Query(object):
         return orm_class.query
 
     def __iter__(self):
-        #return self.all()
-        #return self.get()
-        # NOTE -- for some reason I need to call AllIterator.__iter__() explicitely
-        # because it would call AllIterator.next() even though AllIterator.__iter__
-        # returns a generator, not sure what's up
-        return self.get() if self.bounds else self.all().__iter__()
+        return self.get()
 
     def find_operation_method(self, method_name):
         """Given a method name like <OPERATOR>_<FIELD_NAME> or <FIELD_NAME>_<OPERATOR>,
@@ -751,6 +612,9 @@ class Query(object):
     def create_field(self, field_name, field_val=None, **kwargs):
         f = self.field_class(self, field_name, field_val, **kwargs)
         return f
+
+    def create_iterator(self, query):
+        return self.orm_class.iterator_class(query) if self.orm_class else self.iterator_class(query)
 
     def append_operation(self, operator, field_name, field_val=None, **kwargs):
         kwargs["operator"] = operator
@@ -847,9 +711,6 @@ class Query(object):
         """
         :param field_val: list, a list of field_val values
         """
-        if not field_val and not field_kwargs:
-            self.can_get = False
-
         field_kwargs["is_list"] = True
         return self.append_operation("in", field_name, field_val, **field_kwargs)
 
@@ -857,9 +718,6 @@ class Query(object):
         """
         :param field_val: list, a list of field_val values
         """
-        if not field_val:
-            self.can_get = False
-
         field_kwargs["is_list"] = True
         return self.append_operation("nin", field_name, field_val, **field_kwargs)
 
@@ -910,6 +768,18 @@ class Query(object):
     def desc_field(self, field_name, field_val=None):
         return self.append_sort(-1, field_name, field_val)
 
+    def ifilter(self, predicate):
+        """Set the predicate (callback) for an iterator returned from this instance
+
+        https://docs.python.org/2/library/itertools.html#itertools.ifilter
+
+        :param predicate: callable, this will be passed to the iterator in the
+            .create_iterator method
+        :returns: self, for fluid interface
+        """
+        self._ifilter = predicate
+        return self
+
     def __getattr__(self, method_name):
         field_method, field_name = self.find_operation_method(method_name)
         def callback(*args, **kwargs):
@@ -929,106 +799,45 @@ class Query(object):
         self.bounds.page = page
         return self
 
-    def cursor(self, limit=None, page=None):
-        # TODO -- combine the common parts of this method and get()
-        has_more = False
-        self.bounds.paginate = True
-        limit_paginate, offset = self.bounds.get(limit, page)
-        self.default_val = []
-        results = self._query('get', cursor_result=True)
+    def cursor(self):
+        """Used by the Iterator to actually query the db"""
+        return self.execute('get', cursor_result=True)
 
-        if limit_paginate:
-            self.bounds.paginate = False
-            if results.rowcount == limit_paginate:
-                has_more = True
-                # TODO -- we need to compensate for having one extra
-                #results.pop(-1)
-
-        it = CursorIterator(results, orm_class=self.orm_class, has_more=has_more, query=self)
-        return self.iterator_class(it)
-
-    def get(self, limit=None, page=None):
+    def get(self):
         """
         get results from the db
 
-        return -- Iterator()
+        :returns: Iterator
         """
-        has_more = False
         self.bounds.paginate = True
-        limit_paginate, offset = self.bounds.get(limit, page)
-        self.default_val = []
-        results = self._query('get')
-
-        if limit_paginate:
-            self.bounds.paginate = False
-            if len(results) == limit_paginate:
-                has_more = True
-                results.pop(-1)
-
-        it = ResultsIterator(results, orm_class=self.orm_class, has_more=has_more, query=self)
-        return self.iterator_class(it)
+        return self.create_iterator(self)
 
     def all(self):
-        """
-        return every possible result for this query
+        return self.get()
 
-        This is smart about returning results and will use the set limit (or a default if no
-        limit was set) to chunk up the results, this means you can work your way through
-        really big result sets without running out of memory
+    def values(self):
+        if not self.fields_select:
+            raise ValueError("No selected fields")
+        return self.get()
 
-        return -- Iterator()
-        """
-        ait = AllIterator(self)
-        return self.iterator_class(ait)
-
-    def one(self): return self.get_one()
-    def get_one(self):
+    @deprecated("see list item 2 in issue 24, use .one() instead")
+    def get_one(self): return self.one()
+    def one(self):
         """get one row from the db"""
-        self.default_val = None
-        o = self.default_val
-        d = self._query('get_one')
-        if d:
-            o = self.orm_class.hydrate(d)
-        return o
+        self.limit(1)
+        self.bounds.paginate = False
+        it = self.create_iterator(self)
+        try:
+            ret = it.next()
+        except StopIteration:
+            ret = None
+        return ret
 
-    @deprecated("see list item 1 in issue 24")
-    def values(self, limit=None, page=None):
-        """
-        convenience method to get just the values from the query (same as get().values())
-
-        if you want to get all values, you can use: self.all().values()
-        """
-        return self.get(limit=limit, page=page).values()
-
-    @deprecated("see list item 1 in issue 24")
     def value(self):
         """convenience method to just get one value or tuple of values for the query"""
-        field_vals = None
-        field_names = self.fields_select.names()
-        fcount = len(field_names)
-        if fcount:
-            d = self._query('get_one')
-            if d:
-                field_vals = [d.get(fn, None) for fn in field_names]
-                if fcount == 1:
-                    field_vals = field_vals[0]
-
-        else:
-            raise ValueError("no select fields were set, so cannot return value")
-
-        return field_vals
-
-    @deprecated("see list item 1 in issue 24, and I don't think this is used enough to be officially supported")
-    def pks(self, limit=None, page=None):
-        """convenience method for setting select_pk().values() since this is so common"""
-        #self.fields_set.reset()
-        return self.select_pk().values(limit, page)
-
-    @deprecated("see list item 1 in issue 24, and I don't think this is used enough to be officially supported")
-    def pk(self):
-        """convenience method for setting select_pk().value() since this is so common"""
-        #self.fields_set.reset()
-        return self.select_pk().value()
+        if not self.fields_select:
+            raise ValueError("no selected fields")
+        return self.one()
 
     @deprecated("see issue 112")
     def get_pks(self, field_vals):
@@ -1042,14 +851,6 @@ class Query(object):
         field_name = self.schema.pk.name
         return self.is_field(field_name, field_val).get_one()
 
-    def first(self):
-        """convenience method for running asc__id().get_one()"""
-        return self.asc__id().get_one()
-
-    def last(self):
-        """convenience method for running desc__id().get_one()"""
-        return self.desc__id().get_one()
-
     def count(self):
         """return the count of the criteria"""
 
@@ -1057,8 +858,7 @@ class Query(object):
         fields_sort = self.fields_sort
         self.fields_sort = self.fields_sort_class()
 
-        self.default_val = 0
-        ret = self._query('count')
+        ret = self.execute('count')
 
         # restore previous values now that count is done
         self.fields_sort = fields_sort
@@ -1072,26 +872,19 @@ class Query(object):
 
     def insert(self):
         """persist the .fields"""
-        self.default_val = 0
         return self.interface.insert(self.schema, self.fields_set.fields)
 
     def update(self):
         """persist the .fields using .fields_where"""
-        self.default_val = 0
-        #fields = self.fields
-        #fields = self.orm_class.depart(self.fields, is_update=True)
-        #self.set_fields(fields)
         return self.interface.update(
             self.schema,
             self.fields_set.fields,
             self
         )
-        #return self._query('update')
 
     def delete(self):
         """remove fields matching the where criteria"""
-        self.default_val = None
-        return self._query('delete')
+        return self.execute('delete')
 
     def render(self, **kwargs):
         """Render the query
@@ -1118,11 +911,10 @@ class Query(object):
         i = self.interface
         return i.query(query_str, *query_args, **query_options)
 
-    def _query(self, method_name, **kwargs):
-        if not self.can_get: return self.default_val
+    def execute(self, method_name, **kwargs):
         i = self.interface
         s = self.schema
-        return getattr(i, method_name)(s, self, **kwargs) # i.method_name(schema, query)
+        return getattr(i, method_name)(s, self, **kwargs)
 
     def copy(self):
         """nice handy wrapper around the deepcopy"""
