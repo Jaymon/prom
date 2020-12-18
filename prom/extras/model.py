@@ -5,9 +5,7 @@ from .. import decorators
 from ..model import Orm
 from ..config import (
     Field,
-    ObjectField,
-    JsonField,
-    Index
+    Index,
 )
 
 

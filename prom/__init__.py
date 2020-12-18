@@ -7,8 +7,6 @@ from .config import (
     DsnConnection,
     Schema,
     Field,
-    ObjectField,
-    JsonField,
     Index
 )
 from .query import Query
@@ -25,7 +23,7 @@ from .exception import InterfaceError, Error, UniqueError
 from . import utils
 
 
-__version__ = '1.4.4'
+__version__ = '2.0.0'
 
 
 # get rid of "No handler found" warnings (cribbed from requests)

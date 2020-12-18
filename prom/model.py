@@ -10,7 +10,7 @@ from datatypes.collections import Pool
 from .query import Query, Iterator
 from . import decorators, utils
 from .interface import get_interface
-from .config import Schema, Field, ObjectField, Index
+from .config import Schema, Field, Index
 from .compat import *
 
 
@@ -467,7 +467,7 @@ class Orm(object):
         """
         if field_name:
             field = self.schema.fields[field_name]
-            if not isinstance(field, ObjectField):
+            if not field.is_serialized():
                 self.modified_fields.discard(field_name)
 
         else:
@@ -475,7 +475,7 @@ class Orm(object):
 
             # compensate for us not having knowledge of certain fields changing
             for field_name, field in self.schema.normal_fields.items():
-                if isinstance(field, ObjectField):
+                if field.is_serialized():
                     self.modified_fields.add(field_name)
 
     def modify(self, fields=None, **fields_kwargs):

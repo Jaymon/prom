@@ -319,17 +319,6 @@ class Schema(object):
         except KeyError:
             raise AttributeError("No {} field in schema {}".format(name, self.table_name))
 
-#         if name in self.fields:
-#             return self.fields[name]
-# 
-#         else:
-#             if name == "pk":
-#                 for field_name, field in self.fields.items():
-#                     if field.options.get('pk', False):
-#                         return field
-# 
-#             raise AttributeError("No {} field in schema {}".format(name, self.table_name))
-
     def set_field(self, field_name, field):
         if not field_name: raise ValueError("field_name is empty")
         if field_name in self.fields: raise ValueError("{} already exists and cannot be changed".format(field_name))
@@ -531,33 +520,6 @@ class Field(object):
 
         return self._schema
 
-
-
-
-
-
-#     @property
-#     def schema(self):
-#         """return the schema instance if this is reference to another table"""
-#         if not hasattr(self, "_schema"):
-#             ret = None
-#             #o = self._type
-#             o = self.type
-#             if isinstance(o, type):
-#                 ret = getattr(o, "schema", None)
-# 
-#             elif isinstance(o, Schema):
-#                 ret = o
-# 
-#             else:
-#                 module, klass = utils.get_objects(o)
-#                 ret = klass.schema
-# 
-#             self._schema = ret
-# 
-#         return self._schema
-
-
     @property
     def type(self):
         """Return the actual type this field should be
@@ -579,16 +541,6 @@ class Field(object):
     def interface_type(self):
         """Returns the type that will be used in the interface to create the table"""
         return self.type
-
-#     @property
-#     def interface_type(self):
-#         """Returns the type that will be used in the interface to create the table"""
-#         ret = self.type
-#         if not isinstance(ret, type) or hasattr(ret, "schema"):
-#             s = self.schema
-#             ret = s.pk.type
-# 
-#         return ret
 
     @property
     def ref(self):
@@ -1019,63 +971,4 @@ class Field(object):
         accepts the current value as an argument"""
         val = self.fdel(orm, self.fval(orm))
         orm.__dict__[self.instance_field_name] = val
-        #self.__set__(orm, val)
-
-
-class ObjectField(Field):
-    """A special field type for when you just want to shove an object in a field
-
-    this will just pickle and base64 the object so it can be stored in a text field
-    and then it will do the opposite when you pull it out, so basically, you can dump
-    anything you want in this field and it will be saved and restored transparently
-
-    I thought about doing Field(object, ...) but building it in that way actually
-    proved to be more complicated than I thought, you could pass in some type and if it
-    was that type then it would set the default methods to pickle_iset/iget, but I couldn't
-    decide what type to pass in, if you pass in pickle, then you need to check for pickle and
-    cPickle to decide, you can't pass in something like `object` without complicating 
-    how foreign keys are figured out, so ultimately, I've decided to just have it be
-    a separate class"""
-    def __init__(self, field_required=False, default=None):
-        """
-        unlike the normal Field class, you can't set any options or a type on this
-        Field, because it is a pickled object, so it can't be unique, it doesn't have
-        a size, etc.. Likewise, the field type is always str
-        """
-        super(ObjectField, self).__init__(
-            field_type=str,
-            field_required=field_required,
-            default=default,
-        )
-
-    def encode(self, val):
-        if val is None: return val
-        return base64.b64encode(pickle.dumps(val, pickle.HIGHEST_PROTOCOL))
-
-    def decode(self, val):
-        if val is None: return val
-        return pickle.loads(base64.b64decode(val))
-
-    def iset(self, orm, val):
-        return self.encode(val)
-
-    def iget(self, orm, val):
-        return self.decode(val)
-
-
-class JsonField(ObjectField):
-    """Similar to ObjectField but stores json in the db"""
-    def __init__(self, field_required=False, default=dict):
-        super(JsonField, self).__init__(
-            field_required=field_required,
-            default=default,
-        )
-
-    def encode(self, val):
-        if val is None: return val
-        return json.dumps(val)
-
-    def decode(self, val):
-        if val is None: return val
-        return json.loads(val)
 

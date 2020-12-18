@@ -10,7 +10,7 @@ from . import BaseTestCase, EnvironTestCase
 import prom
 from prom.model import Orm
 from prom.config import Schema, Connection, DsnConnection, Index
-from prom.config import Field, ObjectField, JsonField
+from prom.config import Field
 from prom.compat import *
 
 
@@ -362,86 +362,6 @@ class ConnectionTest(BaseTestCase):
         self.assertEqual({"some_random_thing": "foo"}, c.options)
 
 
-class ObjectFieldTest(EnvironTestCase):
-    field_class = ObjectField
-
-    def get_orm(self, default=None):
-        class EnvironObjectOrm(Orm):
-            interface = self.create_interface()
-            body = self.field_class(True, default=default)
-
-        return EnvironObjectOrm()
-
-    def get_sqlite_orm(self):
-        class IMethodPickleOrmSQLite(Orm):
-            interface = self.create_sqlite_interface()
-            body = self.field_class(True)
-
-        return IMethodPickleOrmSQLite()
-
-    def get_postgres_orm(self):
-        class IMethodPickleOrmPostgres(Orm):
-            interface = self.create_postgres_interface()
-            body = self.field_class(True)
-
-        return IMethodPickleOrmPostgres()
-
-    def test_default(self):
-        o = self.get_orm(default=dict)
-        o.body["foo"] = 1
-        self.assertEqual(1, o.body["foo"])
-
-    def test_imethods_pickle(self):
-        o = self.get_orm()
-        o.body = {"foo": 1}
-        o.save()
-
-        o2 = type(o).query.get_pk(o.pk)
-        self.assertEqual(o.body, o2.body)
-
-    def test_modify(self):
-        o = self.get_orm()
-        o.body = {"bar": 1}
-        o.save()
-
-        o.body["che"] = 2
-        o.save()
-
-        o2 = type(o).query.get_pk(o.pk)
-        self.assertEqual(o.body, o2.body)
-
-    def test_iget_isave_override(self):
-        o = self.get_orm()
-        ocls = type(o)
-
-        ocls_iget = ocls.body.iget
-        ocls_iset = ocls.body.iset
-
-        @ocls.body.igetter
-        def body(cls, field_val):
-            self.assertTrue(isinstance(field_val, dict))
-            return field_val
-
-        @ocls.body.isetter
-        def body(cls, field_val):
-            self.assertTrue(isinstance(field_val, dict))
-            return field_val
-
-        o.body = {"bar": 1, "igetter": 0, "isaver": 0}
-        o.save()
-        self.assertTrue(isinstance(o.body, dict))
-
-        o2 = type(o).query.get_pk(o.pk)
-        self.assertTrue(isinstance(o2.body, dict))
-
-        ocls.body.iget = ocls_iget
-        ocls.body.iset = ocls_iset
-
-
-class JsonFieldTest(ObjectFieldTest):
-    field_class = JsonField
-
-
 class FieldTest(EnvironTestCase):
     def test_help(self):
         help_str = "this is the foo field"
@@ -770,8 +690,6 @@ class FieldTest(EnvironTestCase):
 
 
 class SerializedFieldTest(EnvironTestCase):
-    field_class = ObjectField
-
     def get_orm(self, field_type=dict, default=None):
         orm_class = self.get_orm_class(
             body=Field(field_type, default=default)

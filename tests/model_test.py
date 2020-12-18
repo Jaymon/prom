@@ -9,7 +9,7 @@ import testdata
 from . import BaseTestCase, EnvironTestCase
 from prom.compat import *
 from prom.model import Orm, OrmPool
-from prom.config import Field, Index, ObjectField, JsonField
+from prom.config import Field, Index
 import prom
 
 
@@ -55,23 +55,6 @@ class OrmPoolTest(BaseTestCase):
 
 
 class OrmTest(EnvironTestCase):
-#     def test_alt_fieldtypes(self):
-#         class FTOrm(Orm):
-#             table_name = "ftorm_table"
-#             one = Field(dict)
-#             two = Field(list)
-#             #three = Field(json)
-#             #four = Field(object)
-# 
-#         o = FTOrm()
-#         o.one = {"foo": 1, "bar": 2}
-#         o.two = [1, 2, 3, 4]
-#         o.save()
-#         pout.v(o.fields)
-# 
-#         o2 = o.query.get_pk(o.pk)
-#         pout.v(o2.fields)
-
     def test_created_updated(self):
         orm_class = self.get_orm_class()
 
@@ -435,8 +418,8 @@ class OrmTest(EnvironTestCase):
             table_name = self.get_table_name()
 
             foo = Field(str, False)
-            bar = JsonField(False)
-            che = ObjectField(False)
+            bar = Field(dict, False)
+            che = Field(dict, False)
 
         t = TM()
         self.assertTrue(t.is_modified())
@@ -690,12 +673,27 @@ class OrmTest(EnvironTestCase):
         t2 = t.query.get_pk(_id)
         self.assertEqual(None, t2)
 
-    def test_create(self):
+    def test_create_1(self):
         orm_class = self.get_orm_class()
         t = orm_class.create(foo=1000, bar="value1000")
         self.assertLess(0, t.pk)
         self.assertEqual(1000, t.foo)
         self.assertEqual("value1000", t.bar)
+
+    def test_create_2(self):
+        """https://github.com/Jaymon/prom/issues/124"""
+        kwargs = {
+            "foo": 1,
+            "bar": "2"
+        }
+        orm_class = self.get_orm_class()
+
+        o = orm_class.create(**kwargs)
+        self.assertTrue(isinstance(o._created, datetime.datetime))
+
+        kwargs["_id"] = o.pk + 1
+        o2 = orm_class.create(**kwargs)
+        self.assertTrue(isinstance(o._created, datetime.datetime))
 
     def test_fields(self):
         orm_class = self.get_orm_class()
