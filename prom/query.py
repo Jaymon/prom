@@ -122,6 +122,10 @@ class Iterator(ListIterator):
         else:
             # we couldn't get the rowcount from the cursor for some reason, so
             # we will need to query for it
+
+            # SQLite cursor's will always have rowcount=-1 until the cursor is
+            # exhausted or a fetch*() method has been called, ugh.
+            # https://stackoverflow.com/a/839419/5006
             count = self.query.copy().count()
 
         return count
