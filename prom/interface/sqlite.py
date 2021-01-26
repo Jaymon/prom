@@ -33,6 +33,8 @@ try:
 except ImportError:
     thread = None
 
+from datatypes import Datetime
+
 # first party
 from ..exception import UniqueError
 from ..compat import *
@@ -251,16 +253,19 @@ class SQLite(SQLInterface):
 
         # for some reason this is needed in python 3.6 in order for saved bytes
         # to be ran through the converter, not sure why
-        sqlite3.register_converter('TEXT' if not is_py2 else b'TEXT', StringType.adapt)
+        sqlite3.register_converter(b'TEXT' if is_py2 else 'TEXT', StringType.adapt)
 
         sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
-        sqlite3.register_converter('NUMERIC' if not is_py2 else b'NUMERIC', NumericType.convert)
+        sqlite3.register_converter(b'NUMERIC' if is_py2 else 'NUMERIC', NumericType.convert)
 
         sqlite3.register_adapter(bool, BooleanType.adapt)
-        sqlite3.register_converter('BOOLEAN' if not is_py2 else b'BOOLEAN', BooleanType.convert)
+        sqlite3.register_converter(b'BOOLEAN' if is_py2 else 'BOOLEAN', BooleanType.convert)
 
+        # sadly, it doesn't look like these work for child classes so each class
+        # has to be adapted even if its parent is already registered
         sqlite3.register_adapter(datetime.datetime, TimestampType.adapt)
-        sqlite3.register_converter('TIMESTAMP' if not is_py2 else b'TIMESTAMP', TimestampType.convert)
+        sqlite3.register_adapter(Datetime, TimestampType.adapt)
+        sqlite3.register_converter(b'TIMESTAMP' if is_py2 else 'TIMESTAMP', TimestampType.convert)
 
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html

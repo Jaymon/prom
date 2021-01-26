@@ -414,14 +414,13 @@ class OrmTest(EnvironTestCase):
         self.assertIsNone(t._updated)
 
     def test_modify_2(self):
-        class TM(Orm):
-            table_name = self.get_table_name()
+        orm_class = self.get_orm_class(
+            foo=Field(str, False),
+            bar=Field(dict, False, default=dict),
+            che=Field(dict, False, default=dict),
+        )
 
-            foo = Field(str, False)
-            bar = Field(dict, False)
-            che = Field(dict, False)
-
-        t = TM()
+        t = orm_class()
         self.assertTrue(t.is_modified())
         for k in ["bar", "che"]:
             self.assertTrue(k in t.modified_fields)

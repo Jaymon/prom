@@ -6,6 +6,7 @@ import string
 import decimal
 import datetime
 
+from datatypes import Datetime
 
 from prom import query, InterfaceError
 from prom.config import Schema, Field, Index
@@ -188,7 +189,16 @@ class BaseTestInterface(BaseTestCase):
         self.assertFalse(d["bar"])
         self.assertTrue(d["che"])
 
-    def test_field_datetime(self):
+    def test_field_datetime_datatypes(self):
+        """Makes sure datatypes.Datetime works for the different interfaces"""
+        orm_class = self.get_orm_class(bar=Field(datetime.datetime))
+        o = orm_class.create(bar=Datetime())
+
+        dt = Datetime()
+        o2 = orm_class.query.lt_bar(dt).one()
+        self.assertEqual(o.bar, o2.bar)
+
+    def test_field_datetime_iso8601(self):
         """make sure ISO 8601 formatted datestamps can be added to the db
 
         NOTE -- postgres actually validates the datestamp on insert, so it will 

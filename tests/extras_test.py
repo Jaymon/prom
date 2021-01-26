@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
-import time
-from threading import Thread
 
-from prom.config import Field
+from datatypes import Enum
+
+from prom.extras.config import Field
 from prom.extras.model import MagicOrm
 from . import TestCase, EnvironTestCase, testdata
 
@@ -84,4 +84,30 @@ class MagicOrmTest(EnvironTestCase):
         o = O3()
         with self.assertRaises(ValueError):
             o.foo
+
+
+class FieldTest(EnvironTestCase):
+    def test_enum(self):
+        class FooEnum(Enum):
+            FOO = 1
+            BAR = 2
+
+        class OE(MagicOrm):
+            type = Field(FooEnum)
+
+        o = OE()
+        o.type = "bar"
+        self.assertEqual(FooEnum.BAR, o.type)
+
+        q = o.query.is_type("foo")
+        self.assertEqual(FooEnum.FOO, q.fields_where[0].value)
+        self.assertEqual(1, q.fields_where[0].value)
+
+        o.type = 2
+        self.assertEqual(FooEnum.BAR, o.type)
+        self.assertEqual(2, o.type)
+
+        o.type = FooEnum.BAR
+        self.assertEqual(FooEnum.BAR, o.type)
+        self.assertEqual(2, o.type)
 

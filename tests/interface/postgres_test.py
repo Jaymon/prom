@@ -156,53 +156,6 @@ class InterfacePostgresTest(BaseTestInterface):
         with self.assertRaises(prom.InterfaceError):
             rd = i.insert(s, fields)
 
-#     def test_subquery(self):
-#         i = self.get_interface()
-#         s1 = self.get_schema()
-#         s2 = self.get_schema(s1_id=Field(s1, True))
-# 
-# #         import random
-# # 
-# #         for n in range(1, 15000):
-# #             fields = {
-# #                 'foo': n,
-# #                 'bar': '{}'.format(n),
-# #             }
-# #             pk = i.insert(s1, fields)
-# # #             if random.randint(0, 1):
-# # #                 time.sleep(0.1)
-# # 
-# #         c = i.query("SELECT count(*) FROM {} WHERE _id IN (SELECT _id from {} WHERE foo>0)".format(
-# #             s1,
-# #             s1
-# #         ), count_query=True)
-# #         pout.v(c)
-# #         return
-# 
-# 
-# 
-# 
-# 
-# 
-# 
-#         #i, s = self.get_table()
-# 
-#         for n in range(1, 1500):
-#             fields = {
-#                 'foo': n,
-#                 'bar': '{}'.format(n),
-#             }
-#             pk = i.insert(s1, fields)
-#             i.insert(s2, {"s1_id": pk})
-# 
-# 
-#         c = i.query("SELECT count(*) FROM {} WHERE _id IN (SELECT s1_id from {} WHERE _id>0)".format(
-#             s1,
-#             s2
-#         ), count_query=True)
-#         pout.v(c)
-
-
 
 @skipIf("PROM_PGBOUNCER_DSN" not in os.environ, "Skipping PGBouncer tests because not configured")
 class InterfacePGBouncerTest(InterfacePostgresTest):
@@ -214,7 +167,7 @@ class InterfacePGBouncerTest(InterfacePostgresTest):
         """this will make sure prom handles it gracefully if there is no connection
         available ever. We have to wrap this for pgbouncer because PGBouncer can
         hold the connections if there is no db waiting for the db to come back up
-        for all sorts of timeouts, and it's just easier to reset pg boucner than
+        for all sorts of timeouts, and it's just easier to reset pg bouncer than
         configure it for aggressive test timeouts.
         """
         subprocess.check_call("sudo stop pgbouncer", shell=True, stdout=stdnull)
