@@ -634,42 +634,43 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(None, o.foo)
 
     def test_ref(self):
-        testdata.create_module("ref", "\n".join([
-                "import prom",
-                "class Foo(prom.Orm):",
-                "    che = prom.Field(str)",
-                "",
-                "class Bar(prom.Orm):",
-                "    foo_id = prom.Field(Foo)",
-                ""
-            ])
-        )
+        m = testdata.create_module([
+            "import prom",
+            "class Foo(prom.Orm):",
+            "    che = prom.Field(str)",
+            "",
+            "class Bar(prom.Orm):",
+            "    foo_id = prom.Field(Foo)",
+            ""
+        ])
 
-        from ref import Foo, Bar
+        Foo = m.module().Foo
+        Bar = m.module().Bar
 
         self.assertTrue(isinstance(Bar.schema.fields['foo_id'].schema, Schema))
         self.assertTrue(issubclass(Bar.schema.fields['foo_id'].interface_type, long))
 
     def test_string_ref(self):
-        testdata.create_modules({
-            "stringref.foo": "\n".join([
+        modname = testdata.get_module_name()
+        d = testdata.create_modules({
+            "foo": [
                 "import prom",
                 "class Foo(prom.Orm):",
                 "    interface = None",
-                "    bar_id = prom.Field('stringref.bar.Bar')",
+                "    bar_id = prom.Field('{}.bar.Bar')".format(modname),
                 ""
-            ]),
-            "stringref.bar": "\n".join([
+            ],
+            "bar": [
                 "import prom",
                 "class Bar(prom.Orm):",
                 "    interface = None",
-                "    foo_id = prom.Field('stringref.foo.Foo')",
+                "    foo_id = prom.Field('{}.foo.Foo')".format(modname),
                 ""
-            ])
-        })
+            ],
+        }, modname)
 
-        from stringref.foo import Foo
-        from stringref.bar import Bar
+        Foo = d.module("{}.foo".format(modname)).Foo
+        Bar = d.module("{}.bar".format(modname)).Bar
 
         self.assertTrue(isinstance(Foo.schema.fields['bar_id'].schema, Schema))
         self.assertTrue(issubclass(Foo.schema.fields['bar_id'].interface_type, long))

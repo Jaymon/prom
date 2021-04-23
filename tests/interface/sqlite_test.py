@@ -61,13 +61,13 @@ class InterfaceTest(BaseTestCase):
             #connection_name = ""
             pass
 
-        path = testdata.create_file("inter1.db")
+        path = testdata.get_file("inter1.db")
         dsn = "sqlite://{}#{}".format(path, InterTorm.connection_name)
         configure(dsn)
         InterTorm.install()
         self.assertTrue(InterTorm.interface.has_table(InterTorm.table_name))
 
-        path = testdata.create_file("inter2.db")
+        path = testdata.get_file("inter2.db")
         dsn = "sqlite://{}#{}".format(path, InterTorm.connection_name)
         configure(dsn)
         self.assertFalse(InterTorm.interface.has_table(InterTorm.table_name))
@@ -182,7 +182,7 @@ class InterfaceSQLiteTest(BaseTestInterface):
         self.assertFalse(i.has_table(table_name))
 
     def test_delete_table_ref(self):
-        path = testdata.create_module("dtref", [
+        m = testdata.create_module([
             "import prom",
             "",
             "class Foo(prom.Orm):",
@@ -195,7 +195,8 @@ class InterfaceSQLiteTest(BaseTestInterface):
             ""
         ])
 
-        from dtref import Foo, Bar
+        Foo = m.module().Foo
+        Bar = m.module().Bar
 
         Foo.install()
         Bar.install()

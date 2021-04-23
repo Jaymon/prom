@@ -511,7 +511,7 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(other_orm_class.query_class, prom.Query)
 
     def test_property_autodiscover(self):
-        testdata.create_module("fooq", "\n".join([
+        m = testdata.create_module([
             "import prom",
             "",
             "class FooQuery(prom.Query):",
@@ -531,9 +531,9 @@ class OrmTest(EnvironTestCase):
             "",
             "class CheQuery(prom.Query):",
             "    pass",
-        ]))
+        ])
 
-        import fooq
+        fooq = m.module()
 
         # first try with the instance calling first
         f = fooq.Foo()
@@ -815,7 +815,7 @@ class OrmTest(EnvironTestCase):
         # we succeeded if no error was raised
 
     def test_fk(self):
-        mpath = testdata.create_module(contents=[
+        mpath = testdata.create_module([
             "from prom import Field, Orm",
             "",
             "class Foo(Orm):",
@@ -832,10 +832,10 @@ class OrmTest(EnvironTestCase):
             "    pass",
         ])
 
-        Foo = mpath.module.Foo
-        Bar = mpath.module.Bar
-        Che = mpath.module.Che
-        Boo = mpath.module.Boo
+        Foo = mpath.module().Foo
+        Bar = mpath.module().Bar
+        Che = mpath.module().Che
+        Boo = mpath.module().Boo
 
         b = Bar(foo_id=5)
         self.assertEqual(5, b.fk(Foo))
@@ -852,7 +852,7 @@ class OrmTest(EnvironTestCase):
 
     def test_subquery_1(self):
         count = 10
-        mpath = testdata.create_module(contents=[
+        mpath = testdata.create_module([
             "from prom import Field, Orm",
             "",
             "class Foo(Orm):",
@@ -862,8 +862,8 @@ class OrmTest(EnvironTestCase):
             "    foo_id = Field(Foo, True)",
         ])
 
-        Foo = mpath.module.Foo
-        Bar = mpath.module.Bar
+        Foo = mpath.module().Foo
+        Bar = mpath.module().Bar
 
         foo_ids = self.insert(Foo, count)
         for foo_id in foo_ids:
@@ -881,7 +881,7 @@ class OrmTest(EnvironTestCase):
     def test_subquery_2(self):
         """Similar test as subquery_1 but makes sure query_class works as expected also"""
         count = 10
-        mpath = testdata.create_module(contents=[
+        mpath = testdata.create_module([
             "from prom import Field, Orm, Query",
             "",
             "class Foo(Orm):",
@@ -895,8 +895,8 @@ class OrmTest(EnvironTestCase):
             "    query_class = BarQuery",
         ])
 
-        Foo = mpath.module.Foo
-        Bar = mpath.module.Bar
+        Foo = mpath.module().Foo
+        Bar = mpath.module().Bar
 
         foo_ids = self.insert(Foo, count)
         for foo_id in foo_ids:
