@@ -45,16 +45,16 @@ class Orm(object):
     this is the parent class of any Orm child class you want to create that can access the db
 
     :example:
-        from prom import Orm, Field
+        from prom import Orm, Field, Index
 
         # create a simple class using standard fields
         class Foo(Orm):
             table_name = "<TABLE NAME>"
 
             bar = Field(int, True, max_size=512, default=0, unique=True)
-            che = prom.Field(str, True)
+            che = Field(str, True)
 
-            index_barche = prom.Index('bar', 'che')
+            index_barche = Index('bar', 'che')
 
         # create a more complex class using a field override
         class Foo2(Orm):
@@ -242,17 +242,14 @@ class Orm(object):
         :param **fields_kwargs: dict, if you would like to pass the fields as key=val
         """
         self.reset_modified()
-
         fields = self.make_dict(fields, fields_kwargs)
-        fields = self.modify_fields(fields)
 
         for field_name, field in self.schema.fields.items():
-            if field_name in fields:
-                field_val = fields[field_name]
+            fields[field_name] = field.fdefault(self, fields.get(field_name, None))
 
-            else:
-                field_val = field.fdefault(self, None)
+        fields = self.modify_fields(fields)
 
+        for field_name, field_val in fields.items():
             setattr(self, field_name, field_val)
 
         self._interface_pk = None

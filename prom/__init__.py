@@ -9,7 +9,7 @@ from .config import (
     Field,
     Index
 )
-from .query import Query
+from .query import Query, Iterator
 from . import decorators
 from .model import Orm
 from .interface import (
@@ -23,7 +23,7 @@ from .exception import InterfaceError, Error, UniqueError
 from . import utils
 
 
-__version__ = '2.1.0'
+__version__ = '2.1.1'
 
 
 # get rid of "No handler found" warnings (cribbed from requests)

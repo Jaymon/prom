@@ -434,11 +434,23 @@ class FieldTest(EnvironTestCase):
         self.assertIsNotNone(f.schema)
         self.assertFalse(f.is_serialized())
 
-    def test_serialize(self):
+    def test_serialize_lifecycle(self):
         orm_class = self.get_orm_class(
-            foo=Field(dict, json=False)
+            foo=Field(dict, False)
         )
 
+        o = orm_class()
+        self.assertIsNone(o.foo)
+
+        o.foo = {"bar": 1, "che": "two"}
+        self.assertTrue(isinstance(o.foo, dict))
+        o.save()
+        self.assertTrue(isinstance(o.foo, dict))
+
+        o2 = o.query.eq_pk(o.pk).one()
+        self.assertTrue(isinstance(o2.foo, dict))
+        self.assertEqual(1, o2.foo["bar"])
+        self.assertEqual("two", o2.foo["che"])
 
     def test_choices(self):
         orm_class = self.get_orm_class(
