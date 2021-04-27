@@ -12,9 +12,9 @@ class Field(BaseField):
     """Adds support for Enum as the field type. This allows you to set an enum string
     value, integer value, or Enum instance to the Orm or the Query and it will 
     be inserted into the db as an integer"""
-    @property
-    def type(self):
-        return int if self.is_enum() else super(Field, self).type
+#     @property
+#     def type(self):
+#         return int if self.is_enum() else super(Field, self).type
 
     def is_enum(self):
         """Return True if the field type is an Enum"""
@@ -37,4 +37,10 @@ class Field(BaseField):
         else:
             val = super(Field, self).iquery(query, val)
         return val
+
+    def set_type(self, field_type, field_options):
+        super(Field, self).set_type(field_type, field_options)
+        if self.is_enum():
+            self.serializer = ""
+            self._interface_type = int
 

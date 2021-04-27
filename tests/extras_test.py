@@ -111,3 +111,16 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(FooEnum.BAR, o.type)
         self.assertEqual(2, o.type)
 
+    def test_save(self):
+        class FooEnum(Enum):
+            FOO = 1
+
+        class OE(MagicOrm):
+            type = Field(FooEnum)
+
+        o = OE.create(type="FOO")
+        f = o.schema.fields["type"]
+        self.assertEqual(FooEnum.FOO.value, o.type)
+        self.assertFalse(f.is_serialized())
+        self.assertTrue(issubclass(f.interface_type, int))
+

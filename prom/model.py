@@ -298,10 +298,6 @@ class Orm(object):
         """this runs all the fields through their iget methods to mimic them
         freshly coming out of the db, then resets modified
 
-        This differs from the .populate() method because it applies only to the
-        passed in fields, the .populate() method applies to *all supported* fields
-        of this orm while .populate_fields() only applies to the passed in fields
-
         :param fields: dict, only the fields you want to populate
         """
         schema = self.schema

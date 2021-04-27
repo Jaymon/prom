@@ -493,9 +493,6 @@ class Field(object):
 
     https://docs.python.org/2/howto/descriptor.html
     """
-    type = None
-    """The python type of this field (eg, str, int, Orm)"""
-
     required = False
     """True if this field is required"""
 
@@ -526,21 +523,34 @@ class Field(object):
 
         see .set_type() for an explanation on why we defer this until here
         """
-        ret = self.original_type
-        if self.is_serialized():
-            ret = str
-
-        else:
-            s = self.schema
-            if s:
-                ret = s.pk.type
-
-        return ret
+        return self.interface_type
+#         ret = self.original_type
+#         if self.is_serialized():
+#             ret = str
+# 
+#         else:
+#             s = self.schema
+#             if s:
+#                 ret = s.pk.type
+# 
+#         return ret
 
     @property
     def interface_type(self):
         """Returns the type that will be used in the interface to create the table"""
-        return self.type
+        if self._interface_type is None:
+            if self.is_serialized():
+                self._interface_type = str
+
+            else:
+                s = self.schema
+                if s:
+                    self._interface_type = s.pk.type
+
+                else:
+                    self._interface_type = self.original_type
+
+        return self._interface_type
 
     @property
     def ref(self):
@@ -661,18 +671,20 @@ class Field(object):
 
         self.original_type = field_type
         self.serializer = ""
+        self._interface_type = None
+        self._schema = None
 
         if isinstance(field_type, type):
             if issubclass(field_type, std_types):
-                self._schema = None
+                self._interface_type = field_type
 
             elif issubclass(field_type, json_types):
-                self._schema = None
                 self.serializer = field_options.pop("serializer", "json")
+                self._interface_type = str
 
             elif issubclass(field_type, pickle_types):
-                self._schema = None
                 self.serializer = field_options.pop("serializer", "pickle")
+                self._interface_type = str
 
             else:
                 schema = getattr(field_type, "schema", None)
@@ -682,7 +694,7 @@ class Field(object):
                 else:
                     # We have just some random class that isn't an Orm
                     self.serializer = field_options.pop("serializer", "pickle")
-                    self._schema = None
+                    self._interface_type = str
 
         elif isinstance(field_type, Schema):
             self._schema = field_type
@@ -690,7 +702,12 @@ class Field(object):
         else:
             # check if field_type is a string classpath so we have to defer
             # setting the type
-            if not isinstance(field_type, basestring):
+            if isinstance(field_type, basestring):
+                # no ._schema property will make .schema treat .original_type as
+                # a classpath
+                del self._schema
+
+            else:
                 raise ValueError("Unknown field type {}".format(field_type))
 
     def is_pk(self):
