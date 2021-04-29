@@ -75,6 +75,42 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(_created, o._created)
         self.assertLess(_updated, o._updated)
 
+    def test_created_set(self):
+        orm_class = self.get_orm_class()
+        o = orm_class(foo=1, bar="1")
+
+        _created = testdata.get_past_datetime()
+        o._created = _created
+        o.save()
+
+        o2 = o.query.eq_pk(o.pk).one()
+        self.assertEqual(_created, o2._created)
+
+        _created2 = testdata.get_past_datetime()
+        o2._created = _created2
+        o2.save()
+
+        o3 = o.query.eq_pk(o.pk).one()
+        self.assertEqual(_created2, o3._created)
+
+    def test_updated_set(self):
+        orm_class = self.get_orm_class()
+        o = orm_class(foo=1, bar="1")
+
+        _updated = testdata.get_past_datetime()
+        o._updated = _updated
+        o.save()
+
+        o2 = o.query.eq_pk(o.pk).one()
+        self.assertEqual(_updated, o2._updated)
+
+        _updated2 = testdata.get_past_datetime()
+        o2._updated = _updated2
+        o2.save()
+
+        o3 = o.query.eq_pk(o.pk).one()
+        self.assertEqual(_updated2, o3._updated)
+
     def test_hydrate_1(self):
         """make sure you can add/update and change the primary key and all of that
         works as expected"""

@@ -112,7 +112,9 @@ class Orm(object):
         }
 
         def iset(self, orm, val):
-            return datetime.datetime.utcnow() if orm.is_insert() else val
+            if not val and orm.is_insert():
+                val = datetime.datetime.utcnow()
+            return val
 
     class _updated(Field):
         type = datetime.datetime
@@ -122,7 +124,19 @@ class Orm(object):
         }
 
         def iset(self, orm, val):
-            return datetime.datetime.utcnow()
+            if val:
+                if orm.is_update():
+                    if val == orm._interface__updated:
+                        val = datetime.datetime.utcnow()
+
+            else:
+                val = datetime.datetime.utcnow()
+
+            return val
+
+        def iget(self, orm, val):
+            orm._interface__updated = val
+            return super(Orm._updated, self).iget(orm, val)
 
     @decorators.classproperty
     def table_name(cls):
