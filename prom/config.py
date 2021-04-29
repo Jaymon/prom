@@ -519,25 +519,17 @@ class Field(object):
 
     @property
     def type(self):
-        """Return the actual type this field should be
-
-        see .set_type() for an explanation on why we defer this until here
-        """
+        """alias of the interface type, this is really here so you can set it to
+        a value if you are inline defining a field, this will get passed to the
+        __init__ method and then be used to set ._interface_type"""
         return self.interface_type
-#         ret = self.original_type
-#         if self.is_serialized():
-#             ret = str
-# 
-#         else:
-#             s = self.schema
-#             if s:
-#                 ret = s.pk.type
-# 
-#         return ret
 
     @property
     def interface_type(self):
-        """Returns the type that will be used in the interface to create the table"""
+        """Returns the type that will be used in the interface to create the table
+
+        see .set_type() for an explanation on why we defer this until here
+        """
         if self._interface_type is None:
             if self.is_serialized():
                 self._interface_type = str
