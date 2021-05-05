@@ -13,7 +13,6 @@ name = "prom"
 kwargs = dict(
     name=name,
     description='A sensible orm for PostgreSQL or SQLite',
-    long_description=long_description,
     author='Jay Marcyes',
     author_email='jay@marcyes.com',
     url='http://github.com/jaymon/{}'.format(name),
