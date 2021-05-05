@@ -135,14 +135,14 @@ class Orm2(prom.Orm):
 Now, any child class that extends `Orm1` will use `connection_1` and any child class that extends `Orm2` will use `connection_2`.
 
 
-## Querying
+## Creating Models
 
-Checkout the [README_QUERY](https://github.com/Jaymon/prom/blob/master/docs/README_QUERY.md) to see how to perform queries on the db.
+Checkout the [README](https://github.com/Jaymon/prom/blob/master/docs/README_MODEL.md) to see how to define the db schema and create models your python code can use.
 
 
-## Schema setup
+## Querying Rows
 
-Checkout the [README_SCHEMA](https://github.com/Jaymon/prom/blob/master/docs/README_QUERY.md) to see how to define the db schema.
+Checkout the [README](https://github.com/Jaymon/prom/blob/master/docs/README_QUERY.md) to see how to perform queries on the db.
 
 
 ## Versions
