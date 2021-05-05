@@ -12,7 +12,6 @@ from codecs import open
 name = "prom"
 kwargs = dict(
     name=name,
-    version=version,
     description='A sensible orm for PostgreSQL or SQLite',
     long_description=long_description,
     author='Jay Marcyes',
