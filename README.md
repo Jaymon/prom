@@ -100,11 +100,6 @@ And to set it in your environment:
 
     export PROM_DSN=postgres://testuser:testpw@localhost/testdb
 
-If you have multiple connections, you can actually set multiple environment variables:
-
-    export PROM_DSN_1=postgres://testuser:testpw@localhost/testdb1#conn_1
-    export PROM_DSN_2=sqlite://testuser:testpw@localhost/testdb2#conn_2
-
 After you've set the environment variable, then you just need to import Prom in your code:
 
 ```python
@@ -117,7 +112,12 @@ and Prom will take care of parsing the dsn url(s) and creating the connection(s)
 
 ### Multiple db interfaces or connections
 
-It's easy to have one set of `prom.Orm` children use one connection and another set use a different connection, the fragment part of a Prom dsn url sets the name:
+If you have multiple connections, you can actually set multiple environment variables:
+
+    export PROM_DSN_1=postgres://testuser:testpw@localhost/testdb1#conn_1
+    export PROM_DSN_2=sqlite://testuser:testpw@localhost/testdb2#conn_2
+
+It's easy to have one set of `prom.Orm` children use one connection and another set use a different connection, since the fragment part of a Prom dsn url sets the name:
 
 ```python
 import prom
