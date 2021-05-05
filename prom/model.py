@@ -125,18 +125,13 @@ class Orm(object):
 
         def iset(self, orm, val):
             if val:
-                if orm.is_update():
-                    if val == orm._interface__updated:
-                        val = datetime.datetime.utcnow()
+                if not self.modified(orm, val):
+                    val = datetime.datetime.utcnow()
 
             else:
                 val = datetime.datetime.utcnow()
 
             return val
-
-        def iget(self, orm, val):
-            orm._interface__updated = val
-            return super(Orm._updated, self).iget(orm, val)
 
     @decorators.classproperty
     def table_name(cls):
@@ -179,16 +174,6 @@ class Orm(object):
         return getattr(self, pk_name, None) if pk_name else None
 
     @property
-    def created(self):
-        """wrapper property method to return the created timestamp"""
-        return getattr(self, self.schema._created.name, None)
-
-    @property
-    def updated(self):
-        """wrapper property method to return the updated timestamp"""
-        return getattr(self, self.schema._updated.name, None)
-
-    @property
     def fields(self):
         """
         return all the fields and their raw values for this Orm instance. This
@@ -197,6 +182,14 @@ class Orm(object):
         if you want to control the values for outputting to an api, use .jsonable()
         """
         return {k:getattr(self, k, None) for k in self.schema.fields}
+
+    @property
+    def modified_fields(self):
+        modified_fields = set()
+        for field_name, field in self.schema.fields.items():
+            if field.modified(self, getattr(self, field_name)):
+                modified_fields.add(field_name)
+        return modified_fields
 
     @classmethod
     def pool(cls, maxsize=0):
@@ -234,6 +227,7 @@ class Orm(object):
         instance = cls()
         fields = cls.make_dict(fields, fields_kwargs)
         instance.from_interface(fields)
+        instance._interface_hydrate = True
         return instance
 
     @classmethod
@@ -255,7 +249,6 @@ class Orm(object):
         :param fields: dict, the fields in a dict
         :param **fields_kwargs: dict, if you would like to pass the fields as key=val
         """
-        self.reset_modified()
         fields = self.make_dict(fields, fields_kwargs)
 
         for field_name, field in self.schema.fields.items():
@@ -320,12 +313,8 @@ class Orm(object):
 
         self.modify(fields)
 
-        for field_name in fields.keys():
-            self.reset_modified(field_name)
-
         # this marks that this was repopulated from the interface (database)
         self._interface_pk = self.pk
-        self._interface_hydrate = True
 
     def to_interface(self):
         """Get all the fields that need to be saved
@@ -333,21 +322,19 @@ class Orm(object):
         :param is_udpate: bool, True if update query, False if insert
         :returns: dict, key is field_name and val is the field value to be saved
         """
-        is_update = self.is_update()
         fields = {}
         schema = self.schema
         for k, field in schema.fields.items():
             v = field.iset(self, getattr(self, k))
-            is_modified = self.is_modified(k)
 
-            # if v has a value or it's been modified (even if it doesn't have a
-            # value) then we will probably want to pass the value onto the db
-            if is_modified or v is not None:
+            is_modified = field.modified(self, v)
+            if is_modified:
                 fields[k] = v
 
             if v is None and field.is_required():
-                if field.is_pk() and v == self._interface_pk:
-                    fields.pop(k, None)
+                if field.is_pk():
+                    if is_modified:
+                        raise KeyError("Primary key has been removed and is required")
 
                 else:
                     raise KeyError("Missing required field {}".format(k))
@@ -370,7 +357,6 @@ class Orm(object):
             if pk_name:
                 fields[pk_name] = pk
                 self.from_interface(fields)
-            self.reset_modified()
 
         else:
             ret = False
@@ -395,7 +381,6 @@ class Orm(object):
         if q.update():
             fields = q.fields_set.fields
             self.from_interface(fields)
-            self.reset_modified()
 
         else:
             ret = False
@@ -427,13 +412,9 @@ class Orm(object):
         if pk:
             pk_name = self.schema.pk.name
             self.query.is_field(pk_name, pk).delete()
-            setattr(self, pk_name, None)
 
-            # mark all the fields that still exist as modified
-            self.reset_modified()
-            for field_name in self.schema.fields:
-                if getattr(self, field_name, None) != None:
-                    self.modified_fields.add(field_name)
+            for field_name, field in self.schema.fields.items():
+                setattr(self, field_name, field.idel(self, getattr(self, field_name)))
 
             self._interface_pk = None
             self._interface_hydrate = False
@@ -462,29 +443,6 @@ class Orm(object):
             ret = len(self.modified_fields) > 0
         return ret
 
-    def reset_modified(self, field_name=""):
-        """
-        reset field modification tracking
-
-        this is handy for when you are loading a new Orm with the results from a query and
-        you don't want set() to do anything, you can Orm(**fields) and then orm.reset_modified() to
-        clear all the passed in fields from the modified list
-
-        :param field_name: str, if present then only reset that particular field
-        """
-        if field_name:
-            field = self.schema.fields[field_name]
-            if not field.is_serialized():
-                self.modified_fields.discard(field_name)
-
-        else:
-            self.modified_fields = set()
-
-            # compensate for us not having knowledge of certain fields changing
-            for field_name, field in self.schema.normal_fields.items():
-                if field.is_serialized():
-                    self.modified_fields.add(field_name)
-
     def modify(self, fields=None, **fields_kwargs):
         """update the fields of this instance with the values in dict fields
 
@@ -494,10 +452,7 @@ class Orm(object):
         :param fields: dict, the fields in a dict
         :param **fields_kwargs: dict, if you would like to pass the fields as key=val
             this picks those up and combines them with fields
-        :returns: set, all the names of the fields that were modified
         """
-        modified_fields = set(self.modified_fields)
-
         fields = self.make_dict(fields, fields_kwargs)
         fields = self.modify_fields(fields)
 
@@ -505,8 +460,6 @@ class Orm(object):
             in_schema = field_name in self.schema.fields
             if in_schema:
                 setattr(self, field_name, field_val)
-
-        return self.modified_fields - modified_fields
 
     def modify_fields(self, fields):
         """In child classes you should override this method to do any default 
@@ -518,17 +471,6 @@ class Orm(object):
         """
         return fields
 
-    def __setattr__(self, field_name, field_val):
-        if field_name in self.schema.fields:
-            self.modified_fields.add(field_name)
-        super(Orm, self).__setattr__(field_name, field_val)
-
-    def __delattr__(self, field_name):
-        if field_name in self.schema.fields:
-            self.modified_fields.add(field_name)
-
-        super(Orm, self).__delattr__(field_name)
-
     def __int__(self):
         return int(self.pk)
 
@@ -536,6 +478,7 @@ class Orm(object):
         return long(self.pk)
 
     def __str__(self):
+        #return self.__unicode__() if is_py2 else self.__bytes__()
         return str(self.pk)
 
     def __unicode__(self):

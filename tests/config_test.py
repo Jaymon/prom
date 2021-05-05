@@ -363,6 +363,28 @@ class ConnectionTest(BaseTestCase):
 
 
 class FieldTest(EnvironTestCase):
+    def test_modified_pk(self):
+        orm_class = self.get_orm_class()
+        o = orm_class(foo=1, bar="2")
+        f = o.schema.pk
+
+        im = f.modified(o, 100)
+        self.assertTrue(im)
+
+        im = f.modified(o, None)
+        self.assertFalse(im)
+
+        o.save()
+
+        im = f.modified(o, None)
+        self.assertTrue(im)
+
+        im = f.modified(o, o.pk + 1)
+        self.assertTrue(im)
+
+        im = f.modified(o, o.pk)
+        self.assertFalse(im)
+
     def test_help(self):
         help_str = "this is the foo field"
         orm_class = self.get_orm_class(
@@ -515,12 +537,6 @@ class FieldTest(EnvironTestCase):
         o.foo = datetime.datetime.min
         r = o.jsonable()
         self.assertTrue("foo" in r)
-
-    def test_datetime_jsonable_2(self):
-        instance = None
-        f = Field(datetime.datetime)
-        v = f.jsonable(instance, datetime.datetime(1800, 1, 1))
-        self.assertEqual("1800-01-01T00:00:00.000000Z", v)
 
     def test_default(self):
         class FDefaultOrm(Orm):

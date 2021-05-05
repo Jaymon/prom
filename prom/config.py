@@ -9,6 +9,7 @@ import json
 import logging
 
 import dsnparse
+from datatypes import Datetime
 
 from .compat import *
 from . import utils
@@ -237,6 +238,7 @@ class Schema(object):
             seen_properties = set()
             for klass in inspect.getmro(orm_class)[:-1]:
                 for k, v in vars(klass).items():
+                    k = String(k)
                     if k not in seen_properties:
                         if isinstance(v, (Field, Index)):
                             s.set(k, v)
@@ -327,7 +329,7 @@ class Schema(object):
         field.name = field_name
         field.orm_class = self.orm_class
 
-        if field.options['unique']:
+        if field.unique:
             self.set_index(field_name, Index(field_name, unique=True))
 
         self.fields[field_name] = field
@@ -500,6 +502,21 @@ class Field(object):
     """In the instance, this will be a dict of key/val pairs containing extra information
     about the field"""
 
+    default = None
+    """Default value for this field"""
+
+    help = ""
+    """The description/help message for this field"""
+
+    name = ""
+    """The field name"""
+
+    choices = None
+    """A set of values that this field can be, if set then no other values can be set"""
+
+    unique = False
+    """True if this field is unique"""
+
     @property
     def schema(self):
         """return the schema instance if this is reference to another table
@@ -578,22 +595,25 @@ class Field(object):
             default -- mixed -- defaults to None, can be anything the db can support
         :param **field_options_kwargs: dict, will be combined with field_options
         """
+        # we aren't guaranteed to have this field's name when the descriptor is
+        # created, so this will be the field name this descriptor will use to 
+        # set the value onto the orm
+        self.orm_field_name = "_instance_{}_val".format(id(self))
+
+        # we keep a hash of the field's value when it was pulled from the
+        # interface (see .iget) so we know if the field has been modified
+        self.orm_interface_hash = "_interface_{}_hash".format(id(self))
+
         field_options = utils.make_dict(field_options, field_options_kwargs)
 
         d = self.get_size(field_options)
         field_options.update(d)
 
-        field_options.setdefault("unique", False)
-
-        self.name = field_options.pop("name", "")
-        # this creates a numeric dict key that can't be accessed as an attribute
-        self.instance_field_name = "{}{}".format(self.name, id(self))
-        self.default = field_options.pop("default", None)
         self.orm_class = field_options.pop("orm_class", None)
-        self.help = field_options.pop("help", "")
-        self.choices = field_options.pop("choices", set())
 
-        self.set_type(field_type, field_options)
+        choices = field_options.pop("choices", set())
+        if choices or not self.choices:
+            self.choices = choices
 
         for k in list(field_options.keys()):
             if hasattr(self, k):
@@ -601,6 +621,8 @@ class Field(object):
 
         self.options = field_options
         self.required = field_required or self.is_pk()
+
+        self.set_type(field_type)
 
     def get_size(self, field_options):
         """Figure out if this field has any size information"""
@@ -625,17 +647,16 @@ class Field(object):
 
         return d
 
-    def set_type(self, field_type, field_options):
+    def set_type(self, field_type):
         """Try to infer as much about the type as can be inferred at this moment
 
         Because the Field support string classpaths (eg, "modname.Classname") we can't
         figure everything out in this method, so we figure out as much as we can
-        and then defer everything else to the .type and .schema properties, this
+        and then defer everything else to the .interface_type and .schema properties, this
         allows the parser to hopefully finish loading the modules before we have to
         parse the classpath to find the foreign key schema
 
         :param field_type: mixed, the field type passed into __init__
-        :param field_options: dict, the options passed into __init__
         """
         std_types = (
             bool,
@@ -671,11 +692,11 @@ class Field(object):
                 self._interface_type = field_type
 
             elif issubclass(field_type, json_types):
-                self.serializer = field_options.pop("serializer", "json")
+                self.serializer = self.options.pop("serializer", "json")
                 self._interface_type = str
 
             elif issubclass(field_type, pickle_types):
-                self.serializer = field_options.pop("serializer", "pickle")
+                self.serializer = self.options.pop("serializer", "pickle")
                 self._interface_type = str
 
             else:
@@ -685,7 +706,7 @@ class Field(object):
 
                 else:
                     # We have just some random class that isn't an Orm
-                    self.serializer = field_options.pop("serializer", "pickle")
+                    self.serializer = self.options.pop("serializer", "pickle")
                     self._interface_type = str
 
         elif isinstance(field_type, Schema):
@@ -725,6 +746,7 @@ class Field(object):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
+        #pout.v("fget {}".format(self.name))
         return val
 
     def fgetter(self, v):
@@ -741,8 +763,12 @@ class Field(object):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
+        #pout.v("iget {}".format(self.name))
         if self.is_serialized():
             val = self.decode(val)
+
+        orm.__dict__[self.orm_interface_hash] = self.hash(orm, val)
+
         return val
 
     def igetter(self, v):
@@ -760,6 +786,7 @@ class Field(object):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
+        #pout.v("fset {}".format(self.name))
         if val is not None and self.choices:
             if val not in self.choices:
                 raise ValueError("Value {} not in {} value choices".format(val, self.name))
@@ -779,6 +806,7 @@ class Field(object):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
+        #pout.v("iset {}".format(self.name))
         if self.is_serialized():
             val = self.encode(val)
         return val
@@ -788,7 +816,6 @@ class Field(object):
         self.iset = v
         return self
 
-
     def fdel(self, orm, val):
         return None
 
@@ -797,10 +824,25 @@ class Field(object):
         self.fdel = v
         return self
 
+    def idel(self, orm, val):
+        """Called when the field is being deleted from the db
+
+        :param orm: Orm
+        :param val: mixed, the current value of the field
+        :returns: mixed
+        """
+        orm.__dict__.pop(self.orm_interface_hash, None)
+        return None if self.is_pk() else val
+
+    def ideleter(self, v):
+        """decorator for setting field's idel function"""
+        self.idel = v
+        return self
+
     def fdefault(self, orm, val):
-        """On a new Orm instantiation, this will be called with val=None and will
-        if val=None then this will decide how to use self.default to set the default
-        value of the field
+        """On a new Orm instantiation, this will be called with val=None and if
+        val does equal None then this will decide how to use self.default to set
+        the default value of the field
 
         usually you won't need to override this method because you can just pass
         default into the field instantiation and it will get automatically used
@@ -810,6 +852,7 @@ class Field(object):
         :param val: mixed, the current value of the field (usually None)
         :returns: mixed
         """
+        #pout.v("fdefault {}".format(self.name))
         ret = val
         if val is None:
             if callable(self.default):
@@ -857,50 +900,16 @@ class Field(object):
 
         if val is not None:
             format_str = ""
+            if isinstance(val, (datetime.datetime, datetime.date)):
+                val = Datetime(val).iso_8601()
 
-            if isinstance(val, datetime.datetime):
-                format_str = "%Y-%m-%dT%H:%M:%S.%fZ"
-            elif isinstance(val, datetime.date):
-                format_str = "%Y-%m-%d"
-
-            if format_str:
-                try:
-                    val = datetime.datetime.strftime(val, format_str)
-
-                except ValueError as e:
-                    # strftime can fail on dates <1900
-                    # Note that Python 2.7, 3.0 and 3.1 have errors before the year 1900,
-                    # Python 3.2 has errors before the year 1000. Additionally, pre-3.2
-                    # versions interpret years between 0 and 99 as between 1969 and 2068.
-                    # Python versions from 3.3 onward support all positive years in
-                    # datetime (and negative years in time.strftime), and time.strftime
-                    # doesn't do any mapping of years between 0 and 99.
-                    # https://stackoverflow.com/a/32206673/5006
-                    logger.warning(e, exc_info=True)
-
-                    # we correct this issue by just giving it a dumb year,
-                    # creating the timestamp and then replacing the year, we can
-                    # do this semi-confidently because our format_str doesn't have
-                    # day of the week (eg, Monday), we account for leap years
-                    # just in case
-                    orig_year = val.year
-                    if (orig_year % 4) == 0:
-                        if (orig_year % 100) == 0:
-                            if (orig_year % 400) == 0:
-                                placeholder_year = 2000
-
-                            else:
-                                placeholder_year = 1900
-
-                        else:
-                            placeholder_year = 2012
-
-                    else:
-                        placeholder_year = 1997
-
-                    dt = val.replace(year=placeholder_year)
-                    val = datetime.datetime.strftime(dt, format_str)
-                    val = re.sub(r"^{}".format(placeholder_year), str(orig_year), val)
+#             if isinstance(val, datetime.datetime):
+#                 format_str = "%Y-%m-%dT%H:%M:%S.%fZ"
+#             elif isinstance(val, datetime.date):
+#                 format_str = "%Y-%m-%d"
+# 
+#             if format_str:
+#                 val = Datetime(val).strftime(format_str)
 
         return val
 
@@ -909,6 +918,31 @@ class Field(object):
         is called"""
         self.jsonable = v
         return self
+
+    def modified(self, orm, val):
+        """Returns True if val has been modified in orm
+
+        :param orm: Orm
+        :param val: mixed, the current value of the field
+        :returns: bool, True if val is different than the interface val
+        """
+        if self.is_serialized():
+            return True
+
+        ret = True
+        ihash = orm.__dict__.get(self.orm_interface_hash, None)
+        if ihash:
+            ret = self.hash(orm, val) != ihash
+
+        else:
+            ret = val is not None
+
+        return ret
+
+    def hash(self, orm, val):
+        if self.is_serialized():
+            return None
+        return hash(val)
 
     def encode(self, val):
         if val is None: return val
@@ -937,7 +971,7 @@ class Field(object):
     def fval(self, orm):
         """return the raw value that this property is holding internally for the orm instance"""
         try:
-            val = orm.__dict__[self.instance_field_name]
+            val = orm.__dict__[self.orm_field_name]
         except KeyError as e:
             #raise AttributeError(str(e))
             val = None
@@ -961,7 +995,7 @@ class Field(object):
         # allows us to handle things like dict with no surprises
         if raw_val is None:
             if ret is not None:
-                orm.__dict__[self.instance_field_name] = ret
+                orm.__dict__[self.orm_field_name] = ret
 
         return ret
 
@@ -971,7 +1005,7 @@ class Field(object):
         this is different than Python's built-in @property setter because the
         fset method *NEEDS* to return something"""
         val = self.fset(orm, val)
-        orm.__dict__[self.instance_field_name] = val
+        orm.__dict__[self.orm_field_name] = val
 
     def __delete__(self, orm):
         """the wrapper for when the field is deleted, for the most part the default
@@ -979,5 +1013,5 @@ class Field(object):
         @property deleter because the fdel method *NEEDS* to return something and it
         accepts the current value as an argument"""
         val = self.fdel(orm, self.fval(orm))
-        orm.__dict__[self.instance_field_name] = val
+        orm.__dict__[self.orm_field_name] = val
 

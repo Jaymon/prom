@@ -55,6 +55,52 @@ class OrmPoolTest(BaseTestCase):
 
 
 class OrmTest(EnvironTestCase):
+    def test_to_interface_insert(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, True, default=1),
+            bar=Field(str, False)
+        )
+        o = orm_class()
+
+        fields = o.to_interface()
+        self.assertTrue("foo" in fields)
+        self.assertFalse("bar" in fields)
+
+        orm_class = self.get_orm_class()
+        o = orm_class()
+
+        # missing foo
+        with self.assertRaises(KeyError):
+            fields = o.to_interface()
+
+        o.foo = 1
+
+        # missing bar
+        with self.assertRaises(KeyError):
+            fields = o.to_interface()
+
+        o.bar = "2"
+
+        fields = o.to_interface()
+        self.assertFalse("_id" in fields)
+
+    def test_to_interface_update(self):
+        orm_class = self.get_orm_class()
+        o = orm_class(foo=1, bar="2")
+        o.save()
+
+        fields = o.to_interface()
+        self.assertEqual(1, len(fields)) # _updated would be the only field
+
+        o.foo = None
+        with self.assertRaises(KeyError):
+            fields = o.to_interface()
+        o.foo = 1
+
+        o._id = None
+        with self.assertRaises(KeyError):
+            fields = o.to_interface()
+
     def test_created_updated(self):
         orm_class = self.get_orm_class()
 
@@ -490,6 +536,29 @@ class OrmTest(EnvironTestCase):
         o3 = o.query.get_pk(o.pk)
         self.assertIsNone(o3.foo)
 
+    def test_modified_1(self):
+        orm_class = self.get_orm_class()
+        o = orm_class(foo=1, bar="2")
+
+        mfs = o.modified_fields
+        self.assertEqual(2, len(mfs))
+        for field_name in ["foo", "bar"]:
+            self.assertTrue(field_name in mfs)
+
+        o.save()
+
+        mfs = o.modified_fields
+        self.assertEqual(0, len(mfs))
+
+        o.foo += 1
+        mfs = o.modified_fields
+        self.assertEqual(1, len(mfs))
+        self.assertTrue("foo" in mfs)
+
+        o2 = o.requery()
+        mfs = o2.modified_fields
+        self.assertEqual(0, len(mfs))
+
     def test_unicode(self):
         """
         Jarid was having encoding issues, so I'm finally making sure prom only ever
@@ -842,12 +911,9 @@ class OrmTest(EnvironTestCase):
         """test to make sure getting on a table that doesn't exist works without raising
         an error
         """
-        class FailureGetTorm(Orm):
-            interface = self.get_interface()
-            schema = self.get_schema()
-
-        f = FailureGetTorm(foo=1, bar="value 1")
-        f.query.get_one()
+        orm_class = self.get_orm_class()
+        o = orm_class(foo=1, bar="value 1")
+        o2 = o.query.one()
         # we succeeded if no error was raised
 
     def test_fk(self):

@@ -34,8 +34,8 @@ class Field(BaseField):
             val = super(Field, self).iquery(query, val)
         return val
 
-    def set_type(self, field_type, field_options):
-        super(Field, self).set_type(field_type, field_options)
+    def set_type(self, field_type):
+        super(Field, self).set_type(field_type)
         if self.is_enum():
             self.serializer = ""
             self._interface_type = int
