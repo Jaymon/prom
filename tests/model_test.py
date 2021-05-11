@@ -55,6 +55,25 @@ class OrmPoolTest(BaseTestCase):
 
 
 class OrmTest(EnvironTestCase):
+    def test_f_class_definition(self):
+        class Foo(Field):
+            type = int
+            def fset(self, orm, v):
+                return super(Foo, self).fset(orm, v) + 1
+        class Bar(Field):
+            type = int
+            def fget(self, orm, v):
+                return super(Bar, self).fget(orm, v) + 2
+        orm_class = self.get_orm_class(
+            foo=Foo,
+            bar=Bar,
+        )
+
+        o = orm_class(foo=1, bar=1)
+        self.assertEqual(2, o.foo)
+        self.assertEqual(3, o.bar)
+
+
     def test_to_interface_insert(self):
         orm_class = self.get_orm_class(
             foo=Field(int, True, default=1),

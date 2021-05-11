@@ -245,9 +245,11 @@ class Schema(object):
 
                         elif isinstance(v, type):
                             # We've defined a Field class inline of the Orm, so
-                            # we want to instantiate it
+                            # we want to instantiate it and set it in all the places
                             if issubclass(v, Field):
-                                s.set(k, v(v.type, v.required, v.options))
+                                field = v(v.type, v.required, v.options)
+                                s.set(k, field)
+                                setattr(orm_class, k, field)
 
                         seen_properties.add(k)
 
@@ -840,13 +842,13 @@ class Field(object):
         return self
 
     def fdefault(self, orm, val):
-        """On a new Orm instantiation, this will be called with val=None and if
-        val does equal None then this will decide how to use self.default to set
+        """On a new Orm instantiation, this will be called for each field and if
+        val equals None then this will decide how to use self.default to set
         the default value of the field
 
-        usually you won't need to override this method because you can just pass
-        default into the field instantiation and it will get automatically used
-        in this method
+        If you just want to set a default value you won't need to override this
+        method because you can just pass default into the field instantiation
+        and it will get automatically used in this method
 
         :param orm: Orm, the Orm instance being created
         :param val: mixed, the current value of the field (usually None)

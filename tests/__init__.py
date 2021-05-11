@@ -118,6 +118,10 @@ class BaseTestCase(TestCase):
                 has_field = True
                 break
 
+            elif isinstance(v, type) and issubclass(v, Field):
+                has_field = True
+                break
+
         if not has_field:
             properties.update({
                 "foo": Field(int, True),
