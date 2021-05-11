@@ -56,6 +56,22 @@ class OrmPoolTest(BaseTestCase):
 
 class OrmTest(EnvironTestCase):
     def test_f_class_definition(self):
+
+        class FCD(Orm):
+            _id = _created = _updated = None
+            class foo(Field):
+                type = int
+                def fset(self, orm, v):
+                    return super(FCD.foo, self).fset(orm, v) + 1
+            class bar(Field):
+                type = int
+                def fget(self, orm, v):
+                    return super(FCD.bar, self).fget(orm, v) + 2
+
+        o = FCD(foo=1, bar=1)
+        self.assertEqual(2, o.foo)
+        self.assertEqual(3, o.bar)
+
         class Foo(Field):
             type = int
             def fset(self, orm, v):
@@ -72,7 +88,6 @@ class OrmTest(EnvironTestCase):
         o = orm_class(foo=1, bar=1)
         self.assertEqual(2, o.foo)
         self.assertEqual(3, o.bar)
-
 
     def test_to_interface_insert(self):
         orm_class = self.get_orm_class(

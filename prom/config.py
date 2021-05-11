@@ -221,7 +221,7 @@ class Schema(object):
         return pk_name
 
     @classmethod
-    def get_instance(cls, orm_class):
+    def get_instance(cls, orm_class, **kwargs):
         """return a Schema singleton instance for the given orm_class
 
         if there isn't already an instance in cache then a new instance will be
@@ -247,9 +247,8 @@ class Schema(object):
                             # We've defined a Field class inline of the Orm, so
                             # we want to instantiate it and set it in all the places
                             if issubclass(v, Field):
-                                field = v(v.type, v.required, v.options)
+                                field = v.get_instance()
                                 s.set(k, field)
-                                setattr(orm_class, k, field)
 
                         seen_properties.add(k)
 
@@ -440,7 +439,34 @@ class Index(object):
         self.unique = options.get("unique", False)
 
 
-class Field(object):
+class FieldMeta(type):
+    """Allows a class definition to be a descriptor also
+
+    I don't love this solution, but I like the syntax of just being able to define
+    a subclass inside an Orm and have it work. The problem is an embedded class isn't,
+    by default, a descriptor instance, so it wasn't calling fset, fget, and fdel.
+
+    This makes it so an embedded field class will be treated as a descriptor. It
+    uses an embedded .instance property to actually perform the operations
+    """
+    def __get__(cls, obj, classtype=None):
+        if obj is None:
+            # class is requesting this property, so return it
+            return cls
+
+        ret = cls.get_instance().__get__(obj, classtype)
+        return ret
+
+    def __set__(cls, *args, **kwargs):
+        ret = cls.get_instance().__set__(*args, **kwargs)
+        return ret
+
+    def __del__(cls, *args, **kwargs):
+        ret = cls.get_instance().__del__(*args, **kwargs)
+        return ret
+
+
+class _Field(object):
     """Each column in the database is configured using this class
 
     You can set a couple getters and setters on this object in order to fine tune
@@ -519,6 +545,9 @@ class Field(object):
     unique = False
     """True if this field is unique"""
 
+    instance = None
+    """Don't touch this unless you know what you're doing. Holds internal cached instance"""
+
     @property
     def schema(self):
         """return the schema instance if this is reference to another table
@@ -578,6 +607,12 @@ class Field(object):
         names.extend(self.options.get("names", []))
         names.extend(self.options.get("aliases", []))
         return names
+
+    @classmethod
+    def get_instance(cls, **kwargs):
+        if not cls.instance:
+            cls.instance = cls(cls.type, cls.required, cls.options)
+        return cls.instance
 
     def __init__(self, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
@@ -904,15 +939,6 @@ class Field(object):
             format_str = ""
             if isinstance(val, (datetime.datetime, datetime.date)):
                 val = Datetime(val).iso_8601()
-
-#             if isinstance(val, datetime.datetime):
-#                 format_str = "%Y-%m-%dT%H:%M:%S.%fZ"
-#             elif isinstance(val, datetime.date):
-#                 format_str = "%Y-%m-%d"
-# 
-#             if format_str:
-#                 val = Datetime(val).strftime(format_str)
-
         return val
 
     def jsonabler(self, v):
@@ -1016,4 +1042,17 @@ class Field(object):
         accepts the current value as an argument"""
         val = self.fdel(orm, self.fval(orm))
         orm.__dict__[self.orm_field_name] = val
+
+
+if is_py2:
+    class Field(_Field):
+        __metaclass__ = FieldMeta
+
+else:
+    # python 2 parser will fail on metaclass=... syntax, so work around that
+    #
+    # Order matters for the parent classes
+    # https://docs.python.org/3/library/enum.html#restricted-enum-subclassing
+    exec("class Field(_Field, metaclass=FieldMeta): pass")
+
 

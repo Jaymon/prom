@@ -287,41 +287,6 @@ class BaseTestCase(TestCase):
             pks.append(self.insert_fields(o))
 
         return pks
-#         pks = []
-#         schema = None
-#         if isinstance(args[0], Interface):
-#             interface = args[0]
-#             schema = args[1]
-#             count = args[2]
-# 
-#             for i in range(count):
-#                 fields = self.get_fields(schema)
-#                 pks.append(interface.insert(schema, fields, **kwargs))
-# 
-#         elif isinstance(args[0], query.Query):
-#             q = args[0].copy()
-#             schema = q.orm_class.schema
-#             q.reset()
-#             count = args[1]
-#             for i in range(count):
-#                 fields = self.get_fields(schema)
-#                 pks.append(q.copy().set(fields).insert())
-# 
-#         elif issubclass(args[0], Orm):
-#             orm_class = args[0]
-#             schema = orm_class.schema
-#             count = args[1]
-#             for i in range(count):
-#                 fields = self.get_fields(schema)
-#                 o = orm_class.create(fields)
-#                 pks.append(o.pk)
-# 
-#         assert count == len(pks)
-#         pk_name = schema.pk_name
-#         for pk in pks:
-#             if pk_name:
-#                 assert pk > 0
-#         return pks
 
     def insert_fields(self, o, fields=None, **fields_kwargs):
         fields = make_dict(fields, fields_kwargs)
