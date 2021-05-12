@@ -624,6 +624,21 @@ class FieldTest(EnvironTestCase):
         o2 = o.query.get_pk(o.pk)
         self.assertEqual(400, o2.foo)
 
+    def test_fdel(self):
+        orm_class = self.get_orm_class()
+
+        o = orm_class()
+
+        self.assertFalse(o.schema.fields["foo"].modified(o, o.foo))
+
+        o.foo = 1
+        self.assertTrue(o.schema.fields["foo"].modified(o, o.foo))
+
+        del o.foo
+        self.assertFalse(o.schema.fields["foo"].modified(o, o.foo))
+
+        with self.assertRaises(KeyError):
+            o.to_interface()
 
     def test_fdeleter(self):
         class FDOrm(Orm):

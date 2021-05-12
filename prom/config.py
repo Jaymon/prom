@@ -854,6 +854,7 @@ class _Field(object):
         return self
 
     def fdel(self, orm, val):
+        orm.__dict__.pop(self.orm_interface_hash, None)
         return None
 
     def fdeleter(self, v):

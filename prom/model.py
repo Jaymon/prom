@@ -337,7 +337,8 @@ class Orm(object):
                         raise KeyError("Primary key has been removed and is required")
 
                 else:
-                    raise KeyError("Missing required field {}".format(k))
+                    if self.is_insert() or is_modified:
+                        raise KeyError("Missing required field {}".format(k))
 
         return fields
 

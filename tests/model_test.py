@@ -55,8 +55,32 @@ class OrmPoolTest(BaseTestCase):
 
 
 class OrmTest(EnvironTestCase):
-    def test_f_class_definition(self):
+    def test_required_field_not_set_update(self):
+        orm_class = self.get_orm_class()
 
+        o = orm_class(foo=1, bar="two")
+
+        o.save()
+
+        # create a new instance and make it look like an existing instance
+        o2 = orm_class(
+            foo=o.foo,
+            bar=o.bar,
+        )
+        o2._interface_pk = o.pk
+
+        fields = o2.to_interface()
+        self.assertFalse("_created" in fields)
+
+        o._created = None
+        with self.assertRaises(KeyError):
+            fields = o.to_interface()
+
+        del o._created
+        fields = o.to_interface()
+        self.assertFalse("_created" in fields)
+
+    def test_f_class_definition(self):
         class FCD(Orm):
             _id = _created = _updated = None
             class foo(Field):
@@ -380,11 +404,11 @@ class OrmTest(EnvironTestCase):
         o = FOFieldGAOrm()
 
     def test_field_lifecycle(self):
-        class FOParentOrm(Orm):
-            table_name = "foorm_table"
-            foo = Field(int)
+        orm_class = self.get_orm_class(
+            foo=Field(int)
+        )
 
-        o = FOParentOrm.create(foo=1)
+        o = orm_class.create(foo=1)
         self.assertEqual(1, o.foo)
 
         o.foo = 2
@@ -396,7 +420,7 @@ class OrmTest(EnvironTestCase):
 
         del o.foo
         self.assertEqual(None, o.foo)
-        self.assertTrue("foo" in o.modified_fields)
+        self.assertFalse("foo" in o.modified_fields)
 
     def test___delattr__(self):
         class DAOrm(Orm):
