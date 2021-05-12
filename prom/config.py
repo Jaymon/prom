@@ -461,8 +461,8 @@ class FieldMeta(type):
         ret = cls.get_instance().__set__(*args, **kwargs)
         return ret
 
-    def __del__(cls, *args, **kwargs):
-        ret = cls.get_instance().__del__(*args, **kwargs)
+    def __delete__(cls, *args, **kwargs):
+        ret = cls.get_instance().__delete__(*args, **kwargs)
         return ret
 
 
