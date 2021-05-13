@@ -55,6 +55,17 @@ class OrmPoolTest(BaseTestCase):
 
 
 class OrmTest(EnvironTestCase):
+    def test_removed_field(self):
+        orm_class = self.get_orm_class()
+        o = orm_class.create(foo=1, bar="2")
+        o.save()
+
+        orm_class.schema.fields.pop("bar")
+
+        for count, o in enumerate(orm_class.query, 1):
+            pass
+        self.assertLess(0, count)
+
     def test_required_field_not_set_update(self):
         orm_class = self.get_orm_class()
 

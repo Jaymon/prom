@@ -254,10 +254,12 @@ class Orm(object):
         for field_name, field in self.schema.fields.items():
             fields[field_name] = field.fdefault(self, fields.get(field_name, None))
 
-        fields = self.modify_fields(fields)
+        self.modify(fields)
 
-        for field_name, field_val in fields.items():
-            setattr(self, field_name, field_val)
+#         fields = self.modify_fields(fields)
+# 
+#         for field_name, field_val in fields.items():
+#             setattr(self, field_name, field_val)
 
         self._interface_pk = None
         self._interface_hydrate = False
@@ -308,8 +310,10 @@ class Orm(object):
         :param fields: dict, only the fields you want to populate
         """
         schema = self.schema
-        for k, v in fields.items():
-            fields[k] = schema.fields[k].iget(self, v)
+        for field_name, v in fields.items():
+            fields[field_name] = schema.fields[field_name].iget(self, v)
+            if field_name in schema.fields:
+                fields[field_name] = schema.fields[field_name].iget(self, v)
 
         self.modify(fields)
 
@@ -458,8 +462,7 @@ class Orm(object):
         fields = self.modify_fields(fields)
 
         for field_name, field_val in fields.items():
-            in_schema = field_name in self.schema.fields
-            if in_schema:
+            if field_name in self.schema.fields:
                 setattr(self, field_name, field_val)
 
     def modify_fields(self, fields):

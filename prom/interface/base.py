@@ -851,6 +851,7 @@ class SQLInterface(Interface):
 
         if not only_where_clause:
             query_str.append('SELECT')
+            is_count_query = sql_options.get('count_query', False)
             select_fields = query.fields_select
             if select_fields:
                 distinct_fields = select_fields.options.get(
@@ -858,13 +859,18 @@ class SQLInterface(Interface):
                     select_fields.options.get("unique", False)
                 )
                 distinct = "DISTINCT " if distinct_fields else ""
-                select_fields_str = distinct + ",\n".join(
+                select_fields_str = distinct + ", ".join(
                     (self._normalize_name(f.name) for f in select_fields)
                 )
             else:
-                select_fields_str = "*"
+                if is_count_query:
+                    select_fields_str = "*"
+                else:
+                    select_fields_str = ", ".join(
+                        (self._normalize_name(fname) for fname in schema.fields.keys())
+                    )
 
-            if sql_options.get('count_query', False):
+            if is_count_query:
                 query_str.append('  count({}) as ct'.format(select_fields_str))
 
             else:
