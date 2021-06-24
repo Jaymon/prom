@@ -174,6 +174,8 @@ The `prom.query.Query` has a couple helpful query methods to make grabbing rows 
 
 ### Specialty Queries
 
+#### Dates
+
 If you have a date or datetime field, you can pass kwargs to [fine tune date queries](http://www.postgresql.org/docs/8.3/static/functions-datetime.html#FUNCTIONS-DATETIME-EXTRACT):
 
 ```python
@@ -197,4 +199,11 @@ r = q.is_dt(year=2013).all()
 Hopefully you get the idea from the above code.
 
 
+#### Select all
+
+By default, Prom only selects the fields defined in the schema, but sometimes you might need to get every field on the table:
+
+```python
+Foo.query.select("*") # SELECT * FROM foo_table
+```
 

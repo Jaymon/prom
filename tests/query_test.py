@@ -137,6 +137,11 @@ class BoundsTest(TestCase):
 
 
 class QueryTest(EnvironTestCase):
+    def test_select_all(self):
+        Foo = self.get_orm_class()
+        q = Foo.query.select("*")
+        self.assertRegex(q.render(), r"(?m)SELECT\s+\*\s+FROM")
+
     def test_schemas(self):
         Foo = self.get_orm_class()
         Bar = self.get_orm_class()

@@ -863,7 +863,7 @@ class SQLInterface(Interface):
                     (self._normalize_name(f.name) for f in select_fields)
                 )
             else:
-                if is_count_query:
+                if is_count_query or select_fields.options.get("all", False):
                     select_fields_str = "*"
                 else:
                     select_fields_str = ", ".join(

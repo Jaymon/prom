@@ -433,11 +433,9 @@ class Fields(list):
 
     def __init__(self):
         self.clear()
-        #self.field_names = defaultdict(list)
-        #self.options = {}
 
     def names(self):
-        """Return all the field names in the order the were first seen"""
+        """Return all the field names in the order they were first seen"""
         ret = []
         seen = set()
         for f in self:
@@ -655,8 +653,11 @@ class Query(object):
 
     def select_field(self, field_name):
         """set a field to be selected, this is automatically called when you do select_FIELDNAME(...)"""
-        field = self.create_field(field_name)
-        self.fields_select.append(field)
+        if field_name == "*":
+            self.fields_select.options["all"] = True
+        else:
+            field = self.create_field(field_name)
+            self.fields_select.append(field)
         return self
 
     def select(self, *field_names):
