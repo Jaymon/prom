@@ -87,11 +87,7 @@ class SchemaTest(BaseTestCase):
         s.set_index("testing", Index("che", unique=True))
         self.assertTrue(s.indexes["testing"].unique)
 
-    def test_aliases_primary_key(self):
-        s = self.get_schema()
-        self.assertEqual(s._id, s.pk)
-
-    def test_aliases(self):
+    def test_aliases_1(self):
         s = self.get_schema(
             foo=Field(int, aliases=["bar", "che"])
         )
@@ -102,6 +98,10 @@ class SchemaTest(BaseTestCase):
 
         with self.assertRaises(AttributeError):
             s.faosdfjadkfljlk_does_not_exist
+
+    def test_aliases_primary_key(self):
+        s = self.get_schema()
+        self.assertEqual(s._id, s.pk)
 
     def test_aliases_created_updated(self):
         orm_class = self.get_orm_class()

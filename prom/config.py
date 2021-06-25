@@ -322,6 +322,10 @@ class Schema(object):
         except KeyError:
             raise AttributeError("No {} field in schema {}".format(name, self.table_name))
 
+    def has_field(self, field_name):
+        """Return True if schema contains field_name"""
+        return field_name in self.lookup["names"]
+
     def set_field(self, field_name, field):
         if not field_name: raise ValueError("field_name is empty")
         if field_name in self.fields: raise ValueError("{} already exists and cannot be changed".format(field_name))

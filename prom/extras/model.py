@@ -64,7 +64,7 @@ class MagicOrm(Orm):
             ret = self.pk
 
         else:
-            raise_error = True
+            unfound = True
             field_name = "{}_id".format(k)
             field = self.schema.fields.get(field_name, None)
             if not field:
@@ -78,11 +78,12 @@ class MagicOrm(Orm):
                 if schema:
                     orm_class = schema.orm_class
                     if orm_class:
-                        raise_error = False
+                        unfound = False
                         ret = orm_class.query.get_pk(getattr(self, field_name))
 
-            if raise_error:
-                raise AttributeError(k)
+            if unfound:
+                ret = super(MagicOrm, self).__getattr__(k)
+                #raise AttributeError(k)
 
         return ret
 

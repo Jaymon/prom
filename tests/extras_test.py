@@ -9,6 +9,26 @@ from . import TestCase, EnvironTestCase, testdata
 
 
 class MagicOrmTest(EnvironTestCase):
+    def test_aliases_1(self):
+        class Foo(MagicOrm):
+            ip_address = Field(str, False, aliases=["ip"])
+
+        ip = "1.2.3.4"
+
+        f = Foo(ip="1.2.3.4")
+        self.assertEqual(ip, f.ip)
+        self.assertEqual(ip, f.ip_address)
+
+        f = Foo()
+        f.ip = ip
+        self.assertEqual(ip, f.ip)
+        self.assertEqual(ip, f.ip_address)
+
+        f = Foo(ip="1.2.3.4")
+        del f.ip
+        self.assertIsNone(f.ip)
+        self.assertIsNone(f.ip_address)
+
     def create_1(self, **kwargs):
         class O1(MagicOrm):
             table_name = self.get_table_name("o1_magicorm")

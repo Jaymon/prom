@@ -167,11 +167,11 @@ class Orm(object):
         query_class = cls.query_class
         return query_class(orm_class=cls)
 
-    @property
-    def pk(self):
-        """wrapper method to return the primary key, None if the primary key is not set"""
-        pk_name = self.schema.pk_name
-        return getattr(self, pk_name, None) if pk_name else None
+#     @property
+#     def pk(self):
+#         """wrapper method to return the primary key, None if the primary key is not set"""
+#         pk_name = self.schema.pk_name
+#         return getattr(self, pk_name, None) if pk_name else None
 
     @property
     def fields(self):
@@ -249,20 +249,22 @@ class Orm(object):
         :param fields: dict, the fields in a dict
         :param **fields_kwargs: dict, if you would like to pass the fields as key=val
         """
+        self._interface_pk = None
+        self._interface_hydrate = False
+
         fields = self.make_dict(fields, fields_kwargs)
 
+        # resolve any aliases
+        for fn in list(fields.keys()):
+            if self.schema.has_field(fn):
+                field_name = self.schema.field_name(fn)
+                fields[field_name] = fields.pop(fn)
+
+        # set defaults
         for field_name, field in self.schema.fields.items():
             fields[field_name] = field.fdefault(self, fields.get(field_name, None))
 
         self.modify(fields)
-
-#         fields = self.modify_fields(fields)
-# 
-#         for field_name, field_val in fields.items():
-#             setattr(self, field_name, field_val)
-
-        self._interface_pk = None
-        self._interface_hydrate = False
 
     def fk(self, orm_class):
         """find the field value in self that is the primary key of the passed in orm_class
@@ -462,7 +464,7 @@ class Orm(object):
         fields = self.modify_fields(fields)
 
         for field_name, field_val in fields.items():
-            if field_name in self.schema.fields:
+            if self.schema.has_field(field_name):
                 setattr(self, field_name, field_val)
 
     def modify_fields(self, fields):
@@ -474,6 +476,40 @@ class Orm(object):
         :returns: dict, the fields you want to actually be modified
         """
         return fields
+
+    def __getattr__(self, k):
+        ret = None
+        try:
+            field_name = self.schema.field_name(k)
+
+        except AttributeError:
+            # we treat pk (alias for _id) as special because we usually want the
+            # pk to just return None, even if it doesn't exist, the reason why is
+            # because usually you remove the pk by setting `_id = None` and so
+            # self._id would return None. If you rename the pk then this code
+            # won't be run because schema will update the alias to point to the
+            # new primary key field name
+            if k != "pk":
+                raise
+
+        else:
+            ret = getattr(self, field_name)
+
+        return ret
+
+    def __setattr__(self, k, v):
+        try:
+            field_name = self.schema.field_name(k)
+        except AttributeError:
+            field_name = k
+        return super(Orm, self).__setattr__(field_name, v)
+
+    def __delattr__(self, k):
+        try:
+            field_name = self.schema.field_name(k)
+        except AttributeError:
+            field_name = k
+        return super(Orm, self).__delattr__(field_name)
 
     def __int__(self):
         return int(self.pk)

@@ -142,6 +142,11 @@ class BaseTestCase(TestCase):
         t = orm_class(**fields)
         return t
 
+    def create_orm(self, table_name=None, **fields):
+        orm_class = self.get_orm(table_name, **fields)
+        fs = self.get_fields(orm_class.schema)
+        return orm_class.create(fs)
+
     def find_orm_class(self, v):
         if issubclass(v, Orm):
             orm_class = v
@@ -352,10 +357,33 @@ class EnvironTestCase(BaseTestCase):
 
     @classmethod
     def create_interfaces(cls):
-        return [
-            cls.create_environ_interface("PROM_POSTGRES_DSN"),
-            cls.create_environ_interface("PROM_SQLITE_DSN")
+        """Return the interfaces
+
+        If you would like to cancel an interface, you can do that using the environment:
+
+            export PROM_SQLITE_DSN=
+
+        And then to reactivate it:
+
+            unset PROM_SQLITE_DSN
+
+        :returns: list, the Interface instances
+        """
+        ret = []
+        dsns = [
+            "PROM_POSTGRES_DSN",
+            "PROM_SQLITE_DSN",
         ]
+
+        for dsn in dsns:
+            if os.environ.get(dsn, None):
+                ret.append(cls.create_environ_interface(dsn))
+
+        return ret
+#         return [
+#             cls.create_environ_interface("PROM_POSTGRES_DSN"),
+#             cls.create_environ_interface("PROM_SQLITE_DSN")
+#         ]
 
     @classmethod
     def create_interface(cls):

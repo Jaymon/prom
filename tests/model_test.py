@@ -55,6 +55,49 @@ class OrmPoolTest(BaseTestCase):
 
 
 class OrmTest(EnvironTestCase):
+    def test_field_access(self):
+        orm_class = self.get_orm_class()
+
+        o = orm_class(foo=1, bar="2")
+        self.assertEqual(1, o.foo)
+        self.assertIsNone(o.pk)
+        with self.assertRaises(AttributeError):
+            o.fkdasljfdkfsalk
+
+        orm_class = self.get_orm_class()
+        orm_class._id = None
+        o = orm_class(foo=1, bar="2")
+        self.assertIsNone(o.pk)
+        self.assertIsNone(o._id)
+        self.assertEqual(1, o.foo)
+        with self.assertRaises(AttributeError):
+            o.fkdasljfdkfsalk
+
+    def test_aliases_1(self):
+        class Foo(Orm):
+            ip_address = Field(str, False, aliases=["ip"])
+
+        ip = "1.2.3.4"
+
+        f = Foo(ip="1.2.3.4")
+        self.assertEqual(ip, f.ip)
+        self.assertEqual(ip, f.ip_address)
+
+        f = Foo()
+        f.ip = ip
+        self.assertEqual(ip, f.ip)
+        self.assertEqual(ip, f.ip_address)
+
+        f = Foo(ip="1.2.3.4")
+        del f.ip
+        self.assertIsNone(f.ip)
+        self.assertIsNone(f.ip_address)
+
+    def test_alias_pk(self):
+        o = self.create_orm()
+        self.assertEqual(o.pk, o._id)
+        pout.v(o.pk, o._id)
+
     def test_removed_field(self):
         orm_class = self.get_orm_class()
         o = orm_class.create(foo=1, bar="2")
@@ -259,7 +302,6 @@ class OrmTest(EnvironTestCase):
 
         o = orm_class.hydrate(foo=1)
         self.assertEqual("lambda bar", o.bar)
-
 
     def test_no_pk(self):
         orm_class = self.get_orm_class()
