@@ -691,7 +691,7 @@ class _Field(object):
     def set_type(self, field_type):
         """Try to infer as much about the type as can be inferred at this moment
 
-        Because the Field support string classpaths (eg, "modname.Classname") we can't
+        Because the Field supports string classpaths (eg, "modname.Classname") we can't
         figure everything out in this method, so we figure out as much as we can
         and then defer everything else to the .interface_type and .schema properties, this
         allows the parser to hopefully finish loading the modules before we have to
