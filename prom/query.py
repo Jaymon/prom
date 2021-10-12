@@ -4,7 +4,7 @@ Classes and stuff that handle querying the interface for a passed in Orm class
 """
 from __future__ import unicode_literals, division, print_function, absolute_import
 import copy
-from collections import defaultdict, Mapping, OrderedDict
+from collections import defaultdict, OrderedDict
 import datetime
 import logging
 import os
