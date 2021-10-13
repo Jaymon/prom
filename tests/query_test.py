@@ -395,7 +395,6 @@ class QueryTest(EnvironTestCase):
         dt = o._created
         day = int(dt.strftime('%d'))
 
-        pout.b()
         q = _q.copy()
         q.in__created(day=day)
         r = q.get()
@@ -612,7 +611,6 @@ class QueryTest(EnvironTestCase):
         q = self.get_query()
         q.is_foo(1)
         self.assertEqual(1, len(q.fields_where))
-        pout.v(q.fields_where[0])
         self.assertEqual("eq", q.fields_where[0].operator)
 
         with self.assertRaises(AttributeError):

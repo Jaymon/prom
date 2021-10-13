@@ -157,30 +157,6 @@ class InterfacePostgresTest(BaseTestInterface):
             rd = i.insert(s, fields)
 
 
-@skipIf("PROM_PGBOUNCER_DSN" not in os.environ, "Skipping PGBouncer tests because not configured")
-class InterfacePGBouncerTest(InterfacePostgresTest):
-    @classmethod
-    def create_interface(cls):
-        return cls.create_environ_interface("PROM_PGBOUNCER_DSN")
-
-    def test_no_connection(self):
-        """this will make sure prom handles it gracefully if there is no connection
-        available ever. We have to wrap this for pgbouncer because PGBouncer can
-        hold the connections if there is no db waiting for the db to come back up
-        for all sorts of timeouts, and it's just easier to reset pg bouncer than
-        configure it for aggressive test timeouts.
-        """
-        subprocess.check_call("sudo stop pgbouncer", shell=True, stdout=stdnull)
-        time.sleep(1)
-
-        try:
-            super(InterfacePGBouncerTest, self).test_no_connection()
-
-        finally:
-            subprocess.check_call("sudo start pgbouncer", shell=True, stdout=stdnull)
-            time.sleep(1)
-
-
 @skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")
 class XInterfacePostgresGeventTest(InterfacePostgresTest):
     """this class has an X to start so that it will run last when all tests are run"""

@@ -1151,6 +1151,32 @@ class BaseTestInterface(BaseTestCase):
         self.assertEqual(text, d["group"])
         self.assertEqual(pk, d["_id"])
 
+#     def test_size_error(self):
+#         """This does fail but I'm not sure if it is an interface problem, meaning
+#         I should fix it by registering an adapter/converter for byte strings to be
+#         cast to unicode strings, or if the user code should handle it, I'm not sure
+#         why the byte string is considered bigger either, encoding is utf-8"""
+#         i = self.get_interface()
+#         s = self.get_schema(
+#             foo=Field(str, False, size=60)
+#         )
+#         r = i.set_table(s)
+# 
+#         # psycopg2.errors.StringDataRightTruncation: value too long for type character(60)
+# #         with self.assertRaises(InterfaceError):
+# #             d = {
+# #                 #'foo': b'$2b$12$oKLcUF7xB6xl3HlU6H/eZuY7ETKw/chqvD30Q/2royYDCxM2rZwMC',
+# #                 #'foo': String(b'$2b$12$oKLcUF7xB6xl3HlU6H/eZuY7ETKw/chqvD30Q/2royYDCxM2rZwMC'),
+# #                 'foo': b'$2b$12$oKLcUF7xB6xl3HlU6H/eZuY7ETKw/chqvD30Q/2royYDCxM2rZwMC',
+# #             }
+# #             i.insert(s, d)
+# 
+#         d = {
+#             #'foo': b'$2b$12$oKLcUF7xB6xl3HlU6H/eZuY7ETKw/chqvD30Q/2royYDCxM2rZwMC',
+#             #'foo': String(b'$2b$12$oKLcUF7xB6xl3HlU6H/eZuY7ETKw/chqvD30Q/2royYDCxM2rZwMC'),
+#             'foo': b'$2b$12$oKLcUF7xB6xl4HlU6H/eZuY7ETKw/chQvD30Q/2rOyYDCxn2rZwMC',
+#         }
+#         i.insert(s, d)
 
 # https://docs.python.org/2/library/unittest.html#load-tests-protocol
 def load_tests(loader, tests, pattern):

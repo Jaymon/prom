@@ -96,7 +96,6 @@ class OrmTest(EnvironTestCase):
     def test_alias_pk(self):
         o = self.create_orm()
         self.assertEqual(o.pk, o._id)
-        pout.v(o.pk, o._id)
 
     def test_removed_field(self):
         orm_class = self.get_orm_class()
