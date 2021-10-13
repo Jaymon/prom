@@ -308,8 +308,8 @@ class OrmTest(EnvironTestCase):
 
         pks = self.insert(orm_class, 1)
 
-        om1 = orm_class.query.get_one()
-        om2 = orm_class.query.is_foo(om1.foo).get_one()
+        om1 = orm_class.query.one()
+        om2 = orm_class.query.is_foo(om1.foo).one()
         self.assertEqual(om1.foo, om2.foo)
 
     def test_int_pk(self):
@@ -864,7 +864,7 @@ class OrmTest(EnvironTestCase):
 
         # make sure it persisted
         t.interface.close()
-        t2 = orm_class.query.is_pk(t.pk).get_one()
+        t2 = orm_class.query.is_pk(t.pk).one()
         self.assertFalse(t2.is_modified())
         self.assertEqual(2, t2.foo)
         self.assertEqual("value 2", t2.bar)

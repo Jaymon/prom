@@ -852,9 +852,9 @@ class Query(object):
 
     @deprecated("see issue 112")
     def get_pk(self, field_val):
-        """convenience method for running is_pk(_id).get_one() since this is so common"""
+        """convenience method for running is_pk(_id).one() since this is so common"""
         field_name = self.schema.pk.name
-        return self.is_field(field_name, field_val).get_one()
+        return self.is_field(field_name, field_val).one()
 
     def count(self):
         """return the count of the criteria"""
@@ -891,7 +891,7 @@ class Query(object):
 
     def has(self):
         """returns true if there is atleast one row in the db matching the query, False otherwise"""
-        v = self.get_one()
+        v = self.one()
         return True if v else False
 
     def insert(self):
