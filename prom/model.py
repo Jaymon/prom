@@ -35,7 +35,7 @@ class OrmPool(Pool):
         self.orm_class = orm_class
 
     def __missing__(self, pk):
-        o = self.orm_class.query.get_pk(pk)
+        o = self.orm_class.query.eq_field("pk", pk).one()
         self[pk] = o
         return o
 
@@ -167,12 +167,6 @@ class Orm(object):
         query_class = cls.query_class
         return query_class(orm_class=cls)
 
-#     @property
-#     def pk(self):
-#         """wrapper method to return the primary key, None if the primary key is not set"""
-#         pk_name = self.schema.pk_name
-#         return getattr(self, pk_name, None) if pk_name else None
-
     @property
     def fields(self):
         """
@@ -291,6 +285,15 @@ class Orm(object):
             orm_class.__name__,
             self.__class__.__name__,
         ))
+
+    def ref(self, orm_classpath):
+        """see Query.ref() for an explanation of what this method does
+
+        :param orm_classpath: string|type, a full python class path (eg, foo.bar.Che) or
+            an actual model.Orm python class
+        :returns: Orm
+        """
+        return self.query.ref(orm_classpath).orm_class
 
     def is_hydrated(self):
         """return True if this orm was populated from the interface/db"""
@@ -485,10 +488,11 @@ class Orm(object):
         except AttributeError:
             # we treat pk (alias for _id) as special because we usually want the
             # pk to just return None, even if it doesn't exist, the reason why is
-            # because usually you remove the pk by setting `_id = None` and so
-            # self._id would return None. If you rename the pk then this code
-            # won't be run because schema will update the alias to point to the
-            # new primary key field name
+            # because usually you remove the pk by setting `OrmClass._id = None`
+            # and so self._id would return None, so we want self.pk to return
+            # None also. This should only ever be checked if the field doesn't
+            # exist, and self.pk won't exist if there is no primary key
+            # https://github.com/Jaymon/prom/issues/139#issuecomment-944806055
             if k != "pk":
                 raise
 

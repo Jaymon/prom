@@ -1032,7 +1032,6 @@ class BaseTestInterface(BaseTestCase):
         for i, r in enumerate(rows):
             self.assertEqual(foos[i], r)
 
-        return
         q4 = q.copy()
         rfoos = list(reversed(foos))
         rows = list(q4.select_foo().in_foo(foos).desc_foo(foos).values())
@@ -1040,7 +1039,7 @@ class BaseTestInterface(BaseTestCase):
             self.assertEqual(rfoos[i], r)
 
         qb = q.copy()
-        rows = list(qb.in_foo(foos).asc_foo(foos).get(2, 2))
+        rows = list(qb.in_foo(foos).asc_foo(foos).limit(2).offset(2).get())
         for i, r in enumerate(rows, 2):
             self.assertEqual(foos[i], r.foo)
 
@@ -1056,12 +1055,12 @@ class BaseTestInterface(BaseTestCase):
 
         # make sure limits and offsets work
         qb = q.copy()
-        rows = list(qb.in_bar(bars).asc_bar(bars).get(5))
+        rows = list(qb.in_bar(bars).asc_bar(bars).limit(5).get())
         for i, r in enumerate(rows):
             self.assertEqual(bars[i], r.bar)
 
         qb = q.copy()
-        rows = list(qb.in_bar(bars).asc_bar(bars).get(2, 2))
+        rows = list(qb.in_bar(bars).asc_bar(bars).limit(2).offset(2).get())
         for i, r in enumerate(rows, 2):
             self.assertEqual(bars[i], r.bar)
 

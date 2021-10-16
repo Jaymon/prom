@@ -137,6 +137,22 @@ class BoundsTest(TestCase):
 
 
 class QueryTest(EnvironTestCase):
+    def test_query_syntactic_sugar(self):
+        Foo = self.get_orm_class()
+        self.insert(Foo, 5)
+
+        pk = Foo.query.select_pk().value_pk(3)
+        self.assertEqual(3, pk)
+
+        pkl = list(Foo.query.select_pk().values_pk([2]))
+        self.assertEqual(2, pkl[0])
+
+        o = Foo.query.one_pk(1)
+        self.assertEqual(1, o.pk)
+
+        ol = list(Foo.query.get_pk([1]))
+        self.assertEqual(1, ol[0].pk)
+
     def test_select_all(self):
         Foo = self.get_orm_class()
         q = Foo.query.select("*")
@@ -163,38 +179,38 @@ class QueryTest(EnvironTestCase):
         self.assertRegex(r, r"foo[^=]+=\s*1")
         self.assertRegex(r, r"bar[^=]+=\s*'two'")
 
-    def test_find_operation_method_1(self):
+    def test_find_methods_1(self):
         q = self.get_query()
 
-        opm, fn = q.find_operation_method("eq_foo_bar")
-        opm2, fn2 = q.find_operation_method("foo_bar_eq")
+        opm, qm, fn = q.find_methods("eq_foo_bar")
+        opm2, qm2, fn2 = q.find_methods("foo_bar_eq")
         self.assertEqual("eq_field", opm.__name__)
         self.assertEqual(opm2.__name__, opm.__name__)
         self.assertEqual("foo_bar", fn)
         self.assertEqual(fn2, fn)
 
         with self.assertRaises(AttributeError):
-            q.find_operation_method("baklsdkf_foo_bar")
+            q.find_methods("baklsdkf_foo_bar")
 
         with self.assertRaises(AttributeError):
-            q.find_operation_method("baklsdkf_field")
+            q.find_methods("baklsdkf_field")
 
         with self.assertRaises(AttributeError):
-            q.find_operation_method("_field")
+            q.find_methods("_field")
 
         with self.assertRaises(AttributeError):
-            q.find_operation_method("baklsdkf")
+            q.find_methods("baklsdkf")
 
-    def test_find_operation_method_2(self):
+    def test_find_methods_2(self):
         q = self.get_query()
 
         method_name = "is_{}".format(testdata.random.choice(list(q.schema.fields.keys())))
-        r = q.find_operation_method(method_name)
+        r = q.find_methods(method_name)
         self.assertEqual("is_field", r[0].__name__)
-        self.assertTrue(r[1] in set(q.schema.fields.keys()))
+        self.assertTrue(r[2] in set(q.schema.fields.keys()))
 
         with self.assertRaises(AttributeError):
-            q.find_operation_method("testing")
+            q.find_methods("testing")
 
         q = self.get_query()
         q.orm_class = None
@@ -203,9 +219,19 @@ class QueryTest(EnvironTestCase):
         ]
 
         for t in tests:
-            r = q.find_operation_method(t[0])
+            r = q.find_methods(t[0])
             self.assertEqual(t[1][0], r[0].__name__)
-            self.assertEqual(t[1][1], r[1])
+            self.assertEqual(t[1][1], r[2])
+
+    def test_find_methods_3(self):
+        q = Query()
+        om, qm, fn = q.find_methods("one_pk")
+        self.assertEqual(q.eq_field, om)
+        self.assertEqual(q.one, qm)
+        self.assertEqual("pk", fn)
+
+        with self.assertRaises(AttributeError):
+            q.find_methods("foo_pk")
 
     def test_like(self):
         _q = self.get_query()
@@ -391,7 +417,7 @@ class QueryTest(EnvironTestCase):
         pk = self.insert(q, 1)[0]
 
         # get the object out so we can use it to query
-        o = _q.copy().get_pk(pk)
+        o = _q.copy().one_pk(pk)
         dt = o._created
         day = int(dt.strftime('%d'))
 
@@ -399,7 +425,6 @@ class QueryTest(EnvironTestCase):
         q.in__created(day=day)
         r = q.get()
         self.assertEqual(1, len(r))
-        return
 
         q = _q.copy()
         q.is__created(day=day)
@@ -428,7 +453,7 @@ class QueryTest(EnvironTestCase):
         for set_field in q.fields_set:
             self.assertEqual(set_field.name, "_id")
 
-    def test_get_pks(self):
+    def test_get_pk(self):
         tclass = self.get_orm_class()
         t = tclass()
         t.foo = 1
@@ -442,7 +467,7 @@ class QueryTest(EnvironTestCase):
 
         pks = [t.pk, t2.pk]
 
-        res = tclass.query.get_pks(pks)
+        res = tclass.query.get_pk(pks)
         self.assertEqual(2, len(res))
         self.assertEqual(list(res.pk), pks)
 
@@ -454,7 +479,7 @@ class QueryTest(EnvironTestCase):
 
         count = 2
         pks = self.insert(_q, count)
-        o = _q.copy().get_pk(pks[0])
+        o = _q.copy().one_pk(pks[0])
 
         v = _q.copy().select_foo().is_pk(o.pk).value()
         self.assertEqual(o.foo, v)
@@ -695,7 +720,7 @@ class QueryTest(EnvironTestCase):
         o = orm_class(foo=1, bar="value 1")
         fields = o.to_interface()
         pk = q.copy().set(fields).insert()
-        o = q.copy().get_pk(pk)
+        o = q.copy().one_pk(pk)
         self.assertLess(0, pk)
         self.assertTrue(o._created)
         self.assertTrue(o._updated)
@@ -705,7 +730,7 @@ class QueryTest(EnvironTestCase):
         row_count = q.copy().set(fields).is_pk(pk).update()
         self.assertEqual(1, row_count)
 
-        o2 = q.copy().get_pk(pk)
+        o2 = q.copy().one_pk(pk)
 
         self.assertEqual(2, o2.foo)
         self.assertEqual("value 2", o2.bar)
@@ -808,6 +833,14 @@ class IteratorTest(BaseTestCase):
         self.insert(q, count)
         i = q.limit(limit).page(page).get()
         return i
+
+    def test___repr__(self):
+        """https://github.com/Jaymon/prom/issues/137"""
+        orm_class = self.create_orms()
+
+        it = orm_class.query.get()
+        s = it.__repr__()
+        self.assertNotEqual("[]", s)
 
     def test___init__(self):
         count = 10

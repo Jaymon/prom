@@ -142,6 +142,16 @@ class BaseTestCase(TestCase):
         t = orm_class(**fields)
         return t
 
+    def create_orms(self, table_name=None, count=0, **fields):
+        """Create count orms at table_name with fields
+
+        :returns: Orm class, the Orm class created with table_name
+        """
+        orm_class = self.get_orm_class(table_name, **fields)
+        count = count or testdata.get_int(1, 10)
+        self.insert(orm_class, count)
+        return orm_class
+
     def create_orm(self, table_name=None, **fields):
         orm_class = self.get_orm(table_name, **fields)
         fs = self.get_fields(orm_class.schema)

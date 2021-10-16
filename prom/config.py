@@ -337,6 +337,9 @@ class Schema(object):
         if field.unique:
             self.set_index(field_name, Index(field_name, unique=True))
 
+        if field.index:
+            self.set_index(field_name, Index(field_name))
+
         self.fields[field_name] = field
 
         for fn in field.names:
@@ -470,7 +473,7 @@ class FieldMeta(type):
         return ret
 
 
-class _Field(object):
+class Field(object, metaclass=FieldMeta):
     """Each column in the database is configured using this class
 
     You can set a couple getters and setters on this object in order to fine tune
@@ -547,7 +550,10 @@ class _Field(object):
     """A set of values that this field can be, if set then no other values can be set"""
 
     unique = False
-    """True if this field is unique"""
+    """True if this field is unique indexed"""
+
+    index = False
+    """True if this field is indexed"""
 
     instance = None
     """Don't touch this unless you know what you're doing. Holds internal cached instance"""
@@ -1047,17 +1053,5 @@ class _Field(object):
         accepts the current value as an argument"""
         val = self.fdel(orm, self.fval(orm))
         orm.__dict__[self.orm_field_name] = val
-
-
-if is_py2:
-    class Field(_Field):
-        __metaclass__ = FieldMeta
-
-else:
-    # python 2 parser will fail on metaclass=... syntax, so work around that
-    #
-    # Order matters for the parent classes
-    # https://docs.python.org/3/library/enum.html#restricted-enum-subclassing
-    exec("class Field(_Field, metaclass=FieldMeta): pass")
 
 

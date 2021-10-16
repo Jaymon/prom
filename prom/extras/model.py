@@ -79,7 +79,7 @@ class MagicOrm(Orm):
                     orm_class = schema.orm_class
                     if orm_class:
                         unfound = False
-                        ret = orm_class.query.get_pk(getattr(self, field_name))
+                        ret = orm_class.query.eq_field("pk", getattr(self, field_name)).one()
 
             if unfound:
                 ret = super(MagicOrm, self).__getattr__(k)

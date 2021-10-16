@@ -55,6 +55,14 @@ class OrmPoolTest(BaseTestCase):
 
 
 class OrmTest(EnvironTestCase):
+    def test_custom__id_pk(self):
+        orm_class = self.get_orm_class(
+            _id=Field(str, True, size=36, pk=True)
+        )
+        o = orm_class.create(_id="foo")
+        o2 = orm_class.query.one()
+        self.assertEqual(o.pk, o2.pk)
+
     def test_field_access(self):
         orm_class = self.get_orm_class()
 
@@ -282,14 +290,14 @@ class OrmTest(EnvironTestCase):
             o2 = orm_class(_id=o.pk, foo=2, bar="2")
             o2.save()
 
-        o3 = o.query.get_pk(o.pk)
+        o3 = o.query.one_pk(o.pk)
         self.assertTrue(o3.is_hydrated())
 
         o3._id = o.pk + 1
         self.assertNotEqual(o.pk, o3.pk)
 
         o3.save()
-        o4 = o3.query.get_pk(o3.pk)
+        o4 = o3.query.one_pk(o3.pk)
         self.assertEqual(o3.pk, o4.pk)
         self.assertNotEqual(o.pk, o3.pk)
 
@@ -340,7 +348,7 @@ class OrmTest(EnvironTestCase):
         o._id = 2
         o.save()
 
-        o2 = o.query.get_pk(o.pk)
+        o2 = o.query.one_pk(o.pk)
         for k in o.schema.fields.keys():
             self.assertEqual(getattr(o, k), getattr(o2, k))
 
@@ -351,7 +359,7 @@ class OrmTest(EnvironTestCase):
         o2._id = 1
         o2.save()
 
-        o3 = o.query.get_pk(o2.pk)
+        o3 = o.query.one_pk(o2.pk)
         for k in o2.schema.fields.keys():
             self.assertEqual(getattr(o2, k), getattr(o3, k))
 
@@ -400,7 +408,7 @@ class OrmTest(EnvironTestCase):
         o.foo = 20
         o.insert()
 
-        o2 = o.query.get_pk(o.pk)
+        o2 = o.query.one_pk(o.pk)
         self.assertEqual(1000, o2.foo)
 
     def test_iget_iset_insert_update(self):
@@ -434,7 +442,7 @@ class OrmTest(EnvironTestCase):
         o.update()
         self.assertTrue(isinstance(o.foo, dict))
 
-        o2 = o.query.get_pk(o.pk)
+        o2 = o.query.one_pk(o.pk)
         self.assertTrue(isinstance(o2.foo, dict))
         self.assertEqual(o.foo, o2.foo)
 
@@ -467,7 +475,7 @@ class OrmTest(EnvironTestCase):
         self.assertTrue("foo" in o.modified_fields)
 
         o.save()
-        o2 = o.query.get_pk(o.pk)
+        o2 = o.query.one_pk(o.pk)
         self.assertEqual(2, o.foo)
 
         del o.foo
@@ -548,8 +556,8 @@ class OrmTest(EnvironTestCase):
         t1.save()
         t2.save()
 
-        t11 = orm_class.query.get_pk(t1.pk)
-        t22 = orm_class.query.get_pk(t2.pk)
+        t11 = orm_class.query.one_pk(t1.pk)
+        t22 = orm_class.query.one_pk(t2.pk)
         ff = lambda orm: orm.schema.normal_fields
         self.assertEqual(ff(t11), ff(t22))
         self.assertEqual(ff(t1), ff(t11))
@@ -561,7 +569,7 @@ class OrmTest(EnvironTestCase):
         t3.save()
         self.assertEqual(1, t3.foo)
         self.assertEqual(None, t3.bar)
-        t3 = orm_class.query.get_pk(t3.pk)
+        t3 = orm_class.query.one_pk(t3.pk)
         self.assertEqual(1, t3.foo)
         self.assertEqual(None, t3.bar)
 
@@ -620,13 +628,13 @@ class OrmTest(EnvironTestCase):
         t.bar["foo"] = 1
         t.save()
 
-        t2 = t.query.get_pk(t.pk)
+        t2 = t.query.one_pk(t.pk)
         self.assertEqual(t.bar["foo"], t2.bar["foo"])
 
         t2.bar["foo"] = 2
         t2.save()
 
-        t3 = t.query.get_pk(t.pk)
+        t3 = t.query.one_pk(t.pk)
         self.assertEqual(t3.bar["foo"], t2.bar["foo"])
 
     def test_modify_none(self):
@@ -638,12 +646,12 @@ class OrmTest(EnvironTestCase):
         o.foo = 1
         o.save()
 
-        o2 = o.query.get_pk(o.pk)
+        o2 = o.query.one_pk(o.pk)
         o2.foo = None
         o2.save()
         self.assertIsNone(o2.foo)
 
-        o3 = o.query.get_pk(o.pk)
+        o3 = o.query.one_pk(o.pk)
         self.assertIsNone(o3.foo)
 
     def test_modified_1(self):
@@ -691,7 +699,7 @@ class OrmTest(EnvironTestCase):
             baz=testdata.get_int(1, 100000)
         )
 
-        t2 = orm_class.query.get_pk(t.pk)
+        t2 = orm_class.query.one_pk(t.pk)
 
         self.assertEqual(t.foo, t2.foo)
         self.assertEqual(t.bar, t2.bar)
@@ -709,7 +717,7 @@ class OrmTest(EnvironTestCase):
     def test___int__(self):
         orm_class = self.get_orm_class()
         pk = self.old_insert(orm_class.interface, orm_class.schema, 1)[0]
-        t = orm_class.query.get_pk(pk)
+        t = orm_class.query.one_pk(pk)
         self.assertEqual(pk, int(t))
 
     def test_query_class(self):
@@ -884,7 +892,7 @@ class OrmTest(EnvironTestCase):
 
         # make sure it persists
         t.interface.close()
-        t2 = t.query.get_pk(_id)
+        t2 = t.query.one_pk(_id)
         self.assertEqual(None, t2)
 
     def test_create_1(self):
@@ -937,7 +945,7 @@ class OrmTest(EnvironTestCase):
         t2.foo += 1
         t2.save()
 
-        t3 = PickleOrm.query.get_pk(t2.pk)
+        t3 = PickleOrm.query.one_pk(t2.pk)
         self.assertEqual(t3.fields, t2.fields)
 
     def test_transaction(self):

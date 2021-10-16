@@ -191,6 +191,17 @@ class Iterator(ListIterator):
         return it
         #return (getattr(o, k) for o in self)
 
+    def __repr__(self):
+        format_str = "[ ... {} ... ]"
+        format_args = [self.__class__.__name__]
+
+        orm_class = self.orm_class
+        if orm_class:
+            format_str = "[ ... {} on {} ... ]"
+            format_args.append(orm_class.__name__)
+
+        return format_str.format(*format_args)
+
     def ifilter(self, o):
         """run o through the filter, if True then orm o should be included
 
@@ -468,7 +479,8 @@ class Query(object):
 
     :example:
         q = Query(orm_class)
-        q.is_foo(1).desc_bar().limit(10).page(2).get()
+        q.eq_foo(1).desc_bar().limit(10).page(2).get()
+        # SELECT * FROM <orm_class.table_name> WHERE foo = 1 ORDER BY bar DESC LIMIT 10 OFFSET 20
     """
     field_class = Field
     fields_set_class = Fields
@@ -567,15 +579,16 @@ class Query(object):
     def __iter__(self):
         return self.get()
 
-    def find_operation_method(self, method_name):
+    def find_methods(self, method_name):
         """Given a method name like <OPERATOR>_<FIELD_NAME> or <FIELD_NAME>_<OPERATOR>,
         split those into <OPERATOR> and <FIELD_NAME> if there is an existing
         <OPERATOR>_field method that exists
 
-        So, for example, gt_foo(<VALUE>) would be split to gt <OPERATOR> and foo
-        <FIELD_NAME> so self.gt_field("foo", ...) could be called
+        :example:
+            self.gt_foo() # (<gt_field>, None, "foo")
+            self.one_pk(value) # (<eq_field>, <one>, "pk")
 
-        :returns: tuple, (<OPERATOR>, <FIELD_NAME>)
+        :returns: tuple, (<FIELD_METHOD>, <QUERY_METHOD>, <FIELD_NAME>)
         """
         # infinite recursion check, if a *_field method gets in here then it
         # doesn't exist
@@ -583,33 +596,58 @@ class Query(object):
             raise AttributeError(method_name)
 
         try:
-            # check for <OPERATOR>_<FIELD_NAME>
-            operator, field_name = method_name.split("_", 1)
+            # check for <NAME>_<FIELD_NAME>
+            name, field_name = method_name.split("_", 1)
 
         except ValueError:
-            raise AttributeError("invalid operator method: {}".format(method_name))
+            raise AttributeError("invalid potential method: {}".format(method_name))
 
         else:
-            if not operator:
-                raise AttributeError('Could not derive command from {}"'.format(
+
+            if not name:
+                raise AttributeError('Could not resolve methods from {}"'.format(
                     method_name
                 ))
 
-            operator_method_name = "{}_field".format(operator)
-            operator_method = getattr(self, operator_method_name, None)
-            if not operator_method:
-                # let's try reversing the split, so <FIELD_NAME>_<OPERATOR>
-                field_name, operator = method_name.rsplit("_", 1)
-                operator_method_name = "{}_field".format(operator)
-                operator_method = getattr(self, operator_method_name, None)
+            elif name in {"one", "value"}:
+                field_method = self.eq_field
+                query_method = getattr(self, name)
 
-            if not operator_method:
-                raise AttributeError('No "{}" method derived from "{}"'.format(
-                    operator_method_name,
-                    method_name
-                ))
+            elif name in {"get", "values", "all", "cursor"}:
+                field_method = self.in_field
+                query_method = getattr(self, name)
 
-        return operator_method, field_name
+            else:
+                query_method = None
+                field_method_name = "{}_field".format(name)
+                field_method = getattr(self, field_method_name, None)
+                if not field_method:
+                    # let's try reversing the split, so <FIELD_NAME>_<NAME>
+                    field_name, name = method_name.rsplit("_", 1)
+                    field_method_name = "{}_field".format(name)
+                    field_method = getattr(self, field_method_name, None)
+
+                if not field_method:
+                    raise AttributeError('No field method derived from {}'.format(
+                        method_name
+                    ))
+
+        return field_method, query_method, field_name
+
+    def __getattr__(self, method_name):
+        field_method, query_method, field_name = self.find_methods(method_name)
+
+        def callback(*args, **kwargs):
+            #pout.v(args, kwargs, field_method, query_method, field_name)
+            if field_method:
+                ret = field_method(field_name, *args, **kwargs)
+
+            if query_method:
+                ret = query_method()
+
+            return ret
+
+        return callback
 
     def create_field(self, field_name, field_val=None, **kwargs):
         f = self.field_class(self, field_name, field_val, **kwargs)
@@ -785,13 +823,6 @@ class Query(object):
         self._ifilter = predicate
         return self
 
-    def __getattr__(self, method_name):
-        field_method, field_name = self.find_operation_method(method_name)
-        def callback(*args, **kwargs):
-            #pout.v(args, kwargs, field_method, field_name)
-            return field_method(field_name, *args, **kwargs)
-        return callback
-
     def limit(self, limit):
         self.bounds.limit = limit
         return self
@@ -825,8 +856,6 @@ class Query(object):
             raise ValueError("No selected fields")
         return self.get()
 
-    @deprecated("see list item 2 in issue 24, use .one() instead")
-    def get_one(self): return self.one()
     def one(self):
         """get one row from the db"""
         self.limit(1)
@@ -843,18 +872,6 @@ class Query(object):
         if not self.fields_select:
             raise ValueError("no selected fields")
         return self.one()
-
-    @deprecated("see issue 112")
-    def get_pks(self, field_vals):
-        """convenience method for running in__id([...]).get() since this is so common"""
-        field_name = self.schema.pk.name
-        return self.in_field(field_name, field_vals).get()
-
-    @deprecated("see issue 112")
-    def get_pk(self, field_val):
-        """convenience method for running is_pk(_id).one() since this is so common"""
-        field_name = self.schema.pk.name
-        return self.is_field(field_name, field_val).one()
 
     def count(self):
         """return the count of the criteria"""
@@ -893,6 +910,9 @@ class Query(object):
         """returns true if there is atleast one row in the db matching the query, False otherwise"""
         v = self.one()
         return True if v else False
+
+    def exists(self):
+        return self.has()
 
     def insert(self):
         """persist the .fields"""

@@ -15,6 +15,13 @@ from prom.compat import *
 
 
 class SchemaTest(BaseTestCase):
+    def test_field_index_property(self):
+        s = self.get_schema(
+            foo=Field(str, index=True)
+        )
+        self.assertTrue("foo", s.indexes)
+        self.assertFalse(s.indexes["foo"].unique)
+
     def test___init__(self):
         """
         I had set the class .fields and .indexes attributes to {} instead of None, so you
@@ -621,7 +628,7 @@ class FieldTest(EnvironTestCase):
         o.save()
         self.assertEqual(400, o.foo)
 
-        o2 = o.query.get_pk(o.pk)
+        o2 = o.query.one_pk(o.pk)
         self.assertEqual(400, o2.foo)
 
     def test_fdel(self):
