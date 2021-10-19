@@ -143,12 +143,12 @@ query.raw("SELECT * FROM table_name WHERE foo = %s AND bar = %s", [10, "value 2"
 
 The `prom.query.Query` has a couple helpful query methods to make grabbing rows easy:
 
-  * get -- `get()` -- run the select query.
-  * all -- `all()` -- alias for `get`.
-  * one -- `one()` -- run the select query with a LIMIT 1.
-  * count -- `count()` -- return an integer of how many rows match the query
-  * value -- `value()` -- similar to `one()` but only returns the selected field(s)
-  * values -- `values()` -- return the selected fields as a tuple, not an `prom.model.Orm` instance
+  * get -- `get()` -- run the select query. Return an `Iterator` instance.
+  * all -- `all()` -- alias for `get`. Return an `Iterator` instance.
+  * one -- `one()` -- run the select query with a LIMIT 1. Return an `Orm` instance.
+  * count -- `count()` -- return an integer of how many rows match the query, Return an integer.
+  * value -- `value()` -- similar to `one()` but only returns the selected field(s). Return a `dict`.
+  * values -- `values()` -- return an `Iterator` of the selected fields, not an `prom.model.Orm` instance
 
     This is really handy for when you want to get all the ids as a list:
 
@@ -161,8 +161,9 @@ The `prom.query.Query` has a couple helpful query methods to make grabbing rows 
     ```
 
   * has -- `has()` -- return True if there is at least one row in the db matching query
-  * get_pk -- `get_pk(pk)` -- run the select query with a `WHERE _id = pk`
-  * get_pks -- `get_pks([pk1, pk2,...])` -- run the select query with `WHERE _id IN (...)`
+  * exists -- `exists()` -- alias for `has`
+  * one_* -- `one_<FIELDNAME>(<VALUES>)` -- run the select query with a `WHERE <FIELDNAME> = <VALUE>`, this will always return an `Orm` instance.
+  * get_* -- `get_<FIELDNAME>([<VALUE1>, <VALUE2>, ...])` -- run the select query with `WHERE <FIELDNAME> IN (...)`, this will always return an `Iterator` instance
   * raw -- `raw(query_str, *query_args, **query_options)` -- run a raw query
 
       ```python
