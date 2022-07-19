@@ -28,7 +28,6 @@ import datetime
 from distutils import dir_util
 import re
 import sqlite3
-import aiosqlite
 
 from datatypes import Datetime
 
@@ -38,7 +37,7 @@ from ..compat import *
 from .base import SQLInterface, SQLConnection
 
 
-class SQLiteRowDict(aiosqlite.Row):
+class SQLiteRowDict(sqlite3.Row):
     def get(self, k, default_val=None):
         try:
             r = self[k]
@@ -49,7 +48,7 @@ class SQLiteRowDict(aiosqlite.Row):
 
 # TODO -- I think we can get rid of this by just reconnecting in the error
 # handler
-class SQLiteConnection(SQLConnection, aiosqlite.Connection):
+class SQLiteConnection(SQLConnection, sqlite3.Connection):
     """
     Thin wrapper around the default connection to make sure it has a similar interface
     to Postgres' connection instance so the common code can all be the same in the
