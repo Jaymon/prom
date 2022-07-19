@@ -20,7 +20,7 @@ from prom.config import Schema, DsnConnection, Field, Index
 from prom.interface.postgres import PostgreSQL
 from prom.interface.sqlite import SQLite
 from prom.interface.base import Interface
-from prom.interface import get_interfaces
+from prom.interface import get_interfaces, find_environ
 from prom.utils import make_dict
 import prom
 
@@ -29,15 +29,18 @@ testdata.basic_logging()
 
 
 #os.environ.setdefault('PROM_SQLITE_DSN', 'prom.interface.sqlite.SQLite://:memory:')
-os.environ.setdefault(
-    'PROM_SQLITE_DSN',
-    'prom.interface.sqlite.SQLite://{}.sqlite'.format(os.path.join(tempfile.gettempdir(), str(uuid4())))
-)
+# os.environ.setdefault(
+#     'PROM_SQLITE_DSN',
+#     'prom.interface.sqlite.SQLite://{}.sqlite'.format(os.path.join(tempfile.gettempdir(), str(uuid4())))
+# )
 
 
 class BaseTestCase(TestCase):
 
-    connections = set()
+    interfaces = set()
+
+    #sqlite_class = SQLite
+    #postgres_class = PostgreSQL
 
     def tearDown(self):
         self.tearDownClass()
@@ -45,46 +48,82 @@ class BaseTestCase(TestCase):
     @classmethod
     def get_interfaces(cls):
         """Return all currently configured interfaces in a list"""
-        return get_interfaces().values()
+        return list(cls.interfaces)
+        #return get_interfaces().values()
 
     @classmethod
     def setUpClass(cls):
         """make sure there is a default interface for any class"""
-        i = cls.get_interface()
-        i.unsafe_delete_tables()
-        prom.set_interface(i)
+        for inter in cls.find_environ_interfaces():
+            inter.unsafe_delete_tables()
+
+        #i = cls.get_interface()
+        #i.unsafe_delete_tables()
+        #prom.set_interface(i)
 
     @classmethod
     def tearDownClass(cls):
-        for inter in cls.connections:
+        for inter in cls.interfaces:
             inter.close()
-        cls.connections = set()
+        cls.interfaces = set()
 
     @classmethod
     def get_interface(cls):
         i = cls.create_interface()
         i.connect()
-        assert i.connected
+        #assert i.connected
         return i
 
     @classmethod
     def create_interface(cls):
-        return cls.create_postgres_interface()
+        return cls.create_sqlite_interface()
+
+    @classmethod
+    def create_dsn_interface(cls, dsn):
+        conn = DsnConnection(dsn)
+        inter = conn.interface
+        cls.interfaces.add(inter)
+        return inter
+
+    @classmethod
+    def create_environ_connections(dsn_env_name="PROM_TEST_DSN"):
+        for conn in find_environ(dsn_env_name):
+            yield conn
+
+    @classmethod
+    def create_environ_interfaces(cls):
+        """find any interfaces that match dsn_env_name and yield them"""
+        for conn in cls.create_environ_connections():
+            inter = conn.interface
+            cls.interfaces.add(inter)
+            yield inter
+
+    @classmethod
+    def find_interface(interface_class):
+        for inter in cls.create_environ_interfaces():
+            if isinstance(inter, interface_class):
+                return inter
+
+        raise ValueError("No {} found, set PROM_TEST_DSN".format(interface_class))
 
     @classmethod
     def create_sqlite_interface(cls):
-        return cls.create_environ_interface("PROM_SQLITE_DSN")
+        inter = cls.find_interface(SQLite)
+        return inter
+        #return cls.create_environ_interface("PROM_SQLITE_DSN")
 
     @classmethod
     def create_postgres_interface(cls):
-        return cls.create_environ_interface("PROM_POSTGRES_DSN")
-
-    @classmethod
-    def create_environ_interface(cls, environ_key):
-        config = DsnConnection(os.environ[environ_key])
-        inter = config.interface
-        cls.connections.add(inter)
+        inter = cls.find_interface(PostgreSQL)
         return inter
+        #return cls.create_environ_interface("PROM_POSTGRES_DSN")
+
+#     @classmethod
+#     def create_environ_interface(cls, dsn_env_name):
+#         config = DsnConnection(os.environ[dsn_env_name])
+#         inter = config.interface
+#         cls.connections.add(inter)
+#         return inter
 
     def get_table(self, table_name=None, interface=None, **fields_or_indexes):
         """
@@ -358,55 +397,59 @@ class BaseTestCase(TestCase):
 class EnvironTestCase(BaseTestCase):
     """This will run all the tests with multple environments (eg, both SQLite and Postgres)"""
 
-    @classmethod
-    def setUpClass(cls):
-        """make sure there is a default interface for any class"""
-        for i in cls.create_interfaces():
-            i.delete_tables(disable_protection=True)
-            prom.set_interface(i)
+    interface = None
 
-    @classmethod
-    def create_interfaces(cls):
-        """Return the interfaces
+#     @classmethod
+#     def setUpClass(cls):
+#         """make sure there is a default interface for any class"""
+#         for i in cls.create_interfaces():
+#             i.delete_tables(disable_protection=True)
+#             prom.set_interface(i)
 
-        If you would like to cancel an interface, you can do that using the environment:
-
-            export PROM_SQLITE_DSN=
-
-        And then to reactivate it:
-
-            unset PROM_SQLITE_DSN
-
-        :returns: list, the Interface instances
-        """
-        ret = []
-        dsns = [
-            "PROM_POSTGRES_DSN",
-            "PROM_SQLITE_DSN",
-        ]
-
-        for dsn in dsns:
-            if os.environ.get(dsn, None):
-                ret.append(cls.create_environ_interface(dsn))
-
-        return ret
-#         return [
-#             cls.create_environ_interface("PROM_POSTGRES_DSN"),
-#             cls.create_environ_interface("PROM_SQLITE_DSN")
+#     @classmethod
+#     def create_interfaces(cls):
+#         """Return the interfaces
+# 
+#         If you would like to cancel an interface, you can do that using the environment:
+# 
+#             export PROM_SQLITE_DSN=
+# 
+#         And then to reactivate it:
+# 
+#             unset PROM_SQLITE_DSN
+# 
+#         :returns: list, the Interface instances
+#         """
+#         ret = []
+#         dsns = [
+#             "PROM_POSTGRES_DSN",
+#             "PROM_SQLITE_DSN",
 #         ]
+# 
+#         for dsn in dsns:
+#             if os.environ.get(dsn, None):
+#                 ret.append(cls.create_environ_interface(dsn))
+# 
+#         return ret
+# #         return [
+# #             cls.create_environ_interface("PROM_POSTGRES_DSN"),
+# #             cls.create_environ_interface("PROM_SQLITE_DSN")
+# #         ]
 
     @classmethod
     def create_interface(cls):
-        return cls.create_environ_interface("PROM_DSN")
+        return cls.create_dsn_interfaces(cls.interface.connection_config.dsn)
+        #return cls.create_environ_interface("PROM_DSN")
 
     def run(self, *args, **kwargs):
-        for i in self.create_interfaces():
-            os.environ["PROM_DSN"] = i.connection_config.dsn
-            prom.set_interface(i)
-            super(EnvironTestCase, self).run(*args, **kwargs)
+        for inter in self.create_environ_interfaces():
+            cls.interface = inter
+            #os.environ["PROM_DSN"] = inter.connection_config.dsn
+            #prom.set_interface(inter)
+            super().run(*args, **kwargs)
 
     def countTestCases(self):
-        ret = super(EnvironTestCase, self).countTestCases()
-        multiplier = 2 # the number of interfaces returned from create_interfaces()
+        ret = super().countTestCases()
+        multiplier = len(list(create_environ_connections())) # the number of interfaces
         return ret * multiplier
 

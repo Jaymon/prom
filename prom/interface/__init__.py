@@ -10,6 +10,11 @@ interfaces = {}
 """holds all the configured interfaces"""
 
 
+def find_environ(dsn_env_name='PROM_DSN', connection_class=DsnConnection):
+    """Returns Connection instances found in the environment"""
+    return dsnparse.parse_environs(dsn_env_name, parse_class=connection_class)
+
+
 def configure_environ(dsn_env_name='PROM_DSN', connection_class=DsnConnection):
     """
     configure interfaces based on environment variables
@@ -33,8 +38,7 @@ def configure_environ(dsn_env_name='PROM_DSN', connection_class=DsnConnection):
     :param dsn_env_name: string, the name of the environment variables
     """
     inters = []
-    cs = dsnparse.parse_environs(dsn_env_name, parse_class=connection_class)
-    for c in cs:
+    for c in find_environ(dsn_env_name, connection_class=connection_class):
         inter = c.interface
         set_interface(inter, c.name)
         inters.append(inter)

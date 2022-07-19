@@ -21,9 +21,6 @@ class BaseTestInterface(BaseTestCase):
     def create_interface(cls):
         raise NotImplementedError()
 
-#     def test_connect(self):
-#         i = self.get_interface()
-
     def test_connect_close(self):
         i = self.get_interface()
         i.close()

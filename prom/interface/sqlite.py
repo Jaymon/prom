@@ -28,10 +28,7 @@ import datetime
 from distutils import dir_util
 import re
 import sqlite3
-try:
-    import thread
-except ImportError:
-    thread = None
+import aiosqlite
 
 from datatypes import Datetime
 
@@ -41,31 +38,29 @@ from ..compat import *
 from .base import SQLInterface, SQLConnection
 
 
-class SQLiteRowDict(sqlite3.Row):
-    def __getitem__(self, k):
-        if is_py2:
-            return super(SQLiteRowDict, self).__getitem__(b"{}".format(k))
-        else:
-            return super(SQLiteRowDict, self).__getitem__(k)
-
+class SQLiteRowDict(aiosqlite.Row):
     def get(self, k, default_val=None):
-        r = default_val
-        r = self[k]
+        try:
+            r = self[k]
+        except KeyError:
+            r = default_val
         return r
 
 
-class SQLiteConnection(SQLConnection, sqlite3.Connection):
+# TODO -- I think we can get rid of this by just reconnecting in the error
+# handler
+class SQLiteConnection(SQLConnection, aiosqlite.Connection):
     """
     Thin wrapper around the default connection to make sure it has a similar interface
     to Postgres' connection instance so the common code can all be the same in the
     parent class
     """
     def __init__(self, *args, **kwargs):
-        super(SQLiteConnection, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.closed = 0
 
     def close(self, *args, **kwargs):
-        r = super(SQLiteConnection, self).close(*args, **kwargs)
+        r = super().close(*args, **kwargs)
         self.closed = 1
         return r
 
@@ -82,72 +77,11 @@ class TimestampType(object):
     """
     @staticmethod
     def adapt(val):
-        return val.isoformat(b" ") if is_py2 else val.isoformat(" ")
+        return Datetime(val).isoformat()
 
     @staticmethod
     def convert(val):
-        val = StringType.adapt(val)
-        if re.match(r"^\-?\d+\.\d+$", val):
-            # account for unix timestamps with microseconds
-            val = datetime.datetime.fromtimestamp(float(val))
-
-        elif re.match(r"^\-?\d+$", val):
-            # account for unix timestamps without microseconds
-            val = int(val)
-
-            try:
-                val = datetime.datetime.fromtimestamp(val)
-
-            except ValueError:
-                # we're hosed with this unix timestamp, but rather than error
-                # out let's go ahead and return the closest approximation we
-                # can get to the correct timestamp
-                if val > 0:
-                    val = datetime.datetime.max
-                else:
-                    val = datetime.datetime.min
-
-        else:
-            # ISO 8601 is not very strict with the date format and this tries to
-            # capture most of that leniency, with the one exception that the
-            # date must be in UTC
-            # https://en.wikipedia.org/wiki/ISO_8601
-            m = re.match(
-                r"^(\d{4}).?(\d{2}).?(\d{2}).(\d{2}):?(\d{2}):?(\d{2})(?:\.(\d+))?Z?$",
-                val
-            )
-
-            if m:
-                parsed_dateparts = m.groups()
-                dateparts = list(map(lambda x: int(x) if x else 0, parsed_dateparts[:6]))
-                val = datetime.datetime(*dateparts)
-
-                # account for ms with leading zeros
-                if parsed_dateparts[6]:
-                    ms_len = len(parsed_dateparts[6])
-                    if ms_len >= 3:
-                        millis = parsed_dateparts[6][:3]
-                        micros = parsed_dateparts[6][3:] or 0
-
-                    else:
-                        millis = parsed_dateparts[6] or 0
-                        micros = 0
-
-                    # make sure each part is 3 digits by zero padding on the right
-                    if millis:
-                        millis = "{:0<3.3}".format(millis)
-                    if micros:
-                        micros = "{:0<3.3}".format(micros)
-
-                    val += datetime.timedelta(
-                        milliseconds=int(millis),
-                        microseconds=int(micros)
-                    )
-
-            else:
-                raise ValueError("Cannot infer UTC datetime value from {}".format(val))
-
-        return val
+        return Datetime(StringType.adapt(val)).datetime()
 
 
 class BooleanType(object):
@@ -169,11 +103,8 @@ class NumericType(object):
 
     @staticmethod
     def convert(val):
-        if is_py2:
-            ret = decimal.Decimal(str(val))
-        else:
-            val = StringType.adapt(val)
-            ret = decimal.Decimal(val)
+        val = StringType.adapt(val)
+        ret = decimal.Decimal(val)
         return ret
 
 
@@ -181,11 +112,7 @@ class StringType(object):
     """this just makes sure 8-bit bytestrings get converted ok"""
     @staticmethod
     def adapt(val):
-        #if isinstance(val, str):
-        if isinstance(val, bytes):
-            val = val.decode('utf-8')
-
-        return val
+        return String(val)
 
 
 class SQLite(SQLInterface):
@@ -275,13 +202,6 @@ class SQLite(SQLInterface):
     def get_connection(self):
         if not self.connected: self.connect()
         return self._connection
-
-    def _get_thread(self):
-        if thread:
-            ret = str(thread.get_ident())
-        else:
-            ret = ""
-        return ret
 
     def _close(self):
         self._connection.close()

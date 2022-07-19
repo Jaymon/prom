@@ -53,6 +53,9 @@ class TimestampTypeTest(BaseTestCase):
         self.assertEqual("2020-03-25T19:34:05.057035Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
 
+# TODO -- merge this in with InterfaceSQLite test, I thought about moving it to
+# the model, but it is testing to make sure prom.interface functions like
+# configure() work as expected
 class InterfaceTest(BaseTestCase):
     """This is testing the actual interface, not the db connection or anything"""
     def test_change_interface(self):
