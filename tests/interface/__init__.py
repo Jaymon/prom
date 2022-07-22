@@ -175,6 +175,22 @@ class BaseTestInterface(BaseTestCase):
         i.set_table(s)
         self.assertTrue(i.has_table(s))
 
+    def test_custom_pk_int(self):
+        i, s = self.get_table(_id=Field(int, pk=True), bar=Field(str))
+
+        pk = i.insert(s, {"bar": "barvalue"})
+        self.assertLess(0, pk)
+
+        d = i.get_one(s, query.Query().select__id().is__id(pk))
+        self.assertEqual(pk, d["_id"])
+
+        pk_custom = testdata.get_int()
+        pk = i.insert(s, {"_id": pk_custom})
+        self.assertEqual(pk_custom, pk)
+
+        d = i.get_one(s, query.Query().select__id().is__id(pk_custom))
+        self.assertEqual(pk_custom, d["_id"])
+
     def test_field_bool(self):
         """There was a bug where SQLite boolean field always returned True, this
         tests to make sure that is fixed and it won't happen again"""

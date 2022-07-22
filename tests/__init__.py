@@ -54,7 +54,7 @@ class BaseTestCase(TestCase):
     @classmethod
     def setUpClass(cls):
         """make sure there is a default interface for any class"""
-        for inter in cls.find_environ_interfaces():
+        for inter in cls.create_environ_interfaces():
             inter.unsafe_delete_tables()
 
         #i = cls.get_interface()
@@ -86,7 +86,9 @@ class BaseTestCase(TestCase):
         return inter
 
     @classmethod
-    def create_environ_connections(dsn_env_name="PROM_TEST_DSN"):
+    def create_environ_connections(cls, dsn_env_name="PROM_TEST_DSN"):
+        """creates all the connections that are defined in the environment under
+        <dsn_env_name>_N where N can be any integer"""
         for conn in find_environ(dsn_env_name):
             yield conn
 
@@ -99,7 +101,7 @@ class BaseTestCase(TestCase):
             yield inter
 
     @classmethod
-    def find_interface(interface_class):
+    def find_interface(cls, interface_class):
         for inter in cls.create_environ_interfaces():
             if isinstance(inter, interface_class):
                 return inter
@@ -438,18 +440,18 @@ class EnvironTestCase(BaseTestCase):
 
     @classmethod
     def create_interface(cls):
-        return cls.create_dsn_interfaces(cls.interface.connection_config.dsn)
+        return cls.create_dsn_interface(cls.interface.connection_config.dsn)
         #return cls.create_environ_interface("PROM_DSN")
 
     def run(self, *args, **kwargs):
         for inter in self.create_environ_interfaces():
-            cls.interface = inter
+            type(self).interface = inter
             #os.environ["PROM_DSN"] = inter.connection_config.dsn
             #prom.set_interface(inter)
             super().run(*args, **kwargs)
 
     def countTestCases(self):
         ret = super().countTestCases()
-        multiplier = len(list(create_environ_connections())) # the number of interfaces
+        multiplier = len(list(self.create_environ_connections())) # the number of interfaces
         return ret * multiplier
 

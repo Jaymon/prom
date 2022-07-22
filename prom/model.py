@@ -55,43 +55,6 @@ class Orm(object):
             che = Field(str, True)
 
             index_barche = Index('bar', 'che')
-
-        # create a more complex class using a field override
-        class Foo2(Orm):
-            table_name = "<TABLE NAME>"
-
-            class bar(Field):
-                type = int
-                required = True
-                options = {
-                    "default": 0,
-                    "unique": True,
-                    "max_size": 512,
-                }
-
-                def fget(self, orm, v):
-                    print("fget")
-                    return v
-
-                def iget(self, orm, v):
-                    print("iget")
-                    return v
-
-                def fset(self, orm, v):
-                    print("fset")
-                    return v
-
-                def fdel(self, orm, v):
-                    print("fdel")
-                    return v
-
-                def iquery(self, query, v):
-                    print("iquery")
-                    return v
-
-                def jsonable(self, orm, v):
-                    print("jsonable")
-                    return v
     """
     connection_name = ""
     """the name of the connection to use to retrieve the interface"""

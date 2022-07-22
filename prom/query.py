@@ -223,12 +223,18 @@ class Iterator(ListIterator):
             one field then just that value will be returned
         """
         r = None
+        orm_class = self.orm_class
         if self.field_names:
-            field_vals = [d.get(fn, None) for fn in self.field_names]
+            field_vals = []
+            for field_name in self.field_names:
+                fv = d.get(field_name, None)
+                if orm_class:
+                    fv = orm_class.schema.fields[field_name].iget(None, fv)
+                field_vals.append(fv)
+            #field_vals = [d.get(fn, None) for fn in self.field_names]
             r = field_vals if len(self.field_names) > 1 else field_vals[0]
 
         else:
-            orm_class = self.orm_class
             if orm_class:
                 r = orm_class.hydrate(d)
             else:

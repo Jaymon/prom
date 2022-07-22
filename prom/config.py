@@ -476,38 +476,31 @@ class FieldMeta(type):
 class Field(object, metaclass=FieldMeta):
     """Each column in the database is configured using this class
 
-    You can set a couple getters and setters on this object in order to fine tune
+    You can set some getters and setters on this object in order to fine tune
     control over how a field in the db is set and fetched from the instance and
     also how it is set and fetched from the interface
-
-    In model.Orm, there are popluate() and depart() class methods, when populate
-    is called, each Field will have its iget() method called. When depart() is called, 
-    each Field will have its iset() method called. By customizing these, you can
-    control functionality when a Field is going to be read or written to the db
 
     to customize the field on set and get from the db, you can use the decorators,
     which are classmethods:
 
+    :Example:
         foo = Field(str, True)
 
         @foo.igetter
         def foo(self, val):
-            # do custom things
+            # do custom things when pulling foo from the database
             return val
 
         @foo.isetter
         def foo(self, val):
-            # do custom things
+            # do custom things when putting foo into the database
             return val
-
-    NOTE -- the iset/iget methods are different than traditional python getters
-    and setters because they always need to return a value and they always take in a
-    value
 
     There are also fget/fset/fdel methods that can be set to customize behavior
     on when a value is set on a particular orm instance, so if you wanted to make sure
     that bar was always an int when it is set, you could:
 
+    :Example:
         bar = Field(int, True)
 
         @bar.fsetter
@@ -524,9 +517,48 @@ class Field(object, metaclass=FieldMeta):
             # convert val to something json safe
             return val
 
-    NOTE -- the fget/fset/fdel methods are different than traditional python getters
-    and setters because they always need to return a value and they always take in a
-    value
+    NOTE -- all these get/set/delete methods are different than traditional python getters
+    and setters because they always need to return a value and they always take in the
+    object instance manipulating them and the value.
+
+    NOTE -- Foreign key's can be passed orm instances from other classes because
+    those classes will call the FK's field methods when getting/setting the field
+
+    You can also configure the Field using a class:
+
+    :Example:
+        class bar(Field):
+            type = int
+            required = True
+            options = {
+                "default": 0,
+                "unique": True,
+                "max_size": 512,
+            }
+
+            def fget(self, orm, v):
+                print("fget")
+                return v
+
+            def iget(self, orm, v):
+                print("iget")
+                return v
+
+            def fset(self, orm, v):
+                print("fset")
+                return v
+
+            def fdel(self, orm, v):
+                print("fdel")
+                return v
+
+            def iquery(self, query, v):
+                print("iquery")
+                return v
+
+            def jsonable(self, orm, v):
+                print("jsonable")
+                return v
 
     https://docs.python.org/2/howto/descriptor.html
     """
@@ -794,6 +826,9 @@ class Field(object, metaclass=FieldMeta):
         :returns: mixed
         """
         #pout.v("fget {}".format(self.name))
+        if self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.fget(orm, val)
         return val
 
     def fgetter(self, v):
@@ -806,15 +841,23 @@ class Field(object, metaclass=FieldMeta):
 
         think of this as when the orm receives the field value from the interface
 
-        :param orm: Orm
+        :param orm: Orm, the Orm instance the field is being set on. This can be
+            None if the select query had selected fields so a full orm instance isn't
+            being returned but rather just the selected values
         :param val: mixed, the current value of the field
         :returns: mixed
         """
         #pout.v("iget {}".format(self.name))
-        if self.is_serialized():
-            val = self.decode(val)
+        if self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.iget(orm, val)
 
-        orm.__dict__[self.orm_interface_hash] = self.hash(orm, val)
+        else:
+            if self.is_serialized():
+                val = self.decode(val)
+
+            if orm:
+                orm.__dict__[self.orm_interface_hash] = self.hash(orm, val)
 
         return val
 
@@ -837,6 +880,11 @@ class Field(object, metaclass=FieldMeta):
         if val is not None and self.choices:
             if val not in self.choices:
                 raise ValueError("Value {} not in {} value choices".format(val, self.name))
+
+        if self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.fset(orm, val)
+
         return val
 
     def fsetter(self, v):
@@ -854,8 +902,14 @@ class Field(object, metaclass=FieldMeta):
         :returns: mixed
         """
         #pout.v("iset {}".format(self.name))
-        if self.is_serialized():
-            val = self.encode(val)
+        if self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.iset(orm, val)
+
+        else:
+            if self.is_serialized():
+                val = self.encode(val)
+
         return val
 
     def isetter(self, v):
@@ -935,6 +989,9 @@ class Field(object, metaclass=FieldMeta):
         :param val: mixed, the fields value
         :returns: mixed
         """
+        if self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.iquery(query, val)
         return val
 
     def iquerier(self, v):
@@ -943,13 +1000,19 @@ class Field(object, metaclass=FieldMeta):
         return self
 
     def jsonable(self, orm, val):
-        if val is None:
-            val = self.fdefault(orm, val)
+        if self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.jsonable(orm, val)
 
-        if val is not None:
-            format_str = ""
-            if isinstance(val, (datetime.datetime, datetime.date)):
-                val = Datetime(val).iso_8601()
+        else:
+            if val is None:
+                val = self.fdefault(orm, val)
+
+            if val is not None:
+                format_str = ""
+                if isinstance(val, (datetime.datetime, datetime.date)):
+                    val = Datetime(val).iso_8601()
+
         return val
 
     def jsonabler(self, v):

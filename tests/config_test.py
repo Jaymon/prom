@@ -463,6 +463,25 @@ class FieldTest(EnvironTestCase):
         self.assertIsNotNone(f.schema)
         self.assertFalse(f.is_serialized())
 
+    def test_type_fk_get(self):
+        """ https://github.com/Jaymon/prom/issues/145 """
+        class PrimaryKey(Field):
+            def __init__(self):
+                super().__init__(str, pk=True)
+            def iset(self, orm, v):
+                return str(v)
+            def iget(self, orm, v):
+                return int(v)
+
+        foo_class = self.get_orm_class(_id=PrimaryKey(), _created=None, _updated=None)
+        bar_class = self.get_orm_class(foo_id=Field(foo_class), _created=None, _updated=None)
+
+        f = foo_class.create(pk=1)
+        b = bar_class.create(foo_id=f.pk)
+
+        foo_pk = bar_class.query.select_foo_id().one_pk(b.pk)
+        self.assertTrue(isinstance(foo_pk, int))
+
     def test_serialize_lifecycle(self):
         orm_class = self.get_orm_class(
             foo=Field(dict, False)
@@ -562,6 +581,7 @@ class FieldTest(EnvironTestCase):
     def test_fcrud(self):
 
         class FCrudOrm(Orm):
+            interface = self.get_interface()
             foo = Field(int)
 
             @foo.fsetter
@@ -600,6 +620,7 @@ class FieldTest(EnvironTestCase):
 
     def test_icrud(self):
         class ICrudOrm(Orm):
+            interface = self.get_interface()
             foo = Field(int)
 
             @foo.isetter
