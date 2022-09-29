@@ -204,7 +204,8 @@ class PostgreSQL(SQLInterface):
         ret = self.query(query_str, ignore_result=True, **kwargs)
 
     def _delete_table(self, schema, **kwargs):
-        query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(self._normalize_table_name(schema))
+        #query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(self._normalize_table_name(schema))
+        query_str = 'TRUNCATE TABLE {} CASCADE'.format(self._normalize_table_name(schema))
         ret = self.query(query_str, ignore_result=True, **kwargs)
 
     def _get_fields(self, table_name, **kwargs):
