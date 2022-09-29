@@ -105,8 +105,8 @@ class PostgreSQL(SQLInterface):
         port = connection_config.port
         if not port: port = 5432
 
-        minconn = int(connection_config.options.get('pool_minconn', 1))
-        maxconn = int(connection_config.options.get('pool_maxconn', 1))
+        minconn = int(connection_config.options.get('pool_minconn', 5))
+        maxconn = int(connection_config.options.get('pool_maxconn', 5))
         pool_class_name = connection_config.options.get(
             'pool_class',
             'psycopg2.pool.SimpleConnectionPool'
