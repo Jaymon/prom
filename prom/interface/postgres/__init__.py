@@ -111,7 +111,7 @@ class PostgreSQL(SQLInterface):
             'pool_class',
             'psycopg2.pool.SimpleConnectionPool'
         )
-        async_conn = int(connection_config.options.get('async', 0))
+        async_conn = int(connection_config.options.get('async', 1))
 
         _, pool_class = get_objects(pool_class_name)
 
