@@ -105,13 +105,13 @@ class PostgreSQL(SQLInterface):
         port = connection_config.port
         if not port: port = 5432
 
-        minconn = int(connection_config.options.get('pool_minconn', 1))
-        maxconn = int(connection_config.options.get('pool_maxconn', 1))
+        minconn = int(connection_config.options.get('pool_minconn', 5))
+        maxconn = int(connection_config.options.get('pool_maxconn', 5))
         pool_class_name = connection_config.options.get(
             'pool_class',
             'psycopg2.pool.SimpleConnectionPool'
         )
-        async_conn = int(connection_config.options.get('async', 0))
+        async_conn = int(connection_config.options.get('async', 1))
 
         _, pool_class = get_objects(pool_class_name)
 
@@ -205,6 +205,7 @@ class PostgreSQL(SQLInterface):
 
     def _delete_table(self, schema, **kwargs):
         query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(self._normalize_table_name(schema))
+        # query_str = 'TRUNCATE TABLE {} CASCADE'.format(self._normalize_table_name(schema))
         ret = self.query(query_str, ignore_result=True, **kwargs)
 
     def _get_fields(self, table_name, **kwargs):

@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
+
 import time
 from functools import wraps
 import logging
-
+import gevent
 from decorators import classproperty
 
 from .exception import InterfaceError
@@ -58,7 +59,7 @@ def reconnecting(count=None, backoff=None):
                             backoff_seconds,
                             attempt
                         ))
-                    time.sleep(backoff_seconds)
+                        time.sleep(backoff_seconds)
 
                     return func(self, *args, **kwargs)
 
