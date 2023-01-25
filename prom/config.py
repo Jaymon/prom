@@ -9,7 +9,10 @@ import json
 import logging
 
 import dsnparse
-from datatypes import Datetime
+from datatypes import (
+    Datetime,
+    property as cachedproperty,
+)
 
 from .compat import *
 from . import utils
@@ -257,7 +260,7 @@ class Schema(object):
 
         else:
             s = cls.instances[table_name]
-            s.orm_class = orm_class
+            #s.orm_class = orm_class
 
         return s
 
@@ -456,21 +459,52 @@ class FieldMeta(type):
     This makes it so an embedded field class will be treated as a descriptor. It
     uses an embedded .instance property to actually perform the operations
     """
-    def __get__(cls, obj, classtype=None):
-        if obj is None:
-            # class is requesting this property, so return it
-            return cls
+#     def __getattr__(self, *args, **kwargs):
+#         pout.v(args, kwargs)
+#         return super().__getattr__(*args, **kwargs)
 
-        ret = cls.get_instance().__get__(obj, classtype)
-        return ret
+    #cls(cls.type, cls.required, cls.options)
 
-    def __set__(cls, *args, **kwargs):
-        ret = cls.get_instance().__set__(*args, **kwargs)
-        return ret
 
-    def __delete__(cls, *args, **kwargs):
-        ret = cls.get_instance().__delete__(*args, **kwargs)
-        return ret
+    def __set_name__(cls, orm_class, name):
+        """I'm not quite sure this works, but it does. Basically, when you define
+        the field as an embedded class in the orm, this method will get called
+        when the class is being parsed/loaded the first time.
+
+        So this method gets called and we use cls to create a Field instance and
+        we then set our newly created instance onto orm_class.name. So after this
+        method is called, orm_class.name will be a Field instance instead of a
+        Field subclass
+        """
+        logger.debug(f"Creating field descriptor {orm_class.__name__}.{name} with class {cls.__name__}")
+
+        instance = cls(cls.type, cls.required, cls.options)
+        instance.__set_name__(orm_class, name)
+        setattr(orm_class, name, instance)
+
+#         pout.v(f"FieldMeta.__set_name__ for {name}")
+#         pout.v(orm_class, name)
+#         return cls.get_instance().__set_name__(orm_class, name)
+
+#     def __get__(cls, obj, obj_class=None):
+#         pout.v("FieldMeta.__get__")
+#         pout.v(cls, obj, obj_class)
+#         if obj is None:
+#             # class is requesting this property, so return it
+#             return cls
+# 
+#         ret = cls.get_instance().__get__(obj, obj_class)
+#         return ret
+
+#     def __set__(cls, *args, **kwargs):
+#         pout.v("FieldMeta.__set__")
+#         pout.v(cls, args, kwargs)
+#         ret = cls.get_instance().__set__(*args, **kwargs)
+#         return ret
+# 
+#     def __delete__(cls, *args, **kwargs):
+#         ret = cls.get_instance().__delete__(*args, **kwargs)
+#         return ret
 
 
 class Field(object, metaclass=FieldMeta):
@@ -587,25 +621,22 @@ class Field(object, metaclass=FieldMeta):
     index = False
     """True if this field is indexed"""
 
-    instance = None
+    #instance = None
     """Don't touch this unless you know what you're doing. Holds internal cached instance"""
 
-    @property
+    @cachedproperty(cached="_schema")
     def schema(self):
         """return the schema instance if this is reference to another table
 
         see .set_type() for an explanation on why we defer figuring this out until now
         """
-        if not hasattr(self, "_schema"):
-            field_type = self.original_type
-            module, klass = utils.get_objects(field_type)
-            schema = klass.schema
-            if not schema:
-                raise ValueError("Field type {} is not an Orm class".format(field_type))
+        field_type = self.original_type
+        module, klass = utils.get_objects(field_type)
+        schema = klass.schema
+        if not schema:
+            raise ValueError("Field type {} is not an Orm class".format(field_type))
 
-            self._schema = schema
-
-        return self._schema
+        return schema
 
     @property
     def type(self):
@@ -650,11 +681,11 @@ class Field(object, metaclass=FieldMeta):
         names.extend(self.options.get("aliases", []))
         return names
 
-    @classmethod
-    def get_instance(cls, **kwargs):
-        if not cls.instance:
-            cls.instance = cls(cls.type, cls.required, cls.options)
-        return cls.instance
+#     @classmethod
+#     def get_instance(cls, **kwargs):
+#         if not cls.instance:
+#             cls.instance = cls(cls.type, cls.required, cls.options)
+#         return cls.instance
 
     def __init__(self, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
@@ -677,18 +708,20 @@ class Field(object, metaclass=FieldMeta):
         # we aren't guaranteed to have this field's name when the descriptor is
         # created, so this will be the field name this descriptor will use to 
         # set the value onto the orm
-        self.orm_field_name = "_instance_{}_val".format(id(self))
+        #self.orm_field_name = "_instance_{}_val".format(id(self))
 
         # we keep a hash of the field's value when it was pulled from the
         # interface (see .iget) so we know if the field has been modified
-        self.orm_interface_hash = "_interface_{}_hash".format(id(self))
+        #self.orm_interface_hash = "_interface_{}_hash".format(id(self))
 
         field_options = utils.make_dict(field_options, field_options_kwargs)
 
         d = self.get_size(field_options)
         field_options.update(d)
 
-        self.orm_class = field_options.pop("orm_class", None)
+        #self.orm_class = field_options.pop("orm_class", None)
+        name = field_options.pop("name", "")
+        orm_class = field_options.pop("orm_class", None)
 
         choices = field_options.pop("choices", set())
         if choices or not self.choices:
@@ -702,6 +735,38 @@ class Field(object, metaclass=FieldMeta):
         self.required = field_required or self.is_pk()
 
         self.set_type(field_type)
+
+        # this class is being created manually so mimic what the python parser
+        # would do
+        if name and orm_class:
+            self.__set_name__(orm_class, name)
+
+    def __set_name__(self, orm_class, name):
+        """This is called right after __init__
+
+        https://docs.python.org/3/howto/descriptor.html#customized-names
+
+        This is only called when an instance is created while a class is being
+        parsed/created, so if you just created an instance of Field you would
+        need to call this method manually
+
+        :param orm_class: type, the orm class this Field will belong to
+        :param name: str, the field's public name on the orm class
+        """
+        self.orm_class = orm_class
+
+        #self.orm_field_name = name
+
+        # we aren't guaranteed to have this field's name when the descriptor is
+        # created, so this will be the field name this descriptor will use to 
+        # set the value onto the orm
+        self.orm_field_name = f"_instance_{name}_val"
+
+        # we keep a hash of the field's value when it was pulled from the
+        # interface (see .iget) so we know if the field has been modified
+        self.orm_interface_hash = f"_interface_{name}_hash"
+
+        logger.debug(f"Field descriptor {orm_class.__name__}.{name} created with internal name {self.orm_field_name}")
 
     def get_size(self, field_options):
         """Figure out if this field has any size information"""
@@ -1044,6 +1109,8 @@ class Field(object, metaclass=FieldMeta):
     def hash(self, orm, val):
         if self.is_serialized():
             return None
+        elif isinstance(val, dict):
+            return None
         return hash(val)
 
     def encode(self, val):
@@ -1080,7 +1147,7 @@ class Field(object, metaclass=FieldMeta):
 
         return val
 
-    def __get__(self, orm, classtype=None):
+    def __get__(self, orm, orm_class=None):
         """This is the wrapper that will actually be called when the field is
         fetched from the instance, this is a little different than Python's built-in
         @property fget method because it will pull the value from a shadow variable in

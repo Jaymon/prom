@@ -760,6 +760,27 @@ class FieldTest(EnvironTestCase):
         self.assertTrue(issubclass(f.type, int))
         self.assertEqual(f.options['max_length'], 100)
 
+    def test___set_name___instance(self):
+        class FooSN(Orm):
+            bar = Field(str)
+            _created = None
+            _updated = None
+            _id = None
+
+        o = FooSN(bar="bar")
+        self.assertEqual("bar", o.bar)
+
+    def test___set_name___class(self):
+        class FooSN(Orm):
+            class bar(Field):
+                type = str
+            _created = None
+            _updated = None
+            _id = None
+
+        o = FooSN(bar="bar")
+        self.assertEqual("bar", o.bar)
+
 
 class SerializedFieldTest(EnvironTestCase):
     def get_orm(self, field_type=dict, default=None):

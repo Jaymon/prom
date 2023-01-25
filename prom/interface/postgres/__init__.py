@@ -210,7 +210,7 @@ class PostgreSQL(SQLInterface):
     def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given schema"""
         ret = {}
-        query_args = ['f', table_name]
+        query_args = ['f', self._normalize_table_name(table_name)]
 
         # I had to brush up on my join knowledge while writing this query
         # https://en.wikipedia.org/wiki/Join_(SQL)
@@ -256,6 +256,7 @@ class PostgreSQL(SQLInterface):
             "float4": float,
             "float8": float,
             "timestamp": datetime.datetime,
+            "timestamptz": datetime.datetime,
             "int2": int,
             "int4": int,
             "int8": long,
@@ -266,6 +267,7 @@ class PostgreSQL(SQLInterface):
             "bool": bool,
             "date": datetime.date,
             "blob": bytearray,
+            "jsonb": bytearray,
         }
 
         # the rows we can set: field_type, name, field_required, min_size, max_size,
