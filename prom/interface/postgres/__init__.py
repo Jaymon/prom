@@ -11,6 +11,7 @@ import os
 import sys
 import decimal
 import datetime
+import uuid
 
 # third party
 import psycopg2
@@ -520,6 +521,11 @@ class PostgreSQL(SQLInterface):
 
         elif issubclass(interface_type, bytearray):
             field_type = 'BLOB'
+
+        elif issubclass(interface_type, uuid.UUID):
+            field_type = 'UUID'
+            if is_pk:
+                field_type += ' DEFAULT gen_random_uuid() PRIMARY KEY'
 
         else:
             raise ValueError('unknown python type: {}'.format(interface_type.__name__))

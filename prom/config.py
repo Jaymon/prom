@@ -7,6 +7,8 @@ import re
 import base64
 import json
 import logging
+from uuid import UUID
+
 
 import dsnparse
 from datatypes import (
@@ -757,10 +759,9 @@ class Field(object, metaclass=FieldMeta):
 
         #self.orm_field_name = name
 
-        # we aren't guaranteed to have this field's name when the descriptor is
-        # created, so this will be the field name this descriptor will use to 
-        # set the value onto the orm
-        self.orm_field_name = f"_instance_{name}_val"
+        # the field name this descriptor will use to set the value onto the orm
+        # instance
+        self.orm_field_name = f"_{name}"
 
         # we keep a hash of the field's value when it was pulled from the
         # interface (see .iget) so we know if the field has been modified
@@ -811,11 +812,9 @@ class Field(object, metaclass=FieldMeta):
             decimal.Decimal,
             datetime.datetime,
             datetime.date,
+            UUID,
         )
-        if is_py2:
-            std_types = (basestring,) + std_types
-        else:
-            std_types = basestring + std_types
+        std_types = basestring + std_types
 
         json_types = (
             dict,

@@ -114,6 +114,14 @@ class StringType(object):
         return String(val)
 
 
+import uuid
+# class UUIDType(object):
+#     @staticmethod
+#     def adapt(val):
+#         pout.v(val)
+#         return val if val else str(uuid.uuid4()) 
+
+
 class SQLite(SQLInterface):
 
     val_placeholder = '?'
@@ -179,19 +187,19 @@ class SQLite(SQLInterface):
 
         # for some reason this is needed in python 3.6 in order for saved bytes
         # to be ran through the converter, not sure why
-        sqlite3.register_converter(b'TEXT' if is_py2 else 'TEXT', StringType.adapt)
+        sqlite3.register_converter('TEXT', StringType.adapt)
 
         sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
-        sqlite3.register_converter(b'NUMERIC' if is_py2 else 'NUMERIC', NumericType.convert)
+        sqlite3.register_converter('NUMERIC', NumericType.convert)
 
         sqlite3.register_adapter(bool, BooleanType.adapt)
-        sqlite3.register_converter(b'BOOLEAN' if is_py2 else 'BOOLEAN', BooleanType.convert)
+        sqlite3.register_converter('BOOLEAN', BooleanType.convert)
 
         # sadly, it doesn't look like these work for child classes so each class
         # has to be adapted even if its parent is already registered
         sqlite3.register_adapter(datetime.datetime, TimestampType.adapt)
         sqlite3.register_adapter(Datetime, TimestampType.adapt)
-        sqlite3.register_converter(b'TIMESTAMP' if is_py2 else 'TIMESTAMP', TimestampType.convert)
+        sqlite3.register_converter('TIMESTAMP', TimestampType.convert)
 
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
@@ -298,6 +306,12 @@ class SQLite(SQLInterface):
         elif issubclass(interface_type, bytearray):
             field_type = 'BLOB'
 
+        elif issubclass(interface_type, uuid.UUID):
+            if is_pk:
+                field_type = 'CHARACTER(36) PRIMARY KEY'
+            else:
+                raise ValueError("UUID type can only be used for primary keys")
+
         else:
             raise ValueError('Unknown python type: {}'.format(interface_type.__name__))
 
@@ -374,6 +388,14 @@ class SQLite(SQLInterface):
         """
         http://www.sqlite.org/lang_insert.html
         """
+
+        # handle generating a UUID for the primary key
+        pk_name = schema.pk_name
+        if pk_name not in fields:
+            pk = schema.pk
+            if issubclass(pk.interface_type, uuid.UUID):
+                fields[pk_name] = String(uuid.uuid4())
+
         field_formats = []
         field_names = []
         query_vals = []
