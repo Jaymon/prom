@@ -212,7 +212,7 @@ class Schema(object):
 
     @property
     def magic_fields(self):
-        """the magic fields for the schema"""
+        """the magic fields for the schema, magic fields start with an underscore"""
         return {f:v for f, v in self.fields.items() if f.startswith('_')}
 
     @property
@@ -224,6 +224,11 @@ class Schema(object):
         except AttributeError:
             pk_name = None
         return pk_name
+
+    @property
+    def pk_names(self):
+        """Returns all the field names comprising the primary key as a list"""
+        return [self.pk_name]
 
     @classmethod
     def get_instance(cls, orm_class, **kwargs):

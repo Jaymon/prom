@@ -464,6 +464,34 @@ class Interface(object):
     def _update(self, schema, fields, query, **kwargs): raise NotImplementedError()
 
     @reconnecting()
+    def upsert(self, schema, insert_fields, update_fields, **kwargs):
+        """Perform an upsert (insert or update) on the table
+
+        :param schema: Schema instance, the table
+        :param insert_fields: dict, these are the fields that will be inserted
+        :param update_fields: dict, on a conflict with the insert_fields, these
+            fields will instead be used to update the row
+        :param **kwargs: anything else
+        :returns: mixed, the primary key
+        """
+        with self.connection(**kwargs) as connection:
+            kwargs['connection'] = connection
+            try:
+                with self.transaction(**kwargs):
+                    r = self._upsert(schema, insert_fields, update_fields, **kwargs)
+
+            except Exception as e:
+                exc_info = sys.exc_info()
+                if self.handle_error(schema, e, **kwargs):
+                    r = self._update(schema, insert_fields, update_fields, **kwargs)
+                else:
+                    self.raise_error(e, exc_info)
+
+        return r
+
+    def _upsert(self, schema, insert_fields, update_fields, **kwargs): raise NotImplementedError()
+
+    @reconnecting()
     def _get_query(self, callback, schema, query=None, *args, **kwargs):
         """this is just a common wrapper around all the get queries since they are
         all really similar in how they execute"""
@@ -634,7 +662,6 @@ class SQLInterface(Interface):
         ret = self.query(query_str, *query_args, count_result=True, **kwargs)
         return ret
 
-    # TODO -- rename to execute to match up with cursor interface
     def _query(self, query_str, query_args=None, **query_options):
         """
         **query_options -- dict
@@ -679,6 +706,164 @@ class SQLInterface(Interface):
                 raise
 
             return ret
+
+    def handle_error(self, schema, e, **kwargs):
+        connection = kwargs.get('connection', None)
+        if not connection: return False
+
+        ret = False
+        if connection.closed:
+            # we are unsure of the state of everything since this connection has
+            # closed, go ahead and close out this interface and allow this query
+            # to fail, but subsequent queries should succeed
+            self.close()
+            ret = True
+
+        else:
+            # connection is open
+            if isinstance(e, InterfaceError):
+                # unwind to the original error
+                while isinstance(e, InterfaceError):
+                    e = e.e
+
+            query = kwargs.get("query", None)
+            schemas = query.schemas if query else []
+            if schemas:
+                ret = True
+                for s in query.schemas:
+                    ret = self._handle_error(s, e, **kwargs)
+                    if not ret:
+                        break
+            else:
+                ret = self._handle_error(schema, e, **kwargs)
+
+        return ret
+
+    def _handle_error(self, schema, e, **kwargs): raise NotImplemented()
+
+    def _set_all_tables(self, schema, **kwargs):
+        """
+        You can run into a problem when you are trying to set a table and it has a 
+        foreign key to a table that doesn't exist, so this method will go through 
+        all fk refs and make sure the tables exist
+        """
+        with self.transaction(**kwargs) as connection:
+            kwargs['connection'] = connection
+            # go through and make sure all foreign key referenced tables exist
+            for field_name, field_val in schema.fields.items():
+                s = field_val.schema
+                if s:
+                    self._set_all_tables(s, **kwargs)
+
+            # now that we know all fk tables exist, create this table
+            self.set_table(schema, **kwargs)
+
+        return True
+
+    def _set_all_fields(self, schema, **kwargs):
+        """
+        this will add fields that don't exist in the table if they can be set to NULL,
+        the reason they have to be NULL is adding fields to Postgres that can be NULL
+        is really light, but if they have a default value, then it can be costly
+        """
+        current_fields = self.get_fields(schema, **kwargs)
+        for field_name, field in schema.fields.items():
+            if field_name not in current_fields:
+                if field.required:
+                    raise ValueError('Cannot safely add {} on the fly because it is required'.format(field_name))
+
+                else:
+                    query_str = []
+                    query_str.append('ALTER TABLE')
+                    query_str.append('  {}'.format(schema))
+                    query_str.append('ADD COLUMN')
+                    query_str.append('  {}'.format(self.get_field_SQL(field_name, field)))
+                    query_str = os.linesep.join(query_str)
+                    self.query(query_str, ignore_result=True, **kwargs)
+
+        return True
+
+    def _insert(self, schema, fields, **kwargs):
+
+        query_str, query_args = self.render_insert_sql(
+            schema,
+            insert_fields,
+            **kwargs,
+        )
+
+        r = self.query(query_str, *query_args, **kwargs)
+        if r:
+            pk_names = schema.pk_names
+            if len(pk_names) > 1:
+                r = r[0]
+            else:
+                r = r[0][pk_names[0]]
+        return r
+
+    def _update(self, schema, fields, query, **kwargs):
+        query_str, query_args = self.render_update_sql(
+            schema,
+            fields,
+            query=query,
+            **kwargs,
+        )
+
+        return self.query(query_str, *query_args, count_result=True, **kwargs)
+
+    def _upsert(self, schema, insert_fields, update_fields, **kwargs):
+        conflict_fields = schema.pk_names
+        if not conflict_fields:
+            raise ValueError(f"Could not infer conflict fields for {schema}")
+
+        insert_sql, insert_args = self.render_insert_sql(
+            schema,
+            insert_fields,
+            ignore_return_clause=True,
+            **kwargs,
+        )
+
+        update_sql, update_args = self.render_update_sql(
+            schema,
+            update_fields,
+            query=None,
+            only_set_clause=True,
+            **kwargs,
+        )
+
+        query_str = '{} ON CONFLICT({}) DO UPDATE {}'.format(
+            insert_sql,
+            ', '.join(map(self._normalize_name, conflict_fields)),
+            update_sql,
+        )
+
+        query_str += ' RETURNING {}'.format(', '.join(map(self._normalize_name, conflict_fields)))
+        query_args = insert_args + update_args
+
+        r = self.query(query_str, *query_args, **kwargs)
+        if r:
+            if len(conflict_fields) > 1:
+                r = r[0]
+            else:
+                r = r[0][conflict_fields[0]]
+        return r
+
+    def _get_one(self, schema, query, **kwargs):
+        query_str, query_args = self.get_SQL(schema, query, one_query=True)
+        return self.query(query_str, *query_args, fetchone=True, **kwargs)
+
+    def _get(self, schema, query, **kwargs):
+        query_str, query_args = self.get_SQL(schema, query)
+        return self.query(query_str, *query_args, **kwargs)
+
+    def _count(self, schema, query, **kwargs):
+        query_str, query_args = self.get_SQL(schema, query, count_query=True)
+        ret = self.query(query_str, *query_args, **kwargs)
+        if ret:
+            ret = int(ret[0]['ct'])
+        else:
+            ret = 0
+
+        return ret
 
     def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
@@ -919,95 +1104,48 @@ class SQLInterface(Interface):
         query_str = "\n".join(query_str)
         return query_str, query_args
 
-    def handle_error(self, schema, e, **kwargs):
-        connection = kwargs.get('connection', None)
-        if not connection: return False
+    def render_insert_sql(self, schema, fields, **kwargs):
+        field_formats = []
+        field_names = []
+        query_vals = []
+        for field_name, field_val in fields.items():
+            field_names.append(self._normalize_name(field_name))
+            field_formats.append(self.val_placeholder)
+            query_vals.append(field_val)
 
-        ret = False
-        if connection.closed:
-            # we are unsure of the state of everything since this connection has
-            # closed, go ahead and close out this interface and allow this query
-            # to fail, but subsequent queries should succeed
-            self.close()
-            ret = True
+        query_str = 'INSERT INTO {} ({}) VALUES ({})'.format(
+            self._normalize_table_name(schema),
+            ', '.join(field_names),
+            ', '.join(field_formats),
+        )
 
-        else:
-            # connection is open
-            if isinstance(e, InterfaceError):
-                # unwind to the original error
-                while isinstance(e, InterfaceError):
-                    e = e.e
+        if not kwargs.get("ignore_return_clause", False):
+            pk_name = schema.pk_name
+            if pk_name:
+                query_str += ' RETURNING {}'.format(self._normalize_name(pk_name))
 
-            query = kwargs.get("query", None)
-            schemas = query.schemas if query else []
-            if schemas:
-                ret = True
-                for s in query.schemas:
-                    ret = self._handle_error(s, e, **kwargs)
-                    if not ret:
-                        break
-            else:
-                ret = self._handle_error(schema, e, **kwargs)
+        return query_str, query_vals
 
-        return ret
-
-    def _handle_error(self, schema, e, **kwargs): raise NotImplemented()
-
-    def _set_all_tables(self, schema, **kwargs):
-        """
-        You can run into a problem when you are trying to set a table and it has a 
-        foreign key to a table that doesn't exist, so this method will go through 
-        all fk refs and make sure the tables exist
-        """
-        with self.transaction(**kwargs) as connection:
-            kwargs['connection'] = connection
-            # go through and make sure all foreign key referenced tables exist
-            for field_name, field_val in schema.fields.items():
-                s = field_val.schema
-                if s:
-                    self._set_all_tables(s, **kwargs)
-
-            # now that we know all fk tables exist, create this table
-            self.set_table(schema, **kwargs)
-
-        return True
-
-    def _update(self, schema, fields, query, **kwargs):
-        where_query_str, where_query_args = self.get_SQL(schema, query, only_where_clause=True)
-        query_str = 'UPDATE {} SET {} {}'
+    def render_update_sql(self, schema, fields, query, **kwargs):
+        query_str = ''
         query_args = []
+
+        if not kwargs.get("only_set_clause", False):
+            query_str = 'UPDATE {} '.format(self._normalize_table_name(schema))
 
         field_str = []
         for field_name, field_val in fields.items():
             field_str.append('{} = {}'.format(self._normalize_name(field_name), self.val_placeholder))
             query_args.append(field_val)
 
-        query_str = query_str.format(
-            self._normalize_table_name(schema),
-            ',{}'.format(os.linesep).join(field_str),
-            where_query_str
-        )
-        query_args.extend(where_query_args)
+        query_str += 'SET {}'.format(',{}'.format(os.linesep).join(field_str))
 
-        return self.query(query_str, *query_args, count_result=True, **kwargs)
+        if query:
+            where_query_str, where_query_args = self.get_SQL(schema, query, only_where_clause=True)
+            query_str += ' {}'.format(where_query_str)
+            query_args.extend(where_query_args)
 
-    def _get_one(self, schema, query, **kwargs):
-        query_str, query_args = self.get_SQL(schema, query, one_query=True)
-        return self.query(query_str, *query_args, fetchone=True, **kwargs)
-
-    def _get(self, schema, query, **kwargs):
-        query_str, query_args = self.get_SQL(schema, query)
-        return self.query(query_str, *query_args, **kwargs)
-
-    def _count(self, schema, query, **kwargs):
-        query_str, query_args = self.get_SQL(schema, query, count_query=True)
-        ret = self.query(query_str, *query_args, **kwargs)
-        if ret:
-            ret = int(ret[0]['ct'])
-        else:
-            ret = 0
-
-        return ret
+        return query_str, query_args
 
     def render(self, schema, query, **kwargs):
         """Render the query
@@ -1029,27 +1167,4 @@ class SQLInterface(Interface):
                 sql = sql.replace(self.val_placeholder, sa, 1)
 
         return (sql, sql_args) if placeholders else sql
-
-    def _set_all_fields(self, schema, **kwargs):
-        """
-        this will add fields that don't exist in the table if they can be set to NULL,
-        the reason they have to be NULL is adding fields to Postgres that can be NULL
-        is really light, but if they have a default value, then it can be costly
-        """
-        current_fields = self.get_fields(schema, **kwargs)
-        for field_name, field in schema.fields.items():
-            if field_name not in current_fields:
-                if field.required:
-                    raise ValueError('Cannot safely add {} on the fly because it is required'.format(field_name))
-
-                else:
-                    query_str = []
-                    query_str.append('ALTER TABLE')
-                    query_str.append('  {}'.format(schema))
-                    query_str.append('ADD COLUMN')
-                    query_str.append('  {}'.format(self.get_field_SQL(field_name, field)))
-                    query_str = os.linesep.join(query_str)
-                    self.query(query_str, ignore_result=True, **kwargs)
-
-        return True
 

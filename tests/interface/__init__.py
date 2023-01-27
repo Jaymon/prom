@@ -1218,6 +1218,33 @@ class BaseTestInterface(BaseTestCase):
         d = i.get_one(s, query.Query().is__id(pk))
         self.assertEqual(foo, d["foo"])
 
+    def test_upsert(self):
+        i = self.get_interface()
+        s = self.get_schema()
+        i.set_table(s)
+
+        d = {"foo": 1, "bar": "bar 1"}
+        pk = i.insert(s, d)
+
+        # makes sure conflict update works as expected
+        di = {"_id": pk, "foo": 2, "bar": "bar 2"}
+        du = {"foo": 3}
+        pk2 = i.upsert(s, di, du)
+        self.assertEqual(pk, pk2)
+        d = i.get_one(s, query.Query().is__id(pk))
+        self.assertEqual(du["foo"], d["foo"])
+        self.assertEqual("bar 1", d["bar"])
+
+        # makes sure insert works as expected
+        di = {"foo": 3, "bar": "bar 3"}
+        du = {"foo": 4}
+        pk3 = i.upsert(s, di, du)
+        self.assertNotEqual(pk, pk3)
+        d = i.get_one(s, query.Query().is__id(pk3))
+        self.assertEqual(di["foo"], d["foo"])
+        self.assertEqual(di["bar"], d["bar"])
+
+
 
 # https://docs.python.org/2/library/unittest.html#load-tests-protocol
 def load_tests(loader, tests, pattern):

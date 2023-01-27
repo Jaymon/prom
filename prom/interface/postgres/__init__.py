@@ -344,36 +344,6 @@ class PostgreSQL(SQLInterface):
 
         return self.query(query_str, ignore_result=True, **index_options)
 
-    def _insert(self, schema, fields, **kwargs):
-        field_formats = []
-        field_names = []
-        query_vals = []
-        for field_name, field_val in fields.items():
-            field_names.append(self._normalize_name(field_name))
-            field_formats.append(self.val_placeholder)
-            query_vals.append(field_val)
-
-        pk_name = schema.pk_name
-        if pk_name:
-            query_str = 'INSERT INTO {} ({}) VALUES ({}) RETURNING {}'.format(
-                self._normalize_table_name(schema),
-                ', '.join(field_names),
-                ', '.join(field_formats),
-                self._normalize_name(pk_name),
-            )
-            ret = self.query(query_str, *query_vals, **kwargs)
-            ret = ret[0][pk_name]
-
-        else:
-            query_str = 'INSERT INTO {} ({}) VALUES ({})'.format(
-                self._normalize_table_name(schema),
-                ', '.join(field_names),
-                ', '.join(field_formats),
-            )
-            ret = self.query(query_str, *query_vals, ignore_result=True, **kwargs)
-
-        return ret
-
     def _normalize_field_SQL(self, schema, field_name, symbol):
         format_field_name = self._normalize_name(field_name)
         format_val_str = self.val_placeholder
@@ -479,7 +449,6 @@ class PostgreSQL(SQLInterface):
                     # https://www.postgresql.org/docs/current/datatype-numeric.html
                     #size = sys.maxsize # http://stackoverflow.com/questions/7604966
                     size = field.options.get('size', field.options.get('max_size', 0))
-                    pout.v(size)
 
                     if size == 0:
                         field_type = 'INTEGER'

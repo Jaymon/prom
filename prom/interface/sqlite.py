@@ -105,8 +105,10 @@ class DatetimeType(StringType):
     https://www.sqlite.org/lang_datefunc.html
     the "unixepoch" modifier only works for dates between 0000-01-01 00:00:00 and
     5352-11-01 10:52:47 (unix times of -62167219200 through 106751991167)
+
+    uses the name TIMESTAMP over DATETIME to be consistent with Postgres
     """
-    FIELD_TYPE = 'DATETIME'
+    FIELD_TYPE = 'TIMESTAMP'
 
     @classmethod
     def adapt(cls, val):
@@ -117,8 +119,12 @@ class DatetimeType(StringType):
         return Datetime(super().adapt(val)).datetime()
 
 
-class NumericTextType(object):
-    """This has TEXT in the name so it is treated as text according to SQLite's
+class NumericType(object):
+    """numbers bigger than 64bit integers can be stored as this
+
+    This is named to be as consistent with Postgres's NUMERIC(<precision>, 0) type
+
+    This has TEXT in the name so it is treated as text according to SQLite's
     order of infinity rule 2:
 
         If the declared type of the column contains any of the strings "CHAR",
@@ -220,13 +226,9 @@ class SQLite(SQLInterface):
         sqlite3.register_adapter(datetime.datetime, DatetimeType.adapt)
         sqlite3.register_adapter(Datetime, DatetimeType.adapt)
         sqlite3.register_converter(DatetimeType.FIELD_TYPE, DatetimeType.convert)
-        sqlite3.register_converter("TIMESTAMP", DatetimeType.convert)
 
-        # numbers bigger than 64bit integers can be stored as this. It's named
-        # using "TEXT" so the determining affinity rules apply and any values
-        # will be considered TEXT
-        sqlite3.register_adapter(int, NumericTextType.adapt)
-        sqlite3.register_converter(NumericTextType.FIELD_TYPE, NumericTextType.convert)
+        sqlite3.register_adapter(int, NumericType.adapt)
+        sqlite3.register_converter(NumericType.FIELD_TYPE, NumericType.convert)
 
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
@@ -297,7 +299,7 @@ class SQLite(SQLInterface):
                     field_type = 'INTEGER'
 
                 else:
-                    field_type = NumericTextType.FIELD_TYPE
+                    field_type = NumericType.FIELD_TYPE
 
         elif issubclass(interface_type, basestring):
             if field.is_ref():
@@ -427,20 +429,12 @@ class SQLite(SQLInterface):
             if issubclass(pk.interface_type, uuid.UUID):
                 fields[pk_name] = String(uuid.uuid4())
 
-        field_formats = []
-        field_names = []
-        query_vals = []
-        for field_name, field_val in fields.items():
-            field_names.append(self._normalize_name(field_name))
-            field_formats.append(self.val_placeholder)
-            query_vals.append(field_val)
-
-        query_str = "INSERT INTO {} ({}) VALUES ({})".format(
-            self._normalize_table_name(schema),
-            ', '.join(field_names),
-            ', '.join(field_formats)
+        query_str, query_args = self.render_insert_sql(
+            schema,
+            fields,
+            ignore_return_clause=True,
+            **kwargs,
         )
-
         ret = self._query(query_str, query_vals, cursor_result=True, **kwargs)
 
         pk_name = schema.pk_name

@@ -932,6 +932,14 @@ class Query(object):
             self
         )
 
+    def upsert(self):
+        """persist the .fields"""
+        return self.interface.upsert(
+            self.schema,
+            self.fields_set.fields,
+            self.fields_set.fields,
+        )
+
     def delete(self):
         """remove fields matching the where criteria"""
         return self.execute('delete')
