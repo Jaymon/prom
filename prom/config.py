@@ -779,14 +779,15 @@ class Field(object, metaclass=FieldMeta):
 
         if size > 0:
             d['size'] = size
+
         else:
             if min_size > 0 and max_size < 0:
                 raise ValueError("min_size option was set with no corresponding max_size")
 
-            elif min_size < -1 and max_size > 0:
+            elif min_size < 0 and max_size > 0:
                 d['max_size'] = max_size
 
-            elif min_size >= 0 and max_size >= 0:
+            elif min_size > 0 and max_size > 0:
                 d['min_size'] = min_size
                 d['max_size'] = max_size
 

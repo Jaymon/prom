@@ -6,7 +6,7 @@ import datetime
 import testdata
 
 from prom import query, InterfaceError
-from prom.interface.sqlite import SQLite, TimestampType
+from prom.interface.sqlite import SQLite, DatetimeType
 from prom.interface import configure
 from prom.model import Orm
 from prom.config import Field
@@ -15,50 +15,51 @@ from prom.compat import *
 from . import BaseTestInterface, BaseTestCase
 
 
-class TimestampTypeTest(BaseTestCase):
+class DatetimeTypeTest(BaseTestCase):
     def test_convert(self):
         s = "2020-03-25T19:34:05.00005Z"
-        dt = TimestampType.convert(s)
+        dt = DatetimeType.convert(s)
         self.assertEqual(50, dt.microsecond)
         self.assertEqual("2020-03-25T19:34:05.000050Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
         s = "2020-03-25T19:34:05.05Z"
-        dt = TimestampType.convert(s)
+        dt = DatetimeType.convert(s)
         self.assertEqual(50000, dt.microsecond)
         self.assertEqual("2020-03-25T19:34:05.050000Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
         s = "2020-03-25T19:34:05.0506Z"
-        dt = TimestampType.convert(s)
+        dt = DatetimeType.convert(s)
         self.assertEqual(50600, dt.microsecond)
         self.assertEqual("2020-03-25T19:34:05.050600Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
         s = "2020-03-25T19:34:05.050060Z"
-        dt = TimestampType.convert(s)
+        dt = DatetimeType.convert(s)
         self.assertEqual(50060, dt.microsecond)
         self.assertEqual("2020-03-25T19:34:05.050060Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
         s = "2020-03-25T19:34:05.000057Z"
-        dt = TimestampType.convert(s)
+        dt = DatetimeType.convert(s)
         self.assertEqual(57, dt.microsecond)
         self.assertEqual("2020-03-25T19:34:05.000057Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
         s = "2020-03-25T19:34:05.057Z"
-        dt = TimestampType.convert(s)
+        dt = DatetimeType.convert(s)
         self.assertEqual(57000, dt.microsecond)
         self.assertEqual("2020-03-25T19:34:05.057000Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
         s = "2020-03-25T19:34:05.057035Z"
-        dt = TimestampType.convert(s)
+        dt = DatetimeType.convert(s)
         self.assertEqual(57035, dt.microsecond)
         self.assertEqual("2020-03-25T19:34:05.057035Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
 
-# TODO -- merge this in with InterfaceSQLite test, I thought about moving it to
-# the model, but it is testing to make sure prom.interface functions like
-# configure() work as expected
-class InterfaceTest(BaseTestCase):
-    """This is testing the actual interface, not the db connection or anything"""
+class InterfaceSQLiteTest(BaseTestInterface):
+    @classmethod
+    def create_interface(cls):
+        return cls.create_sqlite_interface()
+
     def test_change_interface(self):
+        """This is testing the actual interface, not the db connection or anything"""
         class InterTorm(Orm):
             connection_name = "change-interface"
             #connection_name = ""
@@ -75,39 +76,18 @@ class InterfaceTest(BaseTestCase):
         configure(dsn)
         self.assertFalse(InterTorm.interface.has_table(InterTorm.table_name))
 
-
-class InterfaceSQLiteTest(BaseTestInterface):
-    @classmethod
-    def create_interface(cls):
-        return cls.create_sqlite_interface()
-
-    def test_field_timestamp(self):
-        table_name = self.get_table_name()
-        schema = self.get_schema(table_name, ZTIMESTAMP=Field(datetime.datetime))
-        q = query.Query()
-        epoch = datetime.datetime(1970, 1, 1)
-        timestamp = (datetime.datetime.utcnow() - epoch).total_seconds()
-
+    def test_field_datetime_type(self):
+        s = self.get_schema(
+            self.get_table_name(),
+            foo=Field(datetime.datetime)
+        )
         i = self.create_interface()
-        i.set_table(schema)
+        i.set_table(s)
 
-        sql = "INSERT INTO {} (ZTIMESTAMP) VALUES ({:.5f})".format(table_name, timestamp)
-        r = i.query(sql, ignore_result=True)
-
-        r = i.get_one(schema, q)
-        self.assertEqual((r["ZTIMESTAMP"] - epoch).total_seconds(), round(timestamp, 5))
-
-        timestamp = -62167219200
-        sql = "INSERT INTO {} (ZTIMESTAMP) VALUES ({})".format(table_name, timestamp)
-        r = i.query(sql, ignore_result=True)
-        r = i.get_one(schema, q.offset(1))
-        self.assertEqual(r["ZTIMESTAMP"], datetime.datetime.min)
-
-        timestamp = 106751991167
-        sql = "INSERT INTO {} (ZTIMESTAMP) VALUES ({})".format(table_name, timestamp)
-        r = i.query(sql, ignore_result=True)
-        r = i.get_one(schema, q.offset(2))
-        self.assertEqual(r["ZTIMESTAMP"], datetime.datetime(5352, 11, 1, 10, 52, 47))
+        foo = testdata.get_past_datetime()
+        pk = i.insert(s, {"foo": foo})
+        r = i.get_one(s, query.Query().eq__id(pk))
+        self.assertEqual(foo, r["foo"])
 
     def test_get_fields_float(self):
         sql = "\n".join([

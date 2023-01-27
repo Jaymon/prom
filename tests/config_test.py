@@ -781,6 +781,28 @@ class FieldTest(EnvironTestCase):
         o = FooSN(bar="bar")
         self.assertEqual("bar", o.bar)
 
+    def test_get_size(self):
+        """Makes sure sizes get set correctly, I've evidently had a bug in this for years (1-26-2023)"""
+        f = Field(int, True, max_size=100)
+        self.assertEqual(100, f.options["max_size"])
+
+        f = Field(int, True, size=100)
+        self.assertEqual(100, f.options["size"])
+
+        f = Field(int, True, size=100)
+        self.assertEqual(100, f.options["size"])
+
+        f = Field(int, True, size=100, max_size=500)
+        self.assertEqual(100, f.options["size"])
+        self.assertFalse("max_size" in f.options)
+
+        with self.assertRaises(ValueError):
+            f = Field(int, True, min_size=100)
+
+        f = Field(int, True, min_size=100, max_size=500)
+        self.assertEqual(100, f.options["min_size"])
+        self.assertEqual(500, f.options["max_size"])
+
 
 class SerializedFieldTest(EnvironTestCase):
     def get_orm(self, field_type=dict, default=None):

@@ -1183,6 +1183,41 @@ class BaseTestInterface(BaseTestCase):
         self.assertEqual(1, d["foo"])
         self.assertEqual(pk, d["_id"])
 
+    def test_bignumber(self):
+        i = self.get_interface()
+        s = self.get_schema(
+            foo=Field(int, True, max_size=int("9" * 78)),
+        )
+        i.set_table(s)
+
+        foo = int("5" * 78)
+        pk = i.insert(s, {"foo": foo})
+
+        q = query.Query().is__id(pk)
+        d = i.get_one(s, q)
+        self.assertEqual(foo, d["foo"])
+
+    def test_text_size_constraint(self):
+        i = self.get_interface()
+        s = self.get_schema(
+            foo=Field(str, True, max_size=10),
+        )
+        i.set_table(s)
+
+        with self.assertRaises(InterfaceError):
+            foo = testdata.get_ascii(20)
+            pk = i.insert(s, {"foo": foo})
+
+        foo = testdata.get_ascii(5)
+        pk = i.insert(s, {"foo": foo})
+        d = i.get_one(s, query.Query().is__id(pk))
+        self.assertEqual(foo, d["foo"])
+
+        foo = testdata.get_ascii(10)
+        pk = i.insert(s, {"foo": foo})
+        d = i.get_one(s, query.Query().is__id(pk))
+        self.assertEqual(foo, d["foo"])
+
 
 # https://docs.python.org/2/library/unittest.html#load-tests-protocol
 def load_tests(loader, tests, pattern):

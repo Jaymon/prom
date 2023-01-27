@@ -461,31 +461,41 @@ class PostgreSQL(SQLInterface):
         if issubclass(interface_type, bool):
             field_type = 'BOOL'
 
-        elif issubclass(interface_type, long):
+#         elif issubclass(interface_type, long):
+#             if is_pk:
+#                 field_type = 'BIGSERIAL PRIMARY KEY'
+#             else:
+#                 field_type = 'BIGINT'
+
+        elif issubclass(interface_type, (int, long)):
             if is_pk:
                 field_type = 'BIGSERIAL PRIMARY KEY'
-            else:
-                field_type = 'BIGINT'
-
-        elif issubclass(interface_type, int):
-            #size = 2147483647
-            if is_pk:
-                field_type = 'BIGSERIAL PRIMARY KEY'
 
             else:
-                size = sys.maxsize # http://stackoverflow.com/questions/7604966
-                if 'size' in field.options:
-                    size = field.options['size']
-                elif 'max_size' in field.options:
-                    size = field.options['max_size']
+                if field.is_ref():
+                    field_type = 'BIGINT'
 
-                if size < 32767:
-                    field_type = 'SMALLINT'
                 else:
-                    if field.is_ref():
-                        field_type = 'BIGINT'
-                    else:
+                    # https://www.postgresql.org/docs/current/datatype-numeric.html
+                    #size = sys.maxsize # http://stackoverflow.com/questions/7604966
+                    size = field.options.get('size', field.options.get('max_size', 0))
+                    pout.v(size)
+
+                    if size == 0:
                         field_type = 'INTEGER'
+
+                    if size < 32767:
+                        field_type = 'SMALLINT'
+
+                    elif size < 2147483647:
+                        field_type = 'INTEGER'
+
+                    elif size < 9223372036854775807:
+                        field_type = 'BIGINT'
+
+                    else:
+                        precision = len(str(size))
+                        field_type = f'NUMERIC({precision}, 0)'
 
         elif issubclass(interface_type, basestring):
             fo = field.options
@@ -510,15 +520,33 @@ class PostgreSQL(SQLInterface):
         elif issubclass(interface_type, datetime.date):
             field_type = 'DATE'
 
-        elif issubclass(interface_type, float):
-            field_type = 'REAL'
+        elif issubclass(interface_type, (float, decimal.Decimal)):
             size = field.options.get('size', field.options.get('max_size', 0))
-            if size > 6:
-                field_type = 'DOUBLE PRECISION'
 
-        elif issubclass(interface_type, decimal.Decimal):
-            field_type = 'NUMERIC'
+            # if size is like 15.6 then that would be considered 21
+            # precision with a scale of 6 (ie, you can have 15 digits before
+            # the decimal point and 6 after)
+            parts = str(size).split(".")
+            if len(parts) > 1:
+                scale = parts[1] or 0
+                precision = parts[0] + scale
+                field_type = f'NUMERIC({precision}, {scale})'
 
+            else:
+                # https://learn.microsoft.com/en-us/cpp/c-language/type-float
+                if size < 3.402823466e+38:
+                    field_type = 'REAL'
+
+                elif size < 1.7976931348623158e+308:
+                    field_type = 'DOUBLE PRECISION'
+
+                else:
+                    precision = len(str(size))
+                    field_type = f'NUMERIC({precision})'
+
+#         elif issubclass(interface_type, decimal.Decimal):
+#             field_type = 'NUMERIC'
+# 
         elif issubclass(interface_type, bytearray):
             field_type = 'BLOB'
 

@@ -28,6 +28,7 @@ import datetime
 from distutils import dir_util
 import re
 import sqlite3
+import uuid
 
 from datatypes import Datetime
 
@@ -64,7 +65,38 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
         return r
 
 
-class TimestampType(object):
+class BooleanType(object):
+    @classmethod
+    def adapt(cls, val):
+        """From python you get False and True, convert those to 1/0"""
+        return 1 if val else 0
+
+    @classmethod
+    def convert(cls, val):
+        """from the db you get values like b'0' and b'1', convert those to True/False"""
+        return bool(int(val))
+
+
+# class NumericType(object):
+#     @staticmethod
+#     def adapt(val):
+#         return float(str(val))
+# 
+#     @staticmethod
+#     def convert(val):
+#         val = StringType.adapt(val)
+#         ret = decimal.Decimal(val)
+#         return ret
+
+
+class StringType(object):
+    """this just makes sure 8-bit bytestrings get converted ok"""
+    @classmethod
+    def adapt(cls, val):
+        return String(val)
+
+
+class DatetimeType(StringType):
     """External sqlite3 databases can store the TIMESTAMP type as unix timestamps,
     this caused parsing problems when pulling the values out of the db because the
     default adapter expected TIMESTAMP to be in the form of YYYY-MM-DD HH:MM:SS.SSSSSS
@@ -74,52 +106,40 @@ class TimestampType(object):
     the "unixepoch" modifier only works for dates between 0000-01-01 00:00:00 and
     5352-11-01 10:52:47 (unix times of -62167219200 through 106751991167)
     """
-    @staticmethod
-    def adapt(val):
+    FIELD_TYPE = 'DATETIME'
+
+    @classmethod
+    def adapt(cls, val):
         return Datetime(val).isoformat()
 
-    @staticmethod
-    def convert(val):
-        return Datetime(StringType.adapt(val)).datetime()
+    @classmethod
+    def convert(cls, val):
+        return Datetime(super().adapt(val)).datetime()
 
 
-class BooleanType(object):
-    @staticmethod
-    def adapt(val):
-        """From python you get False and True, convert those to 1/0"""
-        return 1 if val else 0
+class NumericTextType(object):
+    """This has TEXT in the name so it is treated as text according to SQLite's
+    order of infinity rule 2:
 
-    @staticmethod
-    def convert(val):
-        """from the db you get values like b'0' and b'1', convert those to True/False"""
-        return bool(int(val))
+        If the declared type of the column contains any of the strings "CHAR",
+        "CLOB", or "TEXT" then that column has TEXT affinity.
 
+        https://www.sqlite.org/datatype3.html
+    """
+    FIELD_TYPE = 'NUMERICTEXT'
 
-class NumericType(object):
-    @staticmethod
-    def adapt(val):
-        return float(str(val))
+    @classmethod
+    def adapt(cls, val):
+        if val < 9223372036854775807:
+            return val
+        else:
+            v = str(val)
+            return v
 
-    @staticmethod
-    def convert(val):
-        val = StringType.adapt(val)
-        ret = decimal.Decimal(val)
-        return ret
-
-
-class StringType(object):
-    """this just makes sure 8-bit bytestrings get converted ok"""
-    @staticmethod
-    def adapt(val):
-        return String(val)
-
-
-import uuid
-# class UUIDType(object):
-#     @staticmethod
-#     def adapt(val):
-#         pout.v(val)
-#         return val if val else str(uuid.uuid4()) 
+    @classmethod
+    def convert(cls, val):
+        """This should only be called when the column type is actually FIELD_TYPE"""
+        return int(val)
 
 
 class SQLite(SQLInterface):
@@ -189,17 +209,24 @@ class SQLite(SQLInterface):
         # to be ran through the converter, not sure why
         sqlite3.register_converter('TEXT', StringType.adapt)
 
-        sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
-        sqlite3.register_converter('NUMERIC', NumericType.convert)
+        #sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
+        #sqlite3.register_converter('NUMERIC', NumericType.convert)
 
         sqlite3.register_adapter(bool, BooleanType.adapt)
         sqlite3.register_converter('BOOLEAN', BooleanType.convert)
 
         # sadly, it doesn't look like these work for child classes so each class
         # has to be adapted even if its parent is already registered
-        sqlite3.register_adapter(datetime.datetime, TimestampType.adapt)
-        sqlite3.register_adapter(Datetime, TimestampType.adapt)
-        sqlite3.register_converter('TIMESTAMP', TimestampType.convert)
+        sqlite3.register_adapter(datetime.datetime, DatetimeType.adapt)
+        sqlite3.register_adapter(Datetime, DatetimeType.adapt)
+        sqlite3.register_converter(DatetimeType.FIELD_TYPE, DatetimeType.convert)
+        sqlite3.register_converter("TIMESTAMP", DatetimeType.convert)
+
+        # numbers bigger than 64bit integers can be stored as this. It's named
+        # using "TEXT" so the determining affinity rules apply and any values
+        # will be considered TEXT
+        sqlite3.register_adapter(int, NumericTextType.adapt)
+        sqlite3.register_converter(NumericTextType.FIELD_TYPE, NumericTextType.convert)
 
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
@@ -250,36 +277,41 @@ class SQLite(SQLInterface):
         if issubclass(interface_type, bool):
             field_type = 'BOOLEAN'
 
-        elif issubclass(interface_type, long):
-            if is_pk:
-                field_type = 'INTEGER PRIMARY KEY'
-            else:
-                field_type = 'BIGINT'
+#         elif issubclass(interface_type, long):
+#             if is_pk:
+#                 field_type = 'INTEGER PRIMARY KEY'
+#             else:
+#                 field_type = 'BIGINT'
 
-        elif issubclass(interface_type, int):
-            field_type = 'INTEGER'
+        elif issubclass(interface_type, (int, long)):
             if is_pk:
-                field_type += ' PRIMARY KEY'
+                field_type += 'INTEGER PRIMARY KEY'
+
+            else:
+                # we could break these up into tiny, small, and big but it
+                # doesn't really matter so we're not bothering
+                # https://www.sqlite.org/datatype3.html
+                size = field.options.get('size', field.options.get('max_size', 0))
+
+                if size < 9223372036854775807:
+                    field_type = 'INTEGER'
+
+                else:
+                    field_type = NumericTextType.FIELD_TYPE
 
         elif issubclass(interface_type, basestring):
-            fo = field.options
             if field.is_ref():
-                # TODO -- 7-8-17 - this isn't a great way to do this, ideally the Field instance
-                # would combine all the options of both the current field and the
-                # foreign key field and return all those when Field.options is called
-                # (with the current field's options taking precedence) but there are
-                # lots of circular dependency things that happen when one field is
-                # trying to get the schema of another field and I don't have time
-                # to sort it all out right now
-                ref_s = field.schema
-                fo = ref_s.pk.options
+                fo = field.schema.pk.options
+                fo.update(field.options)
+            else:
+                fo = field.options
+
+            field_type = 'TEXT'
 
             if 'size' in fo:
-                field_type = 'CHARACTER({})'.format(fo['size'])
+                field_type += f" CHECK(length({field_name}) == {fo['size']})"
             elif 'max_size' in fo:
-                field_type = 'VARCHAR({})'.format(fo['max_size'])
-            else:
-                field_type = 'TEXT'
+                field_type += f" CHECK(length({field_name}) <= {fo['max_size']})"
 
             if fo.get('ignore_case', False):
                 field_type += ' COLLATE NOCASE'
@@ -289,28 +321,28 @@ class SQLite(SQLInterface):
 
         elif issubclass(interface_type, datetime.datetime):
             #field_type = 'DATETIME'
-            field_type = 'TIMESTAMP'
+            #field_type = 'TIMESTAMP'
+            field_type = DatetimeType.FIELD_TYPE
 
         elif issubclass(interface_type, datetime.date):
             field_type = 'DATE'
 
-        elif issubclass(interface_type, float):
+        elif issubclass(interface_type, (float, decimal.Decimal)):
             field_type = 'REAL'
-            size = field.options.get('size', field.options.get('max_size', 0))
-            if size > 6:
-                field_type = 'DOUBLE PRECISION'
-
-        elif issubclass(interface_type, decimal.Decimal):
-            field_type = 'NUMERIC'
+#             size = field.options.get('size', field.options.get('max_size', 0))
+#             if size > 6:
+#                 field_type = 'DOUBLE PRECISION'
+# 
+# #         elif issubclass(interface_type, decimal.Decimal):
+# #             field_type = 'NUMERIC'
 
         elif issubclass(interface_type, bytearray):
             field_type = 'BLOB'
 
         elif issubclass(interface_type, uuid.UUID):
+            field_type = 'CHARACTER(36)'
             if is_pk:
-                field_type = 'CHARACTER(36) PRIMARY KEY'
-            else:
-                raise ValueError("UUID type can only be used for primary keys")
+                field_type += ' PRIMARY KEY'
 
         else:
             raise ValueError('Unknown python type: {}'.format(interface_type.__name__))
@@ -320,20 +352,19 @@ class SQLite(SQLInterface):
         else:
             field_type += ' NULL'
 
-        if not is_pk:
-            if field.is_ref():
-                ref_s = field.schema
-                if field.required: # strong ref, it deletes on fk row removal
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(
-                        ref_s,
-                        ref_s.pk.name
-                    )
+        if not is_pk and field.is_ref():
+            ref_s = field.schema
+            if field.required: # strong ref, it deletes on fk row removal
+                field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(
+                    ref_s,
+                    ref_s.pk.name
+                )
 
-                else: # weak ref, it sets column to null on fk row removal
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(
-                        ref_s,
-                        ref_s.pk.name
-                    )
+            else: # weak ref, it sets column to null on fk row removal
+                field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(
+                    ref_s,
+                    ref_s.pk.name
+                )
 
         return '{} {}'.format(self._normalize_name(field_name), field_type)
 
