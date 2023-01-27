@@ -279,12 +279,6 @@ class SQLite(SQLInterface):
         if issubclass(interface_type, bool):
             field_type = 'BOOLEAN'
 
-#         elif issubclass(interface_type, long):
-#             if is_pk:
-#                 field_type = 'INTEGER PRIMARY KEY'
-#             else:
-#                 field_type = 'BIGINT'
-
         elif issubclass(interface_type, (int, long)):
             if is_pk:
                 field_type += 'INTEGER PRIMARY KEY'
@@ -322,8 +316,6 @@ class SQLite(SQLInterface):
                 field_type += ' PRIMARY KEY'
 
         elif issubclass(interface_type, datetime.datetime):
-            #field_type = 'DATETIME'
-            #field_type = 'TIMESTAMP'
             field_type = DatetimeType.FIELD_TYPE
 
         elif issubclass(interface_type, datetime.date):
@@ -331,12 +323,6 @@ class SQLite(SQLInterface):
 
         elif issubclass(interface_type, (float, decimal.Decimal)):
             field_type = 'REAL'
-#             size = field.options.get('size', field.options.get('max_size', 0))
-#             if size > 6:
-#                 field_type = 'DOUBLE PRECISION'
-# 
-# #         elif issubclass(interface_type, decimal.Decimal):
-# #             field_type = 'NUMERIC'
 
         elif issubclass(interface_type, bytearray):
             field_type = 'BLOB'

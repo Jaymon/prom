@@ -45,39 +45,19 @@ class Connection(SQLConnection, psycopg2.extensions.connection):
         # http://initd.org/psycopg/docs/connection.html#connection.autocommit
         self.autocommit = True
 
-        if is_py2:
-            # unicode harden for python 2
-            # http://initd.org/psycopg/docs/usage.html#unicode-handling
-            psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, self)
-            psycopg2.extensions.register_type(psycopg2.extensions.UNICODEARRAY, self)
+        def normalize_str(v, cur):
+            if isinstance(v, str) and v.startswith("\\x"):
+                buf = psycopg2.BINARY(v, cur)
+                v = bytes(buf).decode(cur.connection.encoding)
 
-            # return ints for any long values, this normalizes with SQLite and 
-            # python 2.7+ transparently handles really large integer values
-            # with no long needed (long doesn't even exist in python 3+)
-            def normalize_long(v, cur):
-                return v if v is None else int(v)
-            psycopg2.extensions.register_type(
-                psycopg2.extensions.new_type(
-                    psycopg2.extensions.LONGINTEGER.values,
-                    b"LONGINTEGER",
-                    normalize_long
-                )
-            )
-
-        else:
-            def normalize_str(v, cur):
-                if isinstance(v, str) and v.startswith("\\x"):
-                    buf = psycopg2.BINARY(v, cur)
-                    v = bytes(buf).decode(cur.connection.encoding)
-
-                    #import binascii
-                    #pout.v(binascii.unhexlify(v[2:]))
-                    #v = v.encode(cur.connection.encoding)
-                    #v = bytes(v, encoding=cur.connection.encoding)
-                return v
-            psycopg2.extensions.register_type(
-                psycopg2.extensions.new_type(psycopg2.STRING.values, "STRING", normalize_str)
-            )
+                #import binascii
+                #pout.v(binascii.unhexlify(v[2:]))
+                #v = v.encode(cur.connection.encoding)
+                #v = bytes(v, encoding=cur.connection.encoding)
+            return v
+        psycopg2.extensions.register_type(
+            psycopg2.extensions.new_type(psycopg2.STRING.values, "STRING", normalize_str)
+        )
 
 
         # http://initd.org/psycopg/docs/connection.html#connection.set_client_encoding
@@ -329,10 +309,7 @@ class PostgreSQL(SQLInterface):
         """
         index_fields = []
         for field_name in fields:
-            field = schema.fields[field_name]
-#             if issubclass(field.interface_type, basestring):
-#                 if field.options.get('ignore_case', False):
-#                     field_name = 'UPPER({})'.format(self._normalize_name(field_name))
+            field = schema.fields[field_name] # error checking on the field name
             index_fields.append(field_name)
 
         query_str = 'CREATE {}INDEX {} ON {} USING BTREE ({})'.format(
@@ -350,11 +327,6 @@ class PostgreSQL(SQLInterface):
 
         if 'LIKE' in symbol:
             format_field_name += '::text'
-
-        # postgres specific for getting around case sensitivity:
-#         if schema.fields[field_name].options.get('ignore_case', False):
-#             format_field_name = 'UPPER({})'.format(field_name)
-#             format_val_str = 'UPPER({})'.format(self.val_placeholder)
 
         return format_field_name, format_val_str
 
@@ -431,12 +403,6 @@ class PostgreSQL(SQLInterface):
         if issubclass(interface_type, bool):
             field_type = 'BOOL'
 
-#         elif issubclass(interface_type, long):
-#             if is_pk:
-#                 field_type = 'BIGSERIAL PRIMARY KEY'
-#             else:
-#                 field_type = 'BIGINT'
-
         elif issubclass(interface_type, (int, long)):
             if is_pk:
                 field_type = 'BIGSERIAL PRIMARY KEY'
@@ -447,7 +413,6 @@ class PostgreSQL(SQLInterface):
 
                 else:
                     # https://www.postgresql.org/docs/current/datatype-numeric.html
-                    #size = sys.maxsize # http://stackoverflow.com/questions/7604966
                     size = field.options.get('size', field.options.get('max_size', 0))
 
                     if size == 0:
@@ -523,9 +488,6 @@ class PostgreSQL(SQLInterface):
                     precision = len(str(size))
                     field_type = f'NUMERIC({precision})'
 
-#         elif issubclass(interface_type, decimal.Decimal):
-#             field_type = 'NUMERIC'
-# 
         elif issubclass(interface_type, bytearray):
             field_type = 'BLOB'
 

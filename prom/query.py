@@ -934,10 +934,16 @@ class Query(object):
 
     def upsert(self):
         """persist the .fields"""
+        insert_fields = self.fields_set.fields
+        update_fields = dict(insert_fields)
+
+        for name in self.schema.pk_names:
+            update_fields.pop(name, None)
+
         return self.interface.upsert(
             self.schema,
-            self.fields_set.fields,
-            self.fields_set.fields,
+            insert_fields,
+            update_fields,
         )
 
     def delete(self):
