@@ -330,9 +330,9 @@ class PostgreSQL(SQLInterface):
         index_fields = []
         for field_name in fields:
             field = schema.fields[field_name]
-            if issubclass(field.interface_type, basestring):
-                if field.options.get('ignore_case', False):
-                    field_name = 'UPPER({})'.format(self._normalize_name(field_name))
+#             if issubclass(field.interface_type, basestring):
+#                 if field.options.get('ignore_case', False):
+#                     field_name = 'UPPER({})'.format(self._normalize_name(field_name))
             index_fields.append(field_name)
 
         query_str = 'CREATE {}INDEX {} ON {} USING BTREE ({})'.format(
@@ -352,9 +352,9 @@ class PostgreSQL(SQLInterface):
             format_field_name += '::text'
 
         # postgres specific for getting around case sensitivity:
-        if schema.fields[field_name].options.get('ignore_case', False):
-            format_field_name = 'UPPER({})'.format(field_name)
-            format_val_str = 'UPPER({})'.format(self.val_placeholder)
+#         if schema.fields[field_name].options.get('ignore_case', False):
+#             format_field_name = 'UPPER({})'.format(field_name)
+#             format_val_str = 'UPPER({})'.format(self.val_placeholder)
 
         return format_field_name, format_val_str
 
@@ -467,17 +467,27 @@ class PostgreSQL(SQLInterface):
                         field_type = f'NUMERIC({precision}, 0)'
 
         elif issubclass(interface_type, basestring):
-            fo = field.options
             if field.is_ref():
-                ref_s = field.schema
-                fo = ref_s.pk.options
-
-            if 'size' in fo:
-                field_type = 'CHAR({})'.format(fo['size'])
-            elif 'max_size' in fo:
-                field_type = 'VARCHAR({})'.format(fo['max_size'])
+                fo = field.schema.pk.options
+                fo.update(field.options)
             else:
-                field_type = 'TEXT'
+                fo = field.options
+
+            if fo.get('ignore_case', False):
+                field_type = 'CITEXT'
+
+                if 'size' in fo:
+                    field_type += f" CHECK(length({field_name}) == {fo['size']})"
+                elif 'max_size' in fo:
+                    field_type += f" CHECK(length({field_name}) <= {fo['max_size']})"
+
+            else:
+                if 'size' in fo:
+                    field_type = 'CHAR({})'.format(fo['size'])
+                elif 'max_size' in fo:
+                    field_type = 'VARCHAR({})'.format(fo['max_size'])
+                else:
+                    field_type = 'TEXT'
 
             if is_pk:
                 field_type += ' PRIMARY KEY'

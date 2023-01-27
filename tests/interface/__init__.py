@@ -918,7 +918,36 @@ class BaseTestInterface(BaseTestCase):
         with self.assertRaises(prom.UniqueError):
             d = i.insert(s, {'foo': 2, 'bar': 'v2', 'should_be_unique': 1})
 
-    def test_index_ignore_case(self):
+    def test_ignore_case_primary_key(self):
+        i = self.get_interface()
+        s = self.get_schema(
+            _id=Field(str, True, ignore_case=True, pk=True),
+            foo=Field(int, True),
+        )
+        i.set_table(s)
+
+        pk = i.insert(s, {'_id': "FOO", "foo": 1})
+
+        with self.assertRaises(InterfaceError):
+            i.insert(s, {'_id': "foo", "foo": 2})
+
+    def test_ignore_case_field(self):
+        i = self.get_interface()
+        s = self.get_schema(
+            foo=Field(str, True, ignore_case=True),
+        )
+        i.set_table(s)
+
+        pk = i.insert(s, {'foo': "FOO"})
+        pk2 = i.insert(s, {'foo': "BAR"})
+
+        d = i.get_one(s, query.Query().eq_foo("foo"))
+        self.assertEqual(pk, d["_id"])
+
+        d = i.get_one(s, query.Query().eq_foo("baR"))
+        self.assertEqual(pk2, d["_id"])
+
+    def test_ignore_case_index(self):
         i = self.get_interface()
         s = Schema(
             self.get_table_name(),
@@ -929,19 +958,20 @@ class BaseTestInterface(BaseTestCase):
         )
         i.set_table(s)
 
-        v = 'justin-lee@mail.com'
+        v = 'foo-bar@example.com'
         d = i.insert(s, {'foo': v, 'bar': 'bar'})
         q = query.Query()
         q.is_foo(v)
         r = i.get_one(s, q)
         self.assertGreater(len(r), 0)
 
+        # change the case of v
         lv = list(v)
         for x in range(len(v)):
             lv[x] = lv[x].upper()
             qv = "".join(lv)
             q = query.Query()
-            q.is_foo(qv)
+            q.eq_foo(qv)
             r = i.get_one(s, q)
             self.assertGreater(len(r), 0)
             lv[x] = lv[x].lower()
@@ -1243,7 +1273,6 @@ class BaseTestInterface(BaseTestCase):
         d = i.get_one(s, query.Query().is__id(pk3))
         self.assertEqual(di["foo"], d["foo"])
         self.assertEqual(di["bar"], d["bar"])
-
 
 
 # https://docs.python.org/2/library/unittest.html#load-tests-protocol

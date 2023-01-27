@@ -435,7 +435,7 @@ class SQLite(SQLInterface):
             ignore_return_clause=True,
             **kwargs,
         )
-        ret = self._query(query_str, query_vals, cursor_result=True, **kwargs)
+        ret = self._query(query_str, query_args, cursor_result=True, **kwargs)
 
         pk_name = schema.pk_name
         # http://stackoverflow.com/questions/6242756/

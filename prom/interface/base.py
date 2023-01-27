@@ -784,10 +784,9 @@ class SQLInterface(Interface):
         return True
 
     def _insert(self, schema, fields, **kwargs):
-
         query_str, query_args = self.render_insert_sql(
             schema,
-            insert_fields,
+            fields,
             **kwargs,
         )
 
