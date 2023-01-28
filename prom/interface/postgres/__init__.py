@@ -12,6 +12,7 @@ import sys
 import decimal
 import datetime
 import uuid
+import json
 
 # third party
 import psycopg2
@@ -32,7 +33,58 @@ from ...exception import UniqueError, InterfaceError
 #         #psycopg2.extensions.cursor.execute(self, sql, args)
 
 
-#class Connection(psycopg2.extensions.connection, SQLConnection):
+class DictType(psycopg2.extensions.QuotedString):
+    """Converts from python dict to JSONB to be saved into the db
+
+    https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.QuotedString
+    https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.register_adapter
+
+    Surprisingly, Postgres converts the json value in the db back to dict just fine
+    but does not adapt a dict, I'm not sure why
+    """
+    @classmethod
+    def adapt(cls, val):
+        """adapter should be a function taking a single argument (the object to adapt)
+        and returning an object conforming to the ISQLQuote protocol (e.g. exposing
+        a getquoted() method). Once an object is registered, it can be safely used
+        in SQL queries and by the adapt() function
+
+        :param val: dict, the value coming from Python destined for Postgres
+        :returns: str
+        """
+        return cls(json.dumps(val))
+
+
+class StringType(object):
+    @classmethod
+    def convert(cls, val, cur):
+        """Convert a db string to a python str type
+
+        https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.new_type
+
+            These functions are used to manipulate type casters to convert from
+            PostgreSQL types to Python objects.
+
+            adapter should have signature fun(value, cur) where value is the string
+            representation returned by PostgreSQL and cur is the cursor from which
+            data are read. In case of NULL, value will be None. The adapter should
+            return the converted object.
+
+        :param val: str, the value coming from Postgres and destined for Python
+        :param cur: cursor
+        :returns: str
+        """
+        if isinstance(val, str) and v.startswith("\\x"):
+            buf = psycopg2.BINARY(val, cur)
+            val = bytes(buf).decode(cur.connection.encoding)
+
+            #import binascii
+            #pout.v(binascii.unhexlify(v[2:]))
+            #v = v.encode(cur.connection.encoding)
+            #v = bytes(v, encoding=cur.connection.encoding)
+        return val
+
+
 class Connection(SQLConnection, psycopg2.extensions.connection):
 #class Connection(SQLConnection, psycopg2.extras.LoggingConnection):
     """
@@ -45,25 +97,19 @@ class Connection(SQLConnection, psycopg2.extensions.connection):
         # http://initd.org/psycopg/docs/connection.html#connection.autocommit
         self.autocommit = True
 
-        def normalize_str(v, cur):
-            if isinstance(v, str) and v.startswith("\\x"):
-                buf = psycopg2.BINARY(v, cur)
-                v = bytes(buf).decode(cur.connection.encoding)
-
-                #import binascii
-                #pout.v(binascii.unhexlify(v[2:]))
-                #v = v.encode(cur.connection.encoding)
-                #v = bytes(v, encoding=cur.connection.encoding)
-            return v
         psycopg2.extensions.register_type(
-            psycopg2.extensions.new_type(psycopg2.STRING.values, "STRING", normalize_str)
+            # https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.new_type
+            psycopg2.extensions.new_type(psycopg2.STRING.values, "STRING", StringType.convert)
         )
+
+        # https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.register_adapter
+        psycopg2.extensions.register_adapter(dict, DictType.adapt)
 
 
         # http://initd.org/psycopg/docs/connection.html#connection.set_client_encoding
         # https://www.postgresql.org/docs/current/static/multibyte.html
         # > The default is the encoding defined by the database
-        # Not sure we want to override db encoding which is why I'm sure why I didn't
+        # Not sure we want to override db encoding which is probably why I didn't
         # set this previously
         #self.set_client_encoding("UTF8")
 
@@ -403,7 +449,7 @@ class PostgreSQL(SQLInterface):
         if issubclass(interface_type, bool):
             field_type = 'BOOL'
 
-        elif issubclass(interface_type, (int, long)):
+        elif issubclass(interface_type, int):
             if is_pk:
                 field_type = 'BIGSERIAL PRIMARY KEY'
 
@@ -431,7 +477,7 @@ class PostgreSQL(SQLInterface):
                         precision = len(str(size))
                         field_type = f'NUMERIC({precision}, 0)'
 
-        elif issubclass(interface_type, basestring):
+        elif issubclass(interface_type, str):
             if field.is_ref():
                 fo = field.schema.pk.options
                 fo.update(field.options)
@@ -464,6 +510,12 @@ class PostgreSQL(SQLInterface):
         elif issubclass(interface_type, datetime.date):
             field_type = 'DATE'
 
+        elif issubclass(interface_type, dict):
+            # https://www.postgresql.org/docs/current/datatype-json.html
+            # In general, most applications should prefer to store JSON data as
+            # jsonb, unless there are quite specialized needs
+            field_type = 'JSONB'
+
         elif issubclass(interface_type, (float, decimal.Decimal)):
             size = field.options.get('size', field.options.get('max_size', 0))
 
@@ -488,7 +540,7 @@ class PostgreSQL(SQLInterface):
                     precision = len(str(size))
                     field_type = f'NUMERIC({precision})'
 
-        elif issubclass(interface_type, bytearray):
+        elif issubclass(interface_type, (bytearray, bytes)):
             field_type = 'BLOB'
 
         elif issubclass(interface_type, uuid.UUID):

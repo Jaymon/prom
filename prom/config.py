@@ -810,25 +810,29 @@ class Field(object, metaclass=FieldMeta):
         :param field_type: mixed, the field type passed into __init__
         """
         std_types = (
+            str,
             bool,
             long,
             int,
             float,
+            bytes,
             bytearray,
             decimal.Decimal,
             datetime.datetime,
             datetime.date,
             UUID,
-        )
-        std_types = basestring + std_types
-
-        json_types = (
             dict,
-            list,
         )
+
+        json_types = ()
+#         json_types = (
+#             dict,
+#             list,
+#         )
 
         pickle_types = (
             set,
+            list,
         )
 
         self.original_type = field_type

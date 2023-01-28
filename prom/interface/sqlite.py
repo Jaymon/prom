@@ -28,6 +28,7 @@ import datetime
 from distutils import dir_util
 import re
 import sqlite3
+import json
 import uuid
 
 from datatypes import Datetime
@@ -125,7 +126,7 @@ class NumericType(object):
     This is named to be as consistent with Postgres's NUMERIC(<precision>, 0) type
 
     This has TEXT in the name so it is treated as text according to SQLite's
-    order of infinity rule 2:
+    order of affinity rule 2:
 
         If the declared type of the column contains any of the strings "CHAR",
         "CLOB", or "TEXT" then that column has TEXT affinity.
@@ -146,6 +147,23 @@ class NumericType(object):
     def convert(cls, val):
         """This should only be called when the column type is actually FIELD_TYPE"""
         return int(val)
+
+
+class DictType(object):
+    """Converts a dict to json text and back again
+
+    Uses JSONBTEXT to be as close to Postgres while still triggering SQLite's affinity rule 2
+    """
+    FIELD_TYPE = 'JSONBTEXT'
+
+    @classmethod
+    def adapt(cls, val):
+        return json.dumps(val)
+
+    @classmethod
+    def convert(cls, val):
+        """This should only be called when the column type is actually FIELD_TYPE"""
+        return json.loads(val)
 
 
 class SQLite(SQLInterface):
@@ -230,6 +248,9 @@ class SQLite(SQLInterface):
         sqlite3.register_adapter(int, NumericType.adapt)
         sqlite3.register_converter(NumericType.FIELD_TYPE, NumericType.convert)
 
+        sqlite3.register_adapter(dict, DictType.adapt)
+        sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
+
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
         self._query('PRAGMA foreign_keys = ON', ignore_result=True);
@@ -279,7 +300,7 @@ class SQLite(SQLInterface):
         if issubclass(interface_type, bool):
             field_type = 'BOOLEAN'
 
-        elif issubclass(interface_type, (int, long)):
+        elif issubclass(interface_type, int):
             if is_pk:
                 field_type += 'INTEGER PRIMARY KEY'
 
@@ -295,7 +316,7 @@ class SQLite(SQLInterface):
                 else:
                     field_type = NumericType.FIELD_TYPE
 
-        elif issubclass(interface_type, basestring):
+        elif issubclass(interface_type, str):
             if field.is_ref():
                 fo = field.schema.pk.options
                 fo.update(field.options)
@@ -321,10 +342,13 @@ class SQLite(SQLInterface):
         elif issubclass(interface_type, datetime.date):
             field_type = 'DATE'
 
+        elif issubclass(interface_type, dict):
+            field_type = DictType.FIELD_TYPE
+
         elif issubclass(interface_type, (float, decimal.Decimal)):
             field_type = 'REAL'
 
-        elif issubclass(interface_type, bytearray):
+        elif issubclass(interface_type, (bytearray, bytes)):
             field_type = 'BLOB'
 
         elif issubclass(interface_type, uuid.UUID):

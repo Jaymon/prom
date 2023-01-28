@@ -12,6 +12,7 @@ from datatypes import Datetime
 
 from prom import query, InterfaceError
 from prom.config import Schema, Field, Index
+from prom.query import Query
 from prom.compat import *
 import prom
 
@@ -203,6 +204,18 @@ class BaseTestInterface(BaseTestCase):
         d = dict(i.get_one(s, q))
         self.assertFalse(d["bar"])
         self.assertTrue(d["che"])
+
+    def test_field_dict(self):
+        i, s = self.create_schema(
+            foo=Field(dict)
+        )
+
+        foo = {"bar": 1, "che": "che 1"}
+        pk = i.insert(s, {"foo": foo})
+
+        d = i.get_one(s, Query().eq__id(pk))
+        self.assertEqual(1, d["foo"]["bar"])
+        self.assertEqual("che 1", d["foo"].get("che"))
 
     def test_field_datetime_datatypes(self):
         """Makes sure datatypes.Datetime works for the different interfaces"""

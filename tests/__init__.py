@@ -231,6 +231,14 @@ class BaseTestCase(TestCase):
         )
         return s
 
+    def create_schema(self, inter=None, table_name=None, **fields_or_indexes):
+        if not inter:
+            inter = self.get_interface()
+
+        s = self.get_schema(table_name, **fields_or_indexes)
+        inter.set_table(s)
+        return inter, s
+
     def find_schema(self, v):
         if isinstance(v, Schema):
             schema = v
