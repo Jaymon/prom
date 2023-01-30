@@ -426,12 +426,13 @@ class Interface(object):
         with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
             prefix = callback.__name__
+            always_transaction = set(["_insert", "_upsert", "_update", "_delete"])
 
             # we wrap SELECT queries in a transaction if we are in a transaction because
             # it could cause data loss if it failed by causing the db to discard
             # anything in the current transaction if the query isn't wrapped,
             # go ahead, ask me how I know this
-            cb_transaction = prefix in set(["_insert", "_upsert", "_update"]) or connection.in_transaction()
+            cb_transaction = prefix in always_transaction or connection.in_transaction()
 
             try:
                 if cb_transaction:
@@ -458,17 +459,15 @@ class Interface(object):
                         self.raise_error(e)
 
                 else:
-                    #self.raise_error(e, exc_info)
                     self.raise_error(e)
 
     def insert(self, schema, fields, **kwargs):
-        """
-        Persist fields into the db
+        """Persist fields into the db
 
-        schema -- Schema()
-        fields -- dict -- the values to persist
-
-        return -- int -- the primary key of the row just inserted
+        :param schema: Schema instance, the table the query will run against
+        :param fields: dict, the fields {field_name: field_value} to persist
+        :param **kwargs: passed through
+        :returns: mixed, will return the primary key values
         """
         return self.execute_gracefully(
             self._insert,
@@ -477,88 +476,31 @@ class Interface(object):
             **kwargs
         )
 
-#     @reconnecting()
-#     def insert(self, schema, fields, **kwargs):
-#         """
-#         Persist fields into the db
-# 
-#         schema -- Schema()
-#         fields -- dict -- the values to persist
-# 
-#         return -- int -- the primary key of the row just inserted
-#         """
-#         r = None
-# 
-#         with self.connection(**kwargs) as connection:
-#             kwargs['connection'] = connection
-#             try:
-#                 with self.transaction(prefix="insert", **kwargs):
-#                     r = self._insert(schema, fields, **kwargs)
-# 
-#             except Exception as e:
-#                 exc_info = sys.exc_info()
-#                 if self.handle_error(schema, e, **kwargs):
-#                     with self.transaction(prefix="insert_retry", **kwargs):
-#                         r = self._insert(schema, fields, **kwargs)
-#                 else:
-#                     self.raise_error(e, exc_info)
-# 
-#         return r
-
     def _insert(self, schema, fields, **kwargs): raise NotImplementedError()
 
     def update(self, schema, fields, query, **kwargs):
-        """
-        Persist the query.fields into the db that match query.fields_where
+        """Persist the query.fields into the db that match query.fields_where
 
-        schema -- Schema()
-        fields -- dict -- the values to persist
-        query -- Query() -- will be used to create the where clause
-
-        return -- int -- how many rows where updated
+        :param schema: Schema instance, the table the query will run against
+        :param fields: dict, the fields {field_name: field_value} to persist
+        :param query: Query instance, will be used to create the where clause
+        :param **kwargs: passed through
+        :returns: int, how many rows where updated
         """
         return self.execute_gracefully(
             self._update,
             schema=schema,
             fields=fields,
             query=query,
-            prefix="update",
             **kwargs,
         )
 
-#     @reconnecting()
-#     def update(self, schema, fields, query, **kwargs):
-#         """
-#         Persist the query.fields into the db that match query.fields_where
-# 
-#         schema -- Schema()
-#         fields -- dict -- the values to persist
-#         query -- Query() -- will be used to create the where clause
-# 
-#         return -- int -- how many rows where updated
-#         """
-#         with self.connection(**kwargs) as connection:
-#             kwargs['connection'] = connection
-#             try:
-#                 with self.transaction(**kwargs):
-#                     r = self._update(schema, fields, query, **kwargs)
-# 
-#             except Exception as e:
-#                 exc_info = sys.exc_info()
-#                 if self.handle_error(schema, e, **kwargs):
-#                     r = self._update(schema, fields, query, **kwargs)
-#                 else:
-#                     self.raise_error(e, exc_info)
-# 
-#         return r
-
     def _update(self, schema, fields, query, **kwargs): raise NotImplementedError()
-
 
     def upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
         """Perform an upsert (insert or update) on the table
 
-        :param schema: Schema instance, the table
+        :param schema: Schema instance, the table the query will run against
         :param insert_fields: dict, these are the fields that will be inserted
         :param update_fields: dict, on a conflict with the insert_fields, these
             fields will instead be used to update the row
@@ -573,143 +515,81 @@ class Interface(object):
             insert_fields=insert_fields,
             update_fields=update_fields,
             conflict_field_names=conflict_field_names,
-            prefix="upsert",
             **kwargs,
         )
-
-#     @reconnecting()
-#     def upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
-#         """Perform an upsert (insert or update) on the table
-# 
-#         :param schema: Schema instance, the table
-#         :param insert_fields: dict, these are the fields that will be inserted
-#         :param update_fields: dict, on a conflict with the insert_fields, these
-#             fields will instead be used to update the row
-#         :param conflict_field_names: list, the field names that will decide if
-#             an insert or update is performed
-#         :param **kwargs: anything else
-#         :returns: mixed, the primary key
-#         """
-#         with self.connection(**kwargs) as connection:
-#             kwargs['connection'] = connection
-#             try:
-#                 with self.transaction(**kwargs):
-#                     r = self._upsert(
-#                         schema,
-#                         insert_fields,
-#                         update_fields,
-#                         conflict_field_names,
-#                         **kwargs
-#                     )
-# 
-#             except Exception as e:
-#                 exc_info = sys.exc_info()
-#                 if self.handle_error(schema, e, **kwargs):
-#                     r = self._upsert(
-#                         schema,
-#                         insert_fields,
-#                         update_fields,
-#                         conflict_field_names,
-#                         **kwargs
-#                     )
-#                 else:
-#                     self.raise_error(e, exc_info)
-# 
-#         return r
 
     def _upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
         raise NotImplementedError()
 
+    def delete(self, schema, query, **kwargs):
+        """delete matching rows according to query filter criteria
 
-    def _get_query(self, callback, schema, query=None, *args, **kwargs):
-        """this is just a common wrapper around all the get queries since they are
-        all really similar in how they execute"""
+        :param schema: Schema instance, the table the query will run against
+        :param query: Query instance, the filter criteria, this will fail if empty
+        :returns: int, how many rows were deleted ... I think
+        """
+        if not query or not query.fields_where:
+            raise ValueError('aborting delete because there is no where clause')
+
         return self.execute_gracefully(
-            callback,
+            self._delete,
             schema=schema,
-            query=query or Query(),
-            *args,
-            prefix="select",
+            query=query,
             **kwargs
         )
 
-#     @reconnecting()
-#     def _get_query(self, callback, schema, query=None, *args, **kwargs):
-#         """this is just a common wrapper around all the get queries since they are
-#         all really similar in how they execute"""
-#         if not query: query = Query()
-# 
-#         ret = None
-#         with self.connection(**kwargs) as connection:
-#             kwargs['connection'] = connection
-#             try:
-#                 if connection.in_transaction():
-#                     # we wrap SELECT queries in a transaction if we are in a transaction because
-#                     # it could cause data loss if it failed by causing the db to discard
-#                     # anything in the current transaction if the query isn't wrapped,
-#                     # go ahead, ask me how I know this
-#                     with self.transaction(**kwargs):
-#                         ret = callback(schema, query, *args, **kwargs)
-# 
-#                 else:
-#                     ret = callback(schema, query, *args, **kwargs)
-# 
-#             except Exception as e:
-#                 exc_info = sys.exc_info()
-#                 if self.handle_error(schema, e, query=query, **kwargs):
-#                     ret = callback(schema, query, *args, **kwargs)
-#                 else:
-#                     self.raise_error(e, exc_info)
-# 
-#         return ret
+    def _delete(self, schema, query, **kwargs): raise NotImplementedError()
 
     def get_one(self, schema, query=None, **kwargs):
-        """
-        get one row from the db matching filters set in query
+        """get one row from the db matching filters set in query
 
-        schema -- Schema()
-        query -- Query()
-
-        return -- dict -- the matching row
+        :param schema: Schema instance, the table the query will run against
+        :param query: Query instance, the filter criteria
+        :return: dict, the matching row
         """
-        ret = self._get_query(self._get_one, schema, query, **kwargs)
-        if not ret: ret = {}
-        return ret
+        ret = self.execute_gracefully(
+            self._get_one,
+            schema=schema,
+            query=query or Query(),
+            **kwargs
+        )
+        return ret or {}
 
     def _get_one(self, schema, query, **kwargs): raise NotImplementedError()
 
     def get(self, schema, query=None, **kwargs):
-        """
-        get matching rows from the db matching filters set in query
+        """get matching rows from the db matching filters set in query
 
-        schema -- Schema()
-        query -- Query()
-
-        return -- list -- a list of matching dicts
+        :param schema: Schema instance, the table the query will run against
+        :param query: Query instance, the filter criteria
+        :returns: list, a list of matching dicts
         """
-        ret = self._get_query(self._get, schema, query, **kwargs)
-        if not ret: ret = []
-        return ret
+        ret = self.execute_gracefully(
+            self._get,
+            schema=schema,
+            query=query or Query(),
+            **kwargs
+        )
+        return ret or []
 
     def _get(self, schema, query, **kwargs): raise NotImplementedError()
 
     def count(self, schema, query=None, **kwargs):
-        ret = self._get_query(self._count, schema, query, **kwargs)
-        return int(ret)
+        """count matching rows according to query filter criteria
+
+        :param schema: Schema instance, the table the query will run against
+        :param query: Query instance, the filter criteria
+        :returns: list, a list of matching dicts
+        """
+        ret = self.execute_gracefully(
+            self._count,
+            schema=schema,
+            query=query or Query(),
+            **kwargs
+        )
+        return int(ret) if ret else 0
 
     def _count(self, schema, query, **kwargs): raise NotImplementedError()
-
-    def delete(self, schema, query, **kwargs):
-        if not query or not query.fields_where:
-            raise ValueError('aborting delete because there is no where clause')
-
-        with self.transaction(**kwargs) as connection:
-            kwargs['connection'] = connection
-            ret = self._get_query(self._delete, schema, query, **kwargs)
-
-        return ret
-
-    def _delete(self, schema, query, **kwargs): raise NotImplementedError()
 
     def render(self, schema, query, **kwargs):
         """Render the query in a way that the interface can interpret it
@@ -729,17 +609,6 @@ class Interface(object):
         :returns: Interface instance
         """
         return type(self)(self.connection_config)
-
-    def handle_error(self, schema, e, **kwargs):
-        """
-        try and handle the error, return False if the error can't be handled
-
-        TODO -- this method is really general, maybe change this so there are a couple other methods
-        like isTableError() and isFieldError() that the child needs to flesh out, maybe someday
-
-        return -- boolean -- True if the error was handled, False if it wasn't
-        """
-        return False
 
     def log(self, format_str, *format_args, **log_options):
         """
@@ -761,33 +630,37 @@ class Interface(object):
                 else:
                     logger.log(log_level, format_str)
 
-    def raise_error(self, e, exc_info=None):
-        """this is just a wrapper to make the passed in exception an InterfaceError"""
+    def handle_error(self, schema, e, **kwargs):
+        """
+        try and handle the error, return False if the error can't be handled
+
+        TODO -- this method is really general, maybe change this so there are a couple other methods
+        like isTableError() and isFieldError() that the child needs to flesh out, maybe someday
+
+        return -- boolean -- True if the error was handled, False if it wasn't
+        """
+        return False
+
+    def raise_error(self, e, **kwargs):
+        """raises e
+
+        allow python's built in errors to filter up through
+        https://docs.python.org/2/library/exceptions.html
+
+        :param e: Exception, if a built-in exception then it's raised, if any other
+            error then it will be wrapped in an InterfaceError
+        """
         if isinstance(e, InterfaceError) or hasattr(builtins, e.__class__.__name__):
-            # allow python's built in errors to filter up through
-            # https://docs.python.org/2/library/exceptions.html
             raise e
 
         else:
-            raise self._create_error(e, None) from e
+            raise self._create_error(e, **kwargs) from e
 
-#     def raise_error(self, e, exc_info=None):
-#         """this is just a wrapper to make the passed in exception an InterfaceError"""
-#         if not exc_info:
-#             exc_info = sys.exc_info()
-# 
-#         if not isinstance(e, InterfaceError):
-#             # allow python's built in errors to filter up through
-#             # https://docs.python.org/2/library/exceptions.html
-#             if not hasattr(builtins, e.__class__.__name__):
-#                 e = self._create_error(e, exc_info)
-# 
-#         reraise(e.__class__, e, exc_info[2])
-
-    def _create_error(self, e, exc_info):
+    def _create_error(self, e, **kwargs):
         """create the error that you want to raise, this gives you an opportunity
         to customize the error"""
-        return InterfaceError(e, exc_info)
+        e_class = kwargs.get("e_class", InterfaceError)
+        return e_class(e)
 
 
 class SQLInterface(Interface):
