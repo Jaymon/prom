@@ -932,18 +932,22 @@ class Query(object):
             self
         )
 
-    def upsert(self):
+    def upsert(self, conflict_field_names=None):
         """persist the .fields"""
         insert_fields = self.fields_set.fields
         update_fields = dict(insert_fields)
 
-        for name in self.schema.pk_names:
-            update_fields.pop(name, None)
+        if not conflict_field_names:
+            conflict_field_names = self.schema.pk_names
+
+        for field_name in conflict_field_names:
+            update_fields.pop(field_name, None)
 
         return self.interface.upsert(
             self.schema,
             insert_fields,
             update_fields,
+            conflict_field_names,
         )
 
     def delete(self):

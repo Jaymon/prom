@@ -7,7 +7,7 @@ import re
 import base64
 import json
 import logging
-from uuid import UUID
+import uuid
 
 
 import dsnparse
@@ -438,7 +438,7 @@ class Schema(object):
 class Index(object):
     """Each index on the table is configured using this class"""
 
-    def __init__(self, *fields, **options):
+    def __init__(self, *field_names, **options):
         """
         initialize an index
 
@@ -447,11 +447,11 @@ class Index(object):
         **options -- dict --
             unique -- boolean -- True if the index should be unique, false otherwise
         """
-        if not fields:
-            raise ValueError("fields list is empty")
+        if not field_names:
+            raise ValueError("field_names list is empty")
 
         self.name = ""
-        self.fields = list(map(str, fields))
+        self.field_names = list(map(String, field_names))
         self.options = options
         self.unique = options.get("unique", False)
 
@@ -787,7 +787,7 @@ class Field(object, metaclass=FieldMeta):
 
         else:
             if min_size > 0 and max_size < 0:
-                raise ValueError("min_size option was set with no corresponding max_size")
+                d['min_size'] = min_size
 
             elif min_size < 0 and max_size > 0:
                 d['max_size'] = max_size
@@ -820,7 +820,7 @@ class Field(object, metaclass=FieldMeta):
             decimal.Decimal,
             datetime.datetime,
             datetime.date,
-            UUID,
+            uuid.UUID,
             dict,
         )
 
@@ -1193,4 +1193,70 @@ class Field(object, metaclass=FieldMeta):
         val = self.fdel(orm, self.fval(orm))
         orm.__dict__[self.orm_field_name] = val
 
+
+class DatetimeField(Field):
+    """A special field that will create a datetime according to triggers
+
+    The triggers are:
+        created: create a datetime in the field when the Orm is being created (added
+            to the db for the first time)
+        updated: update the datetime when the Orm is created and when it is updated
+            in the db
+    """
+    def __init__(self, created=True, updated=True, *args, **kwargs):
+        kwargs.setdefault("created", created)
+        kwargs.setdefault("updated", updated)
+        super().__init__(
+            field_type = datetime.datetime,
+            field_required = True,
+            *args,
+            **kwargs,
+        )
+
+    def iset(self, orm, val):
+        if self.options.get("updated", False):
+            return self.updated_iset(orm, val)
+
+        elif self.options.get("created", False):
+            return self.created_iset(orm, val)
+
+        else:
+            return super().iset(orm, val)
+
+    def created_iset(self, orm, val):
+        if not val and orm.is_insert():
+            val = datetime.datetime.utcnow()
+        return val
+
+    def updated_iset(self, orm, val):
+        if val:
+            if not self.modified(orm, val):
+                val = datetime.datetime.utcnow()
+
+        else:
+            val = datetime.datetime.utcnow()
+
+        return val
+
+
+class UUID(Field):
+    def __init__(self, field_type=uuid.UUID, field_required=True, *args, **kwargs):
+        kwargs.setdefault("pk", True)
+        super().__init__(
+            field_type=field_type,
+            field_required=field_required,
+            *args,
+            **kwargs
+        )
+
+
+class AutoIncrement(Field):
+    def __init__(self, field_type=int, field_required=True, *args, **kwargs):
+        kwargs.setdefault("pk", True)
+        super().__init__(
+            field_type=field_type,
+            field_required=field_required,
+            *args,
+            **kwargs
+        )
 

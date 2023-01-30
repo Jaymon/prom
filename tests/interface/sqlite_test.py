@@ -53,7 +53,7 @@ class DatetimeTypeTest(BaseTestCase):
         self.assertEqual("2020-03-25T19:34:05.057035Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
 
-class InterfaceSQLiteTest(BaseTestInterface):
+class InterfaceTest(BaseTestInterface):
     @classmethod
     def create_interface(cls):
         return cls.create_sqlite_interface()

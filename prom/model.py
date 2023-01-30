@@ -10,7 +10,13 @@ from datatypes.collections import Pool
 from .query import Query, Iterator
 from . import decorators, utils
 from .interface import get_interface
-from .config import Schema, Field, Index
+from .config import (
+    Schema,
+    Field,
+    DatetimeField,
+    AutoIncrement,
+    Index
+)
 from .compat import *
 
 
@@ -65,36 +71,40 @@ class Orm(object):
     iterator_class = Iterator
     """the class this Orm will use for iterating through results returned from db"""
 
-    _id = Field(long, True, pk=True)
+    #_id = Field(int, True, pk=True)
+    _id = AutoIncrement()
 
-    class _created(Field):
-        type = datetime.datetime
-        required = True
-        options = {
-            "aliases": ["created"],
-        }
+    _created = DatetimeField(created=True, aliases=["created"])
+    _updated = DatetimeField(updated=True, aliases=["updated"])
 
-        def iset(self, orm, val):
-            if not val and orm.is_insert():
-                val = datetime.datetime.utcnow()
-            return val
-
-    class _updated(Field):
-        type = datetime.datetime
-        required = True
-        options = {
-            "aliases": ["updated"],
-        }
-
-        def iset(self, orm, val):
-            if val:
-                if not self.modified(orm, val):
-                    val = datetime.datetime.utcnow()
-
-            else:
-                val = datetime.datetime.utcnow()
-
-            return val
+#     class _created(Field):
+#         type = datetime.datetime
+#         required = True
+#         options = {
+#             "aliases": ["created"],
+#         }
+# 
+#         def iset(self, orm, val):
+#             if not val and orm.is_insert():
+#                 val = datetime.datetime.utcnow()
+#             return val
+# 
+#     class _updated(Field):
+#         type = datetime.datetime
+#         required = True
+#         options = {
+#             "aliases": ["updated"],
+#         }
+# 
+#         def iset(self, orm, val):
+#             if val:
+#                 if not self.modified(orm, val):
+#                     val = datetime.datetime.utcnow()
+# 
+#             else:
+#                 val = datetime.datetime.utcnow()
+# 
+#             return val
 
     @decorators.classproperty
     def table_name(cls):
@@ -346,7 +356,7 @@ class Orm(object):
 
         pk = self._interface_pk
         if pk:
-            q.is_field(self.schema.pk.name, pk)
+            q.eq_field(self.schema.pk.name, pk)
 
         else:
             raise ValueError("Cannot update an unhydrated orm instance")
@@ -359,6 +369,66 @@ class Orm(object):
             ret = False
 
         return ret
+
+    def upsert(self):
+        """Perform an UPSERT query where we insert the fields if they don't already
+        exist on the db or we UPDATE if they do
+
+        We only want to upsert on specific occasions where we know we've set the
+        conflict values and will be sending them to the db. UPSERT queries need
+        to have a unique index on the table they can use for the conflict fields.
+
+        This method will go through the indexes and try and find a unique index
+        that has all fields that are being sent to the interface and it will use
+        those fields as the conflict fields
+        """
+        ret = True
+
+        schema = self.schema
+        fields = self.to_interface()
+
+        # we need to find the conflict fields
+        conflict_field_names = []
+        for index in schema.indexes.values():
+            if index.unique:
+                for field_name in index.field_names:
+                    if field_name in fields:
+                        conflict_field_names.append(field_name)
+
+                    else:
+                        conflict_field_names = []
+                        break
+
+
+        if not conflict_field_names:
+            for field_name in schema.pk_names:
+                if field_name in fields:
+                    conflict_field_names.append(field_name)
+
+                else:
+                    conflict_field_names = []
+                    break
+
+        if not conflict_field_names:
+            raise ValueError(f"Upsert failed to find the conflict field names")
+
+        q = self.query
+        q.set(fields)
+        pk = q.upsert(conflict_field_names)
+        if pk:
+            fields = q.fields_set.fields
+            pk_name = schema.pk_name
+            if pk_name:
+                fields[pk_name] = pk
+                self.from_interface(fields)
+
+        else:
+            ret = False
+
+        return ret
+
+
+
 
     def save(self):
         """
@@ -384,7 +454,7 @@ class Orm(object):
         pk = self._interface_pk
         if pk:
             pk_name = self.schema.pk.name
-            self.query.is_field(pk_name, pk).delete()
+            self.query.eq_field(pk_name, pk).delete()
 
             for field_name, field in self.schema.fields.items():
                 setattr(self, field_name, field.idel(self, getattr(self, field_name)))

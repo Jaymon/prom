@@ -396,7 +396,7 @@ class SQLite(SQLInterface):
         query_str = os.linesep.join(query_str)
         ret = self._query(query_str, ignore_result=True, **kwargs)
 
-    def _set_index(self, schema, name, fields, **index_options):
+    def _set_index(self, schema, name, field_names, **index_options):
         """
         https://www.sqlite.org/lang_createindex.html
         """
@@ -405,7 +405,7 @@ class SQLite(SQLInterface):
             schema,
             name,
             self._normalize_table_name(schema),
-            ', '.join((self._normalize_name(f) for f in fields))
+            ', '.join(map(self._normalize_name, field_names))
         )
 
         return self._query(query_str, ignore_result=True, **index_options)
@@ -431,14 +431,6 @@ class SQLite(SQLInterface):
         """
         http://www.sqlite.org/lang_insert.html
         """
-
-        # handle generating a UUID for the primary key
-        pk_name = schema.pk_name
-        if pk_name not in fields:
-            pk = schema.pk
-            if issubclass(pk.interface_type, uuid.UUID):
-                fields[pk_name] = String(uuid.uuid4())
-
         query_str, query_args = self.render_insert_sql(
             schema,
             fields,
@@ -472,8 +464,10 @@ class SQLite(SQLInterface):
                 #SELECT: "no such column: che"
                 try:
                     ret = self._set_all_fields(schema, **kwargs)
-                except ValueError as e:
+
+                except ValueError:
                     ret = False
+
             elif "no such table" in e_msg:
                 ret = self._set_all_tables(schema, **kwargs)
 

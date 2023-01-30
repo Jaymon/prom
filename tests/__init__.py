@@ -171,7 +171,7 @@ class BaseTestCase(TestCase):
             })
 
         orm_class = type(
-            ByteString(tn) if is_py2 else String(tn),
+            String(tn),
             (Orm,),
             properties,
         )

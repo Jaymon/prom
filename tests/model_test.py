@@ -1125,3 +1125,30 @@ class OrmTest(EnvironTestCase):
         q = Bar.query.in_foo_id(Foo.query.select_pk())
         self.assertEqual(count, len(q.get()))
 
+    def test_upsert(self):
+        orm_class = self.get_orm_class(
+            foo=Field(str, True),
+            bar=Field(str, True),
+            che=Field(str, True, default=""),
+            baz=Field(int, True),
+            foo_bar_che=Index("foo", "bar", "che", unique=True),
+        )
+
+        o = orm_class({"foo": "1", "bar": "1", "che": "1", "baz": 1})
+        o.upsert()
+        o2 = orm_class.query.eq_pk(o.pk).one()
+        self.assertEqual(o.baz, o2.baz)
+        self.assertEqual(o.pk, o2.pk)
+
+        # we only want to upsert on specific occasions where we know we've set
+        # the conflict values
+        with self.assertRaises(ValueError):
+            o2.baz = 2
+            o2.upsert()
+
+        o3 = orm_class({"foo": "1", "bar": "1", "che": "1", "baz": 2})
+        o3.upsert()
+        self.assertEqual(o.pk, o3.pk)
+        o4 = orm_class.query.eq_pk(o3.pk).one()
+        self.assertEqual(o3.baz, o4.baz)
+

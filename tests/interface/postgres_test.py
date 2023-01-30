@@ -5,6 +5,7 @@ import os
 import datetime
 import time
 import subprocess
+from uuid import UUID
 
 # needed to test prom with greenthreads
 try:
@@ -23,7 +24,7 @@ import prom.interface
 from . import BaseTestInterface, testdata
 
 
-class InterfacePostgresTest(BaseTestInterface):
+class InterfaceTest(BaseTestInterface):
     @classmethod
     def create_interface(cls):
         return cls.create_postgres_interface()
@@ -155,6 +156,20 @@ class InterfacePostgresTest(BaseTestInterface):
         }
         with self.assertRaises(prom.InterfaceError):
             rd = i.insert(s, fields)
+
+    def test_uuid_pk(self):
+        i, s = create_schema(
+            _id=Field(UUID, True, pk=True),
+            foo=Field(int, True),
+        )
+
+        pk = i.insert(s, {"foo": 1})
+        self.assertEqual(36, len(pk))
+
+        q = query.Query().is__id(pk)
+        d = dict(i.get_one(s, q))
+        self.assertEqual(1, d["foo"])
+        self.assertEqual(pk, d["_id"])
 
 
 @skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")

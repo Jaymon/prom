@@ -5,8 +5,6 @@ import random
 import string
 import decimal
 import datetime
-from uuid import UUID
-
 
 from datatypes import Datetime
 
@@ -1208,24 +1206,6 @@ class BaseTestInterface(BaseTestCase):
         self.assertEqual(text, d["group"])
         self.assertEqual(pk, d["_id"])
 
-    def test_uuid(self):
-        i = self.get_interface()
-        s = Schema(
-            self.get_table_name(),
-            _id=Field(UUID, True, pk=True),
-            foo=Field(int, True),
-        )
-
-        i.set_table(s)
-
-        pk = i.insert(s, {"foo": 1})
-        self.assertEqual(36, len(pk))
-
-        q = query.Query().is__id(pk)
-        d = dict(i.get_one(s, q))
-        self.assertEqual(1, d["foo"])
-        self.assertEqual(pk, d["_id"])
-
     def test_bignumber(self):
         i = self.get_interface()
         s = self.get_schema(
@@ -1261,10 +1241,8 @@ class BaseTestInterface(BaseTestCase):
         d = i.get_one(s, query.Query().is__id(pk))
         self.assertEqual(foo, d["foo"])
 
-    def test_upsert(self):
-        i = self.get_interface()
-        s = self.get_schema()
-        i.set_table(s)
+    def test_upsert_pk(self):
+        i, s = self.create_schema()
 
         d = {"foo": 1, "bar": "bar 1"}
         pk = i.insert(s, d)
@@ -1286,6 +1264,41 @@ class BaseTestInterface(BaseTestCase):
         d = i.get_one(s, query.Query().is__id(pk3))
         self.assertEqual(di["foo"], d["foo"])
         self.assertEqual(di["bar"], d["bar"])
+
+    def test_upsert_index(self):
+        i, s = self.create_schema(
+            foo=Field(str, True),
+            bar=Field(str, True),
+            che=Field(str, True, default=""),
+            baz=Field(int, True),
+            foo_bar_che=Index("foo", "bar", "che", unique=True),
+        )
+
+        di = {"foo": "1", "bar": "1", "che": "1", "baz": 1}
+
+        du = {"baz": 1}
+        pk = i.upsert(s, di, du, ["foo", "bar", "che"])
+        d = i.get_one(s, Query().is__id(pk))
+        self.assertEqual(1, d["baz"])
+        self.assertEqual(pk, d["_id"])
+
+        du = {"baz": 2}
+        pk = i.upsert(s, di, du, ["foo", "bar", "che"])
+        d = i.get_one(s, Query().is__id(pk))
+        self.assertEqual(2, d["baz"])
+        self.assertEqual(pk, d["_id"])
+
+    def test_stacktraces(self):
+        i, s = self.create_schema(
+            foo=Field(str, True),
+        )
+
+        try:
+            i.insert(s, {"bar": 10}) # there is no bar field so this should fail
+
+        except InterfaceError as e:
+            # we want to make sure we aren't wrapping errors again and again
+            self.assertFalse(isinstance(e.e, InterfaceError))
 
 
 # https://docs.python.org/2/library/unittest.html#load-tests-protocol

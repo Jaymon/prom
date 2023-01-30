@@ -74,7 +74,7 @@ class StringType(object):
         :param cur: cursor
         :returns: str
         """
-        if isinstance(val, str) and v.startswith("\\x"):
+        if isinstance(val, str) and val.startswith("\\x"):
             buf = psycopg2.BINARY(val, cur)
             val = bytes(buf).decode(cur.connection.encoding)
 
@@ -346,23 +346,18 @@ class PostgreSQL(SQLInterface):
 
         return ret
 
-    def _set_index(self, schema, name, fields, **index_options):
+    def _set_index(self, schema, name, field_names, **index_options):
         """
         NOTE -- we set the index name using <table_name>_<name> format since indexes have to have
         a globally unique name in postgres
 
         http://www.postgresql.org/docs/9.1/static/sql-createindex.html
         """
-        index_fields = []
-        for field_name in fields:
-            field = schema.fields[field_name] # error checking on the field name
-            index_fields.append(field_name)
-
         query_str = 'CREATE {}INDEX {} ON {} USING BTREE ({})'.format(
             'UNIQUE ' if index_options.get('unique', False) else '',
             self._normalize_name("{}_{}".format(schema, name)),
             self._normalize_table_name(schema),
-            ', '.join(index_fields)
+            ', '.join(map(self._normalize_name, field_names))
         )
 
         return self.query(query_str, ignore_result=True, **index_options)
@@ -451,27 +446,27 @@ class PostgreSQL(SQLInterface):
 
         elif issubclass(interface_type, int):
             if is_pk:
-                field_type = 'BIGSERIAL PRIMARY KEY'
+                field_type = 'BIGSERIAL PRIMARY KEY' # INT8
 
             else:
                 if field.is_ref():
-                    field_type = 'BIGINT'
+                    field_type = 'BIGINT' # INT8
 
                 else:
                     # https://www.postgresql.org/docs/current/datatype-numeric.html
                     size = field.options.get('size', field.options.get('max_size', 0))
 
                     if size == 0:
-                        field_type = 'INTEGER'
+                        field_type = 'INTEGER' # INT4
 
                     if size < 32767:
-                        field_type = 'SMALLINT'
+                        field_type = 'SMALLINT' # INT2
 
                     elif size < 2147483647:
-                        field_type = 'INTEGER'
+                        field_type = 'INTEGER' # INT4
 
                     elif size < 9223372036854775807:
-                        field_type = 'BIGINT'
+                        field_type = 'BIGINT' # INT8
 
                     else:
                         precision = len(str(size))
@@ -517,28 +512,34 @@ class PostgreSQL(SQLInterface):
             field_type = 'JSONB'
 
         elif issubclass(interface_type, (float, decimal.Decimal)):
-            size = field.options.get('size', field.options.get('max_size', 0))
-
-            # if size is like 15.6 then that would be considered 21
-            # precision with a scale of 6 (ie, you can have 15 digits before
-            # the decimal point and 6 after)
-            parts = str(size).split(".")
-            if len(parts) > 1:
-                scale = parts[1] or 0
-                precision = parts[0] + scale
+            precision = field.options.get("precision", 0)
+            scale = field.options.get("scale", 0)
+            if precision:
                 field_type = f'NUMERIC({precision}, {scale})'
 
             else:
-                # https://learn.microsoft.com/en-us/cpp/c-language/type-float
-                if size < 3.402823466e+38:
-                    field_type = 'REAL'
+                size = field.options.get('size', field.options.get('max_size', 0))
 
-                elif size < 1.7976931348623158e+308:
-                    field_type = 'DOUBLE PRECISION'
+                # if size is like 15.6 then that would be considered 21
+                # precision with a scale of 6 (ie, you can have 15 digits before
+                # the decimal point and 6 after)
+                parts = str(size).split(".")
+                if len(parts) > 1:
+                    scale = parts[1] or 0
+                    precision = parts[0] + scale
+                    field_type = f'NUMERIC({precision}, {scale})'
 
                 else:
-                    precision = len(str(size))
-                    field_type = f'NUMERIC({precision})'
+                    # https://learn.microsoft.com/en-us/cpp/c-language/type-float
+                    if size < 3.402823466e+38:
+                        field_type = 'REAL'
+
+                    elif size < 1.7976931348623158e+308:
+                        field_type = 'DOUBLE PRECISION'
+
+                    else:
+                        precision = len(str(size))
+                        field_type = f'NUMERIC({precision})'
 
         elif issubclass(interface_type, (bytearray, bytes)):
             field_type = 'BLOB'

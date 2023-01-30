@@ -11,8 +11,27 @@ class Error(Exception):
 
 class InterfaceError(Error):
     """specifically for wrapping SQLite and Postgres errors"""
+    def unwrapped_e(self):
+        """Find the first unwrapped error (ie, unwind to the original error)"""
+        e = self
+        # unwind to the original error
+        while isinstance(e, InterfaceError):
+            e = e.e
+        return e
+
+
+class TableError(InterfaceError):
     pass
 
 
-class UniqueError(InterfaceError):
+class FieldError(InterfaceError):
     pass
+
+
+class UniqueError(FieldError):
+    pass
+
+
+class CloseError(InterfaceError):
+    pass
+

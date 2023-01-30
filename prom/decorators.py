@@ -4,7 +4,7 @@ import time
 from functools import wraps
 import logging
 
-from decorators import classproperty
+from datatypes import classproperty
 
 from .exception import InterfaceError
 from .compat import *
