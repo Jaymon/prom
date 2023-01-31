@@ -173,7 +173,7 @@ class InterfaceTest(BaseTestInterface):
 
 
 @skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")
-class XInterfacePostgresGeventTest(InterfacePostgresTest):
+class XInterfaceGeventTest(InterfaceTest):
     """this class has an X to start so that it will run last when all tests are run"""
     @classmethod
     def setUpClass(cls):

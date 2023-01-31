@@ -34,7 +34,15 @@ import uuid
 from datatypes import Datetime
 
 # first party
-from ..exception import UniqueError
+from ..exception import (
+    InterfaceError,
+    UniqueError,
+    TableError,
+    FieldError,
+    UniqueError,
+    CloseError,
+)
+
 from ..compat import *
 from .base import SQLInterface, SQLConnection
 
@@ -455,33 +463,25 @@ class SQLite(SQLInterface):
         query_str = "DROP TABLE IF EXISTS {}".format(self._normalize_table_name(schema))
         ret = self._query(query_str, ignore_result=True, **kwargs)
 
-    def _handle_error(self, schema, e, **kwargs):
-        ret = False
+    def create_error(self, e, **kwargs):
         if isinstance(e, sqlite3.OperationalError):
             e_msg = str(e)
             if "no such column" in e_msg or "has no column" in e_msg:
                 #INSERT: "table yscrmiklbgdtx has no column named che"
                 #SELECT: "no such column: che"
-                try:
-                    ret = self._set_all_fields(schema, **kwargs)
-
-                except ValueError:
-                    ret = False
+                e = FieldError(e)
 
             elif "no such table" in e_msg:
-                ret = self._set_all_tables(schema, **kwargs)
+                e = Table(e)
 
             elif "UNIQUE" in e_msg:
-                self.raise_error(e, e_class=UniqueError)
+                e = UniqueError(e)
 
-        return ret
-
-    def _create_error(self, e, exc_info):
-        if isinstance(e, sqlite3.IntegrityError):
-            er = UniqueError(e, exc_info)
+        elif isinstance(e, sqlite3.IntegrityError):
+            e = UniqueError(e)
         else:
-            er = super(SQLite, self)._create_error(e, exc_info)
-        return er
+            e = super().create_error(e, **kwargs)
+        return e
 
     def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given table"""

@@ -23,7 +23,14 @@ import psycopg2.extensions
 from ..base import SQLInterface, SQLConnection
 from ...compat import *
 from ...utils import get_objects
-from ...exception import UniqueError, InterfaceError
+from ...exception import (
+    InterfaceError,
+    UniqueError,
+    TableError,
+    FieldError,
+    UniqueError,
+    CloseError,
+)
 
 
 # class LoggingCursor(psycopg2.extras.RealDictCursor):
@@ -574,30 +581,22 @@ class PostgreSQL(SQLInterface):
 
         return '{} {}'.format(self._normalize_name(field_name), field_type)
 
-    def _handle_error(self, schema, e, **kwargs):
-        ret = False
-
+    def create_error(self, e, **kwargs):
         if isinstance(e, psycopg2.ProgrammingError):
             e_msg = String(e)
             if "does not exist" in e_msg:
                 if "column" in e_msg:
-                    #INSERT: 'column "cancelled_date" of relation "chat_followup" does not exist'
-                    #SELECT: 'column "cancelled_date" does not exist'
-                    try:
-                        ret = self._set_all_fields(schema, **kwargs)
-                    except ValueError as e:
-                        ret = False
+                    #INSERT: column "foo" of relation "<TABLE-NAME>" does not exist
+                    #SELECT: column "foo" does not exist
+                    e = FieldError(e)
 
                 else:
-                    #'relation "table_name" does not exit'
-                    ret = self._set_all_tables(schema, **kwargs)
+                    #'relation "<TABLE-NAME>" does not exit'
+                    e = TableError(e)
 
-        return ret
-
-    def _create_error(self, e, exc_info):
-        if isinstance(e, psycopg2.IntegrityError):
-            er = UniqueError(e, exc_info)
+        elif isinstance(e, psycopg2.IntegrityError):
+            e = UniqueError(e)
         else:
-            er = super(PostgreSQL, self)._create_error(e, exc_info)
-        return er
+            e = super().create_error(e, **kwargs)
+        return e
 

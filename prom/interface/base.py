@@ -9,7 +9,16 @@ import uuid as uuidgen
 
 # first party
 from ..query import Query
-from ..exception import InterfaceError, UniqueError
+from ..exception import (
+    InterfaceError,
+    UniqueError,
+    TableError,
+    FieldError,
+    UniqueError,
+    CloseError,
+)
+
+
 from ..decorators import reconnecting
 from ..compat import *
 from ..utils import make_list
@@ -329,14 +338,11 @@ class Interface(object):
 
     def unsafe_delete_table(self, schema, **kwargs):
         """wrapper around delete_table that matches the *_tables variant and denotes
-        that this is a serious operation"""
-        return self.delete_table(schema, **kwargs)
+        that this is a serious operation
 
-    def delete_table(self, schema, **kwargs):
-        """
         remove a table matching schema from the db
 
-        schema -- Schema()
+        :param schema: Schema instance, the table to delete
         """
         with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
@@ -348,24 +354,11 @@ class Interface(object):
 
     def _delete_table(self, schema): raise NotImplementedError()
 
-    def unsafe_delete_tables(self):
-        """wrapper around delete_tables that is easier to remember but denotes the
-        same thing, I could never remember `disable_protection`
+    def unsafe_delete_tables(self, **kwargs):
+        """Removes all the tables from the db
 
-        https://github.com/Jaymon/prom/issues/75"""
-        return self.delete_tables(disable_protection=True)
-
-    def delete_tables(self, **kwargs):
+        https://github.com/Jaymon/prom/issues/75
         """
-        removes all the tables from the db
-
-        this is, obviously, very bad if you didn't mean to call this, because of that, you
-        have to pass in disable_protection=True, if it doesn't get that passed in, it won't
-        run this method
-        """
-        if not kwargs.get('disable_protection', False):
-            raise ValueError('In order to delete all the tables, pass in disable_protection=True')
-
         with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
             self._delete_tables(**kwargs)
@@ -644,23 +637,22 @@ class Interface(object):
     def raise_error(self, e, **kwargs):
         """raises e
 
-        allow python's built in errors to filter up through
-        https://docs.python.org/2/library/exceptions.html
-
         :param e: Exception, if a built-in exception then it's raised, if any other
             error then it will be wrapped in an InterfaceError
         """
-        if isinstance(e, InterfaceError) or hasattr(builtins, e.__class__.__name__):
-            raise e
+        raise self.create_error(e, **kwargs) from e
 
-        else:
-            raise self._create_error(e, **kwargs) from e
-
-    def _create_error(self, e, **kwargs):
+    def create_error(self, e, **kwargs):
         """create the error that you want to raise, this gives you an opportunity
-        to customize the error"""
-        e_class = kwargs.get("e_class", InterfaceError)
-        return e_class(e)
+        to customize the error
+
+        allow python's built in errors to filter up through
+        https://docs.python.org/2/library/exceptions.html
+        """
+        if not isinstance(e, InterfaceError) and not hasattr(builtins, e.__class__.__name__):
+            e_class = kwargs.get("e_class", InterfaceError)
+            e = e_class(e)
+        return e
 
 
 class SQLInterface(Interface):
@@ -746,9 +738,7 @@ class SQLInterface(Interface):
 
         else:
             # connection is open
-            if isinstance(e, InterfaceError):
-                # unwind to the original error
-                e = e.unwrapped_e()
+            e = self.create_error(e)
 
             query = kwargs.get("query", None)
             schemas = query.schemas if query else []
@@ -764,7 +754,22 @@ class SQLInterface(Interface):
 
         return ret
 
-    def _handle_error(self, schema, e, **kwargs): raise NotImplemented()
+    def _handle_error(self, schema, e, **kwargs):
+        ret = False
+        if isinstance(e, UniqueError):
+            ret = False
+
+        elif isinstance(e, FieldError):
+            try:
+                ret = self._set_all_fields(schema, **kwargs)
+
+            except ValueError:
+                ret = False
+
+        elif isinstance(e, TableError):
+            ret = self._set_all_tables(schema, **kwargs)
+
+        return ret
 
     def _set_all_tables(self, schema, **kwargs):
         """
