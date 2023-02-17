@@ -13,7 +13,7 @@ from .interface import get_interface
 from .config import (
     Schema,
     Field,
-    DatetimeField,
+    AutoDatetime,
     AutoIncrement,
     Index
 )
@@ -72,10 +72,9 @@ class Orm(object):
     """the class this Orm will use for iterating through results returned from db"""
 
     #_id = Field(int, True, pk=True)
-    _id = AutoIncrement()
-
-    _created = DatetimeField(created=True, aliases=["created"])
-    _updated = DatetimeField(updated=True, aliases=["updated"])
+    _id = AutoIncrement(aliases=["id"])
+    _created = AutoDatetime(created=True, updated=False, aliases=["created"])
+    _updated = AutoDatetime(created=False, updated=True, aliases=["updated"])
 
 #     class _created(Field):
 #         type = datetime.datetime
@@ -141,6 +140,11 @@ class Orm(object):
         return query_class(orm_class=cls)
 
     @property
+    def field_names(self):
+        """Return all the field names"""
+        return [k for k in self.schema.fields]
+
+    @property
     def fields(self):
         """
         return all the fields and their raw values for this Orm instance. This
@@ -151,12 +155,18 @@ class Orm(object):
         return {k:getattr(self, k, None) for k in self.schema.fields}
 
     @property
-    def modified_fields(self):
-        modified_fields = set()
+    def modified_field_names(self):
+        """Return all the field names that are currently modified"""
+        modified_field_names = set()
         for field_name, field in self.schema.fields.items():
             if field.modified(self, getattr(self, field_name)):
-                modified_fields.add(field_name)
-        return modified_fields
+                modified_field_names.add(field_name)
+        return modified_field_names
+
+    @property
+    def modified_fields(self):
+        """Return a dict of field_names/field_values for all the currently modified fields"""
+        return {k:getattr(self, k) for k in self.modified_field_names}
 
     @classmethod
     def pool(cls, maxsize=0):
@@ -198,7 +208,7 @@ class Orm(object):
         return instance
 
     @classmethod
-    def make_dict(cls, fields, fields_kwargs):
+    def make_dict(cls, fields, fields_kwargs, schema=None):
         """Lots of methods take a dict and key=val for fields, this combines fields
         and fields_kwargs into one master dict, turns out we want to do this more
         than I would've thought to keep api compatibility with prom proper
@@ -206,9 +216,18 @@ class Orm(object):
         :param fields: dict, the fields in a dict
         :param fields_kwargs: dict, if you would like to pass the fields as key=val
             this picks those up and combines them with fields
+        :schema: Schema, if passed in then this will normalize field names
         :returns: dict, the combined fields
         """
-        return utils.make_dict(fields, fields_kwargs)
+        fields = utils.make_dict(fields, fields_kwargs)
+
+        if schema:
+            # since schema is passed in resolve any aliases
+            for field_name in list(fields.keys()):
+                if fn := schema.field_name(field_name):
+                    fields[fn] = fields.pop(field_name)
+
+        return fields
 
     def __init__(self, fields=None, **fields_kwargs):
         """Create an Orm object
@@ -219,16 +238,11 @@ class Orm(object):
         self._interface_pk = None
         self._interface_hydrate = False
 
-        fields = self.make_dict(fields, fields_kwargs)
-
-        # resolve any aliases
-        for fn in list(fields.keys()):
-            if self.schema.has_field(fn):
-                field_name = self.schema.field_name(fn)
-                fields[field_name] = fields.pop(fn)
+        schema = self.schema
+        fields = self.make_dict(fields, fields_kwargs, schema=schema)
 
         # set defaults
-        for field_name, field in self.schema.fields.items():
+        for field_name, field in schema.fields.items():
             fields[field_name] = field.fdefault(self, fields.get(field_name, None))
 
         self.modify(fields)
@@ -274,8 +288,7 @@ class Orm(object):
 
     def is_update(self):
         """Return True if .save() will perform an interface update"""
-        pk = self._interface_pk
-        return pk is not None
+        return self._interface_pk is not None
 
     def is_insert(self):
         """Return True if .save() will perform an interface insert"""
@@ -324,7 +337,7 @@ class Orm(object):
 
         return fields
 
-    def insert(self):
+    def insert(self, **kwargs):
         """persist the field values of this orm"""
         ret = True
 
@@ -333,7 +346,7 @@ class Orm(object):
 
         q = self.query
         q.set(fields)
-        pk = q.insert()
+        pk = q.insert(**kwargs)
         if pk:
             fields = q.fields_set.fields
             pk_name = schema.pk_name
@@ -346,7 +359,7 @@ class Orm(object):
 
         return ret
 
-    def update(self):
+    def update(self, **kwargs):
         """re-persist the updated field values of this orm that has a primary key"""
         ret = True
         fields = self.to_interface()
@@ -361,7 +374,7 @@ class Orm(object):
         else:
             raise ValueError("Cannot update an unhydrated orm instance")
 
-        if q.update():
+        if q.update(**kwargs):
             fields = q.fields_set.fields
             self.from_interface(fields)
 
@@ -370,7 +383,7 @@ class Orm(object):
 
         return ret
 
-    def upsert(self):
+    def upsert(self, **kwargs):
         """Perform an UPSERT query where we insert the fields if they don't already
         exist on the db or we UPDATE if they do
 
@@ -380,41 +393,23 @@ class Orm(object):
 
         This method will go through the indexes and try and find a unique index
         that has all fields that are being sent to the interface and it will use
-        those fields as the conflict fields
+        those fields as the conflict fields, it will raise a ValueError if it can't
+        find a valid set of conflict fields
+
+        :param **kwargs: passed through to the interface
         """
         ret = True
 
         schema = self.schema
         fields = self.to_interface()
 
-        # we need to find the conflict fields
-        conflict_field_names = []
-        for index in schema.indexes.values():
-            if index.unique:
-                for field_name in index.field_names:
-                    if field_name in fields:
-                        conflict_field_names.append(field_name)
-
-                    else:
-                        conflict_field_names = []
-                        break
-
-
-        if not conflict_field_names:
-            for field_name in schema.pk_names:
-                if field_name in fields:
-                    conflict_field_names.append(field_name)
-
-                else:
-                    conflict_field_names = []
-                    break
-
-        if not conflict_field_names:
+        conflict_fields = self.conflict_fields(fields)
+        if not conflict_fields:
             raise ValueError(f"Upsert failed to find the conflict field names")
 
         q = self.query
         q.set(fields)
-        pk = q.upsert(conflict_field_names)
+        pk = q.upsert([t[0] for t in conflict_fields], **kwargs)
         if pk:
             fields = q.fields_set.fields
             pk_name = schema.pk_name
@@ -427,10 +422,7 @@ class Orm(object):
 
         return ret
 
-
-
-
-    def save(self):
+    def save(self, **kwargs):
         """
         persist the fields in this object into the db, this will update if _id is set, otherwise
         it will insert
@@ -441,20 +433,20 @@ class Orm(object):
 
         pk = self._interface_pk
         if pk:
-            ret = self.update()
+            ret = self.update(**kwargs)
         else:
-            ret = self.insert()
+            ret = self.insert(**kwargs)
 
         return ret
 
-    def delete(self):
+    def delete(self, **kwargs):
         """delete the object from the db if pk is set"""
         ret = False
         q = self.query
         pk = self._interface_pk
         if pk:
             pk_name = self.schema.pk.name
-            self.query.eq_field(pk_name, pk).delete()
+            self.query.eq_field(pk_name, pk).delete(**kwargs)
 
             for field_name, field in self.schema.fields.items():
                 setattr(self, field_name, field.idel(self, getattr(self, field_name)))
@@ -466,13 +458,89 @@ class Orm(object):
 
         return ret
 
+    def conflict_fields(self, fields):
+        """Internal method. This will find fields that can be used for .upsert/.load
+
+        :param fields: dict, the fields to check for values that would satisfy
+            unique indexes or a primary key
+        :returns: list<tuple>, a list of (field_name, field_value) tuples
+        """
+        schema = self.schema
+
+        conflict_fields = []
+
+        # we'll start with checking the primary key
+        for field_name in schema.pk_names:
+            if field_name in fields:
+                conflict_fields.append((field_name, fields[field_name]))
+
+            else:
+                conflict_fields = []
+                break
+
+        if not conflict_fields:
+            # no luck with the primary key, so let's check unique indexes 
+            for index in schema.indexes.values():
+                if index.unique:
+                    for field_name in index.field_names:
+                        if field_name in fields:
+                            conflict_fields.append((field_name, fields[field_name]))
+
+                        else:
+                            conflict_fields = []
+                            break
+
+        return conflict_fields
+
+    def load(self):
+        """Given a partially populated orm try and load any missing fields from
+        the db
+
+        :returns: bool, True if it loaded from the db, False otherwise
+        """
+        fields = self.modified_fields
+        conflict_fields = self.conflict_fields(fields)
+        if not conflict_fields:
+            raise ValueError(f"Load failed to find suitable fields to query on")
+
+        q = self.query
+        for field_name, field_val in conflict_fields:
+            q.eq_field(field_name, field_val)
+
+        field_names = []
+        for field_name in self.schema.fields.keys():
+            if field_name not in fields:
+                field_names.append(field_name)
+
+        q.select(*field_names)
+        field_values = q.one()
+        if field_values:
+            ret = True
+            fields = dict(zip(field_names, field_values))
+            self.from_interface(fields)
+
+            # can't decide if I should actually set this or not
+            self._interface_hydrate = True
+
+        else:
+            ret = False
+
+        return ret
+
     def requery(self):
         """Fetch this orm from the db again (ie, re-query the row from the db and
         return a new Orm instance with the columns from that row)"""
-        pk = self._interface_pk
-        if not pk:
-            raise ValueError("Unable to refetch orm via hydrated primary key")
-        return self.query.eq_pk(pk).one()
+        fields = {k:v for k, v in self.fields.items() if v is not None}
+
+        conflict_fields = self.conflict_fields(fields)
+        if not conflict_fields:
+            raise ValueError("Unable to refetch orm")
+
+        q = self.query
+        for field_name, field_val in conflict_fields:
+            q.eq_field(field_name, field_val)
+
+        return q.one()
 
     def is_modified(self, field_name=""):
         """true if a field, or any field, has been changed from its original value, false otherwise
@@ -481,9 +549,9 @@ class Orm(object):
         :returns: bool
         """
         if field_name:
-            ret = field_name in self.modified_fields
+            ret = field_name in self.modified_field_names
         else:
-            ret = len(self.modified_fields) > 0
+            ret = len(self.modified_fields_names) > 0
         return ret
 
     def modify(self, fields=None, **fields_kwargs):
@@ -498,10 +566,11 @@ class Orm(object):
         """
         fields = self.make_dict(fields, fields_kwargs)
         fields = self.modify_fields(fields)
+        schema = self.schema
 
         for field_name, field_val in fields.items():
-            if self.schema.has_field(field_name):
-                setattr(self, field_name, field_val)
+            if fn := schema.field_name(field_name, None):
+                setattr(self, fn, field_val)
 
     def modify_fields(self, fields):
         """In child classes you should override this method to do any default 

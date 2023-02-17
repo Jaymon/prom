@@ -171,11 +171,13 @@ class PostgreSQL(SQLInterface):
 
     def free_connection(self, connection):
         if not self.connected: return
+
         if self._connection:
             self.log("freeing sync connection")
-            return
-        self.log("freeing async connection {}", id(connection))
-        self.connection_pool.putconn(connection)
+
+        else:
+            self.log("freeing async connection {}", id(connection))
+            self.connection_pool.putconn(connection)
 
     def get_connection(self):
         if not self.connected: self.connect()
@@ -218,24 +220,6 @@ class PostgreSQL(SQLInterface):
         ret = self.query(query_str, *query_args, **kwargs)
         # http://www.postgresql.org/message-id/CA+mi_8Y6UXtAmYKKBZAHBoY7F6giuT5WfE0wi3hR44XXYDsXzg@mail.gmail.com
         return [r['tablename'] for r in ret]
-
-    def _set_table(self, schema, **kwargs):
-        """
-        http://www.postgresql.org/docs/9.1/static/sql-createtable.html
-        http://www.postgresql.org/docs/8.1/static/datatype.html
-        http://pythonhosted.org/psycopg2/usage.html#adaptation-of-python-values-to-sql-types
-        """
-        query_str = []
-        query_str.append("CREATE TABLE {} (".format(self._normalize_table_name(schema)))
-
-        query_fields = []
-        for field_name, field in schema.fields.items():
-            query_fields.append('  {}'.format(self.get_field_SQL(field_name, field)))
-
-        query_str.append(",{}".format(os.linesep).join(query_fields))
-        query_str.append(')')
-        query_str = os.linesep.join(query_str)
-        ret = self.query(query_str, ignore_result=True, **kwargs)
 
     def _delete_table(self, schema, **kwargs):
         query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(self._normalize_table_name(schema))
@@ -435,151 +419,238 @@ class PostgreSQL(SQLInterface):
             offset
         )
 
-    def get_field_SQL(self, field_name, field):
-        """
-        returns the SQL for a given field with full type information
+    def render_datatype_int_sql(self, field_name, field, **kwargs):
+        if field.is_pk():
+            field_type = 'BIGSERIAL PRIMARY KEY' # INT8
 
-        field_name -- string -- the field's name
-        fields -- Field() -- the info for the field
-
-        return -- string -- the field type (eg, foo BOOL NOT NULL)
-        """
-        field_type = ""
-        interface_type = field.interface_type
-        is_pk = field.is_pk()
-
-        if issubclass(interface_type, bool):
-            field_type = 'BOOL'
-
-        elif issubclass(interface_type, int):
-            if is_pk:
-                field_type = 'BIGSERIAL PRIMARY KEY' # INT8
+        else:
+            if field.is_ref():
+                field_type = 'BIGINT' # INT8
 
             else:
-                if field.is_ref():
+                # https://www.postgresql.org/docs/current/datatype-numeric.html
+                size_info = field.size_info()
+                size = size_info["size"]
+
+                if size == 0:
+                    field_type = 'INTEGER' # INT4
+
+                elif size < 32767:
+                    field_type = 'SMALLINT' # INT2
+
+                elif size < 2147483647:
+                    field_type = 'INTEGER' # INT4
+
+                elif size < 9223372036854775807:
                     field_type = 'BIGINT' # INT8
 
                 else:
-                    # https://www.postgresql.org/docs/current/datatype-numeric.html
-                    size = field.options.get('size', field.options.get('max_size', 0))
+                    precision = size_info["precision"]
+                    field_type = f'NUMERIC({precision}, 0)'
 
-                    if size == 0:
-                        field_type = 'INTEGER' # INT4
+        return field_type
 
-                    if size < 32767:
-                        field_type = 'SMALLINT' # INT2
+    def render_datatype_str_sql(self, field_name, field, **kwargs):
+        if field.interface_options.get('ignore_case', False):
+            kwargs.setdefault("datatype", "CITEXT")
 
-                    elif size < 2147483647:
-                        field_type = 'INTEGER' # INT4
+        return super().render_datatype_str_sql(field_name, field, **kwargs)
 
-                    elif size < 9223372036854775807:
-                        field_type = 'BIGINT' # INT8
+    def render_datatype_datetime_sql(self, field_name, field, **kwargs):
+        # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
+        #field_type = 'TIMESTAMP WITHOUT TIME ZONE'
 
-                    else:
-                        precision = len(str(size))
-                        field_type = f'NUMERIC({precision}, 0)'
+        # https://wiki.postgresql.org/wiki/Don't_Do_This#Don.27t_use_timestamp_.28without_time_zone.29
+        return 'TIMESTAMPTZ'
 
-        elif issubclass(interface_type, str):
-            if field.is_ref():
-                fo = field.schema.pk.options
-                fo.update(field.options)
-            else:
-                fo = field.options
+    def render_datatype_dict_sql(self, field_name, field, **kwargs):
+        # https://www.postgresql.org/docs/current/datatype-json.html
+        # In general, most applications should prefer to store JSON data as
+        # jsonb, unless there are quite specialized needs
+        return 'JSONB'
 
-            if fo.get('ignore_case', False):
-                field_type = 'CITEXT'
-
-                if 'size' in fo:
-                    field_type += f" CHECK(length({field_name}) == {fo['size']})"
-                elif 'max_size' in fo:
-                    field_type += f" CHECK(length({field_name}) <= {fo['max_size']})"
-
-            else:
-                if 'size' in fo:
-                    field_type = 'CHAR({})'.format(fo['size'])
-                elif 'max_size' in fo:
-                    field_type = 'VARCHAR({})'.format(fo['max_size'])
-                else:
-                    field_type = 'TEXT'
-
-            if is_pk:
-                field_type += ' PRIMARY KEY'
-
-        elif issubclass(interface_type, datetime.datetime):
-            # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
-            field_type = 'TIMESTAMP WITHOUT TIME ZONE'
-
-        elif issubclass(interface_type, datetime.date):
-            field_type = 'DATE'
-
-        elif issubclass(interface_type, dict):
-            # https://www.postgresql.org/docs/current/datatype-json.html
-            # In general, most applications should prefer to store JSON data as
-            # jsonb, unless there are quite specialized needs
-            field_type = 'JSONB'
-
-        elif issubclass(interface_type, (float, decimal.Decimal)):
-            precision = field.options.get("precision", 0)
-            scale = field.options.get("scale", 0)
-            if precision:
-                field_type = f'NUMERIC({precision}, {scale})'
-
-            else:
-                size = field.options.get('size', field.options.get('max_size', 0))
-
-                # if size is like 15.6 then that would be considered 21
-                # precision with a scale of 6 (ie, you can have 15 digits before
-                # the decimal point and 6 after)
-                parts = str(size).split(".")
-                if len(parts) > 1:
-                    scale = parts[1] or 0
-                    precision = parts[0] + scale
-                    field_type = f'NUMERIC({precision}, {scale})'
-
-                else:
-                    # https://learn.microsoft.com/en-us/cpp/c-language/type-float
-                    if size < 3.402823466e+38:
-                        field_type = 'REAL'
-
-                    elif size < 1.7976931348623158e+308:
-                        field_type = 'DOUBLE PRECISION'
-
-                    else:
-                        precision = len(str(size))
-                        field_type = f'NUMERIC({precision})'
-
-        elif issubclass(interface_type, (bytearray, bytes)):
-            field_type = 'BLOB'
-
-        elif issubclass(interface_type, uuid.UUID):
-            field_type = 'UUID'
-            if is_pk:
-                field_type += ' DEFAULT gen_random_uuid() PRIMARY KEY'
+    def render_datatype_float_sql(self, field_name, field, **kwargs):
+        size_info = field.size_info()
+        if size_info["has_precision"]:
+            precision = size_info["precision"]
+            scale = size_info["scale"]
+            field_type = f'NUMERIC({precision}, {scale})'
 
         else:
-            raise ValueError('unknown python type: {}'.format(interface_type.__name__))
+            size = size_info["size"]
 
-        if not is_pk:
-            if field.required:
-                field_type += ' NOT NULL'
+            # https://learn.microsoft.com/en-us/cpp/c-language/type-float
+            if size < 3.402823466e+38:
+                field_type = 'REAL'
+
+            elif size < 1.7976931348623158e+308:
+                field_type = 'DOUBLE PRECISION'
+
             else:
-                field_type += ' NULL'
+                precision = size_info["precision"]
+                field_type = f'NUMERIC({precision})'
 
-            if field.is_ref():
-                ref_s = field.schema
-                if field.required: # strong ref, it deletes on fk row removal
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(
-                        ref_s,
-                        ref_s.pk.name
-                    )
+        return field_type
 
-                else: # weak ref, it sets column to null on fk row removal
-                    field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(
-                        ref_s,
-                        ref_s.pk.name
-                    )
+    def render_datatype_uuid_sql(self, field_name, field, **kwargs):
+        # https://www.postgresql.org/docs/current/datatype-uuid.html
+        # https://www.postgresql.org/docs/current/functions-uuid.html
+        field_type = 'UUID'
+        if field.is_pk():
+            field_type += ' DEFAULT gen_random_uuid() PRIMARY KEY'
+        return field_type
 
-        return '{} {}'.format(self._normalize_name(field_name), field_type)
+
+
+
+
+
+#     def render_datatype_sql(self, field_name, field):
+#         """
+#         returns the SQL for a given field with full type information
+# 
+#         https://www.postgresql.org/docs/current/datatype.html
+# 
+#         field_name -- string -- the field's name
+#         fields -- Field() -- the info for the field
+# 
+#         return -- string -- the field type (eg, foo BOOL NOT NULL)
+#         """
+#         field_type = ""
+#         interface_type = field.interface_type
+#         is_pk = field.is_pk()
+# 
+# #         if issubclass(interface_type, bool):
+# #             field_type = 'BOOL'
+# 
+# #         elif issubclass(interface_type, int):
+# #             if is_pk:
+# #                 field_type = 'BIGSERIAL PRIMARY KEY' # INT8
+# # 
+# #             else:
+# #                 if field.is_ref():
+# #                     field_type = 'BIGINT' # INT8
+# # 
+# #                 else:
+# #                     # https://www.postgresql.org/docs/current/datatype-numeric.html
+# #                     size_info = field.size_info()
+# #                     size = size_info["size"]
+# # 
+# #                     if size == 0:
+# #                         field_type = 'INTEGER' # INT4
+# # 
+# #                     elif size < 32767:
+# #                         field_type = 'SMALLINT' # INT2
+# # 
+# #                     elif size < 2147483647:
+# #                         field_type = 'INTEGER' # INT4
+# # 
+# #                     elif size < 9223372036854775807:
+# #                         field_type = 'BIGINT' # INT8
+# # 
+# #                     else:
+# #                         precision = size_info["precision"]
+# #                         field_type = f'NUMERIC({precision}, 0)'
+# # 
+# #         elif issubclass(interface_type, str):
+# #             fo = field.interface_options
+# #             size_info = field.size_info()
+# # 
+# #             if fo.get('ignore_case', False):
+# #                 field_type = 'CITEXT'
+# #                 if 'size' in size_info["original"]:
+# #                     field_type += f" CHECK(length({field_name}) = {size_info['size']})"
+# # 
+# #                 elif 'max_size' in size_info["original"]:
+# #                     field_type += f" CHECK(length({field_name}) <= {size_info['size']})"
+# # 
+# #             else:
+# #                 if 'size' in size_info["original"]:
+# #                     field_type = f"TEXT CHECK(length({field_name}) = {size_info['size']})"
+# # 
+# #                 elif 'max_size' in size_info["original"]:
+# #                     if "min_size" in size_info["original"]:
+# # 
+# # 
+# #                     field_type = 'VARCHAR({})'.format(size_info['size'])
+# # 
+# #                 else:
+# #                     field_type = 'TEXT'
+# # 
+# #             if is_pk:
+# #                 field_type += ' PRIMARY KEY'
+# 
+# #         elif issubclass(interface_type, datetime.datetime):
+# #             # http://www.postgresql.org/docs/9.0/interactive/datatype-datetime.html
+# #             #field_type = 'TIMESTAMP WITHOUT TIME ZONE'
+# # 
+# #             # https://wiki.postgresql.org/wiki/Don't_Do_This#Don.27t_use_timestamp_.28without_time_zone.29
+# #             field_type = 'TIMESTAMPTZ'
+# # 
+# #         elif issubclass(interface_type, datetime.date):
+# #             field_type = 'DATE'
+# 
+# #         elif issubclass(interface_type, dict):
+# #             # https://www.postgresql.org/docs/current/datatype-json.html
+# #             # In general, most applications should prefer to store JSON data as
+# #             # jsonb, unless there are quite specialized needs
+# #             field_type = 'JSONB'
+# 
+#         elif issubclass(interface_type, (float, decimal.Decimal)):
+#             size_info = field.size_info()
+#             if size_info["has_precision"]:
+#                 precision = size_info["precision"]
+#                 scale = size_info["scale"]
+#                 field_type = f'NUMERIC({precision}, {scale})'
+# 
+#             else:
+#                 size = size_info["size"]
+# 
+#                 # https://learn.microsoft.com/en-us/cpp/c-language/type-float
+#                 if size < 3.402823466e+38:
+#                     field_type = 'REAL'
+# 
+#                 elif size < 1.7976931348623158e+308:
+#                     field_type = 'DOUBLE PRECISION'
+# 
+#                 else:
+#                     precision = size_info["precision"]
+#                     field_type = f'NUMERIC({precision})'
+# 
+# #         elif issubclass(interface_type, (bytearray, bytes)):
+# #             field_type = 'BLOB'
+# 
+# #         elif issubclass(interface_type, uuid.UUID):
+# #             # https://www.postgresql.org/docs/current/datatype-uuid.html
+# #             # https://www.postgresql.org/docs/current/functions-uuid.html
+# #             field_type = 'UUID'
+# #             if is_pk:
+# #                 field_type += ' DEFAULT gen_random_uuid() PRIMARY KEY'
+# # 
+# #         else:
+# #             raise ValueError('unknown python type: {}'.format(interface_type.__name__))
+# 
+# #         if not is_pk:
+# #             if field.required:
+# #                 field_type += ' NOT NULL'
+# #             else:
+# #                 field_type += ' NULL'
+# # 
+# #             if field.is_ref():
+# #                 ref_s = field.schema
+# #                 if field.required: # strong ref, it deletes on fk row removal
+# #                     field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(
+# #                         self._normalize_table_name(ref_s),
+# #                         self._normalize_name(ref_s.pk.name)
+# #                     )
+# # 
+# #                 else: # weak ref, it sets column to null on fk row removal
+# #                     field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(
+# #                         self._normalize_table_name(ref_s),
+# #                         self._normalize_name(ref_s.pk.name)
+# #                     )
+# 
+#         return '{} {}'.format(self._normalize_name(field_name), field_type)
 
     def create_error(self, e, **kwargs):
         if isinstance(e, psycopg2.ProgrammingError):

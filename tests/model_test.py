@@ -101,6 +101,14 @@ class OrmTest(EnvironTestCase):
         self.assertIsNone(f.ip)
         self.assertIsNone(f.ip_address)
 
+    def test_aliases_2(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, alias="foo2"),
+        )
+
+        o = orm_class(foo2=1)
+        self.assertEqual(1, o.foo)
+
     def test_alias_pk(self):
         o = self.create_orm()
         self.assertEqual(o.pk, o._id)
@@ -1125,7 +1133,7 @@ class OrmTest(EnvironTestCase):
         q = Bar.query.in_foo_id(Foo.query.select_pk())
         self.assertEqual(count, len(q.get()))
 
-    def test_upsert(self):
+    def test_upsert_1(self):
         orm_class = self.get_orm_class(
             foo=Field(str, True),
             bar=Field(str, True),
@@ -1151,4 +1159,49 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(o.pk, o3.pk)
         o4 = orm_class.query.eq_pk(o3.pk).one()
         self.assertEqual(o3.baz, o4.baz)
+
+    def test_upsert_nochange(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, True),
+            bar=Field(int, True),
+            upsert_index=Index("foo", "bar", unique=True),
+        )
+
+        o = orm_class(foo=1, bar=1)
+        o.upsert()
+
+        with self.assertRaises(ValueError):
+            o.upsert()
+
+    def test_load(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, True),
+            bar=Field(int, True),
+            che=Field(int, True),
+            baz=Field(int, True),
+            che_baz=Index("che", "baz", unique=True),
+            _updated=None,
+        )
+
+        o = orm_class(foo=1, che=1, baz=1)
+
+        self.assertFalse(o.load())
+
+        o.bar = 1
+        o.save()
+
+        o2 = orm_class(che=1, baz=1)
+        self.assertTrue(o2.load())
+        self.assertEqual(o.pk, o2.pk)
+        for field_name, field_value in o.fields.items():
+            self.assertEqual(field_value, getattr(o2, field_name), field_name)
+
+        o2.save()
+        for field_name, field_value in o.fields.items():
+            self.assertEqual(field_value, getattr(o2, field_name), field_name)
+
+        o3 = orm_class(pk=o2.pk)
+        o3.load()
+        for field_name, field_value in o.fields.items():
+            self.assertEqual(field_value, getattr(o3, field_name), field_name)
 

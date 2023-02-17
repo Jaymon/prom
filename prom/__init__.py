@@ -23,9 +23,31 @@ from .exception import InterfaceError, Error, UniqueError
 from . import utils
 
 
-__version__ = '3.2.0'
+__version__ = '4.0.0'
 
 
 # get rid of "No handler found" warnings (cribbed from requests)
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+#logging.getLogger(__name__).addHandler(logging.NullHandler())
+
+
+def transaction(connection_name="", **kwargs):
+    """Create a transaction 
+
+    Sometimes you just need to batch a whole bunch of operation across a whole bunch
+    of different models, this allows you to create a transaction outside of any
+    of the models so you can do that, it will yield a connection you can then pass
+    into the Orm/Query methods
+
+    :Example:
+        with prom.transaction(prefix="batch") as conn:
+            o = FooOrm(foo=1)
+            o.save(connection=conn)
+
+    :param connection_name: str, the connection name corresponding to the anchor
+        of the DSN, defaults to the default "" connection
+    :param **kwargs: passed through to the Interface.transaction context manager
+        prefix: the name of the transaction you want to use
+    :returns: Connection instance
+    """
+    return get_interface(connection_name).transaction(**kwargs)
 

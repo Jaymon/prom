@@ -3,9 +3,12 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 import sys
 import os
 import datetime
+import decimal
 import logging
 from contextlib import contextmanager
-import uuid as uuidgen
+import uuid
+
+from datatypes import LogMixin
 
 # first party
 from ..query import Query
@@ -17,7 +20,6 @@ from ..exception import (
     UniqueError,
     CloseError,
 )
-
 
 from ..decorators import reconnecting
 from ..compat import *
@@ -47,7 +49,7 @@ class Connection(object):
         :param prefix: str, to better track transactions in logs you can give a
             prefix name that will be prepended to the auto-generated name
         """
-        name = str(uuidgen.uuid4())[-5:]
+        name = str(uuid.uuid4())[-5:]
         #tcount = self.transaction_count + 1
         prefix = prefix or "p"
         return f"{prefix}_{name}"
@@ -67,7 +69,7 @@ class Connection(object):
             #uid = id(self)
 
         self.transaction_count += 1
-        logger.debug("{}. Start transaction {}".format(self.transaction_count, name))
+        logger.info("{}. Start transaction {}".format(self.transaction_count, name))
         if self.transaction_count == 1:
             self._transaction_start()
         else:
@@ -82,7 +84,7 @@ class Connection(object):
     def transaction_stop(self, name):
         """stop/commit a transaction if ready"""
         if self.transaction_count > 0:
-            logger.debug("{}. Stop transaction {}".format(self.transaction_count, name))
+            logger.info("{}. Stop transaction {}".format(self.transaction_count, name))
             if self.transaction_count == 1:
                 self._transaction_stop()
 
@@ -102,7 +104,7 @@ class Connection(object):
             raise ValueError("Transaction name cannot be empty")
 
         if self.transaction_count > 0:
-            logger.debug("{}. Failing transaction {}".format(self.transaction_count, name))
+            logger.info("{}. Failing transaction {}".format(self.transaction_count, name))
             if self.transaction_count == 1:
                 self._transaction_fail()
             else:
@@ -143,7 +145,7 @@ class SQLConnection(Connection):
         cur.execute("ROLLBACK TO SAVEPOINT {}".format(name))
 
 
-class Interface(object):
+class Interface(LogMixin):
 
     connected = False
     """true if a connection has been established, false otherwise"""
@@ -288,6 +290,7 @@ class Interface(object):
         """
         with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
+            kwargs.setdefault("prefix", "set_table")
             if self.has_table(str(schema), **kwargs): return True
 
             try:
@@ -318,7 +321,7 @@ class Interface(object):
         table_name -- string -- the table to check
         return -- boolean -- True if the table exists, false otherwise
         """
-        with self.connection(kwargs.get('connection', None)) as connection:
+        with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
             tables = self.get_tables(table_name, **kwargs)
             return len(tables) > 0
@@ -416,6 +419,8 @@ class Interface(object):
         :param **kwargs: passed to callback as **kwargs, can have values added
         :returns: mixed, whatever the callback returns
         """
+        r = None
+
         with self.connection(**kwargs) as connection:
             kwargs['connection'] = connection
             prefix = callback.__name__
@@ -436,8 +441,15 @@ class Interface(object):
                     r = callback(*args, **kwargs)
 
             except Exception as e:
+                self.log(
+                    f"{prefix} failed with {e}, attempting to handle the error",
+                    level='WARNING',
+                )
                 if self.handle_error(e=e, **kwargs):
-                    self.log(f"handle_error returned True, re-running original {prefix} query")
+                    self.log(
+                        f"{prefix} has handled error: '{e}', re-running original query",
+                        level="WARNING",
+                    )
 
                     try:
                         if cb_transaction:
@@ -447,12 +459,21 @@ class Interface(object):
                         else:
                             r = callback(*args, **kwargs)
 
-                    except Exception:
-                        self.log(f"Failed re-running original {prefix} query, raising original error")
+                    except Exception as e:
+                        self.log(
+                            f"{prefix} failed again re-running original query",
+                            level="WARNING",
+                        )
                         self.raise_error(e)
 
                 else:
+                    self.log(
+                        f"Raising '{e}' because it could not be handled!",
+                        level='WARNING',
+                    )
                     self.raise_error(e)
+
+        return r
 
     def insert(self, schema, fields, **kwargs):
         """Persist fields into the db
@@ -603,26 +624,6 @@ class Interface(object):
         """
         return type(self)(self.connection_config)
 
-    def log(self, format_str, *format_args, **log_options):
-        """
-        wrapper around the module's logger
-
-        format_str -- string -- the message to log
-        *format_args -- list -- if format_str is a string containing {}, then format_str.format(*format_args) is ran
-        **log_options -- 
-            level -- something like logging.DEBUG
-        """
-        if isinstance(format_str, Exception):
-            logger.exception(format_str, *format_args)
-
-        else:
-            log_level = log_options.get('level', logging.DEBUG)
-            if logger.isEnabledFor(log_level):
-                if format_args:
-                    logger.log(log_level, format_str.format(*format_args))
-                else:
-                    logger.log(log_level, format_str)
-
     def handle_error(self, schema, e, **kwargs):
         """
         try and handle the error, return False if the error can't be handled
@@ -640,7 +641,12 @@ class Interface(object):
         :param e: Exception, if a built-in exception then it's raised, if any other
             error then it will be wrapped in an InterfaceError
         """
-        raise self.create_error(e, **kwargs) from e
+        e2 = self.create_error(e, **kwargs)
+        if e2 is not e:
+            raise e2 from e
+        else:
+            raise e
+        #raise self.create_error(e, **kwargs) from e
 
     def create_error(self, e, **kwargs):
         """create the error that you want to raise, this gives you an opportunity
@@ -673,7 +679,7 @@ class SQLInterface(Interface):
         where_query_str, query_args = self.get_SQL(schema, query, only_where_clause=True)
         query_str = []
         query_str.append('DELETE FROM')
-        query_str.append('  {}'.format(schema))
+        query_str.append('  {}'.format(self._normalize_table_name(schema)))
         query_str.append(where_query_str)
         query_str = os.linesep.join(query_str)
         ret = self.query(query_str, *query_args, count_result=True, **kwargs)
@@ -698,7 +704,16 @@ class SQLInterface(Interface):
 
             try:
                 if query_args:
-                    self.log("{}{}{}", query_str, os.linesep, query_args)
+                    self.log_for(
+                        debug=(["{}\n{}", query_str, query_args],),
+                        info=([query_str],)
+#                         info_format_str="{}"
+#                         info_format_args=[query_str],
+#                         debug_format_str="{}\n{}",
+#                         debug_format_args=[query_str, query_args]
+                    )
+
+                    #self.log("{}{}{}", query_str, os.linesep, query_args, level="INFO")
                     cur.execute(query_str, query_args)
                 else:
                     self.log(query_str)
@@ -719,7 +734,7 @@ class SQLInterface(Interface):
                         ret = cur.fetchall()
 
             except Exception as e:
-                self.log(e)
+                #self.log(e)
                 raise
 
             return ret
@@ -790,6 +805,25 @@ class SQLInterface(Interface):
 
         return True
 
+    def _set_table(self, schema, **kwargs):
+        """
+        http://sqlite.org/lang_createtable.html
+        http://www.postgresql.org/docs/9.1/static/sql-createtable.html
+        http://www.postgresql.org/docs/8.1/static/datatype.html
+        http://pythonhosted.org/psycopg2/usage.html#adaptation-of-python-values-to-sql-types
+        """
+        query_str = []
+        query_str.append("CREATE TABLE {} (".format(self._normalize_table_name(schema)))
+
+        query_fields = []
+        for field_name, field in schema.fields.items():
+            query_fields.append('  {}'.format(self.render_datatype_sql(field_name, field)))
+
+        query_str.append(",{}".format(os.linesep).join(query_fields))
+        query_str.append(')')
+        query_str = os.linesep.join(query_str)
+        ret = self._query(query_str, ignore_result=True, **kwargs)
+
     def _set_all_fields(self, schema, **kwargs):
         """
         this will add fields that don't exist in the table if they can be set to NULL,
@@ -805,9 +839,9 @@ class SQLInterface(Interface):
                 else:
                     query_str = []
                     query_str.append('ALTER TABLE')
-                    query_str.append('  {}'.format(schema))
+                    query_str.append('  {}'.format(self._normalize_table_name(schema)))
                     query_str.append('ADD COLUMN')
-                    query_str.append('  {}'.format(self.get_field_SQL(field_name, field)))
+                    query_str.append('  {}'.format(self.render_datatype_sql(field_name, field)))
                     query_str = os.linesep.join(query_str)
                     self.query(query_str, ignore_result=True, **kwargs)
 
@@ -840,6 +874,9 @@ class SQLInterface(Interface):
         return self.query(query_str, *query_args, count_result=True, **kwargs)
 
     def _upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
+        """
+        https://www.sqlite.org/lang_UPSERT.html
+        """
         if not conflict_field_names:
             raise ValueError(f"Upsert is missing conflict fields for {schema}")
 
@@ -876,6 +913,7 @@ class SQLInterface(Interface):
 
         returning_field_names = schema.pk_names
         if returning_field_names:
+            # https://www.sqlite.org/lang_returning.html
             query_str += ' RETURNING {}'.format(', '.join(map(self._normalize_name, returning_field_names)))
             query_args = insert_args + update_args
 
@@ -1145,6 +1183,9 @@ class SQLInterface(Interface):
         return query_str, query_args
 
     def render_insert_sql(self, schema, fields, **kwargs):
+        """
+        https://www.sqlite.org/lang_insert.html
+        """
         field_formats = []
         field_names = []
         query_vals = []
@@ -1160,6 +1201,7 @@ class SQLInterface(Interface):
         )
 
         if not kwargs.get("ignore_return_clause", False):
+            # https://www.sqlite.org/lang_returning.html
             pk_name = schema.pk_name
             if pk_name:
                 query_str += ' RETURNING {}'.format(self._normalize_name(pk_name))
@@ -1186,6 +1228,184 @@ class SQLInterface(Interface):
             query_args.extend(where_query_args)
 
         return query_str, query_args
+
+    def render_datatype_sql(self, field_name, field):
+        """Returns the SQL for a given field with full type information
+
+        http://www.sqlite.org/datatype3.html
+        https://www.postgresql.org/docs/current/datatype.html
+
+        :param field_name: str, the field's name
+        :param field: Field instance, the configuration for the field
+        :returns: str, the complete field datatype SQL (eg, foo BOOL NOT NULL)
+        """
+        field_type = ""
+#         is_pk = field.options.get('pk', False)
+        interface_type = field.interface_type
+
+        if issubclass(interface_type, bool):
+            field_type = self.render_datatype_bool_sql(field_name, field)
+#             field_type = 'BOOLEAN'
+
+        elif issubclass(interface_type, int):
+            field_type = self.render_datatype_int_sql(field_name, field)
+
+#             if is_pk:
+#                 field_type += 'INTEGER PRIMARY KEY'
+# 
+#             else:
+#                 # we could break these up into tiny, small, and big but it
+#                 # doesn't really matter so we're not bothering
+#                 # https://www.sqlite.org/datatype3.html
+#                 size = field.size_info()["size"]
+# 
+#                 if size < 9223372036854775807:
+#                     field_type = 'INTEGER'
+# 
+#                 else:
+#                     field_type = NumericType.FIELD_TYPE
+
+        elif issubclass(interface_type, str):
+            field_type = self.render_datatype_str_sql(field_name, field)
+
+#             fo = field.interface_options
+#             field_type = 'TEXT'
+#             size_info = field.size_info()
+# 
+#             # https://www.sqlitetutorial.net/sqlite-check-constraint/
+#             if 'size' in size_info["original"]:
+#                 field_type += f" CHECK(length({field_name}) == {size_info['size']})"
+# 
+#             elif 'max_size' in size_info["original"]:
+#                 field_type += f" CHECK(length({field_name}) <= {size_info['size']})"
+# 
+#             if fo.get('ignore_case', False):
+#                 field_type += ' COLLATE NOCASE'
+# 
+#             if is_pk:
+#                 field_type += ' PRIMARY KEY'
+
+        elif issubclass(interface_type, datetime.datetime):
+            field_type = self.render_datatype_datetime_sql(field_name, field)
+#             field_type = DatetimeType.FIELD_TYPE
+
+        elif issubclass(interface_type, datetime.date):
+            field_type = self.render_datatype_date_sql(field_name, field)
+#             field_type = 'DATE'
+
+        elif issubclass(interface_type, dict):
+            field_type = self.render_datatype_dict_sql(field_name, field)
+#             field_type = DictType.FIELD_TYPE
+
+        elif issubclass(interface_type, (float, decimal.Decimal)):
+            field_type = self.render_datatype_float_sql(field_name, field)
+#             field_type = 'REAL'
+
+        elif issubclass(interface_type, (bytearray, bytes)):
+            field_type = self.render_datatype_bytes_sql(field_name, field)
+#             field_type = 'BLOB'
+
+        elif issubclass(interface_type, uuid.UUID):
+            field_type = self.render_datatype_uuid_sql(field_name, field)
+#             field_type = 'CHARACTER(36)'
+#             if is_pk:
+#                 field_type += ' PRIMARY KEY'
+
+        else:
+            raise ValueError('Unknown python type: {} for field: {}'.format(
+                interface_type.__name__,
+                field_name,
+            ))
+
+        if not field.is_pk():
+            field_type += ' ' + self.render_datatype_required_sql(field_name, field)
+#         if field.required:
+#             field_type += ' NOT NULL'
+#         else:
+#             field_type += ' NULL'
+
+            if field.is_ref():
+                field_type += ' ' + self.render_datatype_ref_sql(field_name, field)
+#         if not is_pk and field.is_ref():
+#             ref_s = field.schema
+#             if field.required: # strong ref, it deletes on fk row removal
+#                 field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(
+#                     ref_s,
+#                     ref_s.pk.name
+#                 )
+# 
+#             else: # weak ref, it sets column to null on fk row removal
+#                 field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(
+#                     ref_s,
+#                     ref_s.pk.name
+#                 )
+
+        return '{} {}'.format(self._normalize_name(field_name), field_type)
+
+    def render_datatype_bool_sql(self, field_name, field, **kwargs):
+        return 'BOOL'
+
+    def render_datatype_int_sql(self, field_name, field, **kwargs):
+        return 'INTEGER'
+
+    def render_datatype_str_sql(self, field_name, field, **kwargs):
+        fo = field.interface_options
+        field_type = kwargs.get("datatype", 'TEXT')
+        size_info = field.size_info()
+
+        # https://www.sqlitetutorial.net/sqlite-check-constraint/
+        if 'size' in size_info["original"]:
+            field_type += f" CHECK(length({field_name}) = {size_info['size']})"
+
+        elif 'max_size' in size_info["original"]:
+            if "min_size" in size_info["original"]:
+                field_type += f" CHECK(length({field_name}) >= {size_info['original']['min_size']}"
+                field_type += " AND "
+                field_type += f"length({field_name}) <= {size_info['original']['max_size']})"
+
+            else:
+                field_type += f" CHECK(length({field_name}) <= {size_info['size']})"
+
+        if field.is_pk():
+            field_type += ' PRIMARY KEY'
+
+        return field_type
+
+    def render_datatype_datetime_sql(self, field_name, field, **kwargs):
+        raise NotImplementedError()
+
+    def render_datatype_date_sql(self, field_name, field):
+        return 'DATE'
+
+    def render_datatype_dict_sql(self, field_name, field, **kwargs):
+        raise NotImplementedError()
+
+    def render_datatype_float_sql(self, field_name, field, **kwargs):
+        return 'REAL'
+
+    def render_datatype_bytes_sql(self, field_name, field, **kwargs):
+        return 'BLOB'
+
+    def render_datatype_uuid_sql(self, field_name, field, **kwargs):
+        raise NotImplementedError()
+
+    def render_datatype_required_sql(self, field_name, field, **kwargs):
+        return 'NOT NULL' if field.required else 'NULL'
+
+    def render_datatype_ref_sql(self, field_name, field, **kwargs):
+        ref_s = field.schema
+        if field.required: # strong ref, it deletes on fk row removal
+            format_str = 'REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'
+
+        else: # weak ref, it sets column to null on fk row removal
+            format_str = 'REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'
+
+        ret = format_str.format(
+            self._normalize_table_name(ref_s),
+            self._normalize_name(ref_s.pk.name)
+        )
+
+        return ret
 
     def render(self, schema, query, **kwargs):
         """Render the query

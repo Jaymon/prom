@@ -178,6 +178,9 @@ class BaseTestCase(TestCase):
 
         return orm_class
 
+#     def create_orm_class(self, table_name=None, **properties):
+#         return self.get_orm_class(table_name, **properties)
+
     def get_orm(self, table_name=None, **fields):
         orm_class = self.get_orm_class(table_name)
         t = orm_class(**fields)

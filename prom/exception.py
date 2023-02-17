@@ -19,6 +19,13 @@ class InterfaceError(Error):
             e = e.e
         return e
 
+    def __str__(self):
+        """Postgres returns multi-line errors, this switches to just return the
+        first line since the other lines aren't usually helpful, if you want the
+        full message just call .unwrapped_e()"""
+        s = super().__str__()
+        return s.splitlines()[0]
+
 
 class TableError(InterfaceError):
     pass

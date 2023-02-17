@@ -245,7 +245,7 @@ class SQLite(SQLInterface):
         #sqlite3.register_converter('NUMERIC', NumericType.convert)
 
         sqlite3.register_adapter(bool, BooleanType.adapt)
-        sqlite3.register_converter('BOOLEAN', BooleanType.convert)
+        sqlite3.register_converter('BOOL', BooleanType.convert)
 
         # sadly, it doesn't look like these work for child classes so each class
         # has to be adapted even if its parent is already registered
@@ -289,120 +289,6 @@ class SQLite(SQLInterface):
 
         ret = self._query(query_str, query_args, **kwargs)
         return [r['tbl_name'] for r in ret]
-
-    def get_field_SQL(self, field_name, field):
-        """
-        returns the SQL for a given field with full type information
-
-        http://www.sqlite.org/datatype3.html
-
-        field_name -- string -- the field's name
-        field -- Field() -- the set options for the field
-
-        return -- string -- the field type (eg, foo BOOL NOT NULL)
-        """
-        field_type = ""
-        is_pk = field.options.get('pk', False)
-        interface_type = field.interface_type
-
-        if issubclass(interface_type, bool):
-            field_type = 'BOOLEAN'
-
-        elif issubclass(interface_type, int):
-            if is_pk:
-                field_type += 'INTEGER PRIMARY KEY'
-
-            else:
-                # we could break these up into tiny, small, and big but it
-                # doesn't really matter so we're not bothering
-                # https://www.sqlite.org/datatype3.html
-                size = field.options.get('size', field.options.get('max_size', 0))
-
-                if size < 9223372036854775807:
-                    field_type = 'INTEGER'
-
-                else:
-                    field_type = NumericType.FIELD_TYPE
-
-        elif issubclass(interface_type, str):
-            if field.is_ref():
-                fo = field.schema.pk.options
-                fo.update(field.options)
-            else:
-                fo = field.options
-
-            field_type = 'TEXT'
-
-            if 'size' in fo:
-                field_type += f" CHECK(length({field_name}) == {fo['size']})"
-            elif 'max_size' in fo:
-                field_type += f" CHECK(length({field_name}) <= {fo['max_size']})"
-
-            if fo.get('ignore_case', False):
-                field_type += ' COLLATE NOCASE'
-
-            if is_pk:
-                field_type += ' PRIMARY KEY'
-
-        elif issubclass(interface_type, datetime.datetime):
-            field_type = DatetimeType.FIELD_TYPE
-
-        elif issubclass(interface_type, datetime.date):
-            field_type = 'DATE'
-
-        elif issubclass(interface_type, dict):
-            field_type = DictType.FIELD_TYPE
-
-        elif issubclass(interface_type, (float, decimal.Decimal)):
-            field_type = 'REAL'
-
-        elif issubclass(interface_type, (bytearray, bytes)):
-            field_type = 'BLOB'
-
-        elif issubclass(interface_type, uuid.UUID):
-            field_type = 'CHARACTER(36)'
-            if is_pk:
-                field_type += ' PRIMARY KEY'
-
-        else:
-            raise ValueError('Unknown python type: {}'.format(interface_type.__name__))
-
-        if field.required:
-            field_type += ' NOT NULL'
-        else:
-            field_type += ' NULL'
-
-        if not is_pk and field.is_ref():
-            ref_s = field.schema
-            if field.required: # strong ref, it deletes on fk row removal
-                field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(
-                    ref_s,
-                    ref_s.pk.name
-                )
-
-            else: # weak ref, it sets column to null on fk row removal
-                field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(
-                    ref_s,
-                    ref_s.pk.name
-                )
-
-        return '{} {}'.format(self._normalize_name(field_name), field_type)
-
-    def _set_table(self, schema, **kwargs):
-        """
-        http://sqlite.org/lang_createtable.html
-        """
-        query_str = []
-        query_str.append("CREATE TABLE {} (".format(self._normalize_table_name(schema)))
-
-        query_fields = []
-        for field_name, field in schema.fields.items():
-            query_fields.append('  {}'.format(self.get_field_SQL(field_name, field)))
-
-        query_str.append(",{}".format(os.linesep).join(query_fields))
-        query_str.append(')')
-        query_str = os.linesep.join(query_str)
-        ret = self._query(query_str, ignore_result=True, **kwargs)
 
     def _set_index(self, schema, name, field_names, **index_options):
         """
@@ -472,7 +358,7 @@ class SQLite(SQLInterface):
                 e = FieldError(e)
 
             elif "no such table" in e_msg:
-                e = Table(e)
+                e = TableError(e)
 
             elif "UNIQUE" in e_msg:
                 e = UniqueError(e)
@@ -600,4 +486,40 @@ class SQLite(SQLInterface):
             limit,
             offset
         )
+
+    def render_datatype_int_sql(self, field_name, field, **kwargs):
+        if field.is_pk():
+            field_type = 'INTEGER PRIMARY KEY'
+
+        else:
+            # we could break these up into tiny, small, and big but it
+            # doesn't really matter so we're not bothering
+            # https://www.sqlite.org/datatype3.html
+            size = field.size_info()["size"]
+
+            if size < 9223372036854775807:
+                field_type = 'INTEGER'
+
+            else:
+                field_type = NumericType.FIELD_TYPE
+
+        return field_type
+
+    def render_datatype_str_sql(self, field_name, field, **kwargs):
+            field_type = super().render_datatype_str_sql(field_name, field, **kwargs)
+
+            fo = field.interface_options
+            if fo.get('ignore_case', False):
+                field_type += ' COLLATE NOCASE'
+
+            return field_type
+
+    def render_datatype_datetime_sql(self, field_name, field, **kwargs):
+        return DatetimeType.FIELD_TYPE
+
+    def render_datatype_dict_sql(self, field_name, field, **kwargs):
+        return DictType.FIELD_TYPE
+
+    def render_datatype_uuid_sql(self, field_name, field, **kwargs):
+        return self.render_datatype_str_sql(field_name, field)
 

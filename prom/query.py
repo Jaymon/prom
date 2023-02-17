@@ -90,11 +90,7 @@ class Iterator(ListIterator):
 
     def next(self):
         cursor = self.cursor()
-
-        if is_py2:
-            cursor_next = cursor.next
-        else:
-            cursor_next = cursor.__next__
+        cursor_next = cursor.__next__
 
         # if we have paginated the results we have to account for requesting the
         # one extra row to see if we have more results waiting
@@ -829,6 +825,9 @@ class Query(object):
         self._ifilter = predicate
         return self
 
+    def filter(self, predicate):
+        return self.ifilter(predicate)
+
     def limit(self, limit):
         self.bounds.limit = limit
         return self
@@ -920,19 +919,20 @@ class Query(object):
     def exists(self):
         return self.has()
 
-    def insert(self):
+    def insert(self, **kwargs):
         """persist the .fields"""
-        return self.interface.insert(self.schema, self.fields_set.fields)
+        return self.interface.insert(self.schema, self.fields_set.fields, **kwargs)
 
-    def update(self):
+    def update(self, **kwargs):
         """persist the .fields using .fields_where"""
         return self.interface.update(
             self.schema,
             self.fields_set.fields,
-            self
+            self,
+            **kwargs
         )
 
-    def upsert(self, conflict_field_names=None):
+    def upsert(self, conflict_field_names=None, **kwargs):
         """persist the .fields"""
         insert_fields = self.fields_set.fields
         update_fields = dict(insert_fields)
@@ -948,11 +948,12 @@ class Query(object):
             insert_fields,
             update_fields,
             conflict_field_names,
+            **kwargs
         )
 
-    def delete(self):
+    def delete(self, **kwargs):
         """remove fields matching the where criteria"""
-        return self.execute('delete')
+        return self.execute('delete', **kwargs)
 
     def render(self, **kwargs):
         """Render the query
@@ -996,10 +997,6 @@ class Query(object):
                 setattr(instance, key, copy.deepcopy(val, memodict))
         return instance
 
-    def __unicode__(self):
-        return self.render()
-
     def __str__(self):
-        ret = self.__unicode__()
-        return ByteString(ret) if is_py2 else ret
+        return self.render()
 

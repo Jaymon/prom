@@ -171,6 +171,26 @@ class InterfaceTest(BaseTestInterface):
         self.assertEqual(1, d["foo"])
         self.assertEqual(pk, d["_id"])
 
+    def test_invalid_text_repr(self):
+        orm_class1 = self.get_orm_class(
+            _id=Field(UUID, True, pk=True),
+        )
+        orm_class2 = self.get_orm_class(
+            fk=Field(orm_class1, True),
+            interface=orm_class1.interface,
+        )
+
+        o = orm_class1()
+        o.save()
+
+        o2 = orm_class2(fk=o.pk)
+        o2.save()
+
+        # make sure psycopg2.errors.InvalidTextRepresentation doesn't get misrepresented
+        with self.assertRaises(prom.InterfaceError):
+            o3 = orm_class2(fk='foo')
+            o3.save()
+
 
 @skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")
 class XInterfaceGeventTest(InterfaceTest):

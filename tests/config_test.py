@@ -139,6 +139,14 @@ class SchemaTest(BaseTestCase):
         self.assertEqual(None, o._id)
         self.assertTrue(hasattr(Orm, "_id"))
 
+    def test_field_name(self):
+        s = self.get_schema(_id=None)
+        with self.assertRaises(AttributeError):
+            s.field_name("bogus")
+
+        r = s.field_name("bogus", None)
+        self.assertIsNone(r)
+
 
 class DsnConnectionTest(BaseTestCase):
     def test_environ(self):
@@ -802,6 +810,37 @@ class FieldTest(EnvironTestCase):
         f = Field(int, True, min_size=100, max_size=500)
         self.assertEqual(100, f.options["min_size"])
         self.assertEqual(500, f.options["max_size"])
+
+    def test_size_info(self):
+        f = Field(str, size=32)
+        r = f.size_info()
+        self.assertLessEqual(32, r["size"])
+        self.assertLessEqual(32, r["precision"])
+
+        f = Field(int)
+        r = f.size_info()
+        self.assertLessEqual(2147483647, r["size"])
+
+        f = Field(float, size="15.6")
+        r = f.size_info()
+        self.assertTrue(r["has_sizing"])
+        self.assertEqual(21, r["precision"])
+        self.assertEqual(6, r["scale"])
+
+        f = Field(float, precision=78, scale=18)
+        r = f.size_info()
+        self.assertFalse(r["has_sizing"])
+        self.assertTrue(r["has_precision"])
+        self.assertTrue(r["has_scale"])
+
+        f = Field(int, size=100)
+        r = f.size_info()
+        self.assertTrue(r["has_sizing"])
+        self.assertEqual(100, r["size"])
+
+        f = Field(int, precision=78)
+        r = f.size_info()
+        self.assertEqual(int("9" * 78), r["size"])
 
 
 class SerializedFieldTest(EnvironTestCase):

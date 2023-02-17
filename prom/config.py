@@ -228,7 +228,8 @@ class Schema(object):
     @property
     def pk_names(self):
         """Returns all the field names comprising the primary key as a list"""
-        return [self.pk_name]
+        pk_name = self.pk_name
+        return [pk_name] if pk_name else []
 
     @classmethod
     def get_instance(cls, orm_class, **kwargs):
@@ -294,7 +295,6 @@ class Schema(object):
         self.orm_class = None
         self.lookup = {
             "names": {},
-            "pk": None,
         }
 
         for name, val in fields_or_indexes.items():
@@ -336,6 +336,9 @@ class Schema(object):
         """Return True if schema contains field_name"""
         return field_name in self.lookup["names"]
 
+    def __contains__(self, field_name):
+        return self.has_field(field_name)
+
     def set_field(self, field_name, field):
         if not field_name: raise ValueError("field_name is empty")
         if field_name in self.fields: raise ValueError("{} already exists and cannot be changed".format(field_name))
@@ -354,10 +357,6 @@ class Schema(object):
 
         for fn in field.names:
             self.lookup["names"][fn] = field
-
-        if field.is_pk():
-            self.lookup["pk"] = field
-            self.lookup["names"]["pk"] = field
 
         return self
 
@@ -385,14 +384,26 @@ class Schema(object):
         self.indexes[index_name] = index
         return self
 
-    def field_name(self, k):
+    def field_name(self, field_name, *default):
         """
-        get the field name of k
+        get the canonical field name of field_name
 
-        most of the time, the field_name of k will just be k, but this makes special
-        allowance for k's like "pk" which will return _id
+        most of the time, the field name of field_name will just be field_name,
+        but this checks the configured aliases to return the canonical name
+
+        :param field_name: str, the field_name you want the canonical field name for
+        :param *default: mixed, if present this will be returned instead of AttributeError
+            raised if field_name doesn't exist
         """
-        return self.__getattr__(k).name
+        try:
+            return self.__getattr__(field_name).name
+
+        except AttributeError:
+            if default:
+                return default[0]
+
+            else:
+                raise
 
     def create_orm(self, orm_class=None):
         """If you have a schema but don't have an Orm for it, you can call this method
@@ -686,7 +697,69 @@ class Field(object, metaclass=FieldMeta):
 
         names.extend(self.options.get("names", []))
         names.extend(self.options.get("aliases", []))
+
+        if alias := self.options.get("alias", ""):
+            names.append(alias)
+
+        if self.is_pk():
+            names.append("pk")
+
         return names
+
+    @property
+    def interface_options(self):
+        if self.is_ref():
+            options = field.schema.pk.options
+            options.update(self.options)
+        else:
+            options = self.options
+        return options
+
+#     @property
+#     def max_size(self):
+#         # https://www.postgresql.org/docs/current/datatype-numeric.html
+#         size = self.options.get('size', self.options.get('max_size', 0))
+# 
+#         if size <= 0:
+#             precision = self.options.get("precision", 0)
+#             if precision:
+#                 size = int("9" * precision)
+#             else:
+#                 # this is 32bit, it might be worth setting no defined size to 64bit
+#                 size = 2147483647 # INT4
+# 
+#         return size
+# 
+#     @property
+#     def precision(self):
+#         precision = self.options.get("precision", 0)
+#         if not precision:
+#             precision = len(str(self.max_size))
+#         return precision
+# 
+#     @property
+#     def scale(self):
+# 
+#         if "scale" in self.options:
+#             scale = self.options.get("scale", 0)
+# 
+#         else:
+#             # if size is like 15.6 then that would be considered 21
+#             # precision with a scale of 6 (ie, you can have 15 digits before
+#             # the decimal point and 6 after)
+#             size = self.options.get('size', self.options.get('max_size', 0))
+#             parts = str(size).split(".")
+#             if len(parts) > 1:
+#                 scale = parts[1] or 0
+#                 precision = parts[0] + scale
+# 
+# 
+#         interface_type = self.interface_type
+# 
+#         if isinstance(self.interface_type, float):
+
+
+
 
 #     @classmethod
 #     def get_instance(cls, **kwargs):
@@ -780,9 +853,9 @@ class Field(object, metaclass=FieldMeta):
 
         min_size = field_options.pop("min_size", -1)
         max_size = field_options.pop("max_size", -1)
-        size = field_options.pop("size", -1)
+        size = field_options.pop("size", None)
 
-        if size > 0:
+        if size is not None:
             d['size'] = size
 
         else:
@@ -798,6 +871,92 @@ class Field(object, metaclass=FieldMeta):
 
         return d
 
+    def size_info(self):
+        """Figure out actual sizing information with all the ways we can calculate
+        size now
+
+        :returns: dict, will always have "has_size" and "has_precision" keys
+            * if "has_size" key is True then "size" key will exist
+            * if "has_precision" is True then "precision" and "scale" keys will exist
+        """
+        ret = {
+            "has_size": False,
+            "has_precision": False,
+            "original": {},
+        }
+        options = self.interface_options
+
+        if "size" in options:
+            ret["size"] = options["size"]
+            ret["original"]["size"] = options["size"]
+            ret["has_size"] = True
+            ret["bounds"] = (ret["size"], ret["size"])
+
+        if "max_size" in options:
+            ret["size"] = max(options["max_size"], ret.get("size", 0))
+            ret["original"]["max_size"] = options["max_size"]
+            ret["has_size"] = True
+            ret["bounds"] = (ret.get("size", 0), ret["size"])
+
+        if "min_size" in options:
+            ret["size"] = max(options["min_size"], ret.get("size", 0))
+            ret["original"]["min_size"] = options["min_size"]
+            ret["has_size"] = True
+            ret["bounds"] = (options["min_size"], ret["size"])
+
+        if ret["has_size"]:
+            # if size is like 15.6 then that would be considered 21
+            # precision with a scale of 6 (ie, you can have 15 digits before
+            # the decimal point and 6 after)
+            parts = str(ret["size"]).split(".")
+            if len(parts) > 1:
+                ret["scale"] = int(parts[1])
+                ret["precision"] = int(parts[0]) + ret["scale"]
+
+                # the set size was actually precision and scale so we don't have
+                # sizing information
+                ret["has_precision"] = True
+                ret.pop("size")
+
+        if "precision" in options:
+            precision = options["precision"]
+            ret["precision"] = precision
+            ret["original"]["precision"] = precision
+            ret["has_precision"] = True
+            ret["scale"] = 0
+
+            if "scale" in options:
+                scale = options["scale"]
+                ret["scale"] = scale
+                ret["original"]["scale"] = scale
+
+        interface_type = self.interface_type
+        if issubclass(interface_type, (int, float, decimal.Decimal)):
+            if "precision" in ret and "size" not in ret:
+                if "scale" in ret:
+                    ret["size"] = float("{}.{}".format(
+                        "9" * ret["precision"],
+                        "9" * ret["scale"],
+                    ))
+
+                else:
+                    ret["size"] = int("9" * ret["precision"])
+
+            elif "precision" not in ret and "size" not in ret:
+                # this is 32bit, it might be worth setting defined size to 64bit
+                ret["size"] = 2147483647
+
+        elif issubclass(interface_type, (str, bytes, bytearray)):
+            if ret["has_size"]:
+                if not ret["has_precision"]:
+                    ret["precision"] = ret["size"]
+                    ret["scale"] = 0
+
+            elif ret["has_precision"]:
+                ret["size"] = ret["precision"]
+
+        return ret
+
     def set_type(self, field_type):
         """Try to infer as much about the type as can be inferred at this moment
 
@@ -812,7 +971,6 @@ class Field(object, metaclass=FieldMeta):
         std_types = (
             str,
             bool,
-            long,
             int,
             float,
             bytes,
@@ -879,6 +1037,10 @@ class Field(object, metaclass=FieldMeta):
     def is_pk(self):
         """return True if this field is a primary key"""
         return self.options.get("pk", False)
+
+    def is_auto(self):
+        """Return True if this field auto-generates its value somehow"""
+        return self.options.get("auto", False)
 
     def is_ref(self):
         """return true if this field foreign key references the primary key of another orm"""
@@ -1194,8 +1356,40 @@ class Field(object, metaclass=FieldMeta):
         orm.__dict__[self.orm_field_name] = val
 
 
-class DatetimeField(Field):
+class AutoUUID(Field):
+    """an auto-generating UUID field, by default this will be set as primary key"""
+    def __init__(self, **kwargs):
+        kwargs.setdefault("pk", True)
+        kwargs.setdefault("auto", True)
+        kwargs.setdefault("size", 36)
+        super().__init__(
+            field_type=uuid.UUID,
+            field_required=True,
+            **kwargs
+        )
+
+
+class AutoIncrement(Field):
+    """an auto-incrementing Serial field, by default this will be set as primary key"""
+    def __init__(self, **kwargs):
+        kwargs.setdefault("pk", True)
+        kwargs.setdefault("auto", True)
+        super().__init__(
+            field_type=int,
+            field_required=True,
+            **kwargs
+        )
+
+
+class AutoDatetime(Field):
     """A special field that will create a datetime according to triggers
+
+    :Example:
+        # datetime will be auto-populated on creation
+        created = AutoDatetime(created=True)
+
+        # datetime will be auto-populated on creation and update
+        updated = AutoDatetime(updated=True)
 
     The triggers are:
         created: create a datetime in the field when the Orm is being created (added
@@ -1203,13 +1397,16 @@ class DatetimeField(Field):
         updated: update the datetime when the Orm is created and when it is updated
             in the db
     """
-    def __init__(self, created=True, updated=True, *args, **kwargs):
-        kwargs.setdefault("created", created)
-        kwargs.setdefault("updated", updated)
+    def __init__(self, **kwargs):
+        kwargs.setdefault("created", kwargs.get("create", True))
+        kwargs.setdefault("updated", kwargs.get("update", False))
+        kwargs.setdefault("auto", True)
+        if kwargs["updated"]:
+            kwargs["created"] = False
+
         super().__init__(
-            field_type = datetime.datetime,
-            field_required = True,
-            *args,
+            field_type=datetime.datetime,
+            field_required=True,
             **kwargs,
         )
 
@@ -1237,26 +1434,4 @@ class DatetimeField(Field):
             val = datetime.datetime.utcnow()
 
         return val
-
-
-class UUID(Field):
-    def __init__(self, field_type=uuid.UUID, field_required=True, *args, **kwargs):
-        kwargs.setdefault("pk", True)
-        super().__init__(
-            field_type=field_type,
-            field_required=field_required,
-            *args,
-            **kwargs
-        )
-
-
-class AutoIncrement(Field):
-    def __init__(self, field_type=int, field_required=True, *args, **kwargs):
-        kwargs.setdefault("pk", True)
-        super().__init__(
-            field_type=field_type,
-            field_required=field_required,
-            *args,
-            **kwargs
-        )
 

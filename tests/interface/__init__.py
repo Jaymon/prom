@@ -1221,11 +1221,38 @@ class BaseTestInterface(BaseTestCase):
         self.assertEqual(foo, d["foo"])
 
     def test_text_size_constraint(self):
-        i = self.get_interface()
-        s = self.get_schema(
+        # both min and max size
+        i, s = self.create_schema(
+            foo=Field(str, True, min_size=10, max_size=20),
+        )
+
+        with self.assertRaises(InterfaceError):
+            i.insert(s, {"foo": testdata.get_ascii(30)})
+
+        with self.assertRaises(InterfaceError):
+            i.insert(s, {"foo": testdata.get_ascii(5)})
+
+        pk = i.insert(s, {"foo": testdata.get_ascii(15)})
+        self.assertLess(0, pk)
+
+        # just size
+        i, s = self.create_schema(
+            foo=Field(str, True, size=10),
+        )
+
+        with self.assertRaises(InterfaceError):
+            i.insert(s, {"foo": testdata.get_ascii(20)})
+
+        with self.assertRaises(InterfaceError):
+            i.insert(s, {"foo": testdata.get_ascii(5)})
+
+        pk = i.insert(s, {"foo": testdata.get_ascii(10)})
+        self.assertLess(0, pk)
+
+        # just max size
+        i, s = self.create_schema(
             foo=Field(str, True, max_size=10),
         )
-        i.set_table(s)
 
         with self.assertRaises(InterfaceError):
             foo = testdata.get_ascii(20)
@@ -1240,6 +1267,7 @@ class BaseTestInterface(BaseTestCase):
         pk = i.insert(s, {"foo": foo})
         d = i.get_one(s, query.Query().is__id(pk))
         self.assertEqual(foo, d["foo"])
+
 
     def test_upsert_pk(self):
         i, s = self.create_schema()
