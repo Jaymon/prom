@@ -28,19 +28,9 @@ import prom
 testdata.basic_logging()
 
 
-#os.environ.setdefault('PROM_SQLITE_DSN', 'prom.interface.sqlite.SQLite://:memory:')
-# os.environ.setdefault(
-#     'PROM_SQLITE_DSN',
-#     'prom.interface.sqlite.SQLite://{}.sqlite'.format(os.path.join(tempfile.gettempdir(), str(uuid4())))
-# )
-
-
 class BaseTestCase(TestCase):
 
     interfaces = set()
-
-    #sqlite_class = SQLite
-    #postgres_class = PostgreSQL
 
     def tearDown(self):
         self.tearDownClass()
@@ -56,10 +46,6 @@ class BaseTestCase(TestCase):
         """make sure there is a default interface for any class"""
         for inter in cls.create_environ_interfaces():
             inter.unsafe_delete_tables()
-
-        #i = cls.get_interface()
-        #i.unsafe_delete_tables()
-        #prom.set_interface(i)
 
     @classmethod
     def tearDownClass(cls):
@@ -120,13 +106,6 @@ class BaseTestCase(TestCase):
         return inter
         #return cls.create_environ_interface("PROM_POSTGRES_DSN")
 
-#     @classmethod
-#     def create_environ_interface(cls, dsn_env_name):
-#         config = DsnConnection(os.environ[dsn_env_name])
-#         inter = config.interface
-#         cls.connections.add(inter)
-#         return inter
-
     def get_table(self, table_name=None, interface=None, **fields_or_indexes):
         """
         return an interface and schema for a table in the db
@@ -154,7 +133,7 @@ class BaseTestCase(TestCase):
             properties["interface"] = self.get_interface()
 
         has_field = False
-        for v in properties.values():
+        for k, v in properties.items():
             if isinstance(v, Field):
                 has_field = True
                 break

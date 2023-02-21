@@ -4,7 +4,11 @@ import inspect
 import sys
 import datetime
 
-from datatypes.collections import Pool
+from datatypes.collections import (
+    Pool,
+    EnglishWord,
+    NamingConvention,
+)
 
 # first party
 from .query import Query, Iterator
@@ -41,7 +45,7 @@ class OrmPool(Pool):
         self.orm_class = orm_class
 
     def __missing__(self, pk):
-        o = self.orm_class.query.eq_field("pk", pk).one()
+        o = self.orm_class.query.eq_pk(pk).one()
         self[pk] = o
         return o
 
@@ -71,46 +75,48 @@ class Orm(object):
     iterator_class = Iterator
     """the class this Orm will use for iterating through results returned from db"""
 
-    #_id = Field(int, True, pk=True)
+    orm_classes = {}
+    """This will hold all other orm classes that have been loaded into memory
+    the class path is the key and the class object is the value"""
+
     _id = AutoIncrement(aliases=["id"])
     _created = AutoDatetime(created=True, updated=False, aliases=["created"])
     _updated = AutoDatetime(created=False, updated=True, aliases=["updated"])
 
-#     class _created(Field):
-#         type = datetime.datetime
-#         required = True
-#         options = {
-#             "aliases": ["created"],
-#         }
-# 
-#         def iset(self, orm, val):
-#             if not val and orm.is_insert():
-#                 val = datetime.datetime.utcnow()
-#             return val
-# 
-#     class _updated(Field):
-#         type = datetime.datetime
-#         required = True
-#         options = {
-#             "aliases": ["updated"],
-#         }
-# 
-#         def iset(self, orm, val):
-#             if val:
-#                 if not self.modified(orm, val):
-#                     val = datetime.datetime.utcnow()
-# 
-#             else:
-#                 val = datetime.datetime.utcnow()
-# 
-#             return val
-
     @decorators.classproperty
     def table_name(cls):
-        return "{}_{}".format(
+        return NamingConvention("{}_{}".format(
             cls.__module__.lower().replace(".", "_"),
             cls.__name__.lower()
-        )
+        )).snakecase()
+
+    @decorators.classproperty
+    def model_name(cls):
+        """Returns the name for this orm
+
+        :Example:
+            class Collection(Orm): pass
+
+            print(Collection.model_name) # collection
+            print(Collection.models_name) # collections
+
+        :param plural: bool, True if you would like the plural model name
+        :returns: str, the model name in either singular or plural form
+        """
+        return NamingConvention(cls.__name__.lower()).snakecase()
+#         if plural:
+#             name = EnglishWord(name).plural()
+# 
+#         return name
+
+    @decorators.classproperty
+    def models_name(cls):
+        """Returns the plural name for this orm
+
+        :see: .model_name
+        :returns: str, the model name in plural form
+        """
+        return EnglishWord(cls.model_name).plural()
 
     @decorators.classproperty
     def schema(cls):
@@ -246,6 +252,12 @@ class Orm(object):
             fields[field_name] = field.fdefault(self, fields.get(field_name, None))
 
         self.modify(fields)
+
+    def __init_subclass__(cls):
+        """When this class is loaded into memory it will be saved into cls.orm_classes,
+        this way every orm class knows about all the others"""
+        super().__init_subclass__()
+        cls.orm_classes[f"{cls.__module__}:{cls.__name__}"] = cls
 
     def fk(self, orm_class):
         """find the field value in self that is the primary key of the passed in orm_class

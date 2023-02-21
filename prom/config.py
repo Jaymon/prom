@@ -477,15 +477,8 @@ class FieldMeta(type):
     This makes it so an embedded field class will be treated as a descriptor. It
     uses an embedded .instance property to actually perform the operations
     """
-#     def __getattr__(self, *args, **kwargs):
-#         pout.v(args, kwargs)
-#         return super().__getattr__(*args, **kwargs)
-
-    #cls(cls.type, cls.required, cls.options)
-
-
     def __set_name__(cls, orm_class, name):
-        """I'm not quite sure this works, but it does. Basically, when you define
+        """I'm not quite sure why this works, but it does. Basically, when you define
         the field as an embedded class in the orm, this method will get called
         when the class is being parsed/loaded the first time.
 
@@ -499,30 +492,6 @@ class FieldMeta(type):
         instance = cls(cls.type, cls.required, cls.options)
         instance.__set_name__(orm_class, name)
         setattr(orm_class, name, instance)
-
-#         pout.v(f"FieldMeta.__set_name__ for {name}")
-#         pout.v(orm_class, name)
-#         return cls.get_instance().__set_name__(orm_class, name)
-
-#     def __get__(cls, obj, obj_class=None):
-#         pout.v("FieldMeta.__get__")
-#         pout.v(cls, obj, obj_class)
-#         if obj is None:
-#             # class is requesting this property, so return it
-#             return cls
-# 
-#         ret = cls.get_instance().__get__(obj, obj_class)
-#         return ret
-
-#     def __set__(cls, *args, **kwargs):
-#         pout.v("FieldMeta.__set__")
-#         pout.v(cls, args, kwargs)
-#         ret = cls.get_instance().__set__(*args, **kwargs)
-#         return ret
-# 
-#     def __delete__(cls, *args, **kwargs):
-#         ret = cls.get_instance().__delete__(*args, **kwargs)
-#         return ret
 
 
 class Field(object, metaclass=FieldMeta):
@@ -639,9 +608,6 @@ class Field(object, metaclass=FieldMeta):
     index = False
     """True if this field is indexed"""
 
-    #instance = None
-    """Don't touch this unless you know what you're doing. Holds internal cached instance"""
-
     @cachedproperty(cached="_schema")
     def schema(self):
         """return the schema instance if this is reference to another table
@@ -715,58 +681,6 @@ class Field(object, metaclass=FieldMeta):
             options = self.options
         return options
 
-#     @property
-#     def max_size(self):
-#         # https://www.postgresql.org/docs/current/datatype-numeric.html
-#         size = self.options.get('size', self.options.get('max_size', 0))
-# 
-#         if size <= 0:
-#             precision = self.options.get("precision", 0)
-#             if precision:
-#                 size = int("9" * precision)
-#             else:
-#                 # this is 32bit, it might be worth setting no defined size to 64bit
-#                 size = 2147483647 # INT4
-# 
-#         return size
-# 
-#     @property
-#     def precision(self):
-#         precision = self.options.get("precision", 0)
-#         if not precision:
-#             precision = len(str(self.max_size))
-#         return precision
-# 
-#     @property
-#     def scale(self):
-# 
-#         if "scale" in self.options:
-#             scale = self.options.get("scale", 0)
-# 
-#         else:
-#             # if size is like 15.6 then that would be considered 21
-#             # precision with a scale of 6 (ie, you can have 15 digits before
-#             # the decimal point and 6 after)
-#             size = self.options.get('size', self.options.get('max_size', 0))
-#             parts = str(size).split(".")
-#             if len(parts) > 1:
-#                 scale = parts[1] or 0
-#                 precision = parts[0] + scale
-# 
-# 
-#         interface_type = self.interface_type
-# 
-#         if isinstance(self.interface_type, float):
-
-
-
-
-#     @classmethod
-#     def get_instance(cls, **kwargs):
-#         if not cls.instance:
-#             cls.instance = cls(cls.type, cls.required, cls.options)
-#         return cls.instance
-
     def __init__(self, field_type, field_required=False, field_options=None, **field_options_kwargs):
         """
         create a field
@@ -834,8 +748,7 @@ class Field(object, metaclass=FieldMeta):
         :param name: str, the field's public name on the orm class
         """
         self.orm_class = orm_class
-
-        #self.orm_field_name = name
+        self.name = name
 
         # the field name this descriptor will use to set the value onto the orm
         # instance
@@ -878,6 +791,7 @@ class Field(object, metaclass=FieldMeta):
         :returns: dict, will always have "has_size" and "has_precision" keys
             * if "has_size" key is True then "size" key will exist
             * if "has_precision" is True then "precision" and "scale" keys will exist
+            * if "bounds" key exists it will be a tuple (min_size, max_size)
         """
         ret = {
             "has_size": False,

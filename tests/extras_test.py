@@ -5,7 +5,8 @@ from datatypes import Enum
 
 from prom.extras.config import Field
 from prom.extras.model import MagicOrm
-from . import TestCase, EnvironTestCase, testdata
+from prom.extras.testdata import ModelData
+from . import BaseTestCase, EnvironTestCase, testdata
 
 
 class MagicOrmTest(EnvironTestCase):
@@ -143,4 +144,16 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(FooEnum.FOO.value, o.type)
         self.assertFalse(f.is_serialized())
         self.assertTrue(issubclass(f.interface_type, int))
+
+
+class ModelDataTest(BaseTestCase):
+    def test_ref(self):
+        ref_class = self.get_orm_class()
+        orm_class = self.get_orm_class(ref_id=Field(ref_class, True))
+
+        self.assertEqual(0, ref_class.query.count())
+
+        orm = testdata.get_orm(orm_class)
+
+        self.assertEqual(1, ref_class.query.count())
 
