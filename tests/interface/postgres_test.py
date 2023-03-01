@@ -104,12 +104,6 @@ class InterfaceTest(BaseTestInterface):
         orm_class = self.get_orm_class(
             ts=Field(datetime.datetime, True)
         )
-#         i = self.get_interface()
-#         s = Schema(
-#             "fake_table_name",
-#             ts=Field(datetime.datetime, True)
-#         )
-#         orm_class = s.create_orm()
 
         fstr, fargs = orm_class.query.eq_ts(day=10).render(placeholder=True)
         self.assertTrue('EXTRACT(DAY FROM "ts") = %s' in fstr)
@@ -133,12 +127,6 @@ class InterfaceTest(BaseTestInterface):
         orm_class = self.get_orm_class(
             ts=Field(datetime.datetime, True)
         )
-#         i = self.get_interface()
-#         s = Schema(
-#             "fake_table_name",
-#             ts=Field(datetime.datetime, True)
-#         )
-#         orm_class = s.create_orm()
 
         fstr, fargs = orm_class.query.in_ts(day=10).render(placeholder=True)
         self.assertTrue('EXTRACT(DAY FROM "ts") IN (%s)' in fstr)

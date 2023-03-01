@@ -159,9 +159,6 @@ class BaseTestCase(TestCase):
 
         return orm_class
 
-#     def create_orm_class(self, table_name=None, **properties):
-#         return self.get_orm_class(table_name, **properties)
-
     def get_orm(self, table_name=None, **fields):
         orm_class = self.get_orm_class(table_name)
         t = orm_class(**fields)
@@ -311,9 +308,6 @@ class BaseTestCase(TestCase):
             elif issubclass(v.interface_type, datetime.datetime):
                 fields[k] = testdata.get_past_datetime()
 
-#             elif issubclass(v.interface_type, decimal.Decimal):
-#                 fields[k] = decimal.Decimal(testdata.get_float())
-
             elif issubclass(v.interface_type, float):
                 fields[k] = testdata.get_float()
 
@@ -398,45 +392,7 @@ class BaseTestCase(TestCase):
 
 class EnvironTestCase(BaseTestCase):
     """This will run all the tests with multple environments (eg, both SQLite and Postgres)"""
-
     interface = None
-
-#     @classmethod
-#     def setUpClass(cls):
-#         """make sure there is a default interface for any class"""
-#         for i in cls.create_interfaces():
-#             i.delete_tables(disable_protection=True)
-#             prom.set_interface(i)
-
-#     @classmethod
-#     def create_interfaces(cls):
-#         """Return the interfaces
-# 
-#         If you would like to cancel an interface, you can do that using the environment:
-# 
-#             export PROM_SQLITE_DSN=
-# 
-#         And then to reactivate it:
-# 
-#             unset PROM_SQLITE_DSN
-# 
-#         :returns: list, the Interface instances
-#         """
-#         ret = []
-#         dsns = [
-#             "PROM_POSTGRES_DSN",
-#             "PROM_SQLITE_DSN",
-#         ]
-# 
-#         for dsn in dsns:
-#             if os.environ.get(dsn, None):
-#                 ret.append(cls.create_environ_interface(dsn))
-# 
-#         return ret
-# #         return [
-# #             cls.create_environ_interface("PROM_POSTGRES_DSN"),
-# #             cls.create_environ_interface("PROM_SQLITE_DSN")
-# #         ]
 
     @classmethod
     def create_interface(cls):

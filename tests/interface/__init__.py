@@ -352,19 +352,6 @@ class BaseTestInterface(BaseTestCase):
         pk = i.insert(s, d)
         self.assertGreater(pk, 0)
 
-#     def test_set_insert(self):
-#         """test just the insert portion of set"""
-#         i, s = self.get_table()
-#         q = query.Query()
-# 
-#         q.set({
-#             'foo': 1,
-#             'bar': 'this is the value',
-#         })
-# 
-#         rd = i.set(s, q)
-#         self.assertTrue(rd[s._id.name], 0)
-# 
     def test_get_sql(self):
         i = self.get_interface()
         s = self.get_schema()
