@@ -254,34 +254,6 @@ class ModelData(TestData):
         except AttributeError:
             return super().__getattr__(method_name)
 
-    # TODO -- move this functionality to __getattr__, which will create a partial and
-    # keep a mapping cache of the generated methods to check against, and also a
-    # mapping cache of the model names
-#     def _inject_update2(self, testdata):
-#         """TestData hook method, anytime TestData.__update_subclasses__() method
-#         is called then this will be called. It will go through and inject any un-added
-#         orm_classes
-# 
-#         :param testdata: module, the module that will be injected into
-#         """
-#         for orm_class in self._orm_classes():
-#             if orm_class not in self.injected_orm_classes:
-#                 logger.debug(f"Injecting {orm_class.__name__} into {self.__class__.__name__}")
-#                 self.injected_orm_classes.add(orm_class)
-# 
-#                 methods = [
-#                     self._get_method(orm_class),
-#                     self._gets_method(orm_class),
-#                     self._create_method(orm_class),
-#                     self._creates_method(orm_class),
-#                     self._fields_method(orm_class),
-#                 ]
-# 
-#                 for method_name, method in methods:
-#                     method = functools.partial(method, orm_class=orm_class)
-#                     setattr(self, method_name, method)
-#                     setattr(testdata, method_name, method)
-
     def unsafe_delete_db(self):
         """This will delete all the tables from the db
 

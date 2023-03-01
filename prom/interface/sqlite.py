@@ -328,23 +328,6 @@ class SQLite(SQLInterface):
 
         return ret
 
-#     def _insert(self, schema, fields, **kwargs):
-#         """
-#         http://www.sqlite.org/lang_insert.html
-#         """
-#         query_str, query_args = self.render_insert_sql(
-#             schema,
-#             fields,
-#             ignore_return_clause=True,
-#             **kwargs,
-#         )
-#         ret = self._query(query_str, query_args, cursor_result=True, **kwargs)
-# 
-#         pk_name = schema.pk_name
-#         # http://stackoverflow.com/questions/6242756/
-#         # could also do _query('SELECT last_insert_rowid()')
-#         return ret.lastrowid if pk_name not in fields else fields[pk_name]
-
     def _delete_tables(self, **kwargs):
         self._query('PRAGMA foreign_keys = OFF', ignore_result=True, **kwargs);
         ret = super(SQLite, self)._delete_tables(**kwargs)
@@ -415,9 +398,6 @@ class SQLite(SQLInterface):
 
         # the rows we can set: field_type, name, field_required, min_size, max_size,
         #   size, unique, pk, <foreign key info>
-        # These keys will roughly correspond with schema.Field
-        # TODO -- we could actually use "type" to get the size because SQLite returns
-        # a value like VARCHAR[32]
         for row in fields:
             field = {
                 "name": row["name"],
@@ -429,8 +409,6 @@ class SQLite(SQLInterface):
                 if row["type"].startswith(tname):
                     field["field_type"] = ty
                     break
-
-                #pout.v(row["type"])
 
             if row["name"] in fks:
                 field["schema_table_name"] = fks[row["name"]]["table"]

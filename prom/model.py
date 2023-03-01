@@ -620,27 +620,6 @@ class Orm(object):
 
         return ret
 
-#     def __getattr__(self, k):
-#         ret = None
-#         try:
-#             field_name = self.schema.field_name(k)
-# 
-#         except AttributeError:
-#             # we treat pk (alias for _id) as special because we usually want the
-#             # pk to just return None, even if it doesn't exist, the reason why is
-#             # because usually you remove the pk by setting `OrmClass._id = None`
-#             # and so self._id would return None, so we want self.pk to return
-#             # None also. This should only ever be checked if the field doesn't
-#             # exist, and self.pk won't exist if there is no primary key
-#             # https://github.com/Jaymon/prom/issues/139#issuecomment-944806055
-#             if k != "pk":
-#                 raise
-# 
-#         else:
-#             ret = getattr(self, field_name)
-# 
-#         return ret
-
     def __setattr__(self, k, v):
         try:
             field_name = self.schema.field_name(k)
@@ -655,13 +634,6 @@ class Orm(object):
 
             field_name = k
         return super().__setattr__(field_name, v)
-
-#     def __setattr__(self, k, v):
-#         try:
-#             field_name = self.schema.field_name(k)
-#         except AttributeError:
-#             field_name = k
-#         return super(Orm, self).__setattr__(field_name, v)
 
     def __delattr__(self, k):
         try:

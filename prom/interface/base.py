@@ -707,10 +707,6 @@ class SQLInterface(Interface):
                     self.log_for(
                         debug=(["{}\n{}", query_str, query_args],),
                         info=([query_str],)
-#                         info_format_str="{}"
-#                         info_format_args=[query_str],
-#                         debug_format_str="{}\n{}",
-#                         debug_format_args=[query_str, query_args]
                     )
 
                     #self.log("{}{}{}", query_str, os.linesep, query_args, level="INFO")
@@ -1280,8 +1276,6 @@ class SQLInterface(Interface):
         field_type += ' ' + self.render_datatype_required_sql(field_name, field)
 
         if not field.is_pk():
-            #field_type += ' ' + self.render_datatype_required_sql(field_name, field)
-
             if field.is_ref():
                 field_type += ' ' + self.render_datatype_ref_sql(field_name, field)
 

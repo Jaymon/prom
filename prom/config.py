@@ -281,80 +281,9 @@ class Schema(object):
                             s.set_field(k, field)
                             seen_properties[k] = field
 
-
-                    #if k not in seen_properties:
-#                     if isinstance(v, (Field, Index)):
-#                         if k in seen_properties and seen_properties[k] is None:
-#                             pout.v(k, v.names)
-# 
-#                         else:
-#                             s.set(k, v)
-#                             seen_properties[k] = v
-# 
-#                     elif isinstance(v, type):
-#                         # We've defined a Field class inline of the Orm, so
-#                         # we want to instantiate it and set it in all the places
-#                         if issubclass(v, Field):
-#                             field = v.get_instance()
-#                             if k in seen_properties and seen_properties[k] is None:
-#                                 pout.v(field)
-# 
-#                             else:
-#                                 s.set(k, field)
-#                                 seen_properties[k] = field
-# 
-#                     else:
-#                         if v is None:
-#                             seen_properties[k] = v
-
-
-            #s.orm_class = orm_class
             cls.instances[table_name] = s
 
         return s
-
-# 
-# 
-#     @classmethod
-#     def get_instance2(cls, orm_class, **kwargs):
-#         """return a Schema singleton instance for the given orm_class
-# 
-#         if there isn't already an instance in cache then a new instance will be
-#         created. If a Schema instance is already in cache then it will be returned
-# 
-#         :param orm_class: Orm, the class to create the schema for
-#         :returns: Schema
-#         """
-#         table_name = orm_class.table_name
-#         if table_name not in cls.instances:
-#             s = cls(table_name)
-#             s.orm_class = orm_class
-# 
-#             seen_properties = set()
-#             for klass in inspect.getmro(orm_class)[:-1]:
-#                 for k, v in vars(klass).items():
-#                     k = String(k)
-#                     if k not in seen_properties:
-#                         if isinstance(v, (Field, Index)):
-#                             s.set(k, v)
-# 
-#                         elif isinstance(v, type):
-#                             # We've defined a Field class inline of the Orm, so
-#                             # we want to instantiate it and set it in all the places
-#                             if issubclass(v, Field):
-#                                 field = v.get_instance()
-#                                 s.set(k, field)
-# 
-#                         seen_properties.add(k)
-# 
-#             #s.orm_class = orm_class
-#             cls.instances[table_name] = s
-# 
-#         else:
-#             s = cls.instances[table_name]
-#             #s.orm_class = orm_class
-# 
-#         return s
 
     def __init__(self, table_name, **fields_or_indexes):
         """Create an instance
@@ -1002,10 +931,6 @@ class Field(object, metaclass=FieldMeta):
         )
 
         json_types = ()
-#         json_types = (
-#             dict,
-#             list,
-#         )
 
         pickle_types = (
             set,
