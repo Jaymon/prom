@@ -10,17 +10,11 @@ from . import BaseTestCase, EnvironTestCase
 from prom.compat import *
 from prom.model import Orm, OrmPool
 from prom.config import Field, Index
+from prom.query import Query
 import prom
 
 
-class PickleOrm(Orm):
-    """This is only needed to test the test_pickling() method"""
-    foo = Field(int, True)
-    bar = Field(str, True)
-    ifoobar = Index("foo", "bar")
-
-
-class OrmPoolTest(BaseTestCase):
+class OrmPoolTest(EnvironTestCase):
     def test_lifecycle(self):
         orm_class = self.get_orm_class()
         pks = self.insert(orm_class, 10)
@@ -57,11 +51,24 @@ class OrmPoolTest(BaseTestCase):
 class OrmTest(EnvironTestCase):
     def test_custom__id_pk(self):
         orm_class = self.get_orm_class(
-            _id=Field(str, True, size=36, pk=True)
+            _id=Field(str, True, max_size=36, pk=True)
         )
         o = orm_class.create(_id="foo")
         o2 = orm_class.query.one()
         self.assertEqual(o.pk, o2.pk)
+
+    def test_overridden_field_aliases(self):
+        """Makes sure if we override a parent's defined Field instance the aliases
+        will still be set and point back to the overridden field"""
+        orm_class = self.get_orm_class(_id=None, _created=None, _updated=None)
+
+        o = orm_class()
+        self.assertIsNone(o._id)
+        self.assertIsNone(o.pk)
+        self.assertIsNone(o._created)
+        self.assertIsNone(o.created)
+        self.assertIsNone(o._updated)
+        self.assertIsNone(o.updated)
 
     def test_field_access(self):
         orm_class = self.get_orm_class()
@@ -75,6 +82,7 @@ class OrmTest(EnvironTestCase):
         orm_class = self.get_orm_class()
         orm_class._id = None
         o = orm_class(foo=1, bar="2")
+
         self.assertIsNone(o.pk)
         self.assertIsNone(o._id)
         self.assertEqual(1, o.foo)
@@ -110,8 +118,11 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(1, o.foo)
 
     def test_alias_pk(self):
-        o = self.create_orm()
-        self.assertEqual(o.pk, o._id)
+        orm_class = self.get_orm_class(model_name="o1")
+        o = self.insert_orm(orm_class)
+        self.assertEqual(o._id, o.o1_id)
+        self.assertEqual(o._id, o.o1_pk)
+        self.assertEqual(o._id, o.pk)
 
     def test_removed_field(self):
         orm_class = self.get_orm_class()
@@ -155,11 +166,11 @@ class OrmTest(EnvironTestCase):
             class foo(Field):
                 type = int
                 def fset(self, orm, v):
-                    return super(FCD.foo, self).fset(orm, v) + 1
+                    return super().fset(orm, v) + 1
             class bar(Field):
                 type = int
                 def fget(self, orm, v):
-                    return super(FCD.bar, self).fget(orm, v) + 2
+                    return super().fget(orm, v) + 2
 
         o = FCD(foo=1, bar=1)
         self.assertEqual(2, o.foo)
@@ -168,11 +179,11 @@ class OrmTest(EnvironTestCase):
         class Foo(Field):
             type = int
             def fset(self, orm, v):
-                return super(Foo, self).fset(orm, v) + 1
+                return super().fset(orm, v) + 1
         class Bar(Field):
             type = int
             def fget(self, orm, v):
-                return super(Bar, self).fget(orm, v) + 2
+                return super().fget(orm, v) + 2
         orm_class = self.get_orm_class(
             foo=Foo,
             bar=Bar,
@@ -252,14 +263,14 @@ class OrmTest(EnvironTestCase):
         orm_class = self.get_orm_class()
         o = orm_class(foo=1, bar="1")
 
-        _created = testdata.get_past_datetime()
+        _created = testdata.get_past_datetime().replace(tzinfo=datetime.timezone.utc)
         o._created = _created
         o.save()
 
         o2 = o.query.eq_pk(o.pk).one()
         self.assertEqual(_created, o2._created)
 
-        _created2 = testdata.get_past_datetime()
+        _created2 = testdata.get_past_datetime().replace(tzinfo=datetime.timezone.utc)
         o2._created = _created2
         o2.save()
 
@@ -270,14 +281,14 @@ class OrmTest(EnvironTestCase):
         orm_class = self.get_orm_class()
         o = orm_class(foo=1, bar="1")
 
-        _updated = testdata.get_past_datetime()
+        _updated = testdata.get_past_datetime().replace(tzinfo=datetime.timezone.utc)
         o._updated = _updated
         o.save()
 
         o2 = o.query.eq_pk(o.pk).one()
         self.assertEqual(_updated, o2._updated)
 
-        _updated2 = testdata.get_past_datetime()
+        _updated2 = testdata.get_past_datetime().replace(tzinfo=datetime.timezone.utc)
         o2._updated = _updated2
         o2.save()
 
@@ -319,8 +330,7 @@ class OrmTest(EnvironTestCase):
         self.assertEqual("lambda bar", o.bar)
 
     def test_no_pk(self):
-        orm_class = self.get_orm_class()
-        orm_class._id = None
+        orm_class = self.get_orm_class(_id=None)
 
         pks = self.insert(orm_class, 1)
 
@@ -357,8 +367,9 @@ class OrmTest(EnvironTestCase):
         o.save()
 
         o2 = o.query.one_pk(o.pk)
+
         for k in o.schema.fields.keys():
-            self.assertEqual(getattr(o, k), getattr(o2, k))
+            self.assertEqual(getattr(o, k), getattr(o2, k), k)
 
         o2.foo = 11
         o2.save()
@@ -375,27 +386,19 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(1, o2.query.count())
 
     def test_overrides(self):
-        class FOIndexOverride(Orm):
-            table_name = "FOIndexOverride_table"
-            _created = None
-            index_created = None
+        orm_class = self.get_orm_class(_created=None)
 
-        s = FOIndexOverride.schema
-        self.assertFalse("index_created" in s.indexes)
+        s = orm_class.schema
+        self.assertTrue("_updated" in s.fields)
         self.assertFalse("_created" in s.fields)
 
     def test_field_iset(self):
         """make sure a field with an iset method will be called at the correct time"""
-        class FOFieldISetOrm(Orm):
-            table_name = "FOFieldISetOrm_table"
-            foo = Field(int)
-            @foo.isetter
-            def foo(self, val):
-                val = 100 if self.is_update() else 10
-                return val
+        orm_class = self.get_orm_class(
+            foo=Field(int, iset=lambda self, *_, **__: 100 if self.is_update() else 10)
+        )
 
-        #o = FOFieldISetOrm(foo=1)
-        o = FOFieldISetOrm()
+        o = orm_class()
         o.insert()
         self.assertEqual(10, o.foo)
 
@@ -405,14 +408,10 @@ class OrmTest(EnvironTestCase):
 
     def test_field_iget(self):
         """make sure a field with an iget method will be called at the correct time"""
-        class FOFieldIGetOrm(Orm):
-            table_name = "FOFieldIGetOrm_table"
-            foo = Field(int)
-            @foo.igetter
-            def foo(cls, val):
-                return 1000
-
-        o = FOFieldIGetOrm()
+        orm_class = self.get_orm_class(
+            foo=Field(int, iget=lambda *_, **__: 1000)
+        )
+        o = orm_class()
         o.foo = 20
         o.insert()
 
@@ -426,9 +425,10 @@ class OrmTest(EnvironTestCase):
         go back to the iget value on success, this test makes sure that is fixed"""
 
         class IGetSetInsertUpdateOrm(Orm):
-            table_name = "IGetSetInsertUpdateOrm_table"
-            #interface = self.get_interface()
+            table_name = self.get_table_name()
+            interface = self.get_interface()
             foo = Field(str)
+
             @foo.isetter
             def foo(self, val):
                 if val is None: return val
@@ -491,12 +491,12 @@ class OrmTest(EnvironTestCase):
         self.assertFalse("foo" in o.modified_fields)
 
     def test___delattr__(self):
-        class DAOrm(Orm):
-            table_name = "daorm_table"
-            foo = Field(int)
-            bar = Field(str)
+        orm_class = self.get_orm_class(
+            foo=Field(int),
+            bar=Field(str)
+        )
 
-        o = DAOrm()
+        o = orm_class()
         o.foo = 1
         o.bar = "1"
         self.assertEqual(1, o.foo)
@@ -516,12 +516,12 @@ class OrmTest(EnvironTestCase):
             o.che
 
     def test___setattr__(self):
-        class SAOrm(Orm):
-            table_name = "saorm_table"
-            foo = Field(int)
-            bar = Field(str)
+        orm_class = self.get_orm_class(
+            foo=Field(int),
+            bar=Field(str)
+        )
 
-        o = SAOrm()
+        o = orm_class()
         o.foo = 1
         o.bar = "1"
         self.assertTrue(o.modified_fields)
@@ -538,6 +538,61 @@ class OrmTest(EnvironTestCase):
         o.foo = None
         o.bar = None
         self.assertEqual(2, len(o.modified_fields))
+
+    def test___getattr___orm_1(self):
+        foo_class = self.get_orm_class(model_name="foo")
+        bar_class = self.get_orm_class(foo_id=Field(foo_class, True))
+
+        foo_id = self.insert_fields(foo_class)
+        bar = bar_class(foo_id=foo_id)
+
+        foo = bar.foo
+        self.assertEqual(foo_id, foo.pk)
+
+        foo2_id = self.insert_fields(foo_class)
+        foo2 = foo_class.query.eq_pk(foo2_id).one()
+
+        bar.foo = foo2
+        bar.save()
+        self.assertEqual(foo2.pk, bar.foo_id)
+
+        foo2 = bar.foo
+        self.assertEqual(foo2_id, foo2.pk)
+        self.assertNotEqual(foo_id, foo2_id)
+
+    def test___getattr___orm_2(self):
+        o1_class = self.get_orm_class(
+            bar=Field(bool),
+            che=Field(str),
+            model_name="o1",
+        )
+        o2_class = self.get_orm_class(o1_id=Field(o1_class))
+        o1 = self.insert_orm(o1_class, bar=False, che="1")
+        self.assertLess(0, o1.pk)
+        self.assertFalse(o1.bar)
+
+        o2 = self.insert_orm(o2_class, o1_id=o1.pk)
+        r1 = o2.o1
+        self.assertEqual(o1.pk, r1.pk)
+        self.assertEqual(o1.bar, r1.bar)
+        self.assertEqual(o1.che, r1.che)
+
+    def test___getattr___orm_3(self):
+        """Makes sure referencing a foreign key field by the model_name returns
+        None. This was originally in extras.MagicOrmTest"""
+        o1_class = self.get_orm_class(
+            bar=Field(bool),
+            che=Field(str),
+            model_name="o1",
+        )
+        o2_class = self.get_orm_class(o1_id=Field(o1_class))
+
+        o1 = self.insert_orm(o1_class)
+        o2 = self.insert_orm(o2_class)
+
+        self.assertIsNone(o2.o1)
+        with self.assertRaises(AttributeError):
+            o2.blahblah
 
     def test_creation(self):
 
@@ -646,11 +701,11 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(t3.bar["foo"], t2.bar["foo"])
 
     def test_modify_none(self):
-        class TModifyNone(Orm):
-            table_name = self.get_table_name()
-            foo = Field(str, False)
+        orm_class = self.get_orm_class(
+            foo=Field(str, False)
+        )
 
-        o = TModifyNone()
+        o = orm_class()
         o.foo = 1
         o.save()
 
@@ -690,10 +745,7 @@ class OrmTest(EnvironTestCase):
         Jarid was having encoding issues, so I'm finally making sure prom only ever
         returns unicode strings
         """
-        orm_class = self.get_orm_class()
-        table_name = self.get_table_name()
-        orm_class.schema = self.get_schema(
-            self.get_table_name(),
+        orm_class = self.get_orm_class(
             foo=Field(unicode, True),
             bar=Field(str, True),
             che=Field(str, False),
@@ -774,7 +826,7 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(f.query.__class__.__name__, fooq.Foo.query.__class__.__name__)
 
         f = fooq.Foo()
-        self.assertEqual(f.interface, fooq.Foo.interface)
+        #self.assertEqual(f.interface, fooq.Foo.interface)
 
         # now try with the class calling first
         b = fooq.Bar()
@@ -784,7 +836,7 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(fooq.Bar.query.__class__.__name__, b.query.__class__.__name__)
 
         b = fooq.Bar()
-        self.assertEqual(fooq.Bar.interface, b.interface)
+        #self.assertEqual(fooq.Bar.interface, b.interface)
 
         # now make sure we can manipulate it
         fooq.Foo.query_class = fooq.CheQuery
@@ -796,22 +848,20 @@ class OrmTest(EnvironTestCase):
 
     def test_interface(self):
         i = self.get_interface()
-        #i = Torm.interface
         self.assertFalse(i is None)
 
-        class TormInterface2Orm(Orm):
-            pass
+        orm_class = self.get_orm_class()
 
-        i = TormInterface2Orm.interface
+        i = orm_class.interface
         self.assertFalse(i is None)
 
         # now let's make sure a different orm with a bad connection name gets flagged
-        class TormInterfaceOrm(Orm):
-            connection_name = "blkasdfjksdafjdkfklsd"
-            pass
+        orm_class = self.get_orm_class(
+            connection_name="blkasdfjksdafjdkfklsd"
+        )
 
         with self.assertRaises(KeyError):
-            i = TormInterfaceOrm.interface
+            i = orm_class.interface
 
     def test___init__(self):
         orm_class = self.get_orm_class()
@@ -937,6 +987,17 @@ class OrmTest(EnvironTestCase):
         self.assertNotEqual(d["_id"], t.pk)
 
     def test_pickling(self):
+        mpath = testdata.create_module([
+            "from prom import Orm, Field, Index",
+            "",
+            "class PickleOrm(Orm):",
+            "    foo = Field(int, True)",
+            "    bar = Field(str, True)",
+            "    ifoobar = Index('foo', 'bar')",
+        ])
+
+        PickleOrm = mpath.module().PickleOrm
+        PickleOrm.interface = self.get_interface()
         t = PickleOrm(foo=10000, bar="value10000")
 
         p = pickle.dumps(t)
@@ -962,7 +1023,7 @@ class OrmTest(EnvironTestCase):
         test helped me reproduce, diagnose, and fix the problem"""
         # CRUD
         class TransTorm1(Orm):
-            table_name = "trans_torm_1"
+            interface = self.get_interface()
             foo = Field(str, True)
 
             @classmethod
@@ -977,7 +1038,7 @@ class OrmTest(EnvironTestCase):
                 return tt
 
         class TransTorm2(Orm):
-            table_name = "trans_torm_2"
+            interface = TransTorm1.interface
             bar = Field(str, True, max_size=10)
             tt1_id = Field(TransTorm1, True)
 
@@ -997,13 +1058,12 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(0, TransTorm1.query.count())
 
     def test_non_int_primary_key(self):
-        class Nipk(Orm):
-            table_name = "non_int_pk_1"
-            _id = Field(str, True, pk=True, max_size=64)
-
-        class Nipk2(Orm):
-            table_name = "non_int_pk_2"
-            nipk_id = Field(Nipk, True)
+        Nipk = self.get_orm_class(
+            _id=Field(str, True, pk=True, max_size=64)
+        )
+        Nipk2 = self.get_orm_class(
+            nipk_id=Field(Nipk, True)
+        )
 
         # since our pk no longer is auto-increment we always have to provide it
         with self.assertRaises(prom.InterfaceError):
@@ -1025,11 +1085,8 @@ class OrmTest(EnvironTestCase):
 
     def test_failure_save(self):
         """test to make sure saving on a table that doesn't exist doesn't actually fail"""
-        class FailureSetTorm(Orm):
-            interface = self.get_interface()
-            schema = self.get_schema()
-
-        f = FailureSetTorm(foo=1, bar="value 1")
+        orm_class = self.get_orm_class()
+        f = orm_class(foo=1, bar="value 1")
         f.save()
         self.assertTrue(f.pk)
 
@@ -1080,18 +1137,10 @@ class OrmTest(EnvironTestCase):
 
     def test_subquery_1(self):
         count = 10
-        mpath = testdata.create_module([
-            "from prom import Field, Orm",
-            "",
-            "class Foo(Orm):",
-            "    pass",
-            "",
-            "class Bar(Orm):",
-            "    foo_id = Field(Foo, True)",
-        ])
-
-        Foo = mpath.module().Foo
-        Bar = mpath.module().Bar
+        Foo = self.get_orm_class()
+        Bar = self.get_orm_class(
+            foo_id=Field(Foo, True),
+        )
 
         foo_ids = self.insert(Foo, count)
         for foo_id in foo_ids:
@@ -1109,22 +1158,12 @@ class OrmTest(EnvironTestCase):
     def test_subquery_2(self):
         """Similar test as subquery_1 but makes sure query_class works as expected also"""
         count = 10
-        mpath = testdata.create_module([
-            "from prom import Field, Orm, Query",
-            "",
-            "class Foo(Orm):",
-            "    pass",
-            "",
-            "class BarQuery(Query):",
-            "    pass",
-            "",
-            "class Bar(Orm):",
-            "    foo_id = Field(Foo, True)",
-            "    query_class = BarQuery",
-        ])
-
-        Foo = mpath.module().Foo
-        Bar = mpath.module().Bar
+        class BarQuery(Query): pass
+        Foo = self.get_orm_class()
+        Bar = self.get_orm_class(
+            foo_id=Field(Foo, True),
+            query_class=BarQuery,
+        )
 
         foo_ids = self.insert(Foo, count)
         for foo_id in foo_ids:

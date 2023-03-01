@@ -84,7 +84,7 @@ class InterfaceTest(BaseTestInterface):
         i = self.create_interface()
         i.set_table(s)
 
-        foo = testdata.get_past_datetime()
+        foo = testdata.get_past_datetime().astimezone(datetime.timezone.utc)
         pk = i.insert(s, {"foo": foo})
         r = i.get_one(s, query.Query().eq__id(pk))
         self.assertEqual(foo, r["foo"])
@@ -139,7 +139,7 @@ class InterfaceTest(BaseTestInterface):
         """noop, this doesn't really apply to SQLite"""
         pass
 
-    def test_delete_table_strange_name(self):
+    def test_unsafe_delete_table_strange_name(self):
         """this makes sure https://github.com/firstopinion/prom/issues/47 is fixed,
         the problem was table names weren't wrapped with single quotes and so if they
         started with a number or something like that SQLite would choke"""
@@ -150,7 +150,7 @@ class InterfaceTest(BaseTestInterface):
         r = i.count(s)
         self.assertEqual(5, r)
 
-        i.delete_table(table_name)
+        i.unsafe_delete_table(table_name)
 
         r = i.count(s)
         self.assertEqual(0, r)
@@ -158,13 +158,14 @@ class InterfaceTest(BaseTestInterface):
         i._delete_table(table_name)
         self.assertFalse(i.has_table(table_name))
 
-        i.delete_tables(disable_protection=True)
+        i.unsafe_delete_tables()
         self.assertFalse(i.has_table(table_name))
 
-        i.delete_tables(disable_protection=True)
+        i.unsafe_delete_tables()
         self.assertFalse(i.has_table(table_name))
 
-    def test_delete_table_ref(self):
+    def test_unsafe_delete_table_ref(self):
+        inter = self.get_interface()
         m = testdata.create_module([
             "import prom",
             "",
@@ -179,19 +180,21 @@ class InterfaceTest(BaseTestInterface):
         ])
 
         Foo = m.module().Foo
+        Foo.interface = inter
         Bar = m.module().Bar
+        Bar.interface = inter
 
         Foo.install()
         Bar.install()
 
         self.assertTrue(Foo.interface.has_table("dtref_foo"))
-        Foo.interface.delete_table("dtref_foo")
+        Foo.interface.unsafe_delete_table("dtref_foo")
         self.assertFalse(Foo.interface.has_table("dtref_foo"))
 
         Bar.interface.close()
         self.assertFalse(Bar.interface.is_connected())
         self.assertTrue(Bar.interface.has_table("dtref_bar"))
-        Bar.interface.delete_tables(disable_protection=True)
+        Bar.interface.unsafe_delete_tables()
         self.assertFalse(Bar.interface.has_table("dtref_bar"))
 
     def test_in_memory_db(self):

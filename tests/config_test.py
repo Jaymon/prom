@@ -3,6 +3,7 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 import os
 import datetime
 import decimal
+import math
 
 import testdata
 
@@ -432,23 +433,18 @@ class FieldTest(EnvironTestCase):
             self.assertIsNone(f.schema)
             self.assertFalse(f.is_serialized())
 
-    def test_type_json(self):
-        json_types = (
-            dict,
-            list,
-        )
-
-        for field_type in json_types:
-            f = Field(field_type)
-            self.assertEqual(field_type, f.original_type)
-            self.assertEqual(str, f.interface_type)
-            self.assertEqual(str, f.type)
+    def test_type_dict(self):
+            f = Field(dict)
+            self.assertEqual(dict, f.original_type)
+            self.assertEqual(dict, f.interface_type)
+            self.assertEqual(dict, f.type)
             self.assertIsNone(f.schema)
-            self.assertTrue(f.is_serialized())
+            self.assertFalse(f.is_serialized())
 
     def test_type_pickle(self):
         class Foo(object): pass
         pickle_types = (
+            list,
             set,
             Foo,
         )
@@ -564,11 +560,12 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(10, q.fields_where[0].value)
 
     def test_datetime_jsonable_1(self):
-        class FDatetimeOrm(Orm):
-            foo = Field(datetime.datetime)
+        orm_class = self.get_orm_class(
+            foo=Field(datetime.datetime)
+        )
 
-        o = FDatetimeOrm()
-        o.foo = datetime.datetime.min
+        o = orm_class()
+        o.foo = self.get_past_datetime()
         r = o.jsonable()
         self.assertTrue("foo" in r)
 
@@ -804,14 +801,19 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(100, f.options["size"])
         self.assertFalse("max_size" in f.options)
 
-        with self.assertRaises(ValueError):
-            f = Field(int, True, min_size=100)
+        f = Field(int, True, min_size=100)
+        self.assertEqual(100, f.options["min_size"])
 
         f = Field(int, True, min_size=100, max_size=500)
         self.assertEqual(100, f.options["min_size"])
         self.assertEqual(500, f.options["max_size"])
 
-    def test_size_info(self):
+    def test_size_info_1(self):
+        # A field with precision 65, scale 30 must round to an absolute value less than 10^35
+        f = Field(float, precision=65, scale=30)
+        r = f.size_info()
+        self.assertLessEqual(r["size"], math.pow(10, 35))
+
         f = Field(str, size=32)
         r = f.size_info()
         self.assertLessEqual(32, r["size"])
@@ -823,24 +825,28 @@ class FieldTest(EnvironTestCase):
 
         f = Field(float, size="15.6")
         r = f.size_info()
-        self.assertTrue(r["has_sizing"])
+        self.assertTrue(r["has_size"])
         self.assertEqual(21, r["precision"])
         self.assertEqual(6, r["scale"])
 
         f = Field(float, precision=78, scale=18)
         r = f.size_info()
-        self.assertFalse(r["has_sizing"])
+        self.assertFalse(r["has_size"])
         self.assertTrue(r["has_precision"])
-        self.assertTrue(r["has_scale"])
 
         f = Field(int, size=100)
         r = f.size_info()
-        self.assertTrue(r["has_sizing"])
+        self.assertTrue(r["has_size"])
         self.assertEqual(100, r["size"])
 
         f = Field(int, precision=78)
         r = f.size_info()
         self.assertEqual(int("9" * 78), r["size"])
+
+    def test_size_info_2(self):
+        f = Field(int, True, max_size=int("9" * 78))
+        r = f.size_info()
+        self.assertEqual(78, r["precision"])
 
 
 class SerializedFieldTest(EnvironTestCase):

@@ -242,35 +242,119 @@ class Schema(object):
         :returns: Schema
         """
         table_name = orm_class.table_name
-        if table_name not in cls.instances:
+        if table_name in cls.instances:
+            s = cls.instances[table_name]
+
+        else:
             s = cls(table_name)
             s.orm_class = orm_class
 
-            seen_properties = set()
+            seen_properties = {}
             for klass in inspect.getmro(orm_class)[:-1]:
                 for k, v in vars(klass).items():
                     k = String(k)
-                    if k not in seen_properties:
-                        if isinstance(v, (Field, Index)):
-                            s.set(k, v)
+                    field = None
 
-                        elif isinstance(v, type):
-                            # We've defined a Field class inline of the Orm, so
-                            # we want to instantiate it and set it in all the places
-                            if issubclass(v, Field):
-                                field = v.get_instance()
-                                s.set(k, field)
+                    if isinstance(v, Field):
+                        field = v
 
-                        seen_properties.add(k)
+                    elif isinstance(v, Index):
+                        s.set_index(k, v)
+                        seen_properties[k] = v
+
+                    elif isinstance(v, type) and issubclass(v, Field):
+                        # We've defined a Field class inline of the Orm, so
+                        # we want to instantiate it and set it in all the places
+                        field = v.get_instance()
+
+                    else:
+                        if v is None:
+                            seen_properties[k] = v
+
+                    if field:
+                        if k in seen_properties:
+                            if seen_properties[k] is None:
+                                for fn in field.names:
+                                    s.lookup["field_names_deleted"][fn] = k
+
+                        else:
+                            s.set_field(k, field)
+                            seen_properties[k] = field
+
+
+                    #if k not in seen_properties:
+#                     if isinstance(v, (Field, Index)):
+#                         if k in seen_properties and seen_properties[k] is None:
+#                             pout.v(k, v.names)
+# 
+#                         else:
+#                             s.set(k, v)
+#                             seen_properties[k] = v
+# 
+#                     elif isinstance(v, type):
+#                         # We've defined a Field class inline of the Orm, so
+#                         # we want to instantiate it and set it in all the places
+#                         if issubclass(v, Field):
+#                             field = v.get_instance()
+#                             if k in seen_properties and seen_properties[k] is None:
+#                                 pout.v(field)
+# 
+#                             else:
+#                                 s.set(k, field)
+#                                 seen_properties[k] = field
+# 
+#                     else:
+#                         if v is None:
+#                             seen_properties[k] = v
+
 
             #s.orm_class = orm_class
             cls.instances[table_name] = s
 
-        else:
-            s = cls.instances[table_name]
-            #s.orm_class = orm_class
-
         return s
+
+# 
+# 
+#     @classmethod
+#     def get_instance2(cls, orm_class, **kwargs):
+#         """return a Schema singleton instance for the given orm_class
+# 
+#         if there isn't already an instance in cache then a new instance will be
+#         created. If a Schema instance is already in cache then it will be returned
+# 
+#         :param orm_class: Orm, the class to create the schema for
+#         :returns: Schema
+#         """
+#         table_name = orm_class.table_name
+#         if table_name not in cls.instances:
+#             s = cls(table_name)
+#             s.orm_class = orm_class
+# 
+#             seen_properties = set()
+#             for klass in inspect.getmro(orm_class)[:-1]:
+#                 for k, v in vars(klass).items():
+#                     k = String(k)
+#                     if k not in seen_properties:
+#                         if isinstance(v, (Field, Index)):
+#                             s.set(k, v)
+# 
+#                         elif isinstance(v, type):
+#                             # We've defined a Field class inline of the Orm, so
+#                             # we want to instantiate it and set it in all the places
+#                             if issubclass(v, Field):
+#                                 field = v.get_instance()
+#                                 s.set(k, field)
+# 
+#                         seen_properties.add(k)
+# 
+#             #s.orm_class = orm_class
+#             cls.instances[table_name] = s
+# 
+#         else:
+#             s = cls.instances[table_name]
+#             #s.orm_class = orm_class
+# 
+#         return s
 
     def __init__(self, table_name, **fields_or_indexes):
         """Create an instance
@@ -294,7 +378,8 @@ class Schema(object):
         self.table_name = String(table_name)
         self.orm_class = None
         self.lookup = {
-            "names": {},
+            "field_names": {},
+            "field_names_deleted": {},
         }
 
         for name, val in fields_or_indexes.items():
@@ -318,7 +403,7 @@ class Schema(object):
             self.set_index(name, val)
 
         else:
-            raise TypeError("not a Field or Index instance")
+            raise TypeError("Not a Field or Index instance")
 
     def __getattr__(self, name):
         """
@@ -327,14 +412,14 @@ class Schema(object):
         return -- string -- the string value of the attribute name, eg, self.foo returns "foo"
         """
         try:
-            return self.lookup["names"][name]
+            return self.lookup["field_names"][name]
 
         except KeyError:
             raise AttributeError("No {} field in schema {}".format(name, self.table_name))
 
     def has_field(self, field_name):
         """Return True if schema contains field_name"""
-        return field_name in self.lookup["names"]
+        return field_name in self.lookup["field_names"]
 
     def __contains__(self, field_name):
         return self.has_field(field_name)
@@ -344,8 +429,9 @@ class Schema(object):
         if field_name in self.fields: raise ValueError("{} already exists and cannot be changed".format(field_name))
         if not isinstance(field, Field): raise ValueError("{} is not a Field instance".format(type(field)))
 
-        field.name = field_name
-        field.orm_class = self.orm_class
+        field.__set_name__(self.orm_class, field_name)
+        #field.name = field_name
+        #field.orm_class = self.orm_class
 
         if field.unique:
             self.set_index(field_name, Index(field_name, unique=True))
@@ -356,7 +442,7 @@ class Schema(object):
         self.fields[field_name] = field
 
         for fn in field.names:
-            self.lookup["names"][fn] = field
+            self.lookup["field_names"][fn] = field
 
         return self
 
@@ -374,7 +460,7 @@ class Schema(object):
             raise ValueError("index_name must have a value")
         if index_name in self.indexes:
             raise ValueError("index_name {} has already been defined on {}".format(
-                index_name, str(self.indexes[index_name].fields)
+                index_name, str(self.indexes[index_name].field_names)
             ))
         if not isinstance(index, Index): raise ValueError("{} is not an Index instance".format(type(index)))
 
@@ -403,7 +489,11 @@ class Schema(object):
                 return default[0]
 
             else:
-                raise
+                if field_name in self.lookup["field_names_deleted"]:
+                    return self.lookup["field_names_deleted"][field_name]
+
+                else:
+                    raise
 
     def create_orm(self, orm_class=None):
         """If you have a schema but don't have an Orm for it, you can call this method
@@ -419,7 +509,7 @@ class Schema(object):
             orm_class = Orm
 
         child_class = type(
-            ByteString(self.table_name) if is_py2 else String(self.table_name),
+            String(self.table_name),
             (orm_class,),
             {"table_name": self.table_name, "schema": self}
         )
@@ -608,6 +698,9 @@ class Field(object, metaclass=FieldMeta):
     index = False
     """True if this field is indexed"""
 
+    orm_class = None
+    """Holds the model class this field is defined on"""
+
     @cachedproperty(cached="_schema")
     def schema(self):
         """return the schema instance if this is reference to another table
@@ -657,25 +750,29 @@ class Field(object, metaclass=FieldMeta):
 
     @property
     def names(self):
-        names = []
+        names = set()
         if self.name:
-            names.append(self.name)
+            names.add(self.name)
 
-        names.extend(self.options.get("names", []))
-        names.extend(self.options.get("aliases", []))
+        names.update(self.options.get("names", []))
+        names.update(self.options.get("aliases", []))
 
         if alias := self.options.get("alias", ""):
-            names.append(alias)
+            names.add(alias)
 
         if self.is_pk():
-            names.append("pk")
+            names.add("pk")
+            if self.orm_class:
+                model_name = self.orm_class.model_name
+                names.add(f"{model_name}_id")
+                names.add(f"{model_name}_pk")
 
         return names
 
     @property
     def interface_options(self):
         if self.is_ref():
-            options = field.schema.pk.options
+            options = self.schema.pk.options
             options.update(self.options)
         else:
             options = self.options
@@ -758,7 +855,10 @@ class Field(object, metaclass=FieldMeta):
         # interface (see .iget) so we know if the field has been modified
         self.orm_interface_hash = f"_interface_{name}_hash"
 
-        logger.debug(f"Field descriptor {orm_class.__name__}.{name} created with internal name {self.orm_field_name}")
+        if orm_class:
+            logger.debug(
+                f"Field descriptor {orm_class.__name__}.{name} created with internal name {self.orm_field_name}"
+            )
 
     def get_size(self, field_options):
         """Figure out if this field has any size information"""
@@ -833,23 +933,24 @@ class Field(object, metaclass=FieldMeta):
                 ret.pop("size")
 
         if "precision" in options:
+            # So the number 23.5141 has a precision of 6 and a scale of 4
             precision = options["precision"]
-            ret["precision"] = precision
+            ret["precision"] = int(precision)
             ret["original"]["precision"] = precision
             ret["has_precision"] = True
             ret["scale"] = 0
 
             if "scale" in options:
                 scale = options["scale"]
-                ret["scale"] = scale
+                ret["scale"] = int(scale)
                 ret["original"]["scale"] = scale
 
         interface_type = self.interface_type
         if issubclass(interface_type, (int, float, decimal.Decimal)):
             if "precision" in ret and "size" not in ret:
-                if "scale" in ret:
+                if ret["scale"]:
                     ret["size"] = float("{}.{}".format(
-                        "9" * ret["precision"],
+                        "9" * (ret["precision"] - ret["scale"]),
                         "9" * ret["scale"],
                     ))
 
@@ -859,6 +960,10 @@ class Field(object, metaclass=FieldMeta):
             elif "precision" not in ret and "size" not in ret:
                 # this is 32bit, it might be worth setting defined size to 64bit
                 ret["size"] = 2147483647
+                ret["precision"] = len(str(ret["size"]))
+
+            elif "precision" not in ret and "size" in ret:
+                ret["precision"] = len(str(ret["size"]))
 
         elif issubclass(interface_type, (str, bytes, bytearray)):
             if ret["has_size"]:
@@ -1161,7 +1266,7 @@ class Field(object, metaclass=FieldMeta):
             if val is not None:
                 format_str = ""
                 if isinstance(val, (datetime.datetime, datetime.date)):
-                    val = Datetime(val).iso_8601()
+                    val = Datetime(val).isoformat()
 
         return val
 
@@ -1336,16 +1441,22 @@ class AutoDatetime(Field):
 
     def created_iset(self, orm, val):
         if not val and orm.is_insert():
-            val = datetime.datetime.utcnow()
+            #val = datetime.datetime.utcnow()
+            #val = datetime.datetime.now(datetime.timezone.utc)
+            val = Datetime()
         return val
 
     def updated_iset(self, orm, val):
         if val:
             if not self.modified(orm, val):
-                val = datetime.datetime.utcnow()
+                #val = datetime.datetime.utcnow()
+                #val = datetime.datetime.now(datetime.timezone.utc)
+                val = Datetime()
 
         else:
-            val = datetime.datetime.utcnow()
+            #val = datetime.datetime.utcnow()
+            #val = datetime.datetime.now(datetime.timezone.utc)
+            val = Datetime()
 
         return val
 

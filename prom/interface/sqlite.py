@@ -56,8 +56,6 @@ class SQLiteRowDict(sqlite3.Row):
         return r
 
 
-# TODO -- I think we can get rid of this by just reconnecting in the error
-# handler
 class SQLiteConnection(SQLConnection, sqlite3.Connection):
     """
     Thin wrapper around the default connection to make sure it has a similar interface
@@ -75,6 +73,8 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
 
 
 class BooleanType(object):
+    FIELD_TYPE = 'BOOL'
+
     @classmethod
     def adapt(cls, val):
         """From python you get False and True, convert those to 1/0"""
@@ -86,20 +86,10 @@ class BooleanType(object):
         return bool(int(val))
 
 
-# class NumericType(object):
-#     @staticmethod
-#     def adapt(val):
-#         return float(str(val))
-# 
-#     @staticmethod
-#     def convert(val):
-#         val = StringType.adapt(val)
-#         ret = decimal.Decimal(val)
-#         return ret
-
-
 class StringType(object):
     """this just makes sure 8-bit bytestrings get converted ok"""
+    FIELD_TYPE = 'TEXT'
+
     @classmethod
     def adapt(cls, val):
         return String(val)
@@ -126,6 +116,7 @@ class DatetimeType(StringType):
     @classmethod
     def convert(cls, val):
         return Datetime(super().adapt(val)).datetime()
+        #return Datetime(super().adapt(val)).datetime().replace(tzinfo=datetime.timezone.utc)
 
 
 class NumericType(object):
@@ -155,6 +146,19 @@ class NumericType(object):
     def convert(cls, val):
         """This should only be called when the column type is actually FIELD_TYPE"""
         return int(val)
+
+
+class DecimalType(object):
+    FIELD_TYPE = 'DECIMALTEXT'
+
+    @staticmethod
+    def adapt(val):
+        return str(val)
+
+    @staticmethod
+    def convert(val):
+        ret = decimal.Decimal(val)
+        return ret
 
 
 class DictType(object):
@@ -239,13 +243,13 @@ class SQLite(SQLInterface):
 
         # for some reason this is needed in python 3.6 in order for saved bytes
         # to be ran through the converter, not sure why
-        sqlite3.register_converter('TEXT', StringType.adapt)
+        sqlite3.register_converter(StringType.FIELD_TYPE, StringType.adapt)
 
         #sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
         #sqlite3.register_converter('NUMERIC', NumericType.convert)
 
         sqlite3.register_adapter(bool, BooleanType.adapt)
-        sqlite3.register_converter('BOOL', BooleanType.convert)
+        sqlite3.register_converter(BooleanType.FIELD_TYPE, BooleanType.convert)
 
         # sadly, it doesn't look like these work for child classes so each class
         # has to be adapted even if its parent is already registered
@@ -255,6 +259,9 @@ class SQLite(SQLInterface):
 
         sqlite3.register_adapter(int, NumericType.adapt)
         sqlite3.register_converter(NumericType.FIELD_TYPE, NumericType.convert)
+
+        sqlite3.register_adapter(decimal.Decimal, DecimalType.adapt)
+        sqlite3.register_converter(DecimalType.FIELD_TYPE, DecimalType.convert)
 
         sqlite3.register_adapter(dict, DictType.adapt)
         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
@@ -321,22 +328,22 @@ class SQLite(SQLInterface):
 
         return ret
 
-    def _insert(self, schema, fields, **kwargs):
-        """
-        http://www.sqlite.org/lang_insert.html
-        """
-        query_str, query_args = self.render_insert_sql(
-            schema,
-            fields,
-            ignore_return_clause=True,
-            **kwargs,
-        )
-        ret = self._query(query_str, query_args, cursor_result=True, **kwargs)
-
-        pk_name = schema.pk_name
-        # http://stackoverflow.com/questions/6242756/
-        # could also do _query('SELECT last_insert_rowid()')
-        return ret.lastrowid if pk_name not in fields else fields[pk_name]
+#     def _insert(self, schema, fields, **kwargs):
+#         """
+#         http://www.sqlite.org/lang_insert.html
+#         """
+#         query_str, query_args = self.render_insert_sql(
+#             schema,
+#             fields,
+#             ignore_return_clause=True,
+#             **kwargs,
+#         )
+#         ret = self._query(query_str, query_args, cursor_result=True, **kwargs)
+# 
+#         pk_name = schema.pk_name
+#         # http://stackoverflow.com/questions/6242756/
+#         # could also do _query('SELECT last_insert_rowid()')
+#         return ret.lastrowid if pk_name not in fields else fields[pk_name]
 
     def _delete_tables(self, **kwargs):
         self._query('PRAGMA foreign_keys = OFF', ignore_result=True, **kwargs);
@@ -363,10 +370,15 @@ class SQLite(SQLInterface):
             elif "UNIQUE" in e_msg:
                 e = UniqueError(e)
 
+            else:
+                e = super().create_error(e, **kwargs)
+
         elif isinstance(e, sqlite3.IntegrityError):
             e = UniqueError(e)
+
         else:
             e = super().create_error(e, **kwargs)
+
         return e
 
     def _get_fields(self, table_name, **kwargs):
@@ -396,6 +408,11 @@ class SQLite(SQLInterface):
             "BLOB": bytearray,
         }
 
+        for field_type, adapter in sqlite3.adapters.items():
+            if adapter_class := getattr(adapter, "__self__", None):
+                if adapter_class.FIELD_TYPE not in pg_types:
+                    pg_types[adapter_class.FIELD_TYPE] = field_type[0]
+
         # the rows we can set: field_type, name, field_required, min_size, max_size,
         #   size, unique, pk, <foreign key info>
         # These keys will roughly correspond with schema.Field
@@ -413,9 +430,7 @@ class SQLite(SQLInterface):
                     field["field_type"] = ty
                     break
 
-            if field["pk"] and field["field_type"] is int:
-                # we compensate for SQLite internally setting pk to int
-                field["field_type"] = long
+                #pout.v(row["type"])
 
             if row["name"] in fks:
                 field["schema_table_name"] = fks[row["name"]]["table"]

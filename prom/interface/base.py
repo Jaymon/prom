@@ -734,8 +734,7 @@ class SQLInterface(Interface):
                         ret = cur.fetchall()
 
             except Exception as e:
-                #self.log(e)
-                raise
+                self.raise_error(e)
 
             return ret
 
@@ -848,6 +847,10 @@ class SQLInterface(Interface):
         return True
 
     def _insert(self, schema, fields, **kwargs):
+        pk_names = schema.pk_names
+        kwargs.setdefault("ignore_return_clause", len(pk_names) == 0)
+        kwargs.setdefault("ignore_result", len(pk_names) == 0)
+
         query_str, query_args = self.render_insert_sql(
             schema,
             fields,
@@ -855,8 +858,7 @@ class SQLInterface(Interface):
         )
 
         r = self.query(query_str, *query_args, **kwargs)
-        if r:
-            pk_names = schema.pk_names
+        if r and pk_names:
             if len(pk_names) > 1:
                 r = r[0]
             else:
@@ -1240,76 +1242,34 @@ class SQLInterface(Interface):
         :returns: str, the complete field datatype SQL (eg, foo BOOL NOT NULL)
         """
         field_type = ""
-#         is_pk = field.options.get('pk', False)
         interface_type = field.interface_type
 
         if issubclass(interface_type, bool):
             field_type = self.render_datatype_bool_sql(field_name, field)
-#             field_type = 'BOOLEAN'
 
         elif issubclass(interface_type, int):
             field_type = self.render_datatype_int_sql(field_name, field)
 
-#             if is_pk:
-#                 field_type += 'INTEGER PRIMARY KEY'
-# 
-#             else:
-#                 # we could break these up into tiny, small, and big but it
-#                 # doesn't really matter so we're not bothering
-#                 # https://www.sqlite.org/datatype3.html
-#                 size = field.size_info()["size"]
-# 
-#                 if size < 9223372036854775807:
-#                     field_type = 'INTEGER'
-# 
-#                 else:
-#                     field_type = NumericType.FIELD_TYPE
-
         elif issubclass(interface_type, str):
             field_type = self.render_datatype_str_sql(field_name, field)
 
-#             fo = field.interface_options
-#             field_type = 'TEXT'
-#             size_info = field.size_info()
-# 
-#             # https://www.sqlitetutorial.net/sqlite-check-constraint/
-#             if 'size' in size_info["original"]:
-#                 field_type += f" CHECK(length({field_name}) == {size_info['size']})"
-# 
-#             elif 'max_size' in size_info["original"]:
-#                 field_type += f" CHECK(length({field_name}) <= {size_info['size']})"
-# 
-#             if fo.get('ignore_case', False):
-#                 field_type += ' COLLATE NOCASE'
-# 
-#             if is_pk:
-#                 field_type += ' PRIMARY KEY'
-
         elif issubclass(interface_type, datetime.datetime):
             field_type = self.render_datatype_datetime_sql(field_name, field)
-#             field_type = DatetimeType.FIELD_TYPE
 
         elif issubclass(interface_type, datetime.date):
             field_type = self.render_datatype_date_sql(field_name, field)
-#             field_type = 'DATE'
 
         elif issubclass(interface_type, dict):
             field_type = self.render_datatype_dict_sql(field_name, field)
-#             field_type = DictType.FIELD_TYPE
 
         elif issubclass(interface_type, (float, decimal.Decimal)):
             field_type = self.render_datatype_float_sql(field_name, field)
-#             field_type = 'REAL'
 
         elif issubclass(interface_type, (bytearray, bytes)):
             field_type = self.render_datatype_bytes_sql(field_name, field)
-#             field_type = 'BLOB'
 
         elif issubclass(interface_type, uuid.UUID):
             field_type = self.render_datatype_uuid_sql(field_name, field)
-#             field_type = 'CHARACTER(36)'
-#             if is_pk:
-#                 field_type += ' PRIMARY KEY'
 
         else:
             raise ValueError('Unknown python type: {} for field: {}'.format(
@@ -1317,28 +1277,13 @@ class SQLInterface(Interface):
                 field_name,
             ))
 
+        field_type += ' ' + self.render_datatype_required_sql(field_name, field)
+
         if not field.is_pk():
-            field_type += ' ' + self.render_datatype_required_sql(field_name, field)
-#         if field.required:
-#             field_type += ' NOT NULL'
-#         else:
-#             field_type += ' NULL'
+            #field_type += ' ' + self.render_datatype_required_sql(field_name, field)
 
             if field.is_ref():
                 field_type += ' ' + self.render_datatype_ref_sql(field_name, field)
-#         if not is_pk and field.is_ref():
-#             ref_s = field.schema
-#             if field.required: # strong ref, it deletes on fk row removal
-#                 field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'.format(
-#                     ref_s,
-#                     ref_s.pk.name
-#                 )
-# 
-#             else: # weak ref, it sets column to null on fk row removal
-#                 field_type += ' REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'.format(
-#                     ref_s,
-#                     ref_s.pk.name
-#                 )
 
         return '{} {}'.format(self._normalize_name(field_name), field_type)
 

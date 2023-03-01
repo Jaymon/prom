@@ -4,7 +4,7 @@ import inspect
 import sys
 import datetime
 
-from datatypes.collections import (
+from datatypes import (
     Pool,
     EnglishWord,
     NamingConvention,
@@ -86,8 +86,8 @@ class Orm(object):
     @decorators.classproperty
     def table_name(cls):
         return NamingConvention("{}_{}".format(
-            cls.__module__.lower().replace(".", "_"),
-            cls.__name__.lower()
+            cls.__module__.replace(".", "_"),
+            cls.__name__
         )).snakecase()
 
     @decorators.classproperty
@@ -103,11 +103,7 @@ class Orm(object):
         :param plural: bool, True if you would like the plural model name
         :returns: str, the model name in either singular or plural form
         """
-        return NamingConvention(cls.__name__.lower()).snakecase()
-#         if plural:
-#             name = EnglishWord(name).plural()
-# 
-#         return name
+        return NamingConvention(cls.__name__).snakecase()
 
     @decorators.classproperty
     def models_name(cls):
@@ -230,7 +226,7 @@ class Orm(object):
         if schema:
             # since schema is passed in resolve any aliases
             for field_name in list(fields.keys()):
-                if fn := schema.field_name(field_name):
+                if fn := schema.field_name(field_name, ""):
                     fields[fn] = fields.pop(field_name)
 
         return fields
@@ -255,7 +251,10 @@ class Orm(object):
 
     def __init_subclass__(cls):
         """When this class is loaded into memory it will be saved into cls.orm_classes,
-        this way every orm class knows about all the others"""
+        this way every orm class knows about all the others
+
+        https://peps.python.org/pep-0487/
+        """
         super().__init_subclass__()
         cls.orm_classes[f"{cls.__module__}:{cls.__name__}"] = cls
 
@@ -563,7 +562,7 @@ class Orm(object):
         if field_name:
             ret = field_name in self.modified_field_names
         else:
-            ret = len(self.modified_fields_names) > 0
+            ret = len(self.modified_field_names) > 0
         return ret
 
     def modify(self, fields=None, **fields_kwargs):
@@ -600,27 +599,69 @@ class Orm(object):
             field_name = self.schema.field_name(k)
 
         except AttributeError:
-            # we treat pk (alias for _id) as special because we usually want the
-            # pk to just return None, even if it doesn't exist, the reason why is
-            # because usually you remove the pk by setting `OrmClass._id = None`
-            # and so self._id would return None, so we want self.pk to return
-            # None also. This should only ever be checked if the field doesn't
-            # exist, and self.pk won't exist if there is no primary key
-            # https://github.com/Jaymon/prom/issues/139#issuecomment-944806055
-            if k != "pk":
-                raise
+            for ref_field_name, ref_field in self.schema.ref_fields.items():
+                ref_class = ref_field.ref
+                if k == ref_class.model_name:
+                    ref_field_value = getattr(self, ref_field_name, None)
+                    ret = None
+                    if ref_field_value:
+                        ret = ref_class.query.eq_pk(ref_field_value).one()
+
+                    return ret
+
+            raise
+
+            # ??? - could we do something with models_name here? Go through all
+            # the orm_classes looking for a models_name match and querying them
+            # using self.pk?
 
         else:
             ret = getattr(self, field_name)
 
         return ret
 
+#     def __getattr__(self, k):
+#         ret = None
+#         try:
+#             field_name = self.schema.field_name(k)
+# 
+#         except AttributeError:
+#             # we treat pk (alias for _id) as special because we usually want the
+#             # pk to just return None, even if it doesn't exist, the reason why is
+#             # because usually you remove the pk by setting `OrmClass._id = None`
+#             # and so self._id would return None, so we want self.pk to return
+#             # None also. This should only ever be checked if the field doesn't
+#             # exist, and self.pk won't exist if there is no primary key
+#             # https://github.com/Jaymon/prom/issues/139#issuecomment-944806055
+#             if k != "pk":
+#                 raise
+# 
+#         else:
+#             ret = getattr(self, field_name)
+# 
+#         return ret
+
     def __setattr__(self, k, v):
         try:
             field_name = self.schema.field_name(k)
+
         except AttributeError:
+            for ref_field_name, ref_field in self.schema.ref_fields.items():
+                ref_class = ref_field.ref
+                if k == ref_class.model_name:
+                    k = ref_field_name
+                    v = v.pk
+                    break
+
             field_name = k
-        return super(Orm, self).__setattr__(field_name, v)
+        return super().__setattr__(field_name, v)
+
+#     def __setattr__(self, k, v):
+#         try:
+#             field_name = self.schema.field_name(k)
+#         except AttributeError:
+#             field_name = k
+#         return super(Orm, self).__setattr__(field_name, v)
 
     def __delattr__(self, k):
         try:

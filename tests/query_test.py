@@ -63,6 +63,18 @@ class FieldsTest(BaseTestCase):
 
 
 class BoundsTest(TestCase):
+    def test_find_more_index(self):
+        b = Bounds()
+        b.limit = 3
+
+        b.page = 0
+        index = b.find_more_index()
+        self.assertEqual(3, index)
+
+        b.page = 2
+        index = b.find_more_index()
+        self.assertEqual(6, index)
+
     def test___nonzero__(self):
         b = Bounds()
 
@@ -312,6 +324,7 @@ class QueryTest(EnvironTestCase):
         t1.join()
 
     def test_query_ref_1(self):
+        inter = self.create_interface()
         testdata.create_modules({
             "qr2": "\n".join([
                 "import prom",
@@ -329,8 +342,9 @@ class QueryTest(EnvironTestCase):
                 ""
             ])
         })
-
         from qr2 import Foo as t1, Bar as t2
+        t1.interface = inter
+        t2.interface = inter
 
         ti1 = t1.create(foo=11, bar='11')
         ti12 = t1.create(foo=12, bar='12')
@@ -360,6 +374,7 @@ class QueryTest(EnvironTestCase):
         self.assertEqual(2, len(l))
 
     def test_query_ref_2(self):
+        inter = self.create_interface()
         testdata.create_modules({
             "qre": "\n".join([
                 "import prom",
@@ -376,8 +391,10 @@ class QueryTest(EnvironTestCase):
                 ""
             ])
         })
-
         from qre import T1, T2, T3
+        T1.interface = inter
+        T2.interface = inter
+        T3.interface = inter
 
         t1a = T1.create()
         t1b = T1.create()
@@ -827,7 +844,7 @@ class QueryTest(EnvironTestCase):
         self.assertEqual(10, orm_class.query.count())
 
 
-class IteratorTest(BaseTestCase):
+class IteratorTest(EnvironTestCase):
     def get_iterator(self, count=5, limit=5, page=0):
         q = self.get_query()
         self.insert(q, count)
@@ -1056,8 +1073,6 @@ class IteratorTest(BaseTestCase):
         i = orm_class.query.limit(3).get()
         self.assertEqual(3, len(i))
 
-
-
     def test___getattr__(self):
         count = 5
         i = self.get_iterator(count)
@@ -1073,7 +1088,7 @@ class IteratorTest(BaseTestCase):
         rs = list(i.pk)
         self.assertEqual(count, len(rs))
 
-    def test_has_more(self):
+    def test_has_more_1(self):
         limit = 3
         count = 5
         q = self.get_query()
@@ -1081,8 +1096,8 @@ class IteratorTest(BaseTestCase):
         self.assertEqual(count, len(pks))
 
         i = q.limit(limit).page(0).get()
+
         self.assertTrue(i.has_more())
-        return
 
         i = q.limit(limit).page(3).get()
         self.assertFalse(i.has_more())

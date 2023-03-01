@@ -101,38 +101,44 @@ class InterfaceTest(BaseTestInterface):
             postgresql.start()
 
     def test__normalize_val_SQL_eq(self):
-        i = self.get_interface()
-        s = Schema(
-            "fake_table_name",
+        orm_class = self.get_orm_class(
             ts=Field(datetime.datetime, True)
         )
-        orm_class = s.create_orm()
+#         i = self.get_interface()
+#         s = Schema(
+#             "fake_table_name",
+#             ts=Field(datetime.datetime, True)
+#         )
+#         orm_class = s.create_orm()
 
-        fstr, fargs = orm_class.query.is_ts(day=10).render(placeholder=True)
+        fstr, fargs = orm_class.query.eq_ts(day=10).render(placeholder=True)
         self.assertTrue('EXTRACT(DAY FROM "ts") = %s' in fstr)
         self.assertEqual(10, fargs[0])
 
-        fstr, fargs = orm_class.query.is_ts(day=11, hour=12).render(placeholder=True)
+        fstr, fargs = orm_class.query.eq_ts(day=11, hour=12).render(placeholder=True)
         self.assertTrue('EXTRACT(DAY FROM "ts") = %s AND EXTRACT(HOUR FROM "ts") = %s' in fstr)
         self.assertEqual(11, fargs[0])
         self.assertEqual(12, fargs[1])
 
-        fstr, fargs = orm_class.query.is_ts(None).render(placeholder=True)
+        fstr, fargs = orm_class.query.eq_ts(None).render(placeholder=True)
         self.assertTrue('"ts" IS %s' in fstr)
 
-        fstr, fargs = orm_class.query.not_ts(None).render(placeholder=True)
+        fstr, fargs = orm_class.query.ne_ts(None).render(placeholder=True)
         self.assertTrue('"ts" IS NOT %s' in fstr)
 
         with self.assertRaises(KeyError):
             fstr, fargs = orm_class.query.is_ts(bogus=5).render(placeholder=True)
 
     def test__normalize_val_SQL_in(self):
-        i = self.get_interface()
-        s = Schema(
-            "fake_table_name",
+        orm_class = self.get_orm_class(
             ts=Field(datetime.datetime, True)
         )
-        orm_class = s.create_orm()
+#         i = self.get_interface()
+#         s = Schema(
+#             "fake_table_name",
+#             ts=Field(datetime.datetime, True)
+#         )
+#         orm_class = s.create_orm()
 
         fstr, fargs = orm_class.query.in_ts(day=10).render(placeholder=True)
         self.assertTrue('EXTRACT(DAY FROM "ts") IN (%s)' in fstr)
@@ -158,7 +164,7 @@ class InterfaceTest(BaseTestInterface):
             rd = i.insert(s, fields)
 
     def test_uuid_pk(self):
-        i, s = create_schema(
+        i, s = self.create_schema(
             _id=Field(UUID, True, pk=True),
             foo=Field(int, True),
         )

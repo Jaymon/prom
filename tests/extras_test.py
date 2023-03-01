@@ -3,6 +3,7 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 
 from datatypes import Enum
 
+from prom.model import Orm
 from prom.extras.config import Field
 from prom.extras.model import MagicOrm
 from prom.extras.testdata import ModelData
@@ -10,47 +11,22 @@ from . import BaseTestCase, EnvironTestCase, testdata
 
 
 class MagicOrmTest(EnvironTestCase):
-    def test_aliases_1(self):
-        class Foo(MagicOrm):
-            ip_address = Field(str, False, aliases=["ip"])
-
-        ip = "1.2.3.4"
-
-        f = Foo(ip="1.2.3.4")
-        self.assertEqual(ip, f.ip)
-        self.assertEqual(ip, f.ip_address)
-
-        f = Foo()
-        f.ip = ip
-        self.assertEqual(ip, f.ip)
-        self.assertEqual(ip, f.ip_address)
-
-        f = Foo(ip="1.2.3.4")
-        del f.ip
-        self.assertIsNone(f.ip)
-        self.assertIsNone(f.ip_address)
-
     def create_1(self, **kwargs):
-        class O1(MagicOrm):
-            table_name = self.get_table_name("o1_magicorm")
-            interface = self.get_interface()
-            bar = Field(bool)
-            che = Field(str)
-
-        return O1(**kwargs)
+        o1_class = self.get_orm_class(
+            bar = Field(bool),
+            che = Field(str),
+            model_name="o1",
+            parent_class=MagicOrm,
+        )
+        return self.insert_orm(o1_class, **kwargs)
 
     def create_2(self, **kwargs):
         o1 = self.create_1()
-        class O2(MagicOrm):
-            table_name = self.get_table_name("o2_magicorm")
-            interface = self.get_interface()
-            o1_id = Field(o1.__class__)
-
-        return O2(**kwargs)
-
-    def test_pk(self):
-        o = self.create_1(_id=200)
-        self.assertEqual(200, o.o1_id)
+        o2_class = self.get_orm_class(
+            o1_id=Field(type(o1)),
+            parent_class=MagicOrm,
+        )
+        return self.insert_orm(o2_class, **kwargs)
 
     def test_is(self):
         o = self.create_1(bar=True, che="che")
@@ -62,30 +38,11 @@ class MagicOrmTest(EnvironTestCase):
         o.bar = False
         self.assertFalse(o.is_bar())
 
-    def test_fk(self):
-        o1 = self.create_1(bar=False, che="1")
-        o1.save()
-        self.assertLess(0, o1.pk)
-        self.assertFalse(o1.bar)
-
-        o2 = self.create_2(o1_id=o1.pk)
-
-        r1 = o2.o1
-        self.assertEqual(o1.pk, r1.pk)
-        self.assertEqual(o1.bar, r1.bar)
-        self.assertEqual(o1.che, r1.che)
-
     def test_jsonable(self):
         o = self.create_1(_id=500, bar=False, che="1")
         d = o.jsonable()
         self.assertTrue(o.pk_name in d)
         self.assertFalse("_id" in d)
-
-    def test_attribute_error(self):
-        o = self.create_2()
-        self.assertIsNone(o.o1)
-        with self.assertRaises(AttributeError):
-            o.blahblah
 
     def test___getattr___error(self):
         class O4(MagicOrm):
@@ -136,8 +93,7 @@ class FieldTest(EnvironTestCase):
         class FooEnum(Enum):
             FOO = 1
 
-        class OE(MagicOrm):
-            type = Field(FooEnum)
+        OE = self.get_orm_class(type=Field(FooEnum))
 
         o = OE.create(type="FOO")
         f = o.schema.fields["type"]
@@ -153,7 +109,29 @@ class ModelDataTest(BaseTestCase):
 
         self.assertEqual(0, ref_class.query.count())
 
-        orm = testdata.get_orm(orm_class)
+        orm = testdata.get_orm(orm_class, ignore_refs=False)
 
         self.assertEqual(1, ref_class.query.count())
+
+    def test_model_name(self):
+        modpath = self.create_module([
+            "from prom import Orm, Field",
+            "",
+            "class Foo(Orm):",
+            "    bar = Field(str)",
+        ])
+
+        m = modpath.module()
+
+        foo = self.get_foo()
+        self.assertIsNotNone(foo)
+        self.assertIsInstance(foo, Orm)
+
+        class OtherData(testdata.TestData):
+            def get_bar(self, *args, **kwargs):
+                return self.get_foo()
+
+        d = OtherData()
+        foo2 = d.get_bar()
+        self.assertTrue(type(foo) is type(foo2))
 

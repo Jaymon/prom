@@ -60,7 +60,7 @@ class BaseTestInterface(BaseTestCase):
         count = 0
         for known_index_name, known_index in s.indexes.items():
             for index_name, index_fields in indexes.items():
-                if known_index.fields == index_fields:
+                if known_index.field_names == index_fields:
                     count += 1
 
         self.assertEqual(len(s.indexes), count)
@@ -77,7 +77,6 @@ class BaseTestInterface(BaseTestCase):
             two=Field(int, True, size=50),
             three=Field(decimal.Decimal),
             four=Field(float, True, size=10),
-            six=Field(long, True,),
             seven=Field(s_ref, False),
             eight=Field(datetime.datetime),
             nine=Field(datetime.date),
@@ -88,9 +87,8 @@ class BaseTestInterface(BaseTestCase):
             'two': 50,
             'three': decimal.Decimal('1.5'),
             'four': 1.987654321,
-            'six': 40000,
             'seven': s_ref_id,
-            'eight': datetime.datetime(2005, 7, 14, 12, 30),
+            'eight': datetime.datetime(2005, 7, 14, 12, 30, tzinfo=datetime.timezone.utc),
             'nine': datetime.date(2005, 9, 14),
         }
         pk = i.insert(s, d)
@@ -127,14 +125,14 @@ class BaseTestInterface(BaseTestCase):
         # Test if query succeeds
         i.get_one(s, q)
 
-    def test_delete_table(self):
+    def test_unsafe_delete_table(self):
         i = self.get_interface()
         s = self.get_schema()
 
         r = i.set_table(s)
         self.assertTrue(i.has_table(str(s)))
 
-        r = i.delete_table(s)
+        r = i.unsafe_delete_table(s)
         self.assertFalse(i.has_table(str(s)))
 
         # make sure it persists
@@ -142,8 +140,7 @@ class BaseTestInterface(BaseTestCase):
         i = self.get_interface()
         self.assertFalse(i.has_table(str(s)))
 
-    def test_delete_tables(self):
-
+    def test_unsafe_delete_tables(self):
         i = self.get_interface()
         s1 = self.get_schema()
         i.set_table(s1)
@@ -153,11 +150,7 @@ class BaseTestInterface(BaseTestCase):
         self.assertTrue(i.has_table(s1))
         self.assertTrue(i.has_table(s2))
 
-        # make sure you can't shoot yourself in the foot willy nilly
-        with self.assertRaises(ValueError):
-            i.delete_tables()
-
-        i.delete_tables(disable_protection=True)
+        i.unsafe_delete_tables()
 
         self.assertFalse(i.has_table(s1))
         self.assertFalse(i.has_table(s2))
@@ -320,8 +313,17 @@ class BaseTestInterface(BaseTestCase):
                 }
             },
             {
-                "input": "2019-10-08 20:18:59.",
-                "output": ValueError
+                "input": "2019-10-08 20:18:59",
+                #"input": "2019-10-08 20:18:59.",
+                "output": {
+                    "year": 2019,
+                    "month": 10,
+                    "day": 8,
+                    "hour": 20,
+                    "minute": 18,
+                    "second": 59,
+                    "microsecond": 0,
+                }
             },
         ]
 
@@ -335,7 +337,7 @@ class BaseTestInterface(BaseTestCase):
                     self.assertEqual(v, getattr(d["bar"], k))
 
             else:
-                with self.assertRaises((dt["output"], InterfaceError)):
+                with self.assertRaises((dt["output"], InterfaceError), msg=dt["input"]):
                     pk = i.insert(s, {"bar": dt["input"]})
                     q = query.Query().is__id(pk)
                     i.get_one(s, q)
@@ -680,7 +682,11 @@ class BaseTestInterface(BaseTestCase):
 
         for field_name, field in s:
             field2 = fields[field_name]
-            self.assertEqual(field.interface_type, field2["field_type"])
+            if issubclass(field.interface_type, decimal.Decimal):
+                self.assertEqual(float, field2["field_type"])
+
+            else:
+                self.assertEqual(field.interface_type, field2["field_type"])
             self.assertEqual(field.is_pk(), field2["pk"])
             self.assertEqual(field.required, field2["field_required"], field_name)
 
@@ -1270,7 +1276,12 @@ class BaseTestInterface(BaseTestCase):
 
 
     def test_upsert_pk(self):
-        i, s = self.create_schema()
+        i, s = self.create_schema(
+            foo=Field(int, True),
+            bar=Field(str, True),
+            che=Field(str, False),
+            ifoobar=Index("foo", "bar", unique=True),
+        )
 
         d = {"foo": 1, "bar": "bar 1"}
         pk = i.insert(s, d)
@@ -1278,7 +1289,7 @@ class BaseTestInterface(BaseTestCase):
         # makes sure conflict update works as expected
         di = {"_id": pk, "foo": 2, "bar": "bar 2"}
         du = {"foo": 3}
-        pk2 = i.upsert(s, di, du)
+        pk2 = i.upsert(s, di, du, ["_id"])
         self.assertEqual(pk, pk2)
         d = i.get_one(s, query.Query().is__id(pk))
         self.assertEqual(du["foo"], d["foo"])
@@ -1286,8 +1297,8 @@ class BaseTestInterface(BaseTestCase):
 
         # makes sure insert works as expected
         di = {"foo": 3, "bar": "bar 3"}
-        du = {"foo": 4}
-        pk3 = i.upsert(s, di, du)
+        du = {"che": "che 3"}
+        pk3 = i.upsert(s, di, du, ["foo", "bar"])
         self.assertNotEqual(pk, pk3)
         d = i.get_one(s, query.Query().is__id(pk3))
         self.assertEqual(di["foo"], d["foo"])

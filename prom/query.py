@@ -66,7 +66,17 @@ class Iterator(ListIterator):
         ret = False
         if self.query.bounds.has_more():
             cursor = self.cursor()
-            ret = self.query.bounds.limit_paginate == cursor.rowcount
+            if cursor.rowcount == -1:
+                try:
+                    if self[self.query.bounds.find_more_index()]:
+                        ret = True
+
+                except IndexError:
+                    pass
+
+            else:
+                ret = self.query.bounds.limit_paginate == cursor.rowcount
+
         return ret
 
     def cursor(self):
@@ -331,7 +341,6 @@ class Bounds(object):
 
     def __bool__(self):
         return self.limit > 0 or self.offset > 0
-    __nonzero__ = __bool__ # py2
 
     def has(self):
         return bool(self)
@@ -378,6 +387,10 @@ class Bounds(object):
                 raise IndexError("Iterator index {} out of range".format(i))
 
         return offset
+
+    def find_more_index(self):
+        #return self.offset + self.limit_paginate
+        return self.offset + self.limit
 
 
 class Field(object):
@@ -727,12 +740,12 @@ class Query(object):
 
     def is_field(self, field_name, field_val=None, **field_kwargs):
         return self.append_operation("eq", field_name, field_val, **field_kwargs)
-    def eq_field(self, field_name, field_val, **field_kwargs):
+    def eq_field(self, field_name, field_val=None, **field_kwargs):
         return self.is_field(field_name, field_val, **field_kwargs)
 
     def not_field(self, field_name, field_val=None, **field_kwargs):
         return self.append_operation("ne", field_name, field_val, **field_kwargs)
-    def ne_field(self, field_name, field_val, **field_kwargs):
+    def ne_field(self, field_name, field_val=None, **field_kwargs):
         return self.not_field(field_name, field_val, **field_kwargs)
 
     def between_field(self, field_name, low, high):

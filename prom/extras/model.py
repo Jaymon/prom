@@ -35,7 +35,7 @@ class MagicOrm(Orm):
             that should be used in jsonable and in foreign key fields on other
             models
         """
-        return "{}_id".format(cls.__name__.lower())
+        return f"{cls.model_name}_id"
 
     def __getattr__(self, k):
         """Adds some syntactic sugar to the Orm
@@ -64,32 +64,34 @@ class MagicOrm(Orm):
             ret = self.pk
 
         else:
-            unfound = True
-            field_name = "{}_id".format(k)
-            field = self.schema.fields.get(field_name, None)
-            if not field:
-                field_name = "{}_fk".format(k)
-                field = self.schema.fields.get(field_name, None)
+            ret = super().__getattr__(k)
 
-            if field:
-                # NOTE -- another way to do this might be to just use field._type
-                # and pass that into self.query.ref(field._type)
-                schema = field.schema
-                if schema:
-                    orm_class = schema.orm_class
-                    if orm_class:
-                        unfound = False
-                        ret = orm_class.query.eq_field("pk", getattr(self, field_name)).one()
-
-            if unfound:
-                ret = super(MagicOrm, self).__getattr__(k)
-                #raise AttributeError(k)
+#             unfound = True
+#             field_name = "{}_id".format(k)
+#             field = self.schema.fields.get(field_name, None)
+#             if not field:
+#                 field_name = "{}_fk".format(k)
+#                 field = self.schema.fields.get(field_name, None)
+# 
+#             if field:
+#                 # NOTE -- another way to do this might be to just use field._type
+#                 # and pass that into self.query.ref(field._type)
+#                 schema = field.schema
+#                 if schema:
+#                     orm_class = schema.orm_class
+#                     if orm_class:
+#                         unfound = False
+#                         ret = orm_class.query.eq_field("pk", getattr(self, field_name)).one()
+# 
+#             if unfound:
+#                 ret = super(MagicOrm, self).__getattr__(k)
+#                 #raise AttributeError(k)
 
         return ret
 
     def jsonable(self):
         """Switches out _id for pk_name"""
-        d = super(MagicOrm, self).jsonable()
+        d = super().jsonable()
         d[self.pk_name] = self.pk
         d.pop("_id", None)
         return d

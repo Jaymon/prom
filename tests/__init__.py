@@ -126,11 +126,13 @@ class BaseTestCase(TestCase):
 
     def get_orm_class(self, table_name=None, **properties):
         tn = self.get_table_name(table_name)
+        parent_class = properties.get("parent_class", Orm)
 
         properties["table_name"] = tn
 
         if "interface" not in properties:
-            properties["interface"] = self.get_interface()
+            if "connection_name" not in properties:
+                properties["interface"] = self.get_interface()
 
         has_field = False
         for k, v in properties.items():
@@ -151,7 +153,7 @@ class BaseTestCase(TestCase):
 
         orm_class = type(
             String(tn),
-            (Orm,),
+            (parent_class,),
             properties,
         )
 
@@ -200,7 +202,7 @@ class BaseTestCase(TestCase):
             fields_or_indexes.setdefault("bar", Field(str, True))
             fields_or_indexes.setdefault("ifoobar", Index("foo", "bar"))
 
-        fields_or_indexes.setdefault("_id", Field(long, True, pk=True))
+        fields_or_indexes.setdefault("_id", Field(int, True, pk=True))
 
         # remove any None values
         for k in list(fields_or_indexes.keys()):
@@ -292,9 +294,13 @@ class BaseTestCase(TestCase):
         fields = {}
         for k, v in schema.fields.items():
             if v.is_pk(): continue
+            if v.is_ref(): continue
 
             if issubclass(v.interface_type, basestring):
                 fields[k] = testdata.get_words()
+
+            elif issubclass(v.interface_type, bool):
+                fields[k] = True if random.randint(0, 1) == 1 else False
 
             elif issubclass(v.interface_type, int):
                 fields[k] = testdata.get_int32()
@@ -305,11 +311,11 @@ class BaseTestCase(TestCase):
             elif issubclass(v.interface_type, datetime.datetime):
                 fields[k] = testdata.get_past_datetime()
 
+#             elif issubclass(v.interface_type, decimal.Decimal):
+#                 fields[k] = decimal.Decimal(testdata.get_float())
+
             elif issubclass(v.interface_type, float):
                 fields[k] = testdata.get_float()
-
-            elif issubclass(v.interface_type, bool):
-                fields[k] = True if random.randint(0, 1) == 1 else False
 
             else:
                 raise ValueError("{}".format(v.interface_type))
@@ -372,6 +378,10 @@ class BaseTestCase(TestCase):
             assert pk > 0
 
         return pk
+
+    def insert_orm(self, orm_class, fields=None, **fields_kwargs):
+        pk = self.insert_fields(orm_class, fields, **fields_kwargs)
+        return orm_class.query.eq_pk(pk).one()
 
     def old_insert(self, interface, schema, count, **kwargs):
         """insert count rows into schema using interface"""
@@ -439,6 +449,9 @@ class EnvironTestCase(BaseTestCase):
             #os.environ["PROM_DSN"] = inter.connection_config.dsn
             #prom.set_interface(inter)
             super().run(*args, **kwargs)
+
+            if os.environ.get("PROM_TEST_ENVIRON_ONCE", False):
+                break
 
     def countTestCases(self):
         ret = super().countTestCases()
