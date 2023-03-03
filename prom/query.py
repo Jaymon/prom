@@ -14,7 +14,6 @@ import inspect
 import time
 import re
 
-from decorators import deprecated
 from datatypes.collections import ListIterator
 
 from . import decorators
