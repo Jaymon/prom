@@ -301,6 +301,11 @@ class Interface(InterfaceABC):
         :param readonly: boolean, True if this connection should be readonly, False
             if the connection should be read/write
         """
+        if readonly:
+            self.log_warning([
+                f"Setting interface {self.connection_config.interface_name}",
+                f"to readonly={readonly}",
+            ])
         self.connection_config.readonly = readonly
 
         if self.connected:
@@ -385,12 +390,27 @@ class Interface(InterfaceABC):
                 # do a bunch of calls
             # those db calls will be committed by this line
         """
+#         with self.connection(connection) as connection:
+#             try:
+#                 do_transaction = kwargs.get("nest", True) or connection.in_transaction()
+# 
+#                 if do_transaction:
+#                     connection.transaction_start(**kwargs)
+#                 yield connection
+#                 connection.transaction_stop()
+# 
+#             except Exception as e:
+#                 connection.transaction_fail()
+#                 self.raise_error(e)
+
         with self.connection(connection) as connection:
             if not kwargs.get("nest", True) and connection.in_transaction():
                 # internal write transactions don't nest
+                self.log_debug("Transaction call IS NOT creating a new transaction")
                 yield connection
 
             else:
+                self.log_debug("Transaction call IS creating a new transaction")
                 connection.transaction_start(**kwargs)
                 try:
                     yield connection
@@ -432,24 +452,41 @@ class Interface(InterfaceABC):
         """
         CREATE, DELETE, DROP, INSERT, or UPDATE (collectively "write statements")
         """
-        kwargs.setdefault("prefix", callback.__name__)
-        nest = kwargs.pop("nest", False)
-        with self.transaction(nest=nest, **kwargs) as connection:
-            kwargs["connection"] = connection
-            return self.execute(callback, *args, **kwargs)
+        kwargs.setdefault("nest", True)
+        kwargs.setdefault("execute_in_transaction", True)
+        return self.execute(callback, *args, **kwargs)
+
+#     def execute_write(self, callback, *args, **kwargs):
+#         """
+#         CREATE, DELETE, DROP, INSERT, or UPDATE (collectively "write statements")
+#         """
+#         kwargs.setdefault("prefix", callback.__name__)
+#         nest = kwargs.pop("nest", False)
+#         with self.transaction(nest=nest, **kwargs) as connection:
+#             kwargs["connection"] = connection
+#             return self.execute(callback, *args, **kwargs)
 
     def execute_read(self, callback, *args, **kwargs):
-        kwargs.setdefault("prefix", callback.__name__)
         with self.connection(**kwargs) as connection:
             kwargs["connection"] = connection
-            if in_transaction := connection.in_transaction():
-                nest = kwargs.pop("nest", in_transaction)
-                with self.transaction(nest=nest, **kwargs) as connection:
-                    kwargs["connection"] = connection
-                    return self.execute(callback, *args, **kwargs)
 
-            else:
-                return self.execute(callback, *args, **kwargs)
+            in_transaction = connection.in_transaction()
+            kwargs.setdefault("nest", in_transaction)
+            kwargs.setdefault("execute_in_transaction", in_transaction)
+
+            return self.execute(callback, *args, **kwargs)
+
+#     def execute_read(self, callback, *args, **kwargs):
+#         with self.connection(**kwargs) as connection:
+#             kwargs["connection"] = connection
+#             if in_transaction := connection.in_transaction():
+#                 nest = kwargs.pop("nest", in_transaction)
+#                 with self.transaction(nest=nest, **kwargs) as connection:
+#                     kwargs["connection"] = connection
+#                     return self.execute(callback, *args, **kwargs)
+# 
+#             else:
+#                 return self.execute(callback, *args, **kwargs)
 
     def execute(self, callback, *args, **kwargs):
         """Internal method. Execute the callback with args and kwargs, retrying
@@ -462,20 +499,63 @@ class Interface(InterfaceABC):
         :param **kwargs: passed to callback as **kwargs, can have values added
         :returns: mixed, whatever the callback returns
         """
-        with self.connection(**kwargs) as connection:
-            kwargs["connection"] = connection
-            try:
+        prefix = kwargs.pop("prefix", callback.__name__)
+        #kwargs.setdefault("prefix", callback.__name__)
+
+        try:
+            return self._execute(callback, *args, prefix=prefix, **kwargs)
+
+        except Exception as e:
+            if self.handle_error(e=e, **kwargs):
+                return self._execute(
+                    callback,
+                    *args,
+                    prefix=f"{prefix}_retry",
+                    **kwargs
+                )
+
+            else:
+                self.raise_error(e)
+
+    def _execute(self, callback, *args, **kwargs):
+        in_transaction = kwargs.get("execute_in_transaction", False)
+
+        if in_transaction:
+            with self.transaction(**kwargs) as connection:
+                kwargs["connection"] = connection
                 return callback(*args, **kwargs)
 
-            except Exception as e:
-                if self.handle_error(e=e, **kwargs):
-                    # refresh the connection just in case
-                    with self.connection(**kwargs) as connection:
-                        kwargs["connection"] = connection
-                        return callback(*args, **kwargs)
+        else:
+            with self.connection(**kwargs) as connection:
+                kwargs["connection"] = connection
+                return callback(*args, **kwargs)
 
-                else:
-                    self.raise_error(e)
+
+#     def execute(self, callback, *args, **kwargs):
+#         """Internal method. Execute the callback with args and kwargs, retrying
+#         the query if an error is raised that it thinks it successfully handled
+# 
+#         better names: retry? execute_retry?
+# 
+#         :param callback: callable, this will be run at-most twice
+#         :param *args: passed directly to callback as *args
+#         :param **kwargs: passed to callback as **kwargs, can have values added
+#         :returns: mixed, whatever the callback returns
+#         """
+#         with self.connection(**kwargs) as connection:
+#             kwargs["connection"] = connection
+#             try:
+#                 return callback(*args, **kwargs)
+# 
+#             except Exception as e:
+#                 if self.handle_error(e=e, **kwargs):
+#                     # refresh the connection just in case
+#                     with self.connection(**kwargs) as connection:
+#                         kwargs["connection"] = connection
+#                         return callback(*args, **kwargs)
+# 
+#                 else:
+#                     self.raise_error(e)
 
 #     @reconnecting()
 #     def execute_gracefully(self, callback, *args, **kwargs):
@@ -590,10 +670,10 @@ class Interface(InterfaceABC):
         schema -- Schema() -- contains all the information about the table
         """
         kwargs.setdefault("prefix", "set_table")
-        with self.transaction(write=True, **kwargs) as connection:
-            kwargs['connection'] = connection
+        try:
+            with self.transaction(write=True, **kwargs) as connection:
+                kwargs['connection'] = connection
 
-            try:
                 self.execute_write(self._set_table, schema, **kwargs)
 
                 for index_name, index in schema.indexes.items():
@@ -606,11 +686,11 @@ class Interface(InterfaceABC):
                         **index.options
                     )
 
-            except InterfaceError:
-                # check to see if this table now exists, it might have been created
-                # in another thread
-                if not self.has_table(schema, **kwargs):
-                    raise
+        except InterfaceError:
+            # check to see if this table now exists, it might have been created
+            # in another thread
+            if not self.has_table(schema, **kwargs):
+                raise
 
 #         with self.connection(**kwargs) as connection:
 #             kwargs['connection'] = connection
@@ -901,7 +981,11 @@ class Interface(InterfaceABC):
         prefix = kwargs.get("prefix", "")
         self.log_warning(["Handling", prefix, f"error: {e}"])
 
-        # connection is open
+        # if we have a connection in a transaction we should fail that transaction
+#         if connection := kwargs.get("connection", None):
+#             if connection.in_transaction():
+#                 connection.transaction_fail()
+
         e = self.create_error(e)
 
         if isinstance(e, CloseError):

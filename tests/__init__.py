@@ -33,6 +33,9 @@ testdata.basic_logging(
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class BaseTestCase(TestCase):
 
     interfaces = set()
@@ -53,7 +56,7 @@ class BaseTestCase(TestCase):
             try:
                 inter.unsafe_delete_tables()
             except inter.InterfaceError as e:
-                pout.v(e)
+                logger.exception(e)
 
     @classmethod
     def tearDownClass(cls):

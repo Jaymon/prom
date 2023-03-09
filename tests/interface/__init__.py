@@ -156,10 +156,9 @@ class BaseTestInterface(BaseTestCase):
         self.assertFalse(i.has_table(s2))
 
     def test_readonly(self):
+        s = self.get_schema()
         i = self.get_interface()
         i.readonly(True)
-
-        s = self.get_schema()
 
         with self.assertRaises(InterfaceError):
             i.set_table(s)
@@ -748,16 +747,11 @@ class BaseTestInterface(BaseTestCase):
     def test_transaction_nested_fail_1(self):
         """make sure 2 new tables in a wrapped transaction work as expected"""
         i = self.get_interface()
-        table_name_1 = self.get_table_name()
-        table_name_2 = self.get_table_name()
-
-        s1 = Schema(
-            table_name_1,
+        s1 = self.get_schema(
             _id=Field(int, pk=True),
             foo=Field(int, True)
         )
-        s2 = Schema(
-            table_name_2,
+        s2 = self.get_schema(
             _id=Field(int, pk=True),
             bar=Field(int, True),
             s_pk=Field(s1),
@@ -767,14 +761,10 @@ class BaseTestInterface(BaseTestCase):
             pk1 = i.insert(s1, {"foo": 1}, connection=connection)
             pk2 = i.insert(s2, {"bar": 2, "s_pk": pk1}, connection=connection)
 
-        q1 = query.Query()
-        q1.is__id(pk1)
-        r1 = i.get_one(s1, q1)
+        r1 = i.get_one(s1, Query().eq__id(pk1))
         self.assertEqual(pk1, r1['_id'])
 
-        q2 = query.Query()
-        q2.is__id(pk2)
-        r2 = i.get_one(s2, q2)
+        r2 = i.get_one(s2, Query().eq__id(pk2))
         self.assertEqual(pk2, r2['_id'])
         self.assertEqual(pk1, r2['s_pk'])
 
@@ -870,9 +860,8 @@ class BaseTestInterface(BaseTestCase):
             # it just discards all the current stuff and adds the table, had this
             # been a mod query (eg, insert) it would not have failed, this is fixed
             # by wrapping selects in a transaction if an active transaction is found
-            q3 = query.Query()
-            q3.is_s_pk(pk1)
-            pk3 = i.get(s3, q3, connection=connection)
+            pout.b()
+            pk3 = i.get(s3, Query().eq_s_pk(pk1), connection=connection)
 
         self.assertEqual(1, i.count(s2, query.Query()))
 

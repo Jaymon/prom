@@ -171,7 +171,7 @@ class PostgreSQL(SQLInterface):
         # if an error was handled there is a chance that the connection was reset
         # and we don't want to put a dead connection back into the pool
         if connection.closed:
-            self.log_warning(f"discarding pool connection {id(connection)}")
+            self.log_warning(f"discarding pool connection {id(connection)} because it is closed")
 
         else:
             self.log(f"freeing pool connection {id(connection)}")
@@ -188,7 +188,9 @@ class PostgreSQL(SQLInterface):
         if not self.connected: self.connect()
 
         connection = self._connection_pool.getconn()
-        self.log("getting pool connection {}", id(connection))
+
+        connection_id = id(connection)
+        self.log(f"getting pool connection {connection_id}", )
 
         if connection.closed:
             # we've gotten into a bad state so let's try everything again
@@ -213,8 +215,13 @@ class PostgreSQL(SQLInterface):
 #             self.log("getting async connection {}", id(connection))
 
         # change the connection readonly status if they don't match
-        if connection.readonly != self.connection_config.readonly:
+        if bool(connection.readonly) != bool(self.connection_config.readonly):
             # https://www.psycopg.org/docs/connection.html#connection.readonly
+            self.log_warning([
+                f"Changing connection {connection_id}",
+                f"to readonly={self.connection_config.readonly}",
+                f"from readonly={connection.readonly}",
+            ])
             connection.readonly = self.connection_config.readonly
 
         return connection
