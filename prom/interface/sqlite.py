@@ -44,7 +44,7 @@ from ..exception import (
 )
 
 from ..compat import *
-from .base import SQLInterface, SQLConnection
+from .sql import SQLInterface, SQLConnection
 
 
 class SQLiteRowDict(sqlite3.Row):
@@ -272,7 +272,14 @@ class SQLite(SQLInterface):
         self.readonly(self.connection_config.readonly)
 
     def get_connection(self):
-        if not self.connected: self.connect()
+        if not self.connected:
+            self.connect()
+
+        if self._connection.closed:
+            # we've gotten into a bad state so let's try everything again
+            self.close()
+            self.connect()
+
         return self._connection
 
     def _close(self):
@@ -294,22 +301,22 @@ class SQLite(SQLInterface):
             query_str += ' AND name = ?'
             query_args.append(str(table_name))
 
-        ret = self._query(query_str, query_args, **kwargs)
+        ret = self._query(query_str, *query_args, **kwargs)
         return [r['tbl_name'] for r in ret]
 
-    def _set_index(self, schema, name, field_names, **index_options):
+    def _set_index(self, schema, name, field_names, **kwargs):
         """
         https://www.sqlite.org/lang_createindex.html
         """
         query_str = "CREATE {}INDEX IF NOT EXISTS '{}_{}' ON {} ({})".format(
-            'UNIQUE ' if index_options.get('unique', False) else '',
+            'UNIQUE ' if kwargs.get('unique', False) else '',
             schema,
             name,
             self._normalize_table_name(schema),
             ', '.join(map(self._normalize_name, field_names))
         )
 
-        return self._query(query_str, ignore_result=True, **index_options)
+        return self._query(query_str, ignore_result=True, **kwargs)
 
     def _get_indexes(self, schema, **kwargs):
         """return all the indexes for the given schema"""
@@ -330,14 +337,17 @@ class SQLite(SQLInterface):
 
     def _delete_tables(self, **kwargs):
         self._query('PRAGMA foreign_keys = OFF', ignore_result=True, **kwargs);
-        ret = super(SQLite, self)._delete_tables(**kwargs)
+        ret = super()._delete_tables(**kwargs)
         self._query('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs);
         return ret
 
     def _delete_table(self, schema, **kwargs):
+        """
+        https://www.sqlite.org/lang_droptable.html
+        """
         #query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
         query_str = "DROP TABLE IF EXISTS {}".format(self._normalize_table_name(schema))
-        ret = self._query(query_str, ignore_result=True, **kwargs)
+        ret = self.query(query_str, ignore_result=True, **kwargs)
 
     def create_error(self, e, **kwargs):
         if isinstance(e, sqlite3.OperationalError):
@@ -358,6 +368,11 @@ class SQLite(SQLInterface):
 
         elif isinstance(e, sqlite3.IntegrityError):
             e = UniqueError(e)
+
+        elif isinstance(e, sqlite3.ProgrammingError):
+            e_msg = str(e)
+            if "closed database" in e_msg:
+                e = CloseError(e)
 
         else:
             e = super().create_error(e, **kwargs)

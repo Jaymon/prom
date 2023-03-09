@@ -72,18 +72,13 @@ class InterfaceTest(BaseTestInterface):
         """make sure interface can recover if the db disconnects mid script execution"""
         i, s = self.get_table()
         _id = self.insert(i, s, 1)[0]
-        q = Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
-        self.assertGreater(len(d), 0)
+        d = i.get_one(s, Query().eq__id(_id))
+        self.assertLess(0, len(d))
 
-        testdata.stop_service("postgresql")
-        testdata.start_service("postgresql")
+        testdata.restart_service("postgresql")
 
-        q = Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
-        self.assertGreater(len(d), 0)
+        d = i.get_one(s, Query().eq__id(_id))
+        self.assertLess(0, len(d))
 
     def test_no_connection(self):
         """this will make sure prom handles it gracefully if there is no connection available ever"""

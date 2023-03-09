@@ -20,7 +20,7 @@ import psycopg2.extras
 import psycopg2.extensions
 
 # first party
-from ..base import SQLInterface, SQLConnection
+from ..sql import SQLInterface, SQLConnection
 from ...compat import *
 from ...utils import get_objects
 from ...exception import (
@@ -88,14 +88,14 @@ class StringType(object):
         return val
 
 
-class Connection(SQLConnection, psycopg2.extensions.connection):
+class PostgreSQLConnection(SQLConnection, psycopg2.extensions.connection):
 #class Connection(SQLConnection, psycopg2.extras.LoggingConnection):
     """
     http://initd.org/psycopg/docs/advanced.html
     http://initd.org/psycopg/docs/extensions.html#psycopg2.extensions.connection
     """
     def __init__(self, *args, **kwargs):
-        super(Connection, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         # http://initd.org/psycopg/docs/connection.html#connection.autocommit
         self.autocommit = True
@@ -123,9 +123,9 @@ class PostgreSQL(SQLInterface):
 
     val_placeholder = '%s'
 
-    connection_pool = None
+    _connection_pool = None
 
-    _connection = None
+#     _connection = None
 
     def _connect(self, connection_config):
         database = connection_config.database
@@ -141,14 +141,14 @@ class PostgreSQL(SQLInterface):
             'pool_class',
             'psycopg2.pool.SimpleConnectionPool'
         )
-        async_conn = int(connection_config.options.get('async', 0))
+#         async_conn = int(connection_config.options.get('async', 0))
 
         _, pool_class = get_objects(pool_class_name)
 
         self.log("connecting using pool class {}".format(pool_class_name))
 
         # http://initd.org/psycopg/docs/module.html#psycopg2.connect
-        self.connection_pool = pool_class(
+        self._connection_pool = pool_class(
             minconn,
             maxconn,
             dbname=database,
@@ -158,47 +158,75 @@ class PostgreSQL(SQLInterface):
             port=port,
             cursor_factory=psycopg2.extras.RealDictCursor,
             #cursor_factory=LoggingCursor,
-            connection_factory=Connection,
+            connection_factory=PostgreSQLConnection,
         )
 
         # hack for sync backwards compatibility with transactions
-        if not async_conn:
-            self._connection = self.connection_pool.getconn()
+#         if not async_conn:
+#             self._connection = self.connection_pool.getconn()
 
     def free_connection(self, connection):
         if not self.connected: return
 
-        if self._connection:
-            self.log("freeing sync connection")
+        # if an error was handled there is a chance that the connection was reset
+        # and we don't want to put a dead connection back into the pool
+        if connection.closed:
+            self.log_warning(f"discarding pool connection {id(connection)}")
 
         else:
-            self.log("freeing async connection {}", id(connection))
-            self.connection_pool.putconn(connection)
+            self.log(f"freeing pool connection {id(connection)}")
+            self._connection_pool.putconn(connection)
+
+#         if self._connection:
+#             self.log("freeing sync connection")
+# 
+#         else:
+#             self.log("freeing async connection {}", id(connection))
+#             self.connection_pool.putconn(connection)
 
     def get_connection(self):
         if not self.connected: self.connect()
 
-        connection = None
-        if self._connection:
-            self.log("getting sync connection")
-            connection = self._connection
+        connection = self._connection_pool.getconn()
+        self.log("getting pool connection {}", id(connection))
 
-        else:
-            connection = self.connection_pool.getconn()
-            self.log("getting async connection {}", id(connection))
+        if connection.closed:
+            # we've gotten into a bad state so let's try everything again
+            self.close()
+            self.connect()
+            connection = self._connection_pool.getconn()
+
+#         connection = None
+#         if self._connection:
+#             self.log("getting sync connection")
+#             connection = self._connection
+# 
+#             if connection.closed:
+#                 pout.h()
+#                 # we've gotten into a bad state so let's try everything again
+#                 self.close()
+#                 self.connect()
+#                 connection = self._connection
+# 
+#         else:
+#             connection = self.connection_pool.getconn()
+#             self.log("getting async connection {}", id(connection))
 
         # change the connection readonly status if they don't match
         if connection.readonly != self.connection_config.readonly:
             # https://www.psycopg.org/docs/connection.html#connection.readonly
             connection.readonly = self.connection_config.readonly
+
         return connection
 
     def _close(self):
-        self.connection_pool.closeall()
-        if self._connection:
-            self._connection.close()
-            self._connection = None
-            self.connection_pool = None
+        self._connection_pool.closeall()
+        self._connection_pool = None
+
+#         if self._connection:
+#             self._connection.close()
+#             self._connection = None
+#             self.connection_pool = None
 
     def _readonly(self, readonly):
         """readonly setting is handled when you grab the connection from get_connection()
@@ -213,13 +241,16 @@ class PostgreSQL(SQLInterface):
             query_str += ' AND tablename = %s'
             query_args.append(str(table_name))
 
-        ret = self.query(query_str, *query_args, **kwargs)
+        ret = self._query(query_str, *query_args, **kwargs)
         # http://www.postgresql.org/message-id/CA+mi_8Y6UXtAmYKKBZAHBoY7F6giuT5WfE0wi3hR44XXYDsXzg@mail.gmail.com
         return [r['tablename'] for r in ret]
 
     def _delete_table(self, schema, **kwargs):
+        """
+        https://www.postgresql.org/docs/current/sql-droptable.html
+        """
         query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(self._normalize_table_name(schema))
-        ret = self.query(query_str, ignore_result=True, **kwargs)
+        ret = self._query(query_str, ignore_result=True, **kwargs)
 
     def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given schema"""
@@ -263,8 +294,8 @@ class PostgreSQL(SQLInterface):
             '  AND a.attnum > 0',
             'ORDER BY a.attnum ASC',
         ]
-        query_str = os.linesep.join(query_str)
-        fields = self.query(query_str, *query_args, **kwargs)
+        query_str = "\n".join(query_str)
+        fields = self._query(query_str, *query_args, **kwargs)
 
         pg_types = {
             "float4": float,
@@ -319,9 +350,9 @@ class PostgreSQL(SQLInterface):
             'ORDER BY',
             '  tbl.relname, i.relname',
         ]
-        query_str = os.linesep.join(query_str)
+        query_str = "\n".join(query_str)
 
-        indexes = self.query(query_str, 'r', str(schema), **kwargs)
+        indexes = self._query(query_str, 'r', str(schema), **kwargs)
 
         # massage the data into more readable {index_name: fields} format
         for idict in indexes:
@@ -333,7 +364,7 @@ class PostgreSQL(SQLInterface):
 
         return ret
 
-    def _set_index(self, schema, name, field_names, **index_options):
+    def _set_index(self, schema, name, field_names, **kwargs):
         """
         NOTE -- we set the index name using <table_name>_<name> format since indexes have to have
         a globally unique name in postgres
@@ -341,13 +372,13 @@ class PostgreSQL(SQLInterface):
         http://www.postgresql.org/docs/9.1/static/sql-createindex.html
         """
         query_str = 'CREATE {}INDEX {} ON {} USING BTREE ({})'.format(
-            'UNIQUE ' if index_options.get('unique', False) else '',
+            'UNIQUE ' if kwargs.get('unique', False) else '',
             self._normalize_name("{}_{}".format(schema, name)),
             self._normalize_table_name(schema),
             ', '.join(map(self._normalize_name, field_names))
         )
 
-        return self.query(query_str, ignore_result=True, **index_options)
+        return self._query(query_str, ignore_result=True, **kwargs)
 
     def _normalize_field_SQL(self, schema, field_name, symbol):
         format_field_name = self._normalize_name(field_name)
@@ -515,9 +546,17 @@ class PostgreSQL(SQLInterface):
                     #'relation "<TABLE-NAME>" does not exit'
                     e = TableError(e)
 
+        elif isinstance(e, psycopg2.errors.AdminShutdown):
+            e = CloseError(e)
+
+        elif isinstance(e, psycopg2.errors.InFailedSqlTransaction):
+            e = CloseError(e)
+
         elif isinstance(e, psycopg2.IntegrityError):
             e = UniqueError(e)
+
         else:
             e = super().create_error(e, **kwargs)
+
         return e
 

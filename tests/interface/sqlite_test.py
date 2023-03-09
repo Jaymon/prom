@@ -11,6 +11,7 @@ from prom.interface import configure
 from prom.model import Orm
 from prom.config import Field
 from prom.compat import *
+from prom.query import Query
 
 from . import BaseTestInterface, BaseTestCase
 
@@ -116,32 +117,38 @@ class InterfaceTest(BaseTestInterface):
         i.connect(config)
         self.assertTrue(i.connected)
 
-    def test_db_disconnect(self):
+    def test_db_disconnect_1(self):
         """make sure interface can recover if the db disconnects mid script execution,
         SQLite is a bit different than postgres which is why this method is completely
         original"""
         i, s = self.get_table()
         _id = self.insert(i, s, 1)[0]
-        q = query.Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
+        d = i.get_one(s, Query().eq__id(_id))
         self.assertGreater(len(d), 0)
 
         i._connection.close()
 
         _id = self.insert(i, s, 1)[0]
-        q = query.Query()
-        q.is__id(_id)
-        d = i.get_one(s, q)
+        d = i.get_one(s, Query().eq__id(_id))
         self.assertGreater(len(d), 0)
 
-    def test_no_connection(self):
-        """noop, this doesn't really apply to SQLite"""
-        pass
+    def test_db_disconnect_2(self):
+        i, s = self.get_table()
+        def callback(connection, **kwargs):
+            if getattr(connection, "attempt", False):
+                connection.close()
+                connection.attempt 
+            connection.cursor().execute("SELECT true")
+
+        with i.connection() as connection:
+            connection.attempt = True
+            i.execute(callback, connection=connection)
+
+        self.assertFalse(i.get_one(s))
 
     def test_unsafe_delete_table_strange_name(self):
         """this makes sure https://github.com/firstopinion/prom/issues/47 is fixed,
-        the problem was table names weren't wrapped with single quotes and so if they
+        the problem was table names weren't escaped and so if they
         started with a number or something like that SQLite would choke"""
         table_name = "1{}".format(testdata.get_ascii(32))
         i = self.create_interface()

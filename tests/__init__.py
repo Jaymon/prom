@@ -25,7 +25,12 @@ from prom.utils import make_dict
 import prom
 
 
-testdata.basic_logging()
+testdata.basic_logging(
+    levels={
+        "prom": "INFO",
+        "datatypes": "WARNING",
+    }
+)
 
 
 class BaseTestCase(TestCase):
@@ -45,7 +50,10 @@ class BaseTestCase(TestCase):
     def setUpClass(cls):
         """make sure there is a default interface for any class"""
         for inter in cls.create_environ_interfaces():
-            inter.unsafe_delete_tables()
+            try:
+                inter.unsafe_delete_tables()
+            except inter.InterfaceError as e:
+                pout.v(e)
 
     @classmethod
     def tearDownClass(cls):
@@ -75,8 +83,13 @@ class BaseTestCase(TestCase):
     def create_environ_connections(cls, dsn_env_name="PROM_TEST_DSN"):
         """creates all the connections that are defined in the environment under
         <dsn_env_name>_N where N can be any integer"""
-        for conn in find_environ(dsn_env_name):
-            yield conn
+        if dsn_index := os.environ.get("PROM_TEST_DSN_INDEX", 0):
+            for conn in find_environ(f"{dsn_env_name}_{dsn_index}"):
+                yield conn
+
+        else:
+            for conn in find_environ(dsn_env_name):
+                yield conn
 
     @classmethod
     def create_environ_interfaces(cls):
@@ -405,9 +418,6 @@ class EnvironTestCase(BaseTestCase):
             #os.environ["PROM_DSN"] = inter.connection_config.dsn
             #prom.set_interface(inter)
             super().run(*args, **kwargs)
-
-            if os.environ.get("PROM_TEST_ENVIRON_ONCE", False):
-                break
 
     def countTestCases(self):
         ret = super().countTestCases()

@@ -1010,5 +1010,9 @@ class Query(object):
         return instance
 
     def __str__(self):
-        return self.render()
+        try:
+            return self.render()
+
+        except AttributeError:
+            return super().__str__()
 
