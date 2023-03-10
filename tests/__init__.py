@@ -27,7 +27,8 @@ import prom
 
 testdata.basic_logging(
     levels={
-        "prom": "INFO",
+        "prom": "ERROR",
+        #"prom": "INFO",
         "datatypes": "WARNING",
     }
 )
@@ -60,9 +61,30 @@ class BaseTestCase(TestCase):
 
     @classmethod
     def tearDownClass(cls):
+#         if len(cls.interfaces):
+#             #pout.v(len(cls.interfaces))
+#             pout.v(len(cls.interfaces), len(type(list(cls.interfaces)[0]).connections))
+#             for conn in type(list(cls.interfaces)[0]).connections:
+#                 if conn.in_transaction():
+#                     pout.v(conn.in_transaction())
+
         for inter in cls.interfaces:
             inter.close()
         cls.interfaces = set()
+
+#     def setUp(self):
+#         for conn in SQLite.connections:
+#             conn.close()
+
+#         if len(cls.interfaces):
+#             #pout.v(len(cls.interfaces))
+#             pout.v(len(cls.interfaces), len(type(list(cls.interfaces)[0]).connections))
+#             for conn in type(list(cls.interfaces)[0]).connections:
+#                 if conn.in_transaction():
+#                     pout.v(conn.in_transaction())
+        
+
+
 
     @classmethod
     def get_interface(cls):
@@ -260,7 +282,6 @@ class BaseTestCase(TestCase):
         orm_class = self.get_orm_class()
         if inter:
             orm_class.interface = inter
-            i = inter
             orm_class.install()
 
         s = Schema(
@@ -354,11 +375,14 @@ class BaseTestCase(TestCase):
         fields = make_dict(fields, fields_kwargs)
 
         if isinstance(o, query.Query):
-            q = o.copy()
-            schema = q.orm_class.schema
-            q.reset()
-            fields = self.get_fields(schema, **fields)
-            pk = q.copy().set(fields).insert()
+            schema = o.orm_class.schema
+            pk = self.insert_fields(o.orm_class, fields)
+
+#             q = o.copy()
+#             schema = q.orm_class.schema
+#             q.reset()
+#             fields = self.get_fields(schema, **fields)
+#             pk = q.copy().set(fields).insert()
 
         elif isinstance(o, tuple):
             interface, schema = o
@@ -392,18 +416,6 @@ class BaseTestCase(TestCase):
     def insert_orm(self, orm_class, fields=None, **fields_kwargs):
         pk = self.insert_fields(orm_class, fields, **fields_kwargs)
         return orm_class.query.eq_pk(pk).one()
-
-    def old_insert(self, interface, schema, count, **kwargs):
-        """insert count rows into schema using interface"""
-        pks = []
-        for i in range(count):
-            fields = self.get_fields(schema)
-            pk = interface.insert(schema, fields, **kwargs)
-
-            assert pk > 0
-            pks.append(pk)
-
-        return pks
 
 
 class EnvironTestCase(BaseTestCase):

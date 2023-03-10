@@ -184,6 +184,8 @@ class SQLite(SQLInterface):
 
     _connection = None
 
+#     connections = set()
+
     @classmethod
     def configure(cls, connection_config):
         dsn = getattr(connection_config, 'dsn', '')
@@ -225,6 +227,7 @@ class SQLite(SQLInterface):
 
         try:
             self._connection = sqlite3.connect(path, **options)
+#             type(self).connections.add(self._connection)
 
         except sqlite3.DatabaseError as e:
             path_d = os.path.dirname(path)
@@ -245,9 +248,6 @@ class SQLite(SQLInterface):
         # to be ran through the converter, not sure why
         sqlite3.register_converter(StringType.FIELD_TYPE, StringType.adapt)
 
-        #sqlite3.register_adapter(decimal.Decimal, NumericType.adapt)
-        #sqlite3.register_converter('NUMERIC', NumericType.convert)
-
         sqlite3.register_adapter(bool, BooleanType.adapt)
         sqlite3.register_converter(BooleanType.FIELD_TYPE, BooleanType.convert)
 
@@ -266,31 +266,30 @@ class SQLite(SQLInterface):
         sqlite3.register_adapter(dict, DictType.adapt)
         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
 
+    def _configure_connection(self):
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
-        self._query('PRAGMA foreign_keys = ON', ignore_result=True);
-        self.readonly(self.connection_config.readonly)
+        #cur = self._connection.cursor()
+        #cur.execute('PRAGMA foreign_keys = ON')
+        # !!! these commands run queries on the db, which means they will
+        # get a connection and free a connection
+        self._query('PRAGMA foreign_keys = ON', ignore_result=True)
+        self._readonly(self.connection_config.readonly)
+        #self.readonly(self.connection_config.readonly)
 
-    def get_connection(self):
-        if not self.connected:
-            self.connect()
-
-        if self._connection.closed:
-            # we've gotten into a bad state so let's try everything again
-            self.close()
-            self.connect()
-
+    def _get_connection(self):
         return self._connection
 
     def _close(self):
         self._connection.close()
         self._connection = None
 
-    def _readonly(self, readonly):
+    def _readonly(self, readonly, **kwargs):
         self._query(
             # https://stackoverflow.com/a/49630725/5006
             'PRAGMA query_only = {}'.format("ON" if readonly else "OFF"),
-            ignore_result=True
+            ignore_result=True,
+            **kwargs
         )
 
     def _get_tables(self, table_name, **kwargs):
@@ -362,6 +361,9 @@ class SQLite(SQLInterface):
 
             elif "UNIQUE" in e_msg:
                 e = UniqueError(e)
+
+            elif "database is locked":
+                e = CloseError(e)
 
             else:
                 e = super().create_error(e, **kwargs)

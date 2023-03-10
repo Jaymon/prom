@@ -4,7 +4,10 @@ import time
 from functools import wraps
 import logging
 
-from datatypes import classproperty
+from datatypes import (
+    classproperty,
+    property as cachedproperty,
+)
 
 from .exception import InterfaceError
 from .compat import *

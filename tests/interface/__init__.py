@@ -860,7 +860,6 @@ class BaseTestInterface(BaseTestCase):
             # it just discards all the current stuff and adds the table, had this
             # been a mod query (eg, insert) it would not have failed, this is fixed
             # by wrapping selects in a transaction if an active transaction is found
-            pout.b()
             pk3 = i.get(s3, Query().eq_s_pk(pk1), connection=connection)
 
         self.assertEqual(1, i.count(s2, query.Query()))

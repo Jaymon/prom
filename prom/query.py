@@ -15,6 +15,7 @@ import time
 import re
 
 from datatypes.collections import ListIterator
+from datatypes import property as cachedproperty
 
 from . import decorators
 from .utils import make_list, get_objects, make_dict, make_hash
@@ -504,25 +505,34 @@ class Query(object):
     bounds_class = Bounds
     iterator_class = Iterator
 
+
     @property
     def interface(self):
-        if not self.orm_class: return None
-        interface = getattr(self, "_interface", None)
-        if not interface:
-            interface = self.orm_class.interface
-            self._interface = interface
-        return interface
+        return self.orm_class.interface if self.orm_class else None
 
-    @interface.setter
-    def interface(self, interface):
-        self._interface = interface
+#     @cachedproperty(cached="_interface", allow_empty=False)
+#     def interface(self):
+#         return self.orm_class.interface if self.orm_class else None
 
-    @interface.deleter
-    def interface(self):
-        try:
-            del self._interface
-        except AttributeError:
-            pass
+#     @property
+#     def interface(self):
+#         if not self.orm_class: return None
+#         interface = getattr(self, "_interface", None)
+#         if not interface:
+#             interface = self.orm_class.interface
+#             self._interface = interface
+#         return interface
+# 
+#     @interface.setter
+#     def interface(self, interface):
+#         self._interface = interface
+# 
+#     @interface.deleter
+#     def interface(self):
+#         try:
+#             del self._interface
+#         except AttributeError:
+#             pass
 
     @property
     def schema(self):
@@ -560,7 +570,7 @@ class Query(object):
         self.kwargs = kwargs
 
     def reset(self):
-        self.interface = None
+        #self.interface = None
         self._ifilter = None
         self.fields_set = self.fields_set_class()
         self.fields_select = self.fields_select_class()

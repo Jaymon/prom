@@ -23,30 +23,43 @@ logger = logging.getLogger(__name__)
 
 class SQLConnection(Connection):
     def _transaction_start(self):
-        cur = self.cursor()
-        cur.execute("BEGIN")
+        self._execute("BEGIN")
+#         cur = self.cursor()
+#         cur.execute("BEGIN")
 
     def _transaction_started(self, name):
-        cur = self.cursor()
         # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-        cur.execute("SAVEPOINT \"{}\"".format(name))
+        self._execute("SAVEPOINT {}".format(self.interface._normalize_name(name)))
+#         cur = self.cursor()
+#         # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
+#         cur.execute("SAVEPOINT \"{}\"".format(name))
 
     def _transaction_stop(self):
         """
         http://initd.org/psycopg/docs/usage.html#transactions-control
         https://news.ycombinator.com/item?id=4269241
         """
-        cur = self.cursor()
-        cur.execute("COMMIT")
+        self._execute("COMMIT")
+#         cur = self.cursor()
+#         cur.execute("COMMIT")
 
     def _transaction_fail(self):
-        cur = self.cursor()
-        cur.execute("ROLLBACK")
+        self._execute("ROLLBACK")
+#         cur = self.cursor()
+#         cur.execute("ROLLBACK")
 
     def _transaction_failing(self, name):
-        cur = self.cursor()
         # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-        cur.execute("ROLLBACK TO SAVEPOINT \"{}\"".format(name))
+        self._execute("ROLLBACK TO SAVEPOINT {}".format(self.interface._normalize_name(name)))
+#         cur = self.cursor()
+#         # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
+#         cur.execute("ROLLBACK TO SAVEPOINT \"{}\"".format(name))
+
+    def _execute(self, query_str):
+        cur = self.cursor()
+        self.log_info(query_str)
+        #self.log_info(f"{id(self)} - {query_str}")
+        cur.execute(query_str)
 
 
 class SQLInterfaceABC(Interface):
@@ -81,35 +94,6 @@ class SQLInterfaceABC(Interface):
 
 class SQLInterface(SQLInterfaceABC):
     """Generic base class for all SQL derived interfaces"""
-
-#     def _set_all_tables(self, schema, **kwargs):
-#         """
-#         You can run into a problem when you are trying to set a table and it has a 
-#         foreign key to a table that doesn't exist, so this method will go through 
-#         all fk refs and make sure all the tables exist
-#         """
-#         for field_name, field_val in schema.fields.items():
-#             s = field_val.schema
-#             if s:
-#                 self._set_all_tables(s, **kwargs)
-# 
-#         # now that we know all fk tables exist, create this table
-#         self._set_table(schema, **kwargs)
-#         return True
-
-#         with self.transaction(**kwargs) as connection:
-#             kwargs['connection'] = connection
-#             # go through and make sure all foreign key referenced tables exist
-#             for field_name, field_val in schema.fields.items():
-#                 s = field_val.schema
-#                 if s:
-#                     self._set_all_tables(s, **kwargs)
-# 
-#             # now that we know all fk tables exist, create this table
-#             self._set_table(schema, **kwargs)
-# 
-#         return True
-
     def _set_table(self, schema, **kwargs):
         """
         http://sqlite.org/lang_createtable.html
@@ -128,29 +112,6 @@ class SQLInterface(SQLInterfaceABC):
         query_str.append(')')
         query_str = "\n".join(query_str)
         self._query(query_str, ignore_result=True, **kwargs)
-
-#     def _set_all_fields(self, schema, **kwargs):
-#         """
-#         this will add fields that don't exist in the table if they can be set to NULL,
-#         the reason they have to be NULL is adding fields to Postgres that can be NULL
-#         is really light, but if they have a default value, then it can be costly
-#         """
-#         current_fields = self._get_fields(schema, **kwargs)
-#         for field_name, field in schema.fields.items():
-#             if field_name not in current_fields:
-#                 if field.required:
-#                     raise ValueError('Cannot safely add {} on the fly because it is required'.format(field_name))
-# 
-#                 else:
-#                     query_str = []
-#                     query_str.append('ALTER TABLE')
-#                     query_str.append('  {}'.format(self._normalize_table_name(schema)))
-#                     query_str.append('ADD COLUMN')
-#                     query_str.append('  {}'.format(self.render_datatype_sql(field_name, field)))
-#                     query_str = "\n".join(query_str)
-#                     self._query(query_str, ignore_result=True, **kwargs)
-# 
-#         return True
 
     def _insert(self, schema, fields, **kwargs):
         pk_names = schema.pk_names
@@ -243,6 +204,54 @@ class SQLInterface(SQLInterfaceABC):
         ret = self._query(query_str, *query_args, count_result=True, **kwargs)
         return ret
 
+#     def _query(self, query_str, *query_args, **kwargs):
+#         """
+#         **kwargs -- dict
+#             ignore_result -- boolean -- true to not attempt to fetch results
+#             fetchone -- boolean -- true to only fetch one result
+#             count_result -- boolean -- true to return the int count of rows affected
+#         """
+#         ret = True
+# 
+#         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
+#         connection = kwargs['connection']
+#         cur = connection.cursor()
+#         ignore_result = kwargs.get('ignore_result', False)
+#         count_result = kwargs.get('count_result', False)
+#         one_result = kwargs.get('fetchone', kwargs.get('one_result', False))
+#         cursor_result = kwargs.get('cursor_result', False)
+# 
+#         if query_args:
+#             self.log_for(
+#                 debug=(["{}\n{}", query_str, query_args],),
+#                 info=([query_str],)
+#             )
+#             cur.execute(query_str, query_args)
+#         else:
+#             self.log_for(
+#                 debug=([query_str],),
+#                 info=([query_str],)
+#             )
+#             cur.execute(query_str)
+# 
+#         if cursor_result:
+#             ret = cur
+# 
+#         elif not ignore_result:
+#             if one_result:
+#                 # https://www.psycopg.org/docs/cursor.html#cursor.fetchone
+#                 ret = cur.fetchone()
+# 
+#             elif count_result:
+#                 # https://www.psycopg.org/docs/cursor.html#cursor.rowcount
+#                 ret = cur.rowcount
+# 
+#             else:
+#                 # https://www.psycopg.org/docs/cursor.html#cursor.fetchall
+#                 ret = cur.fetchall()
+# 
+#         return ret
+
     def _query(self, query_str, *query_args, **kwargs):
         """
         **kwargs -- dict
@@ -333,12 +342,6 @@ class SQLInterface(SQLInterfaceABC):
 
         return True
 
-#         try:
-#             return self._set_all_fields(**kwargs)
-# 
-#         except ValueError:
-#             return False
-
     def _handle_table_error(self, schema, e, **kwargs):
         """
         You can run into a problem when you are trying to set a table and it has a 
@@ -360,73 +363,6 @@ class SQLInterface(SQLInterfaceABC):
         # now that we know all fk tables exist, create this table
         self._set_table(schema, **kwargs)
         return True
-#         return self._set_all_tables(**kwargs)
-
-#         schema = kwargs.pop("schema", None)
-#         if query := kwargs.get("query", None):
-#             if schemas := query.schemas:
-#                 for s in schemas:
-#                     if not self._set_all_tables(s, **kwargs):
-#                         return False
-# 
-#         return self._set_all_tables(schema, **kwargs)
-
-#     def handle_error(self, schema, e, **kwargs):
-#         connection = kwargs.get('connection', None)
-#         if not connection: return False
-# 
-#         with self.transaction(**kwargs) as connection:
-#             kwargs["connection"] = connection
-#             prefix = kwargs.get("prefix", "")
-#             self.log_warning(["Handling", prefix, f"error: {e}"])
-# 
-#             ret = False
-#             if connection.closed:
-#                 # we are unsure of the state of everything since this connection has
-#                 # closed, go ahead and close out this interface and allow this query
-#                 # to fail, but subsequent queries should succeed
-#                 self.close()
-#                 ret = True
-# 
-#             else:
-#                 # connection is open
-#                 e = self.create_error(e)
-# 
-#                 query = kwargs.get("query", None)
-#                 schemas = query.schemas if query else []
-#                 if schemas:
-#                     ret = True
-#                     for s in query.schemas:
-#                         ret = self._handle_error(s, e, **kwargs)
-#                         if not ret:
-#                             break
-# 
-#                 else:
-#                     ret = self._handle_error(schema, e, **kwargs)
-# 
-#             if ret:
-#                 self.log_warning(["Successfully handled", prefix, "error"])
-#             else:
-#                 self.log_warning(["Failed to handle", prefix, "error"])
-# 
-#         return ret
-# 
-#     def _handle_error(self, schema, e, **kwargs):
-#         ret = False
-#         if isinstance(e, UniqueError):
-#             ret = False
-# 
-#         elif isinstance(e, FieldError):
-#             try:
-#                 ret = self._set_all_fields(schema, **kwargs)
-# 
-#             except ValueError:
-#                 ret = False
-# 
-#         elif isinstance(e, TableError):
-#             ret = self._set_all_tables(schema, **kwargs)
-# 
-#         return ret
 
     def _normalize_val_SQL(self, schema, symbol_map, field):
         format_str = ''

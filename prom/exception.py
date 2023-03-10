@@ -10,7 +10,10 @@ class Error(Exception):
 
 
 class InterfaceError(Error):
-    """specifically for wrapping SQLite and Postgres errors"""
+    """specifically for wrapping SQLite and Postgres errors
+
+    see Interface.create_error() for how InterfaceError instances are created
+    """
     def unwrapped_e(self):
         """Find the first unwrapped error (ie, unwind to the original error)"""
         e = self

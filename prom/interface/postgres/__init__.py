@@ -125,8 +125,6 @@ class PostgreSQL(SQLInterface):
 
     _connection_pool = None
 
-#     _connection = None
-
     def _connect(self, connection_config):
         database = connection_config.database
         username = connection_config.username
@@ -141,7 +139,6 @@ class PostgreSQL(SQLInterface):
             'pool_class',
             'psycopg2.pool.SimpleConnectionPool'
         )
-#         async_conn = int(connection_config.options.get('async', 0))
 
         _, pool_class = get_objects(pool_class_name)
 
@@ -161,58 +158,11 @@ class PostgreSQL(SQLInterface):
             connection_factory=PostgreSQLConnection,
         )
 
-        # hack for sync backwards compatibility with transactions
-#         if not async_conn:
-#             self._connection = self.connection_pool.getconn()
-
-    def free_connection(self, connection):
-        if not self.connected: return
-
-        # if an error was handled there is a chance that the connection was reset
-        # and we don't want to put a dead connection back into the pool
-        if connection.closed:
-            self.log_warning(f"discarding pool connection {id(connection)} because it is closed")
-
-        else:
-            self.log(f"freeing pool connection {id(connection)}")
-            self._connection_pool.putconn(connection)
-
-#         if self._connection:
-#             self.log("freeing sync connection")
-# 
-#         else:
-#             self.log("freeing async connection {}", id(connection))
-#             self.connection_pool.putconn(connection)
-
-    def get_connection(self):
-        if not self.connected: self.connect()
-
+    def _get_connection(self):
         connection = self._connection_pool.getconn()
 
         connection_id = id(connection)
         self.log(f"getting pool connection {connection_id}", )
-
-        if connection.closed:
-            # we've gotten into a bad state so let's try everything again
-            self.close()
-            self.connect()
-            connection = self._connection_pool.getconn()
-
-#         connection = None
-#         if self._connection:
-#             self.log("getting sync connection")
-#             connection = self._connection
-# 
-#             if connection.closed:
-#                 pout.h()
-#                 # we've gotten into a bad state so let's try everything again
-#                 self.close()
-#                 self.connect()
-#                 connection = self._connection
-# 
-#         else:
-#             connection = self.connection_pool.getconn()
-#             self.log("getting async connection {}", id(connection))
 
         # change the connection readonly status if they don't match
         if bool(connection.readonly) != bool(self.connection_config.readonly):
@@ -226,14 +176,19 @@ class PostgreSQL(SQLInterface):
 
         return connection
 
+    def _free_connection(self, connection):
+        # if an error was handled there is a chance that the connection was reset
+        # and we don't want to put a dead connection back into the pool
+        if connection.closed:
+            self.log_warning(f"discarding pool connection {id(connection)} because it is closed")
+
+        else:
+            self.log(f"freeing pool connection {id(connection)}")
+            self._connection_pool.putconn(connection)
+
     def _close(self):
         self._connection_pool.closeall()
         self._connection_pool = None
-
-#         if self._connection:
-#             self._connection.close()
-#             self._connection = None
-#             self.connection_pool = None
 
     def _readonly(self, readonly):
         """readonly setting is handled when you grab the connection from get_connection()

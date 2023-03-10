@@ -770,13 +770,13 @@ class OrmTest(EnvironTestCase):
 
     def test_query(self):
         orm_class = self.get_orm_class()
-        pks = self.old_insert(orm_class.interface, orm_class.schema, 5)
+        pks = self.insert(orm_class, 5)
         lc = orm_class.query.in_pk(pks).count()
         self.assertEqual(len(pks), lc)
 
     def test___int__(self):
         orm_class = self.get_orm_class()
-        pk = self.old_insert(orm_class.interface, orm_class.schema, 1)[0]
+        pk = self.insert(orm_class, 1)[0]
         t = orm_class.query.one_pk(pk)
         self.assertEqual(pk, int(t))
 

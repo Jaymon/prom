@@ -300,7 +300,7 @@ class QueryTest(EnvironTestCase):
             ],
             "rtfoo.rtbar.tqr2": [
                 "import prom",
-                "from tqr1 import Foo",
+                "from rtfoo.rtbar.tqr1 import Foo",
                 "",
                 "class Bar(prom.Orm):",
                 "    table_name = 'thrd_qr2_bar'",
@@ -324,7 +324,7 @@ class QueryTest(EnvironTestCase):
         t1.join()
 
     def test_query_ref_1(self):
-        inter = self.create_interface()
+        inter = self.get_interface()
         testdata.create_modules({
             "qr2": "\n".join([
                 "import prom",
@@ -374,7 +374,7 @@ class QueryTest(EnvironTestCase):
         self.assertEqual(2, len(l))
 
     def test_query_ref_2(self):
-        inter = self.create_interface()
+        inter = self.get_interface()
         testdata.create_modules({
             "qre": "\n".join([
                 "import prom",
@@ -784,7 +784,7 @@ class QueryTest(EnvironTestCase):
         r = tclass.query.is_pk(first_pk).delete()
         self.assertEqual(0, r)
 
-    def test_get(self):
+    def test_get_1(self):
         TestGetTorm = self.get_orm_class()
         _ids = self.insert(TestGetTorm, 2)
 
@@ -1116,10 +1116,4 @@ class IteratorTest(EnvironTestCase):
 
         it = q.select_pk().limit(limit).asc_pk().get()
         self.assertEqual(pks[:limit], list(it))
-
-
-
-
-
-
 
