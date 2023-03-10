@@ -6,7 +6,6 @@ from threading import Thread
 import sys
 
 import testdata
-#from testdata.threading import Thread
 
 from . import BaseTestCase, EnvironTestCase, TestCase, SkipTest
 from prom.query import (
@@ -15,7 +14,6 @@ from prom.query import (
     Field,
     Fields,
     Iterator,
-    #AllIterator,
 )
 from prom.compat import *
 import prom
@@ -307,7 +305,7 @@ class QueryTest(EnvironTestCase):
                 "    one=prom.Field(int, True)",
                 "    foo_id=prom.Field(Foo, True)",
                 ""
-            ]
+            ],
         })
 
         tqr1 = basedir.module("rtfoo.rtbar.tqr1")
@@ -326,7 +324,7 @@ class QueryTest(EnvironTestCase):
     def test_query_ref_1(self):
         inter = self.get_interface()
         testdata.create_modules({
-            "qr2": "\n".join([
+            "qr2": [
                 "import prom",
                 "",
                 "class Foo(prom.Orm):",
@@ -340,7 +338,7 @@ class QueryTest(EnvironTestCase):
                 "    bar=prom.Field(str, True)",
                 "    che=prom.Field(Foo, True)",
                 ""
-            ])
+            ]
         })
         from qr2 import Foo as t1, Bar as t2
         t1.interface = inter

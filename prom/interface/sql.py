@@ -22,17 +22,15 @@ logger = logging.getLogger(__name__)
 
 
 class SQLConnection(Connection):
+    """
+    https://docs.python.org/3.9/library/sqlite3.html#sqlite3-controlling-transactions
+    """
     def _transaction_start(self):
         self._execute("BEGIN")
-#         cur = self.cursor()
-#         cur.execute("BEGIN")
 
     def _transaction_started(self, name):
         # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
         self._execute("SAVEPOINT {}".format(self.interface._normalize_name(name)))
-#         cur = self.cursor()
-#         # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-#         cur.execute("SAVEPOINT \"{}\"".format(name))
 
     def _transaction_stop(self):
         """
@@ -40,25 +38,17 @@ class SQLConnection(Connection):
         https://news.ycombinator.com/item?id=4269241
         """
         self._execute("COMMIT")
-#         cur = self.cursor()
-#         cur.execute("COMMIT")
 
     def _transaction_fail(self):
         self._execute("ROLLBACK")
-#         cur = self.cursor()
-#         cur.execute("ROLLBACK")
 
     def _transaction_failing(self, name):
         # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
         self._execute("ROLLBACK TO SAVEPOINT {}".format(self.interface._normalize_name(name)))
-#         cur = self.cursor()
-#         # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-#         cur.execute("ROLLBACK TO SAVEPOINT \"{}\"".format(name))
 
     def _execute(self, query_str):
         cur = self.cursor()
         self.log_info(query_str)
-        #self.log_info(f"{id(self)} - {query_str}")
         cur.execute(query_str)
 
 
@@ -112,6 +102,24 @@ class SQLInterface(SQLInterfaceABC):
         query_str.append(')')
         query_str = "\n".join(query_str)
         self._query(query_str, ignore_result=True, **kwargs)
+
+    def _set_index(self, schema, name, field_names, **kwargs):
+        """
+        NOTE -- we set the index name using <table_name>_<name> format since indexes have to have
+        a globally unique name in postgres
+
+        * https://www.sqlite.org/lang_createindex.html
+        * https://www.postgresql.org/docs/14/sql-createindex.html - "IF NOT EXISTS support
+        was added around 9.5
+        """
+        query_str = 'CREATE {}INDEX IF NOT EXISTS {} ON {} ({})'.format(
+            'UNIQUE ' if kwargs.get('unique', False) else '',
+            self._normalize_name(f"{schema}_{name}"),
+            self._normalize_table_name(schema),
+            ', '.join(map(self._normalize_name, field_names))
+        )
+
+        return self._query(query_str, ignore_result=True, **kwargs)
 
     def _insert(self, schema, fields, **kwargs):
         pk_names = schema.pk_names
@@ -203,54 +211,6 @@ class SQLInterface(SQLInterfaceABC):
         query_str = "\n".join(query_str)
         ret = self._query(query_str, *query_args, count_result=True, **kwargs)
         return ret
-
-#     def _query(self, query_str, *query_args, **kwargs):
-#         """
-#         **kwargs -- dict
-#             ignore_result -- boolean -- true to not attempt to fetch results
-#             fetchone -- boolean -- true to only fetch one result
-#             count_result -- boolean -- true to return the int count of rows affected
-#         """
-#         ret = True
-# 
-#         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
-#         connection = kwargs['connection']
-#         cur = connection.cursor()
-#         ignore_result = kwargs.get('ignore_result', False)
-#         count_result = kwargs.get('count_result', False)
-#         one_result = kwargs.get('fetchone', kwargs.get('one_result', False))
-#         cursor_result = kwargs.get('cursor_result', False)
-# 
-#         if query_args:
-#             self.log_for(
-#                 debug=(["{}\n{}", query_str, query_args],),
-#                 info=([query_str],)
-#             )
-#             cur.execute(query_str, query_args)
-#         else:
-#             self.log_for(
-#                 debug=([query_str],),
-#                 info=([query_str],)
-#             )
-#             cur.execute(query_str)
-# 
-#         if cursor_result:
-#             ret = cur
-# 
-#         elif not ignore_result:
-#             if one_result:
-#                 # https://www.psycopg.org/docs/cursor.html#cursor.fetchone
-#                 ret = cur.fetchone()
-# 
-#             elif count_result:
-#                 # https://www.psycopg.org/docs/cursor.html#cursor.rowcount
-#                 ret = cur.rowcount
-# 
-#             else:
-#                 # https://www.psycopg.org/docs/cursor.html#cursor.fetchall
-#                 ret = cur.fetchall()
-# 
-#         return ret
 
     def _query(self, query_str, *query_args, **kwargs):
         """
@@ -351,17 +311,21 @@ class SQLInterface(SQLInterfaceABC):
         if query := kwargs.pop("query", None):
             if schemas := query.schemas:
                 for s in schemas:
+                    self.log_warning(f"Verifying foreign key table: {s}")
                     if not self._handle_table_error(s, e=e, **kwargs):
                         return False
 
         for field_name, field_val in schema.fields.items():
             s = field_val.schema
             if s:
+                self.log_warning(f"Verifying foreign key table: {s}")
                 if not self._handle_table_error(schema=s, e=e, **kwargs):
                     return False
 
         # now that we know all fk tables exist, create this table
-        self._set_table(schema, **kwargs)
+        # !!! This uses the external .set_table so it will run through all the 
+        # indexes also
+        self.set_table(schema, **kwargs)
         return True
 
     def _normalize_val_SQL(self, schema, symbol_map, field):

@@ -33,31 +33,37 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionABC(LogMixin):
-    def _transaction_start(self): pass
+    def _transaction_start(self):
+        pass
 
-    def _transaction_started(self, name): pass
+    def _transaction_started(self, name):
+        pass
 
-    def _transaction_stop(self): pass
+    def _transaction_stop(self):
+        pass
 
-    def _transaction_fail(self): pass
+    def _transaction_fail(self):
+        pass
 
-    def _transaction_failing(self, name): pass
+    def _transaction_failing(self, name):
+        pass
 
 
 class Connection(ConnectionABC):
     """holds common methods that all raw connections should have"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-    transactions = Stack()
-    """Holds the active transaction names"""
+        # counting semaphore, greater than 0 if in a transaction, 0 if no current transaction.
+        #
+        # This will be incremented everytime transaction_start() is called, and decremented
+        # everytime transaction_stop() is called.
+        #
+        # transaction_fail will set this back to 0 and rollback the transaction
+        #
+        # Holds the active transaction names
+        self.transactions = Stack()
 
-    """
-    counting semaphore, greater than 0 if in a transaction, 0 if no current transaction.
-
-    This will be incremented everytime transaction_start() is called, and decremented
-    everytime transaction_stop() is called.
-
-    transaction_fail will set this back to 0 and rollback the transaction
-    """
     @property
     def transaction_count(self):
         """How many active transactions there currently are"""
@@ -83,8 +89,7 @@ class Connection(ConnectionABC):
         return self.transaction_count > 0
 
     def transaction_start(self, **kwargs):
-        """
-        start a transaction
+        """start a transaction
 
         this will increment transaction semaphore and pass it to _transaction_start()
         """
@@ -122,11 +127,9 @@ class Connection(ConnectionABC):
         return self.transaction_count
 
     def transaction_fail(self):
-        """
-        rollback a transaction if currently in one
-        """
-        if self.transactions:
-            transaction_count = self.transaction_count
+        """rollback a transaction if currently in one"""
+        transaction_count = self.transaction_count
+        if transaction_count > 0:
 
             self.log_info([
                 f"{transaction_count}.", 
@@ -144,7 +147,8 @@ class InterfaceABC(LogMixin):
     def _connect(self, connection_config):
         raise NotImplementedError()
 
-    def _configure_connection(self):
+    def _configure_connection(self, **kwargs):
+        """This is ran immediately after a successful .connect()"""
         pass
 
     def _free_connection(self, connection):
@@ -279,7 +283,7 @@ class Interface(InterfaceABC):
             self.connected = False
             self.raise_error(e)
 
-        self.log("Connected {}", self.connection_config.interface_name)
+        self.log("Connected {}", self.connection_config.name)
         self.configure_connection()
         return self.connected
 
@@ -288,7 +292,11 @@ class Interface(InterfaceABC):
         self.connect()
 
     def configure_connection(self, **kwargs):
-        self._configure_connection()
+        kwargs.setdefault("prefix", "configure_connection")
+        self.execute(
+            self._configure_connection,
+            **kwargs
+        )
 
     def get_connection(self):
         if not self.is_connected():
@@ -318,7 +326,7 @@ class Interface(InterfaceABC):
 
         self._close()
         self.connected = False
-        self.log("Closed Connection {}", self.connection_config.interface_name)
+        self.log("Closed Connection {}", self.connection_config.name)
         return True
 
     def readonly(self, readonly=True, **kwargs):
@@ -327,15 +335,20 @@ class Interface(InterfaceABC):
         :param readonly: boolean, True if this connection should be readonly, False
             if the connection should be read/write
         """
-        if readonly:
-            self.log_warning([
-                f"Setting interface {self.connection_config.interface_name}",
-                f"to readonly={readonly}",
-            ])
+        self.log_warning([
+            f"Setting interface {self.connection_config.name}",
+            f"to readonly={readonly}",
+        ])
         self.connection_config.readonly = readonly
 
         if self.connected:
-            self._readonly(readonly, **kwargs)
+            kwargs.setdefault("prefix", "readonly")
+            self.execute(
+                self._readonly,
+                readonly,
+                **kwargs
+            )
+            #self._readonly(readonly, **kwargs)
 
     @contextmanager
     def connection(self, connection=None, **kwargs):
@@ -495,8 +508,8 @@ class Interface(InterfaceABC):
 
                 for index_name, index in schema.indexes.items():
                     self.execute_write(
-                        self.set_index,
-                        schema,
+                        self._set_index,
+                        schema=schema,
                         name=index.name,
                         field_names=index.field_names,
                         connection=connection,

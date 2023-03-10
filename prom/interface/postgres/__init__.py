@@ -190,7 +190,7 @@ class PostgreSQL(SQLInterface):
         self._connection_pool.closeall()
         self._connection_pool = None
 
-    def _readonly(self, readonly):
+    def _readonly(self, readonly, **kwargs):
         """readonly setting is handled when you grab the connection from get_connection()
         so this method does nothing"""
         pass
@@ -325,22 +325,6 @@ class PostgreSQL(SQLInterface):
             ret[idict['index_name']][i] = idict['field_name']
 
         return ret
-
-    def _set_index(self, schema, name, field_names, **kwargs):
-        """
-        NOTE -- we set the index name using <table_name>_<name> format since indexes have to have
-        a globally unique name in postgres
-
-        http://www.postgresql.org/docs/9.1/static/sql-createindex.html
-        """
-        query_str = 'CREATE {}INDEX {} ON {} USING BTREE ({})'.format(
-            'UNIQUE ' if kwargs.get('unique', False) else '',
-            self._normalize_name("{}_{}".format(schema, name)),
-            self._normalize_table_name(schema),
-            ', '.join(map(self._normalize_name, field_names))
-        )
-
-        return self._query(query_str, ignore_result=True, **kwargs)
 
     def _normalize_field_SQL(self, schema, field_name, symbol):
         format_field_name = self._normalize_name(field_name)

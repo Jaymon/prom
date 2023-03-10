@@ -57,6 +57,9 @@ class Iterator(ListIterator):
 
         self.reset()
 
+    def __del__(self):
+        self.close()
+
     def has_more(self):
         """Return true if there are more results for this query if the query didn't
         have a LIMIT clause
@@ -88,6 +91,13 @@ class Iterator(ListIterator):
             self.field_names = self.query.fields_select.names()
 
         return cursor
+
+    def close(self):
+        try:
+            self.cursor().close()
+
+        except Exception:
+            pass
 
     def reset(self):
         """put all the pieces together to build a generator of the results"""
@@ -509,30 +519,6 @@ class Query(object):
     @property
     def interface(self):
         return self.orm_class.interface if self.orm_class else None
-
-#     @cachedproperty(cached="_interface", allow_empty=False)
-#     def interface(self):
-#         return self.orm_class.interface if self.orm_class else None
-
-#     @property
-#     def interface(self):
-#         if not self.orm_class: return None
-#         interface = getattr(self, "_interface", None)
-#         if not interface:
-#             interface = self.orm_class.interface
-#             self._interface = interface
-#         return interface
-# 
-#     @interface.setter
-#     def interface(self, interface):
-#         self._interface = interface
-# 
-#     @interface.deleter
-#     def interface(self):
-#         try:
-#             del self._interface
-#         except AttributeError:
-#             pass
 
     @property
     def schema(self):
@@ -1013,7 +999,7 @@ class Query(object):
 
     def __deepcopy__(self, memodict={}):
         instance = type(self)(self.orm_class)
-        ignore_keys = set(["_interface"])
+        ignore_keys = set(["_interface", "interface"])
         for key, val in self.__dict__.items():
             if key not in ignore_keys:
                 setattr(instance, key, copy.deepcopy(val, memodict))

@@ -27,8 +27,8 @@ import prom
 
 testdata.basic_logging(
     levels={
-        "prom": "ERROR",
-        #"prom": "INFO",
+        #"prom": "ERROR",
+        "prom": "INFO",
         "datatypes": "WARNING",
     }
 )
@@ -40,9 +40,6 @@ logger = logging.getLogger(__name__)
 class BaseTestCase(TestCase):
 
     interfaces = set()
-
-    def tearDown(self):
-        self.tearDownClass()
 
     @classmethod
     def get_interfaces(cls):
@@ -72,19 +69,13 @@ class BaseTestCase(TestCase):
             inter.close()
         cls.interfaces = set()
 
+#     def tearDown(self):
+#         self.tearDownClass()
+
 #     def setUp(self):
+#         self.tearDownClass()
 #         for conn in SQLite.connections:
 #             conn.close()
-
-#         if len(cls.interfaces):
-#             #pout.v(len(cls.interfaces))
-#             pout.v(len(cls.interfaces), len(type(list(cls.interfaces)[0]).connections))
-#             for conn in type(list(cls.interfaces)[0]).connections:
-#                 if conn.in_transaction():
-#                     pout.v(conn.in_transaction())
-        
-
-
 
     @classmethod
     def get_interface(cls):
@@ -126,6 +117,10 @@ class BaseTestCase(TestCase):
 
     @classmethod
     def find_interface(cls, interface_class):
+        for inter in cls.interfaces:
+            if isinstance(inter, interface_class):
+                return inter
+
         for inter in cls.create_environ_interfaces():
             if isinstance(inter, interface_class):
                 return inter
@@ -136,13 +131,11 @@ class BaseTestCase(TestCase):
     def create_sqlite_interface(cls):
         inter = cls.find_interface(SQLite)
         return inter
-        #return cls.create_environ_interface("PROM_SQLITE_DSN")
 
     @classmethod
     def create_postgres_interface(cls):
         inter = cls.find_interface(PostgreSQL)
         return inter
-        #return cls.create_environ_interface("PROM_POSTGRES_DSN")
 
     def get_table(self, table_name=None, interface=None, **fields_or_indexes):
         """
@@ -425,13 +418,10 @@ class EnvironTestCase(BaseTestCase):
     @classmethod
     def create_interface(cls):
         return cls.create_dsn_interface(cls.interface.connection_config.dsn)
-        #return cls.create_environ_interface("PROM_DSN")
 
     def run(self, *args, **kwargs):
         for inter in self.create_environ_interfaces():
             type(self).interface = inter
-            #os.environ["PROM_DSN"] = inter.connection_config.dsn
-            #prom.set_interface(inter)
             super().run(*args, **kwargs)
 
     def countTestCases(self):
