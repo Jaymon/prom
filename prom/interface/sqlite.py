@@ -47,15 +47,6 @@ from ..compat import *
 from .sql import SQLInterface, SQLConnection
 
 
-class SQLiteRowDict(sqlite3.Row):
-    def get(self, k, default_val=None):
-        try:
-            r = self[k]
-        except KeyError:
-            r = default_val
-        return r
-
-
 class SQLiteConnection(SQLConnection, sqlite3.Connection):
     """
     Thin wrapper around the default connection to make sure it has a similar interface
@@ -244,7 +235,7 @@ class SQLite(SQLInterface):
                 self._connection = sqlite3.connect(path, **options)
 
         # https://docs.python.org/2/library/sqlite3.html#row-objects
-        self._connection.row_factory = SQLiteRowDict
+        self._connection.row_factory = sqlite3.Row
         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
         self._connection.text_factory = StringType.adapt
 

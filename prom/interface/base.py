@@ -334,14 +334,14 @@ class Interface(InterfaceABC):
 
         connection.interface = self
 
-        self.log_debug(f"Getting {self.connection_config.name} connection 0x{id(self._connection):02x}")
+        self.log_debug(f"Getting {self.connection_config.name} connection 0x{id(connection):02x}")
         return connection
 
     def free_connection(self, connection):
         """When .connection is done with a connection it calls this method"""
         connection.interface = None
         if self.is_connected():
-            self.log_debug(f"Freeing {self.connection_config.name} connection 0x{id(self._connection):02x}")
+            self.log_debug(f"Freeing {self.connection_config.name} connection 0x{id(connection):02x}")
             self._free_connection(connection)
 
     def is_connected(self):

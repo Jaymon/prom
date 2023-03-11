@@ -19,7 +19,16 @@ from .interface import (
     configure,
     configure_environ
 )
-from .exception import InterfaceError, Error, UniqueError
+from .exception import (
+    Error,
+    InterfaceError,
+    UniqueError,
+    TableError,
+    FieldError,
+    UniqueError,
+    CloseError,
+)
+
 from . import utils
 
 

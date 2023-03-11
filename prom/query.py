@@ -240,11 +240,10 @@ class Iterator(ListIterator):
         if self.field_names:
             field_vals = []
             for field_name in self.field_names:
-                fv = d.get(field_name, None)
+                fv = d[field_name]
                 if orm_class:
                     fv = orm_class.schema.fields[field_name].iget(None, fv)
                 field_vals.append(fv)
-            #field_vals = [d.get(fn, None) for fn in self.field_names]
             r = field_vals if len(self.field_names) > 1 else field_vals[0]
 
         else:

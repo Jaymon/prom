@@ -207,18 +207,13 @@ class ModelData(TestData):
                 raise AttributeError("invalid potential method: {}".format(method_name))
 
             else:
-                orm_class = None
+                try:
+                    orm_class = self.get_orm_class(model_name)
 
-                if model_name in self.model_cache:
-                    orm_class = self.model_cache[model_name]
+                except ValueError as e:
+                    raise AttributeError() from e
 
                 else:
-                    for oc in self._orm_classes():
-                        if model_name in set([oc.model_name, oc.models_name]):
-                            orm_class = oc
-                            break
-
-                if orm_class:
                     orm_method = None
                     if name == "get":
                         if orm_class.model_name == model_name:
@@ -240,7 +235,6 @@ class ModelData(TestData):
                     if orm_method:
                         method = functools.partial(orm_method, orm_class=orm_class)
                         self.method_cache[method_name] = method
-                        self.model_cache[model_name] = orm_class
 
         if not method:
             raise AttributeError(f"Could not find an orm matching {method_name}")
@@ -351,6 +345,34 @@ class ModelData(TestData):
         for instance in instances:
             instance.save()
         return instances
+
+    def get_orm_class(self, model_name, **kwargs):
+        """get the orm class found at model_name
+
+        :param model_name: str, the name of the orm class
+        :returns: Orm, the orm_class.model_name that matches model_name
+        """
+        if model_name in self.model_cache:
+            return self.model_cache[model_name]
+
+        elif model_name in Orm.orm_classes:
+            orm_class = Orm.orm_classes[model_name]
+            self.model_cache[model_name] = orm_class
+            return orm_class
+
+        else:
+            for oc in self._orm_classes():
+                if model_name in set([oc.model_name, oc.models_name]):
+                    orm_class = oc
+                    self.model_cache[model_name] = orm_class
+                    return orm_class
+
+            for orm_classpath, orm_class in Orm.orm_classes.items():
+                if orm_classpath.endswith(f":{model_name}"):
+                    self.model_cache[model_name] = orm_class
+                    return orm_class
+
+        raise ValueError(f"could not find an orm_class for {model_name}")
 
     def get_orm(self, orm_class, **kwargs):
         """get an instance of the orm but don't save it into the db
