@@ -43,7 +43,6 @@ class BaseTestCase(TestCase):
     def get_interfaces(cls):
         """Return all currently configured interfaces in a list"""
         return list(cls.interfaces)
-        #return get_interfaces().values()
 
     @classmethod
     def setUpClass(cls):
@@ -59,43 +58,14 @@ class BaseTestCase(TestCase):
 
     @classmethod
     def tearDownClass(cls):
-#         if len(cls.interfaces):
-#             #pout.v(len(cls.interfaces))
-#             pout.v(len(cls.interfaces), len(type(list(cls.interfaces)[0]).connections))
-#             for conn in type(list(cls.interfaces)[0]).connections:
-#                 if conn.in_transaction():
-#                     pout.v(conn.in_transaction())
-
         for inter in cls.interfaces:
             inter.close()
         cls.interfaces = set()
-
-#         for orm_class in Orm.orm_classes.values():
-#             try:
-#                 orm_class.interface.close()
-#             except KeyError:
-#                 pass
-#         Orm.orm_classes = {}
-
-#     def tearDown(self):
-#         #self.tearDownClass()
-#         for inter in self.interfaces:
-#             conn = inter.get_connection()
-#             if conn.in_transaction():
-#                 pout.v(conn)
-#             inter.close()
-#         type(self).interfaces = set()
-
-#     def setUp(self):
-#         self.tearDownClass()
-#         for conn in SQLite.connections:
-#             conn.close()
 
     @classmethod
     def get_interface(cls):
         i = cls.create_interface()
         i.connect()
-        #assert i.connected
         return i
 
     @classmethod
@@ -131,10 +101,6 @@ class BaseTestCase(TestCase):
 
     @classmethod
     def find_interface(cls, interface_class):
-#         for inter in cls.interfaces:
-#             if isinstance(inter, interface_class):
-#                 return inter
-
         for inter in cls.create_environ_interfaces():
             if isinstance(inter, interface_class):
                 return inter

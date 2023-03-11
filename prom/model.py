@@ -246,6 +246,10 @@ class Orm(object):
     def __init__(self, fields=None, **fields_kwargs):
         """Create an Orm object
 
+        While you can override this method to customize the signature, you might
+        also need to override .hydrate (but don't change .hydrate's signature)
+        since .hydrate creates an instance using no arguments
+
         :param fields: dict, the fields in a dict
         :param **fields_kwargs: dict, if you would like to pass the fields as key=val
         """

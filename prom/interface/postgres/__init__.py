@@ -108,7 +108,6 @@ class PostgreSQLConnection(SQLConnection, psycopg2.extensions.connection):
         # https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.register_adapter
         psycopg2.extensions.register_adapter(dict, DictType.adapt)
 
-
         # http://initd.org/psycopg/docs/connection.html#connection.set_client_encoding
         # https://www.postgresql.org/docs/current/static/multibyte.html
         # > The default is the encoding defined by the database

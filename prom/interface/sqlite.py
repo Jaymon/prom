@@ -184,8 +184,6 @@ class SQLite(SQLInterface):
 
     _connection = None
 
-#     connections = set()
-
     @classmethod
     def configure(cls, connection_config):
         dsn = getattr(connection_config, 'dsn', '')
@@ -233,7 +231,6 @@ class SQLite(SQLInterface):
 
         try:
             self._connection = sqlite3.connect(path, **options)
-#             type(self).connections.add(self._connection)
             self.log_debug(f"Connected to connection 0x{id(self._connection):02x}")
 
         except sqlite3.DatabaseError as e:
@@ -273,33 +270,15 @@ class SQLite(SQLInterface):
         sqlite3.register_adapter(dict, DictType.adapt)
         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
 
-        # https://docs.python.org/3.11/library/sqlite3.html#sqlite3.enable_callback_tracebacks
-#         sqlite3.enable_callback_tracebacks(True)
-#         def debug(unraisable):
-#             pout.v(unraisable)
-#             #print(f"{unraisable.exc_value!r} in callback {unraisable.object.__name__}")
-#             #print(f"Error message: {unraisable.err_msg}")
-#         import sys
-#         sys.unraisablehook = debug
-
     def _configure_connection(self, **kwargs):
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
-        #cur = self._connection.cursor()
-        #cur.execute('PRAGMA foreign_keys = ON')
-        # !!! these commands run queries on the db, which means they will
-        # get a connection and free a connection
         self._query('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs)
 
         # by default we can read/write, so only bother to run this query if we need to
         # make the connection actually readonly
         if self.connection_config.readonly:
             self._readonly(self.connection_config.readonly, **kwargs)
-
-#         self._query('PRAGMA max_connections = 128', ignore_result=True, **kwargs)
-
-        #pout.v(self._query('PRAGMA max_connections', fetch_one=True))
-        #pout.v(list(self._query('PRAGMA compile_options', ignore_result=False)))
 
     def _get_connection(self):
         return self._connection

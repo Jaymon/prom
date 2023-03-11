@@ -52,18 +52,11 @@ class SQLConnection(Connection):
     def _execute(self, query_str):
         self.log_info(query_str)
         self.cursor().execute(query_str)
-#         try:
-#             self.cursor().execute(query_str)
-#         except Exception:
-#             cur = self.cursor()
-#             cur.execute('PRAGMA locking_mode')
-#             pout.v(cur.fetchone())
-#             for conn in self.interface.connections:
-#                 pout.v(id(conn), conn.in_transaction())
-            #self.cursor().execute(query_str)
 
 
 class SQLInterfaceABC(Interface):
+    """SQL database interfaces should extend SQLInterface and implement all these
+    methods in this class and all the methods in InterfaceABC"""
     @property
     def val_placeholder(self):
         raise NotImplementedError("this property should be set in any children class")
@@ -223,9 +216,6 @@ class SQLInterface(SQLInterfaceABC):
         ret = self._query(query_str, *query_args, count_result=True, **kwargs)
         return ret
 
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-
     def _query(self, query_str, *query_args, **kwargs):
         """
         **kwargs -- dict
@@ -271,8 +261,6 @@ class SQLInterface(SQLInterfaceABC):
                 else:
                     # https://www.psycopg.org/docs/cursor.html#cursor.fetchall
                     ret = cur.fetchall()
-
-#                 cur.close()
 
             return ret
 

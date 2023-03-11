@@ -689,14 +689,10 @@ class BaseTestInterface(BaseTestCase):
         })
 
         self.assertFalse(i._handle_field_error(s, e=None))
-#         with self.assertRaises(ValueError):
-#             ret = i._set_all_fields(s)
 
         s = self.get_schema(table_name=str(s))
         s.che = str, False
         self.assertTrue(i._handle_field_error(s, e=None))
-#         ret = i._set_all_fields(s)
-#         self.assertTrue(ret)
 
     def test_handle_error_subquery(self):
         Foo = self.get_orm_class()
@@ -865,6 +861,7 @@ class BaseTestInterface(BaseTestCase):
         self.assertEqual(1, i.count(s2, query.Query()))
 
     def test_transaction_connection(self):
+        """This is the best test for seeing if transactions are working as expected"""
         orm_class = self.get_orm_class()
         i = self.get_interface()
         conn = i.get_connection()

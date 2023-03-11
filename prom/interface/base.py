@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionABC(LogMixin):
+    """Subclasses should extend Connection and implement the methods in this class"""
     def _transaction_start(self):
         pass
 
@@ -150,6 +151,9 @@ class Connection(ConnectionABC):
 
 
 class InterfaceABC(LogMixin):
+    """This is just a convenience abstract base class so child interfaces can easily
+    see what methods they need to implement. They should extend Interface and then
+    implement the methods in this class"""
     def _connect(self, connection_config):
         raise NotImplementedError()
 
@@ -270,6 +274,8 @@ class Interface(InterfaceABC):
         weakref.finalize(self, self.__del__)
 
     def __del__(self):
+        """Whenever this gets garbage collected close everything. This is also the
+        method for weakref.finalize"""
         self.close()
 
     def connect(self, connection_config=None, *args, **kwargs):
@@ -311,6 +317,11 @@ class Interface(InterfaceABC):
         )
 
     def get_connection(self):
+        """Any time you need a connection it should be retrieved through .connection,
+        and that method uses this method
+
+        :returns: Connection instance
+        """
         if not self.is_connected():
             self.connect()
 
@@ -327,6 +338,7 @@ class Interface(InterfaceABC):
         return connection
 
     def free_connection(self, connection):
+        """When .connection is done with a connection it calls this method"""
         connection.interface = None
         if self.is_connected():
             self.log_debug(f"Freeing {self.connection_config.name} connection 0x{id(self._connection):02x}")
@@ -367,6 +379,14 @@ class Interface(InterfaceABC):
 
     @contextmanager
     def connection(self, connection=None, **kwargs):
+        """Any time you need a connection you should use this context manager, this
+        is the only place that wraps exceptions in InterfaceError, so all connections
+        should go through this method or .transaction if you need to start a transaction
+
+        :Example:
+            with self.connection(**kwargs) as connection:
+                # do something with connection
+        """
         try:
             if connection:
                 if connection.closed:
@@ -393,13 +413,11 @@ class Interface(InterfaceABC):
 
     @contextmanager
     def transaction(self, connection=None, **kwargs):
-        """
-        a simple context manager useful for when you want to wrap a bunch of db calls in a transaction
-        http://docs.python.org/2/library/contextlib.html
-        http://docs.python.org/release/2.5/whatsnew/pep-343.html
+        """A simple context manager useful for when you want to wrap a bunch of
+        db calls in a transaction, this is used internally for any write statements
 
-        example --
-            with self.transaction()
+        :Example:
+            with self.transaction() as connection
                 # do a bunch of calls
             # those db calls will be committed by this line
         """
@@ -423,7 +441,8 @@ class Interface(InterfaceABC):
                     connection.transaction_stop()
 
     def execute_write(self, callback, *args, **kwargs):
-        """
+        """Any write statements will use this method
+
         CREATE, DELETE, DROP, INSERT, or UPDATE (collectively "write statements")
         """
         kwargs.setdefault("nest", True)
@@ -431,6 +450,10 @@ class Interface(InterfaceABC):
         return self.execute(callback, *args, **kwargs)
 
     def execute_read(self, callback, *args, **kwargs):
+        """Any write statements will use this method
+
+        SELECT (collectively "read statements")
+        """
         with self.connection(**kwargs) as connection:
             kwargs["connection"] = connection
 
@@ -444,7 +467,7 @@ class Interface(InterfaceABC):
         """Internal method. Execute the callback with args and kwargs, retrying
         the query if an error is raised that it thinks it successfully handled
 
-        better names: retry? execute_retry?
+        This is called by .execute_write, .execute_read, and .query
 
         :param callback: callable, this will be run at-most twice
         :param *args: passed directly to callback as *args
@@ -469,6 +492,7 @@ class Interface(InterfaceABC):
                 self.raise_error(e)
 
     def _execute(self, callback, *args, **kwargs):
+        """Internal method. Called by .execute"""
         in_transaction = kwargs.get("execute_in_transaction", False)
 
         if in_transaction:
