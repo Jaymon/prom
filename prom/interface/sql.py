@@ -39,6 +39,9 @@ class SQLConnection(Connection):
         """
         self._execute("COMMIT")
 
+    def _transaction_stopping(self, name):
+        self._execute("RELEASE {}".format(self.interface._normalize_name(name)))
+
     def _transaction_fail(self):
         self._execute("ROLLBACK")
 
@@ -47,9 +50,17 @@ class SQLConnection(Connection):
         self._execute("ROLLBACK TO SAVEPOINT {}".format(self.interface._normalize_name(name)))
 
     def _execute(self, query_str):
-        cur = self.cursor()
         self.log_info(query_str)
-        cur.execute(query_str)
+        self.cursor().execute(query_str)
+#         try:
+#             self.cursor().execute(query_str)
+#         except Exception:
+#             cur = self.cursor()
+#             cur.execute('PRAGMA locking_mode')
+#             pout.v(cur.fetchone())
+#             for conn in self.interface.connections:
+#                 pout.v(id(conn), conn.in_transaction())
+            #self.cursor().execute(query_str)
 
 
 class SQLInterfaceABC(Interface):
@@ -212,6 +223,9 @@ class SQLInterface(SQLInterfaceABC):
         ret = self._query(query_str, *query_args, count_result=True, **kwargs)
         return ret
 
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+
     def _query(self, query_str, *query_args, **kwargs):
         """
         **kwargs -- dict
@@ -257,6 +271,8 @@ class SQLInterface(SQLInterfaceABC):
                 else:
                     # https://www.psycopg.org/docs/cursor.html#cursor.fetchall
                     ret = cur.fetchall()
+
+#                 cur.close()
 
             return ret
 
@@ -590,7 +606,7 @@ class SQLInterface(SQLInterfaceABC):
             field_str.append('{} = {}'.format(self._normalize_name(field_name), self.val_placeholder))
             query_args.append(field_val)
 
-        query_str += 'SET {}'.format(',{}'.format(os.linesep).join(field_str))
+        query_str += 'SET {}'.format(',\n'.join(field_str))
 
         if query:
             where_query_str, where_query_args = self.get_SQL(schema, query, only_where_clause=True)

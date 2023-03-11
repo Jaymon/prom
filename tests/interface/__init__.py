@@ -864,6 +864,36 @@ class BaseTestInterface(BaseTestCase):
 
         self.assertEqual(1, i.count(s2, query.Query()))
 
+    def test_transaction_connection(self):
+        orm_class = self.get_orm_class()
+        i = self.get_interface()
+        conn = i.get_connection()
+
+        conn.transaction_start(prefix="c1")
+
+        self.assertIsNotNone(conn.interface)
+        orm_class.create(self.get_fields(orm_class.schema), connection=conn)
+        self.assertIsNotNone(conn.interface)
+
+        conn.cursor().execute("SELECT true")
+        conn.transaction_start(prefix="c2")
+        conn.cursor().execute("SELECT true")
+        conn.transaction_start(prefix="c3")
+        conn.cursor().execute("SELECT true")
+        conn.transaction_start(prefix="c4")
+
+        self.assertIsNotNone(conn.interface)
+        orm_class.create(self.get_fields(orm_class.schema), connection=conn)
+        self.assertIsNotNone(conn.interface)
+
+        conn.transaction_stop()
+        conn.cursor().execute("SELECT true")
+        conn.transaction_stop()
+        conn.cursor().execute("SELECT true")
+        conn.transaction_stop()
+        conn.cursor().execute("SELECT true")
+        conn.transaction_stop()
+
     def test_transaction_context(self):
         i = self.get_interface()
         table_name_1 = "{}_1".format(self.get_table_name())

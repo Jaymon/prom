@@ -211,14 +211,20 @@ class SQLite(SQLInterface):
         return connection_config
 
     def _connect(self, connection_config):
+        """
+        https://docs.python.org/3.11/library/sqlite3.html#sqlite3.connect
+        """
         path = connection_config.path
 
         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
         options = {
             'isolation_level': None,
+            #'isolation_level': "IMMEDIATE",
+            #'isolation_level': "EXCLUSIVE",
             'detect_types': sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
             'factory': SQLiteConnection,
             'check_same_thread': True, # https://stackoverflow.com/a/2578401/5006
+            #'timeout': 100,
         }
         option_keys = list(options.keys()) + ['timeout', 'cached_statements']
         for k in option_keys:
@@ -228,6 +234,7 @@ class SQLite(SQLInterface):
         try:
             self._connection = sqlite3.connect(path, **options)
 #             type(self).connections.add(self._connection)
+            self.log_debug(f"Connected to connection 0x{id(self._connection):02x}")
 
         except sqlite3.DatabaseError as e:
             path_d = os.path.dirname(path)
@@ -288,6 +295,11 @@ class SQLite(SQLInterface):
         # make the connection actually readonly
         if self.connection_config.readonly:
             self._readonly(self.connection_config.readonly, **kwargs)
+
+#         self._query('PRAGMA max_connections = 128', ignore_result=True, **kwargs)
+
+        #pout.v(self._query('PRAGMA max_connections', fetch_one=True))
+        #pout.v(list(self._query('PRAGMA compile_options', ignore_result=False)))
 
     def _get_connection(self):
         return self._connection

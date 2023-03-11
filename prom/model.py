@@ -180,16 +180,28 @@ class Orm(object):
         return OrmPool(orm_class=cls, maxsize=maxsize)
 
     @classmethod
-    def create(cls, fields=None, **fields_kwargs):
+    def create(cls, *args, **kwargs):
         """
         create an instance of cls with the passed in fields and set it into the db
 
-        fields -- dict -- field_name keys, with their respective values
-        **fields_kwargs -- dict -- if you would rather pass in fields as name=val, that works also
+        this method takes *args, **kwargs because a child class can override .__init__
+        and it's nice to not have to modify this method also
+
+        :param *args: passed directly to .__init__
+        :param **kwargs: passed directly to .__init__
+        :returns: Orm instance that has been saved into the db
         """
         # NOTE -- you cannot use hydrate/populate here because populate alters modified fields
-        instance = cls(fields, **fields_kwargs)
-        instance.save()
+        connection = kwargs.pop("connection", None)
+
+        instance = cls(*args, **kwargs)
+
+        if connection:
+            instance.save(connection=connection)
+
+        else:
+            instance.save()
+
         return instance
 
     @classmethod

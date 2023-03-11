@@ -142,7 +142,7 @@ class PostgreSQL(SQLInterface):
 
         _, pool_class = get_objects(pool_class_name)
 
-        self.log("connecting using pool class {}".format(pool_class_name))
+        self.log_debug("connecting using pool class {}".format(pool_class_name))
 
         # http://initd.org/psycopg/docs/module.html#psycopg2.connect
         self._connection_pool = pool_class(
@@ -162,13 +162,12 @@ class PostgreSQL(SQLInterface):
         connection = self._connection_pool.getconn()
 
         connection_id = id(connection)
-        self.log(f"getting pool connection {connection_id}", )
 
         # change the connection readonly status if they don't match
         if bool(connection.readonly) != bool(self.connection_config.readonly):
             # https://www.psycopg.org/docs/connection.html#connection.readonly
             self.log_warning([
-                f"Changing connection {connection_id}",
+                f"Changing connection {connection_id:02x}",
                 f"to readonly={self.connection_config.readonly}",
                 f"from readonly={connection.readonly}",
             ])
@@ -180,10 +179,9 @@ class PostgreSQL(SQLInterface):
         # if an error was handled there is a chance that the connection was reset
         # and we don't want to put a dead connection back into the pool
         if connection.closed:
-            self.log_warning(f"discarding pool connection {id(connection)} because it is closed")
+            self.log_warning(f"Discarding pool connection {id(connection):02x} because it is closed")
 
         else:
-            self.log(f"freeing pool connection {id(connection)}")
             self._connection_pool.putconn(connection)
 
     def _close(self):

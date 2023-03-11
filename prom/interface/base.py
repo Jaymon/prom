@@ -7,6 +7,7 @@ import decimal
 import logging
 from contextlib import contextmanager
 import uuid
+import weakref
 
 from datatypes import (
     LogMixin,
@@ -40,6 +41,9 @@ class ConnectionABC(LogMixin):
         pass
 
     def _transaction_stop(self):
+        pass
+
+    def _transaction_stopping(self):
         pass
 
     def _transaction_fail(self):
@@ -98,9 +102,9 @@ class Connection(ConnectionABC):
 
         self.transactions.push(name)
         transaction_count = self.transaction_count
-        self.log_info([
+        self.log_debug([
             f"{transaction_count}.", 
-            f"Start {id(self)} transaction {self.transaction_names()}",
+            f"Start {id(self):02x} transaction {self.transaction_names()}",
         ])
         if transaction_count == 1:
             self._transaction_start()
@@ -114,15 +118,17 @@ class Connection(ConnectionABC):
         transaction_count = self.transaction_count
         if transaction_count > 0:
 
-            self.log_info([
+            self.log_debug([
                 f"{transaction_count}.", 
-                f"Stopping {id(self)} transaction {self.transaction_names()}",
+                f"Stopping {id(self):02x} transaction {self.transaction_names()}",
             ])
 
+            name = self.transactions.pop()
             if transaction_count == 1:
                 self._transaction_stop()
+            else:
+                self._transaction_stopping(name)
 
-            self.transactions.pop()
 
         return self.transaction_count
 
@@ -131,9 +137,9 @@ class Connection(ConnectionABC):
         transaction_count = self.transaction_count
         if transaction_count > 0:
 
-            self.log_info([
+            self.log_debug([
                 f"{transaction_count}.", 
-                f"Failing {id(self)} transaction {self.transaction_names()}",
+                f"Failing {id(self):02x} transaction {self.transaction_names()}",
             ])
 
             name = self.transactions.pop()
@@ -260,6 +266,12 @@ class Interface(InterfaceABC):
     def __init__(self, connection_config=None):
         self.connection_config = connection_config
 
+        # enables cleanup of open sockets even if the object isn't correctly garbage collected
+        weakref.finalize(self, self.__del__)
+
+    def __del__(self):
+        self.close()
+
     def connect(self, connection_config=None, *args, **kwargs):
         """
         connect to the interface
@@ -283,7 +295,7 @@ class Interface(InterfaceABC):
             self.connected = False
             self.raise_error(e)
 
-        self.log("Connected {}", self.connection_config.name)
+        self.log_debug(f"Connected {self.connection_config.name}")
         self.configure_connection()
         return self.connected
 
@@ -310,11 +322,14 @@ class Interface(InterfaceABC):
             connection = self._get_connection()
 
         connection.interface = self
+
+        self.log_debug(f"Getting {self.connection_config.name} connection 0x{id(self._connection):02x}")
         return connection
 
     def free_connection(self, connection):
         connection.interface = None
         if self.is_connected():
+            self.log_debug(f"Freeing {self.connection_config.name} connection 0x{id(self._connection):02x}")
             self._free_connection(connection)
 
     def is_connected(self):
@@ -326,7 +341,7 @@ class Interface(InterfaceABC):
 
         self._close()
         self.connected = False
-        self.log("Closed Connection {}", self.connection_config.name)
+        self.log_debug(f"Closed Connection {self.connection_config.name}")
         return True
 
     def readonly(self, readonly=True, **kwargs):
@@ -399,11 +414,13 @@ class Interface(InterfaceABC):
                 connection.transaction_start(**kwargs)
                 try:
                     yield connection
-                    connection.transaction_stop()
 
-                except Exception as e:
+                except Exception:
                     connection.transaction_fail()
-                    self.raise_error(e)
+                    raise
+
+                else:
+                    connection.transaction_stop()
 
     def execute_write(self, callback, *args, **kwargs):
         """
@@ -791,9 +808,15 @@ class Interface(InterfaceABC):
 
         allow python's built in errors to filter up through
         https://docs.python.org/2/library/exceptions.html
+
+        :param e: Exception, this error will be wrapped in an InterfaceError (or
+            whatever is in kwargs["error_class"] if it isn't already an instance
+            of that class
+        :param **kwargs:
+            - error_class: InterfaceError
         """
-        if not isinstance(e, InterfaceError) and not hasattr(builtins, e.__class__.__name__):
-            e_class = kwargs.get("e_class", InterfaceError)
-            e = e_class(e)
+        error_class = kwargs.get("error_class", InterfaceError)
+        if not isinstance(e, error_class) and not hasattr(builtins, e.__class__.__name__):
+            e = error_class(e)
         return e
 

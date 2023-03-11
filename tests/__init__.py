@@ -17,8 +17,6 @@ from prom import query
 from prom.compat import *
 from prom.model import Orm
 from prom.config import Schema, DsnConnection, Field, Index
-from prom.interface.postgres import PostgreSQL
-from prom.interface.sqlite import SQLite
 from prom.interface.base import Interface
 from prom.interface import get_interfaces, find_environ
 from prom.utils import make_dict
@@ -56,6 +54,9 @@ class BaseTestCase(TestCase):
             except inter.InterfaceError as e:
                 logger.exception(e)
 
+            finally:
+                inter.close()
+
     @classmethod
     def tearDownClass(cls):
 #         if len(cls.interfaces):
@@ -69,8 +70,21 @@ class BaseTestCase(TestCase):
             inter.close()
         cls.interfaces = set()
 
+#         for orm_class in Orm.orm_classes.values():
+#             try:
+#                 orm_class.interface.close()
+#             except KeyError:
+#                 pass
+#         Orm.orm_classes = {}
+
 #     def tearDown(self):
-#         self.tearDownClass()
+#         #self.tearDownClass()
+#         for inter in self.interfaces:
+#             conn = inter.get_connection()
+#             if conn.in_transaction():
+#                 pout.v(conn)
+#             inter.close()
+#         type(self).interfaces = set()
 
 #     def setUp(self):
 #         self.tearDownClass()
@@ -117,9 +131,9 @@ class BaseTestCase(TestCase):
 
     @classmethod
     def find_interface(cls, interface_class):
-        for inter in cls.interfaces:
-            if isinstance(inter, interface_class):
-                return inter
+#         for inter in cls.interfaces:
+#             if isinstance(inter, interface_class):
+#                 return inter
 
         for inter in cls.create_environ_interfaces():
             if isinstance(inter, interface_class):
@@ -129,11 +143,13 @@ class BaseTestCase(TestCase):
 
     @classmethod
     def create_sqlite_interface(cls):
+        from prom.interface.sqlite import SQLite
         inter = cls.find_interface(SQLite)
         return inter
 
     @classmethod
     def create_postgres_interface(cls):
+        from prom.interface.postgres import PostgreSQL
         inter = cls.find_interface(PostgreSQL)
         return inter
 
@@ -148,15 +164,16 @@ class BaseTestCase(TestCase):
         i.set_table(s)
         return i, s
 
-    def get_table_name(self, table_name=None):
+    def get_table_name(self, table_name=None, prefix=""):
         """return a random table name"""
         if table_name: return table_name
-        return "{}_table".format(
+        return "{}{}_table".format(
+            prefix,
             "".join(random.sample(string.ascii_lowercase, random.randint(5, 15)))
         )
 
-    def get_orm_class(self, table_name=None, **properties):
-        tn = self.get_table_name(table_name)
+    def get_orm_class(self, table_name=None, prefix="orm_class", **properties):
+        tn = self.get_table_name(table_name, prefix=prefix)
         parent_class = properties.get("parent_class", Orm)
 
         properties["table_name"] = tn
@@ -190,8 +207,8 @@ class BaseTestCase(TestCase):
 
         return orm_class
 
-    def get_orm(self, table_name=None, **fields):
-        orm_class = self.get_orm_class(table_name)
+    def get_orm(self, table_name=None, prefix="orm", **fields):
+        orm_class = self.get_orm_class(table_name, prefix=prefix)
         t = orm_class(**fields)
         return t
 
@@ -224,7 +241,7 @@ class BaseTestCase(TestCase):
 
         return orm_class
 
-    def get_schema(self, table_name=None, **fields_or_indexes):
+    def get_schema(self, table_name=None, prefix="schema", **fields_or_indexes):
         if not fields_or_indexes:
             fields_or_indexes.setdefault("foo", Field(int, True))
             fields_or_indexes.setdefault("bar", Field(str, True))
@@ -238,7 +255,7 @@ class BaseTestCase(TestCase):
                 fields_or_indexes.pop(k)
 
         s = Schema(
-            self.get_table_name(table_name),
+            self.get_table_name(table_name, prefix=prefix),
             **fields_or_indexes
         )
         return s
@@ -312,8 +329,8 @@ class BaseTestCase(TestCase):
 
         return s
 
-    def get_query(self, table_name=None):
-        orm_class = self.get_orm_class(table_name)
+    def get_query(self, table_name=None, prefix="query"):
+        orm_class = self.get_orm_class(table_name, prefix=prefix)
         return orm_class.query
 
     def get_fields(self, schema, **field_kwargs):
@@ -370,12 +387,6 @@ class BaseTestCase(TestCase):
         if isinstance(o, query.Query):
             schema = o.orm_class.schema
             pk = self.insert_fields(o.orm_class, fields)
-
-#             q = o.copy()
-#             schema = q.orm_class.schema
-#             q.reset()
-#             fields = self.get_fields(schema, **fields)
-#             pk = q.copy().set(fields).insert()
 
         elif isinstance(o, tuple):
             interface, schema = o

@@ -17,13 +17,20 @@ from prom import query
 from prom.query import Query, Field as QueryField
 from prom.compat import *
 from prom.config import Schema, DsnConnection, Field
-from prom.interface.postgres import PostgreSQL
+
+# needed to test postgres interface
+try:
+    from prom.interface.postgres import PostgreSQL
+except ImportError:
+    PostgreSQL = None
+
 import prom
 import prom.interface
 
 from . import BaseTestInterface, testdata
 
 
+@skipIf(PostgreSQL is None, "Skipping Postgres test because dependencies not installed")
 class InterfaceTest(BaseTestInterface):
     @classmethod
     def create_interface(cls):
