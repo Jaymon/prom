@@ -35,10 +35,6 @@ from . import utils
 __version__ = '4.2.0'
 
 
-# get rid of "No handler found" warnings (cribbed from requests)
-#logging.getLogger(__name__).addHandler(logging.NullHandler())
-
-
 def transaction(connection_name="", **kwargs):
     """Create a transaction 
 

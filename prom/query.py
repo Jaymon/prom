@@ -100,10 +100,7 @@ class Iterator(ListIterator):
 
     def close(self):
         if "_cursor" in self.__dict__:
-        #if cursor := getattr(self, "_cursor", None):
-        #if self._cursor:
             try:
-                #cursor.close()
                 self._cursor.close()
 
             except Exception:

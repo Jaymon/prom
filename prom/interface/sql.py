@@ -54,42 +54,6 @@ class SQLConnection(Connection):
         cur = self.cursor()
         cur.execute(query_str)
 
-#         pout.v(self.in_transaction)
-#         self.log_info(f"0x{id(self):02x} - {query_str}")
-#         cur = self.cursor()
-#         try:
-#             cur.execute(query_str)
-#         except Exception as e:
-#             pout.v(e)
-# 
-#             import time
-#             if self.in_transaction:
-#                 for i in range(50):
-#                     pout.v(self.in_transaction)
-#                     if self.in_transaction:
-#                         cur.execute("ROLLBACK")
-#                     time.sleep(1)
-# 
-# 
-# 
-# 
-# #             cur.execute("SELECT * FROM sqlite_master WHERE type='table' AND name IN ('sqlite_locks', 'sqlite_transactions')")
-# #             pout.v(cur.fetchall())
-# #             cur.execute("PRAGMA integrity_check")
-# #             pout.v(cur.fetchall())
-# #             cur.execute("PRAGMA compile_options")
-# #             pout.v(cur.fetchall())
-# 
-# #             import sqlite3
-# #             pout.v(self.getlimit(sqlite3.SQLITE_MAX_INDEX_NAME))
-# #             pout.v(self.getlimit(sqlite3.SQLITE_MAX_TABLE_NAME))
-#             raise
-# 
-# 
-#         finally:
-#             cur.close()
-#             pout.v(self.in_transaction)
-
 
 class SQLInterfaceABC(Interface):
     """SQL database interfaces should extend SQLInterface and implement all these
@@ -278,10 +242,6 @@ class SQLInterface(SQLInterfaceABC):
                 cur.execute(query_str, query_args)
             else:
                 self.log_info(f"0x{id(connection):02x} - {query_str}")
-#                 self.log_for(
-#                     debug=([query_str],),
-#                     info=([query_str],)
-#                 )
                 cur.execute(query_str)
 
             if cursor_result:
@@ -345,12 +305,6 @@ class SQLInterface(SQLInterfaceABC):
                     query_str.append('ADD COLUMN')
                     query_str.append('  {}'.format(self.render_datatype_sql(field_name, field)))
                     query_str = "\n".join(query_str)
-#                     self.execute_write(
-#                         self._query,
-#                         query_str,
-#                         ignore_result=True,
-#                         **kwargs
-#                     )
                     self._query(query_str, ignore_result=True, **kwargs)
 
         return True

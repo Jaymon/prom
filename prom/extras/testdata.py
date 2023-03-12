@@ -87,10 +87,6 @@ class ModelData(TestData):
 
     model_cache = {}
 
-#     injected_orm_classes = set([])
-    """any class that has been injected will be saved here so they aren't injected
-    more than once"""
-
     def _orm_classes(self):
         """Iterate through a list of orms that should be injected into testdata
 

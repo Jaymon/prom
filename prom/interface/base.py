@@ -134,17 +134,6 @@ class Connection(ConnectionABC):
             else:
                 self._transaction_stopping(name)
 
-#             try:
-#                 if transaction_count == 1:
-#                     self._transaction_stop()
-#                 else:
-#                     self._transaction_stopping(name)
-# 
-#             except Exception:
-#                 self.transactions.push(name)
-#                 self.transaction_fail()
-#                 raise
-
         return self.transaction_count
 
     def transaction_fail(self):
@@ -429,41 +418,6 @@ class Interface(InterfaceABC):
 
             else:
                 self.log_debug(f"Connection call NOT freeing connection 0x{id(connection):02x}")
-
-#     @contextmanager
-#     def connection(self, connection=None, **kwargs):
-#         """Any time you need a connection you should use this context manager, this
-#         is the only place that wraps exceptions in InterfaceError, so all connections
-#         should go through this method or .transaction if you need to start a transaction
-# 
-#         :Example:
-#             with self.connection(**kwargs) as connection:
-#                 # do something with connection
-#         """
-#         try:
-#             if connection:
-#                 if connection.closed:
-#                     self.log_warning("Passed in connection is closed and must be refreshed")
-#                     if connection.transaction_exists():
-#                         self.log_error("Closed connection had open transactions!")
-# 
-#                     connection = None
-# 
-#                 else:
-#                     self.log_debug(f"Connection call using existing connection 0x{id(connection):02x}")
-#                     yield connection
-# 
-#             if connection is None:
-#                 try:
-#                     connection = self.get_connection()
-#                     yield connection
-# 
-#                 finally:
-#                     if connection:
-#                         self.free_connection(connection)
-# 
-#         except Exception as e:
-#             self.raise_error(e)
 
     @contextmanager
     def transaction(self, connection=None, **kwargs):
