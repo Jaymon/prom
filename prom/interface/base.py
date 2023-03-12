@@ -271,17 +271,11 @@ class Interface(InterfaceABC):
             connection_config.database = db.strip("/")
         return connection_config
 
-
-#     interface_instances = set()
-
     def __init__(self, connection_config=None):
         self.connection_config = connection_config
 
         # enables cleanup of open sockets even if the object isn't correctly garbage collected
         weakref.finalize(self, self.__del__)
-
-#         type(self).interface_instances.add(self)
-
 
     def __del__(self):
         """Whenever this gets garbage collected close everything. This is also the
@@ -424,7 +418,7 @@ class Interface(InterfaceABC):
                 self.free_connection(connection)
 
             else:
-                self.log_debug(f"Connection call NOT freeing connection 0x{id(connection):02x}")
+                self.log_debug(f"Connection call NOT freeing existing connection 0x{id(connection):02x}")
 
     @contextmanager
     def transaction(self, connection=None, **kwargs):

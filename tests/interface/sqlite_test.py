@@ -133,18 +133,19 @@ class InterfaceTest(BaseTestInterface):
         self.assertGreater(len(d), 0)
 
     def test_db_disconnect_2(self):
-        i, s = self.get_table()
+        i = self.get_interface()
         def callback(connection, **kwargs):
             if getattr(connection, "attempt", False):
                 connection.close()
-                connection.attempt 
+                connection.attempt = False
             connection.cursor().execute("SELECT true")
 
         with i.connection() as connection:
             connection.attempt = True
             i.execute(callback, connection=connection)
 
-        self.assertFalse(i.get_one(s))
+        with i.connection() as connection:
+            i.execute(callback, connection=connection)
 
     def test_unsafe_delete_table_strange_name(self):
         """this makes sure https://github.com/firstopinion/prom/issues/47 is fixed,

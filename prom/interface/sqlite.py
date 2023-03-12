@@ -57,8 +57,13 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
         super().__init__(*args, **kwargs)
         self.closed = 0
 
-        self.cursors = set()
+    def close(self, *args, **kwargs):
+        r = super().close(*args, **kwargs)
+        self.closed = 1
+        return r
 
+#         self.cursors = set()
+# 
 #     def cursor(self, *args, **kwargs):
 #         cur = super().cursor(*args, **kwargs)
 #         self.cursors.add(cur)
@@ -75,7 +80,7 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
 #         r = super().close(*args, **kwargs)
 #         self.closed = 1
 #         return r
-
+# 
 #     def _execute(self, query_str):
 #         pout.v(self.in_transaction)
 #         return super()._execute(query_str)
