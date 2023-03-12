@@ -625,11 +625,16 @@ class Orm(object):
 
                     return ret
 
-            raise
+            # Go through all the orm_classes looking for a models_name match and
+            # query that model using the field name that matches the FK value in self
+            for orm_class in self.orm_classes.values():
+                if k == orm_class.models_name:
+                    for ref_field_name, ref_field in orm_class.schema.ref_fields.items():
+                        ref_class = ref_field.ref
+                        if ref_class and isinstance(self, ref_class):
+                            return orm_class.query.eq_field(ref_field_name, self.pk).all()
 
-            # ??? - could we do something with models_name here? Go through all
-            # the orm_classes looking for a models_name match and querying them
-            # using self.pk?
+            raise
 
         else:
             ret = getattr(self, field_name)

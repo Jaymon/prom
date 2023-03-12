@@ -594,6 +594,30 @@ class OrmTest(EnvironTestCase):
         with self.assertRaises(AttributeError):
             o2.blahblah
 
+    def test___getattr___models_name(self):
+        """Makes sure that getting an attribute by models_name works as expected"""
+        o1_class = self.get_orm_class(
+            bar=Field(str),
+            model_name="o1",
+            #models_name="o1s",
+        )
+        o2_class = self.get_orm_class(
+            o1_id=Field(o1_class),
+            model_name="o2",
+        )
+
+        o1 = self.insert_orm(o1_class, bar="1")
+        self.insert_orm(o1_class, bar="ignored")
+
+        o2 = self.insert_orm(o2_class, o1_id=o1.pk)
+        o2 = self.insert_orm(o2_class, o1_id=o1.pk)
+
+        count = 0
+        for o2r in o1.o2s:
+            count += 1
+            self.assertEqual(o1.pk, o2.o1_id)
+        self.assertEqual(2, count)
+
     def test_creation(self):
 
         class COrm(Orm):

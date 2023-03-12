@@ -889,6 +889,9 @@ class IteratorTest(EnvironTestCase):
     def test___getitem___positive_index(self):
         count = 10
         orm_class = self.get_orm_class()
+        pout.b()
+        orm_class.install()
+        pout.b()
         pks = self.insert(orm_class, count)
 
         q = orm_class.query.asc_pk()

@@ -17,7 +17,7 @@ from prom import query
 from prom.compat import *
 from prom.model import Orm
 from prom.config import Schema, DsnConnection, Field, Index
-from prom.interface.base import Interface
+from prom.interface.base import Interface, Connection
 from prom.interface import get_interfaces, find_environ
 from prom.utils import make_dict
 import prom
@@ -57,11 +57,27 @@ class BaseTestCase(TestCase):
             finally:
                 inter.close()
 
-    def setUp(self):
-        self.tearDownClass()
-
-    def tearDown(self):
-        self.tearDownClass()
+#     def setUp(self):
+#         self.tearDownClass()
+# 
+# #         for conn in Connection.instances:
+# #             conn.close()
+# #         Connection.instances = set()
+# 
+# #         for inter in Interface.interface_instances:
+# #             inter.close()
+# #         Interface.interface_instances = set()
+# 
+#     def tearDown(self):
+#         self.tearDownClass()
+# 
+# #         for inter in Interface.interface_instances:
+# #             inter.close()
+# #         Interface.interface_instances = set()
+# 
+# #         for conn in Connection.instances:
+# #             conn.close()
+# #         Connection.instances = set()
 
     @classmethod
     def tearDownClass(cls):
