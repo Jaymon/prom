@@ -877,9 +877,6 @@ class IteratorTest(EnvironTestCase):
 
         it = orm_class.query.select_pk().asc_pk().get()
 
-        list(it[-5:6])
-        return
-
         self.assertEqual(pks[-5:6], list(it[-5:6]))
         self.assertEqual(pks[2:5], list(it[2:5]))
 

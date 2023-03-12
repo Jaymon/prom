@@ -25,8 +25,9 @@ import prom
 
 testdata.basic_logging(
     levels={
+        "prom": "DEBUG",
         #"prom": "ERROR",
-        "prom": "INFO",
+        #"prom": "INFO",
         "datatypes": "WARNING",
     }
 )
@@ -56,6 +57,12 @@ class BaseTestCase(TestCase):
             finally:
                 inter.close()
 
+    def setUp(self):
+        self.tearDownClass()
+
+    def tearDown(self):
+        self.tearDownClass()
+
     @classmethod
     def tearDownClass(cls):
         for inter in cls.interfaces:
@@ -70,7 +77,9 @@ class BaseTestCase(TestCase):
 
     @classmethod
     def create_interface(cls):
-        return cls.create_sqlite_interface()
+        for inter in cls.create_environ_interfaces():
+            return inter
+        #return cls.create_sqlite_interface()
 
     @classmethod
     def create_dsn_interface(cls, dsn):

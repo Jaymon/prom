@@ -89,8 +89,12 @@ class Connection(ConnectionABC):
         prefix = prefix or "p"
         return f"{prefix}_{name}"
 
-    def in_transaction(self):
-        """return true if currently in a transaction"""
+    def transaction_exists(self):
+        """return true if currently in a transaction
+
+        this was previously named .in_transaction but it turns out SQLite has a
+        property with that name
+        """
         return self.transaction_count > 0
 
     def transaction_start(self, **kwargs):
@@ -105,7 +109,7 @@ class Connection(ConnectionABC):
         transaction_count = self.transaction_count
         self.log_debug([
             f"{transaction_count}.", 
-            f"Start {id(self):02x} transaction {self.transaction_names()}",
+            f"Start 0x{id(self):02x} transaction {self.transaction_names()}",
         ])
         if transaction_count == 1:
             self._transaction_start()
@@ -121,7 +125,7 @@ class Connection(ConnectionABC):
 
             self.log_debug([
                 f"{transaction_count}.", 
-                f"Stopping {id(self):02x} transaction {self.transaction_names()}",
+                f"Stopping 0x{id(self):02x} transaction {self.transaction_names()}",
             ])
 
             name = self.transactions.pop()
@@ -130,6 +134,16 @@ class Connection(ConnectionABC):
             else:
                 self._transaction_stopping(name)
 
+#             try:
+#                 if transaction_count == 1:
+#                     self._transaction_stop()
+#                 else:
+#                     self._transaction_stopping(name)
+# 
+#             except Exception:
+#                 self.transactions.push(name)
+#                 self.transaction_fail()
+#                 raise
 
         return self.transaction_count
 
@@ -140,7 +154,7 @@ class Connection(ConnectionABC):
 
             self.log_debug([
                 f"{transaction_count}.", 
-                f"Failing {id(self):02x} transaction {self.transaction_names()}",
+                f"Failing 0x{id(self):02x} transaction {self.transaction_names()}",
             ])
 
             name = self.transactions.pop()
@@ -301,7 +315,7 @@ class Interface(InterfaceABC):
             self.connected = False
             self.raise_error(e)
 
-        self.log_debug(f"Connected {self.connection_config.name}")
+        self.log_debug(f"Connected {self.connection_config.interface_name}")
         self.configure_connection()
         return self.connected
 
@@ -334,14 +348,14 @@ class Interface(InterfaceABC):
 
         connection.interface = self
 
-        self.log_debug(f"Getting {self.connection_config.name} connection 0x{id(connection):02x}")
+        self.log_debug(f"Getting {self.connection_config.interface_name} connection 0x{id(connection):02x}")
         return connection
 
     def free_connection(self, connection):
         """When .connection is done with a connection it calls this method"""
         connection.interface = None
         if self.is_connected():
-            self.log_debug(f"Freeing {self.connection_config.name} connection 0x{id(connection):02x}")
+            self.log_debug(f"Freeing {self.connection_config.interface_name} connection 0x{id(connection):02x}")
             self._free_connection(connection)
 
     def is_connected(self):
@@ -353,7 +367,7 @@ class Interface(InterfaceABC):
 
         self._close()
         self.connected = False
-        self.log_debug(f"Closed Connection {self.connection_config.name}")
+        self.log_debug(f"Closed Connection {self.connection_config.interface_name}")
         return True
 
     def readonly(self, readonly=True, **kwargs):
@@ -363,7 +377,7 @@ class Interface(InterfaceABC):
             if the connection should be read/write
         """
         self.log_warning([
-            f"Setting interface {self.connection_config.name}",
+            f"Setting interface {self.connection_config.interface_name}",
             f"to readonly={readonly}",
         ])
         self.connection_config.readonly = readonly
@@ -387,29 +401,69 @@ class Interface(InterfaceABC):
             with self.connection(**kwargs) as connection:
                 # do something with connection
         """
+        free_connection = False
         try:
             if connection:
                 if connection.closed:
                     self.log_warning("Passed in connection is closed and must be refreshed")
-                    if connection.in_transaction():
+                    if connection.transaction_exists():
                         self.log_error("Closed connection had open transactions!")
 
                     connection = None
 
                 else:
+                    self.log_debug(f"Connection call using existing connection 0x{id(connection):02x}")
                     yield connection
 
             if connection is None:
-                try:
-                    connection = self.get_connection()
-                    yield connection
-
-                finally:
-                    if connection:
-                        self.free_connection(connection)
+                free_connection = True
+                connection = self.get_connection()
+                yield connection
 
         except Exception as e:
             self.raise_error(e)
+
+        finally:
+            if free_connection and connection:
+                self.free_connection(connection)
+
+            else:
+                self.log_debug(f"Connection call NOT freeing connection 0x{id(connection):02x}")
+
+#     @contextmanager
+#     def connection(self, connection=None, **kwargs):
+#         """Any time you need a connection you should use this context manager, this
+#         is the only place that wraps exceptions in InterfaceError, so all connections
+#         should go through this method or .transaction if you need to start a transaction
+# 
+#         :Example:
+#             with self.connection(**kwargs) as connection:
+#                 # do something with connection
+#         """
+#         try:
+#             if connection:
+#                 if connection.closed:
+#                     self.log_warning("Passed in connection is closed and must be refreshed")
+#                     if connection.transaction_exists():
+#                         self.log_error("Closed connection had open transactions!")
+# 
+#                     connection = None
+# 
+#                 else:
+#                     self.log_debug(f"Connection call using existing connection 0x{id(connection):02x}")
+#                     yield connection
+# 
+#             if connection is None:
+#                 try:
+#                     connection = self.get_connection()
+#                     yield connection
+# 
+#                 finally:
+#                     if connection:
+#                         self.free_connection(connection)
+# 
+#         except Exception as e:
+#             self.raise_error(e)
 
     @contextmanager
     def transaction(self, connection=None, **kwargs):
@@ -422,7 +476,7 @@ class Interface(InterfaceABC):
             # those db calls will be committed by this line
         """
         with self.connection(connection) as connection:
-            if not kwargs.get("nest", True) and connection.in_transaction():
+            if not kwargs.get("nest", True) and connection.transaction_exists():
                 # internal write transactions don't nest
                 self.log_debug("Transaction call IS NOT creating a new transaction")
                 yield connection
@@ -457,7 +511,7 @@ class Interface(InterfaceABC):
         with self.connection(**kwargs) as connection:
             kwargs["connection"] = connection
 
-            in_transaction = connection.in_transaction()
+            in_transaction = connection.transaction_exists()
             kwargs.setdefault("nest", in_transaction)
             kwargs.setdefault("execute_in_transaction", in_transaction)
 
@@ -538,30 +592,22 @@ class Interface(InterfaceABC):
         """
         add the table to the db
 
-        schema -- Schema() -- contains all the information about the table
+        :param schema: Schema instance, contains all the information about the table
         """
         kwargs.setdefault("prefix", "set_table")
-        try:
-            with self.transaction(write=True, **kwargs) as connection:
-                kwargs['connection'] = connection
+        with self.transaction(**kwargs) as connection:
+            kwargs['connection'] = connection
 
-                self.execute_write(self._set_table, schema, **kwargs)
+            self._set_table(schema=schema, **kwargs)
 
-                for index_name, index in schema.indexes.items():
-                    self.execute_write(
-                        self._set_index,
-                        schema=schema,
-                        name=index.name,
-                        field_names=index.field_names,
-                        connection=connection,
-                        **index.options
-                    )
-
-        except InterfaceError:
-            # check to see if this table now exists, it might have been created
-            # in another thread
-            if not self.has_table(schema, **kwargs):
-                raise
+            for index_name, index in schema.indexes.items():
+                self._set_index(
+                    schema=schema,
+                    name=index.name,
+                    field_names=index.field_names,
+                    connection=connection,
+                    **index.options,
+                )
 
     def unsafe_delete_table(self, schema, **kwargs):
         """wrapper around delete_table that matches the *_tables variant and denotes
@@ -788,6 +834,7 @@ class Interface(InterfaceABC):
         e = self.create_error(e)
 
         if isinstance(e, CloseError):
+            self.log_debug("Handling a close error")
             ret = self._handle_close_error(e=e, **kwargs)
 
         else:
@@ -795,15 +842,19 @@ class Interface(InterfaceABC):
                 kwargs["connection"] = connection
 
                 if isinstance(e, UniqueError):
+                    self.log_debug("Handling a unique error")
                     ret = self._handle_unique_error(e=e, **kwargs)
 
                 elif isinstance(e, FieldError):
+                    self.log_debug("Handling a field error")
                     ret = self._handle_field_error(e=e, **kwargs)
 
                 elif isinstance(e, TableError):
+                    self.log_debug("Handling a table error")
                     ret = self._handle_table_error(e=e, **kwargs)
 
                 else:
+                    self.log_debug("Handling a general error")
                     ret = self._handle_general_error(e=e, **kwargs)
 
         if ret:

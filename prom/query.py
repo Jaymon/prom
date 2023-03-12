@@ -13,6 +13,7 @@ import math
 import inspect
 import time
 import re
+import weakref
 
 from datatypes.collections import ListIterator
 from datatypes import property as cachedproperty
@@ -57,6 +58,14 @@ class Iterator(ListIterator):
 
         self.reset()
 
+        # cleanup
+        weakref.finalize(self, self.__del__)
+
+    def __del__(self):
+        """Whenever this gets garbage collected close everything. This is also the
+        method for weakref.finalize"""
+        self.close()
+
     def has_more(self):
         """Return true if there are more results for this query if the query didn't
         have a LIMIT clause
@@ -90,14 +99,19 @@ class Iterator(ListIterator):
         return cursor
 
     def close(self):
-        try:
-            self.cursor().close()
+        if "_cursor" in self.__dict__:
+        #if cursor := getattr(self, "_cursor", None):
+        #if self._cursor:
+            try:
+                #cursor.close()
+                self._cursor.close()
 
-        except Exception:
-            pass
+            except Exception:
+                pass
 
     def reset(self):
         """put all the pieces together to build a generator of the results"""
+        self.close()
         self._cursor = None
         self._cursor_i = 0
 

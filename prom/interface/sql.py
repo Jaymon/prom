@@ -50,8 +50,45 @@ class SQLConnection(Connection):
         self._execute("ROLLBACK TO SAVEPOINT {}".format(self.interface._normalize_name(name)))
 
     def _execute(self, query_str):
-        self.log_info(query_str)
-        self.cursor().execute(query_str)
+        self.log_info(f"0x{id(self):02x} - {query_str}")
+        cur = self.cursor()
+        cur.execute(query_str)
+
+#         pout.v(self.in_transaction)
+#         self.log_info(f"0x{id(self):02x} - {query_str}")
+#         cur = self.cursor()
+#         try:
+#             cur.execute(query_str)
+#         except Exception as e:
+#             pout.v(e)
+# 
+#             import time
+#             if self.in_transaction:
+#                 for i in range(50):
+#                     pout.v(self.in_transaction)
+#                     if self.in_transaction:
+#                         cur.execute("ROLLBACK")
+#                     time.sleep(1)
+# 
+# 
+# 
+# 
+# #             cur.execute("SELECT * FROM sqlite_master WHERE type='table' AND name IN ('sqlite_locks', 'sqlite_transactions')")
+# #             pout.v(cur.fetchall())
+# #             cur.execute("PRAGMA integrity_check")
+# #             pout.v(cur.fetchall())
+# #             cur.execute("PRAGMA compile_options")
+# #             pout.v(cur.fetchall())
+# 
+# #             import sqlite3
+# #             pout.v(self.getlimit(sqlite3.SQLITE_MAX_INDEX_NAME))
+# #             pout.v(self.getlimit(sqlite3.SQLITE_MAX_TABLE_NAME))
+#             raise
+# 
+# 
+#         finally:
+#             cur.close()
+#             pout.v(self.in_transaction)
 
 
 class SQLInterfaceABC(Interface):
@@ -235,21 +272,25 @@ class SQLInterface(SQLInterfaceABC):
 
             if query_args:
                 self.log_for(
-                    debug=(["{}\n{}", query_str, query_args],),
-                    info=([query_str],)
+                    debug=(["0x{:02x} - {}\n{}", id(connection), query_str, query_args],),
+                    info=([f"0x{id(connection):02x} - {query_str}"],)
                 )
                 cur.execute(query_str, query_args)
             else:
-                self.log_for(
-                    debug=([query_str],),
-                    info=([query_str],)
-                )
+                self.log_info(f"0x{id(connection):02x} - {query_str}")
+#                 self.log_for(
+#                     debug=([query_str],),
+#                     info=([query_str],)
+#                 )
                 cur.execute(query_str)
 
             if cursor_result:
                 ret = cur
 
-            elif not ignore_result:
+            elif ignore_result:
+                cur.close()
+
+            else:
                 if one_result:
                     # https://www.psycopg.org/docs/cursor.html#cursor.fetchone
                     ret = cur.fetchone()
@@ -261,6 +302,8 @@ class SQLInterface(SQLInterfaceABC):
                 else:
                     # https://www.psycopg.org/docs/cursor.html#cursor.fetchall
                     ret = cur.fetchall()
+
+                cur.close()
 
             return ret
 
@@ -292,8 +335,8 @@ class SQLInterface(SQLInterfaceABC):
         for field_name, field in schema.fields.items():
             if field_name not in current_fields:
                 if field.required:
+                    self.log_error(f"Cannot safely add {field_name} on the fly because it is required")
                     return False
-                    #raise ValueError('Cannot safely add {} on the fly because it is required'.format(field_name))
 
                 else:
                     query_str = []
@@ -302,6 +345,12 @@ class SQLInterface(SQLInterfaceABC):
                     query_str.append('ADD COLUMN')
                     query_str.append('  {}'.format(self.render_datatype_sql(field_name, field)))
                     query_str = "\n".join(query_str)
+#                     self.execute_write(
+#                         self._query,
+#                         query_str,
+#                         ignore_result=True,
+#                         **kwargs
+#                     )
                     self._query(query_str, ignore_result=True, **kwargs)
 
         return True
