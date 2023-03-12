@@ -50,12 +50,10 @@ class SQLConnection(Connection):
         self._execute("ROLLBACK TO SAVEPOINT {}".format(self.interface._normalize_name(name)))
 
     def _execute(self, query_str):
-#         pout.v(self.in_transaction)
         self.log_info(f"0x{id(self):02x} - {query_str}")
         cur = self.cursor()
         cur.execute(query_str)
-
-#         pout.v(self.in_transaction)
+        cur.close()
 
 
 class SQLInterfaceABC(Interface):

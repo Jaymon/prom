@@ -57,10 +57,6 @@ class ConnectionABC(LogMixin):
 class Connection(ConnectionABC):
     """holds common methods that all raw connections should have"""
 
-
-#     instances = set()
-
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -73,10 +69,6 @@ class Connection(ConnectionABC):
         #
         # Holds the active transaction names
         self.transactions = Stack()
-
-#         type(self).instances.add(self)
-
-
 
     @property
     def transaction_count(self):

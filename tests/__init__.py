@@ -68,8 +68,8 @@ class BaseTestCase(TestCase):
 # #             inter.close()
 # #         Interface.interface_instances = set()
 # 
-#     def tearDown(self):
-#         self.tearDownClass()
+    def tearDown(self):
+        self.tearDownClass()
 # 
 # #         for inter in Interface.interface_instances:
 # #             inter.close()
