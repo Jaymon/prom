@@ -314,7 +314,7 @@ class ModelData(TestData):
                     else:
                         if not ignore_refs:
                             if require_fields or field.is_required() or self.yes():
-                                kwargs[ref_field_name] = self._create(ref_class)
+                                kwargs[ref_field_name] = self._create(ref_class, **kwargs)
                                 kwargs[field_name] = kwargs[ref_field_name].pk
 
         return kwargs
