@@ -286,30 +286,34 @@ class ModelData(TestData):
         :param orm_class: Orm
         :param **kwargs: orm_class's actual field name value will be checked and
             the ref's orm_class.model_name will be checked
-            * ignore_refs: bool, default False, if True then refs will not be checked
-            * require_fields: bool, default True, if True then create missing refs, if False
-                then refs won't be created and so if they are missing their fields
-                will not be populated
+            * ignore_refs: bool, default False, if True then refs will not be checked,
+                passed in refs will still be set
+            * require_fields: bool, default True, if True then create missing refs,
+                if False, then refs won't be created and so if they are missing
+                their fields will not be populated
         :returns: dict, the kwargs with ref field_name and ref orm_class.model_name
             will be included
         """
         kwargs = self.assure_orm_field_names(orm_class, **kwargs)
-        if not kwargs.get("ignore_refs", False):
-            require_fields = kwargs.get("require_fields", True)
-            for field_name, field in orm_class.schema.fields.items():
-                if ref_class := field.ref:
-                    if require_fields or field.is_required() or self.yes():
-                        ref_field_name = ref_class.model_name
+        ignore_refs = kwargs.get("ignore_refs", False)
+        require_fields = kwargs.get("require_fields", True)
+        for field_name, field in orm_class.schema.fields.items():
+            if ref_class := field.ref:
+                ref_field_name = ref_class.model_name
 
-                        if field_name in kwargs:
-                            if ref_field_name not in kwargs:
-                                kwargs[ref_field_name] = ref_class.query.eq_pk(kwargs[field_name]).one()
+                if field_name in kwargs:
+                    if ref_field_name not in kwargs:
+                        kwargs[ref_field_name] = ref_class.query.eq_pk(
+                            kwargs[field_name]
+                        ).one()
 
-                        else:
-                            if ref_field_name in kwargs:
-                                kwargs[field_name] = kwargs[ref_field_name].pk
+                else:
+                    if ref_field_name in kwargs:
+                        kwargs[field_name] = kwargs[ref_field_name].pk
 
-                            else:
+                    else:
+                        if not ignore_refs:
+                            if require_fields or field.is_required() or self.yes():
                                 kwargs[ref_field_name] = self._create(ref_class)
                                 kwargs[field_name] = kwargs[ref_field_name].pk
 

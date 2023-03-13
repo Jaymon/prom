@@ -135,3 +135,18 @@ class ModelDataTest(BaseTestCase):
         foo2 = d.get_bar()
         self.assertTrue(type(foo) is type(foo2))
 
+    def test_references(self):
+        count = 2
+        foo_class = self.get_orm_class(model_name="foo")
+        bar_class = self.get_orm_class(foo_id=Field(foo_class))
+
+        foo = self.insert_orm(foo_class)
+
+        bars = self.get_orms(bar_class, count=count, foo=foo, related_refs=False)
+
+        bcount = 0
+        for b in bars:
+            self.assertEqual(foo.pk, b.foo_id)
+            bcount += 1
+        self.assertEqual(2, count)
+

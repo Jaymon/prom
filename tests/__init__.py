@@ -89,13 +89,19 @@ class BaseTestCase(TestCase):
     def create_environ_connections(cls, dsn_env_name="PROM_TEST_DSN"):
         """creates all the connections that are defined in the environment under
         <dsn_env_name>_N where N can be any integer"""
+        found = False
         if dsn_index := os.environ.get("PROM_TEST_DSN_INDEX", 0):
             for conn in find_environ(f"{dsn_env_name}_{dsn_index}"):
+                found = True
                 yield conn
 
         else:
             for conn in find_environ(dsn_env_name):
+                found = True
                 yield conn
+
+        if not found:
+            raise ValueError("No connection found, set PROM_TEST_DSN")
 
     @classmethod
     def create_environ_interfaces(cls):
@@ -110,8 +116,6 @@ class BaseTestCase(TestCase):
         for inter in cls.create_environ_interfaces():
             if isinstance(inter, interface_class):
                 return inter
-
-        raise ValueError("No {} found, set PROM_TEST_DSN".format(interface_class))
 
     @classmethod
     def create_sqlite_interface(cls):
