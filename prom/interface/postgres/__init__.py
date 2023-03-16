@@ -188,16 +188,22 @@ class PostgreSQL(SQLInterface):
     def _free_connection(self, connection):
         # if an error was handled there is a chance that the connection was reset
         # and we don't want to put a dead connection back into the pool
-        if connection.closed:
-            self.log_warning(f"Discarding pool connection {id(connection):02x} because it is closed")
-            self._connection_pool.putconn(
-                connection,
-                key=self.connection_config.options["pool_key"],
-                close=True,
-            )
+            if connection.closed:
+                try:
+                    self.log_warning(f"Discarding pool connection {id(connection):02x} because it is closed")
+                    self._connection_pool.putconn(
+                        connection,
+                        key=self.connection_config.options["pool_key"],
+                        close=True,
+                    )
 
-        else:
-            self._connection_pool.putconn(connection)
+                except KeyError:
+                    # something happened and so we just discard this instead of
+                    # trying to clean it up
+                    pass
+
+            else:
+                self._connection_pool.putconn(connection)
 
     def _close(self):
         self._connection_pool.closeall()

@@ -11,7 +11,6 @@ from datatypes import (
 
 from ..model import Orm
 from ..interface import get_interfaces
-from ..exception import UniqueError
 
 
 logger = logging.getLogger(__name__)
@@ -284,14 +283,6 @@ class ModelData(TestData):
 
         return kwargs
 
-        #     def _find_orm_refs(self, orm_class):
-#         ref_classes = []
-#         for field_name, field in orm_class.schema.fields.items():
-#             if ref_class := field.ref:
-#                 ref_classes.extend(self._find_orm_refs(ref_class))
-#                 ref_classes.append(ref_class)
-#         return ref_classes
-
     def assure_orm_refs(self, orm_class, **kwargs):
         """When creating an orm, they will often need foreign key values, this will
         go through any of the foreign key ref fields and create a foreign key if
@@ -315,10 +306,6 @@ class ModelData(TestData):
         """
         logger.debug(f"Assuring orm refs for orm_class {orm_class.__name__}")
         kwargs = self.assure_orm_field_names(orm_class, **kwargs)
-
-        # first let's find all the refs all the way down
-        #         ref_classes = self._find_orm_refs(orm_class)
-#         pout.x(ref_classes)
 
         ignore_refs = kwargs.get("ignore_refs", False)
         require_fields = kwargs.get("require_fields", True)
@@ -361,12 +348,6 @@ class ModelData(TestData):
         kwargs.setdefault("ignore_refs", False)
         instance = self._get(orm_class, **kwargs)
         instance.save()
-        #         try:
-#             instance.save()
-# 
-#         except UniqueError:
-#             instance.upsert()
-
         return instance
 
     def create_orms(self, orm_class, **kwargs):
