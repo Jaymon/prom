@@ -52,6 +52,8 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
     Thin wrapper around the default connection to make sure it has a similar interface
     to Postgres' connection instance so the common code can all be the same in the
     parent class
+
+    https://docs.python.org/3.11/library/sqlite3.html#sqlite3.Connection
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -65,6 +67,7 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
 #         self.cursors = set()
 # 
 #     def cursor(self, *args, **kwargs):
+#         """https://docs.python.org/3.11/library/sqlite3.html#cursor-objects"""
 #         cur = super().cursor(*args, **kwargs)
 #         self.cursors.add(cur)
 #         return cur

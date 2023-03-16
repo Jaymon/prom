@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 class SQLConnection(Connection):
     """
     https://docs.python.org/3.9/library/sqlite3.html#sqlite3-controlling-transactions
+    https://www.sqlite.org/lockingv3.html
+    https://www.sqlite.org/lang_transaction.html
     """
     def _transaction_start(self):
         self._execute("BEGIN")

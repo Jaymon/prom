@@ -11,6 +11,7 @@ from datatypes import (
 
 from ..model import Orm
 from ..interface import get_interfaces
+from ..exception import UniqueError
 
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,7 @@ class ModelData(TestData):
         a get_<ORM-NAME> method and fallback to get_orm"""
         method_name, method = self._get_method(orm_class)
         kwargs.setdefault("orm_class", orm_class)
+        logger.debug(f"Running {method_name} for orm_class {orm_class.__name__}")
         return method(**kwargs)
 
     def _gets_method(self, orm_class, **kwargs):
@@ -142,6 +144,7 @@ class ModelData(TestData):
         a get_<ORM-MODELS-NAME> method and fallback to get_orms"""
         method_name, method = self._gets_method(orm_class)
         kwargs.setdefault("orm_class", orm_class)
+        logger.debug(f"Running {method_name} for orm_class {orm_class.__name__}")
         return method(**kwargs)
 
     def _create_method(self, orm_class, **kwargs):
@@ -155,6 +158,7 @@ class ModelData(TestData):
         a create_<ORM-NAME> method and fallback to create_orm"""
         method_name, method = self._create_method(orm_class)
         kwargs.setdefault("orm_class", orm_class)
+        logger.debug(f"Running {method_name} for orm_class {orm_class.__name__}")
         return method(**kwargs)
 
     def _creates_method(self, orm_class, **kwargs):
@@ -168,6 +172,7 @@ class ModelData(TestData):
         a create_<ORM-MODELS-NAME> method and fallback to create_orm"""
         method_name, method = self._creates_method(orm_class)
         kwargs.setdefault("orm_class", orm_class)
+        logger.debug(f"Running {method_name} for orm_class {orm_class.__name__}")
         return method(**kwargs)
 
     def _fields_method(self, orm_class, **kwargs):
@@ -181,6 +186,7 @@ class ModelData(TestData):
         a get_<ORM-NAME>_fields method and fallback to get_orm_fields"""
         method_name, method = self._fields_method(orm_class)
         kwargs.setdefault("orm_class", orm_class)
+        logger.debug(f"Running {method_name} for orm_class {orm_class.__name__}")
         return method(**kwargs)
 
     def _find_attr(self, method_name):
@@ -278,10 +284,23 @@ class ModelData(TestData):
 
         return kwargs
 
+        #     def _find_orm_refs(self, orm_class):
+#         ref_classes = []
+#         for field_name, field in orm_class.schema.fields.items():
+#             if ref_class := field.ref:
+#                 ref_classes.extend(self._find_orm_refs(ref_class))
+#                 ref_classes.append(ref_class)
+#         return ref_classes
+
     def assure_orm_refs(self, orm_class, **kwargs):
         """When creating an orm, they will often need foreign key values, this will
         go through any of the foreign key ref fields and create a foreign key if
-        it wasn't included
+        it wasn't included.
+
+        This is a recursive method, when it finds a ref_class it will assure that
+        ref's foreign keys before handling ref, this way all references all the
+        way down the stack can be generated for the top level so the same refs
+        can propogate all the way down the dependency chain
 
         :param orm_class: Orm
         :param **kwargs: orm_class's actual field name value will be checked and
@@ -294,7 +313,13 @@ class ModelData(TestData):
         :returns: dict, the kwargs with ref field_name and ref orm_class.model_name
             will be included
         """
+        logger.debug(f"Assuring orm refs for orm_class {orm_class.__name__}")
         kwargs = self.assure_orm_field_names(orm_class, **kwargs)
+
+        # first let's find all the refs all the way down
+        #         ref_classes = self._find_orm_refs(orm_class)
+#         pout.x(ref_classes)
+
         ignore_refs = kwargs.get("ignore_refs", False)
         require_fields = kwargs.get("require_fields", True)
         for field_name, field in orm_class.schema.fields.items():
@@ -314,7 +339,14 @@ class ModelData(TestData):
                     else:
                         if not ignore_refs:
                             if require_fields or field.is_required() or self.yes():
-                                kwargs[ref_field_name] = self._create(ref_class, **kwargs)
+                                # handle all ref_class's refs before we handle
+                                # ref_class
+                                kwargs.update(self.assure_orm_refs(ref_class, **kwargs))
+
+                                kwargs[ref_field_name] = self._create(
+                                    ref_class,
+                                    **kwargs
+                                )
                                 kwargs[field_name] = kwargs[ref_field_name].pk
 
         return kwargs
@@ -329,6 +361,12 @@ class ModelData(TestData):
         kwargs.setdefault("ignore_refs", False)
         instance = self._get(orm_class, **kwargs)
         instance.save()
+        #         try:
+#             instance.save()
+# 
+#         except UniqueError:
+#             instance.upsert()
+
         return instance
 
     def create_orms(self, orm_class, **kwargs):

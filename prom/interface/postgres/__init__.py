@@ -91,6 +91,7 @@ class StringType(object):
 class PostgreSQLConnection(SQLConnection, psycopg2.extensions.connection):
 #class Connection(SQLConnection, psycopg2.extras.LoggingConnection):
     """
+    https://www.psycopg.org/docs/connection.html
     http://initd.org/psycopg/docs/advanced.html
     http://initd.org/psycopg/docs/extensions.html#psycopg2.extensions.connection
     """
@@ -119,7 +120,10 @@ class PostgreSQLConnection(SQLConnection, psycopg2.extensions.connection):
 
 
 class PostgreSQL(SQLInterface):
-
+    """
+    https://www.psycopg.org/docs/
+    https://www.psycopg.org/docs/usage.html
+    """
     val_placeholder = '%s'
 
     _connection_pool = None
@@ -132,6 +136,10 @@ class PostgreSQL(SQLInterface):
         port = connection_config.port
         if not port: port = 5432
 
+        # set pool_key to None to use the pool as an actual pool, right now we've
+        # turned it back into basically a sync interface since I don't need the gevent
+        # stuff right now and I want to switch to using the native async interface
+        self.connection_config.options.setdefault("pool_key", "sync_interface")
         minconn = int(connection_config.options.get('pool_minconn', 1))
         maxconn = int(connection_config.options.get('pool_maxconn', 1))
         pool_class_name = connection_config.options.get(
@@ -143,6 +151,7 @@ class PostgreSQL(SQLInterface):
 
         self.log_debug("connecting using pool class {}".format(pool_class_name))
 
+        # https://www.psycopg.org/docs/pool.html
         # http://initd.org/psycopg/docs/module.html#psycopg2.connect
         self._connection_pool = pool_class(
             minconn,
@@ -158,7 +167,9 @@ class PostgreSQL(SQLInterface):
         )
 
     def _get_connection(self):
-        connection = self._connection_pool.getconn()
+        connection = self._connection_pool.getconn(
+            key=self.connection_config.options["pool_key"]
+        )
 
         connection_id = id(connection)
 
@@ -179,6 +190,11 @@ class PostgreSQL(SQLInterface):
         # and we don't want to put a dead connection back into the pool
         if connection.closed:
             self.log_warning(f"Discarding pool connection {id(connection):02x} because it is closed")
+            self._connection_pool.putconn(
+                connection,
+                key=self.connection_config.options["pool_key"],
+                close=True,
+            )
 
         else:
             self._connection_pool.putconn(connection)
