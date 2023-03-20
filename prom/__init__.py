@@ -32,7 +32,7 @@ from .exception import (
 from . import utils
 
 
-__version__ = '4.2.3'
+__version__ = '4.2.4'
 
 
 def transaction(connection_name="", **kwargs):

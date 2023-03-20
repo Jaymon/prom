@@ -222,6 +222,11 @@ class PostgreSQL(SQLInterface):
             query_str += ' AND tablename = %s'
             query_args.append(str(table_name))
 
+        schema_name = kwargs.get("schema_name", "public")
+        if schema_name:
+            query_str += ' AND schemaname = %s'
+            query_args.append(schema_name)
+
         ret = self._query(query_str, *query_args, **kwargs)
         # http://www.postgresql.org/message-id/CA+mi_8Y6UXtAmYKKBZAHBoY7F6giuT5WfE0wi3hR44XXYDsXzg@mail.gmail.com
         return [r['tablename'] for r in ret]
