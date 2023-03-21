@@ -110,20 +110,20 @@ class BaseTestInterface(BaseTestCase):
         self.assertTrue(str(s) in r)
 
     def test_query_modified_table(self):
-        i = self.get_interface()
-        s = prom.Schema(
-            'test_table',
-            one=Field(int, True)
-        )
-        i.set_table(s)
+        """Make sure SELECT statements with a non-existent field don't fail.
+
+        NOTE -- SQLite 3.40.1 is not raising an error on selecting on non-existent
+            fields, this feels like a change to me
+        """
+        i, s = self.get_table(one=Field(int, True))
 
         # Add new column
         s.set_field("two", Field(int, False))
-        q = query.Query()
-        q.is_two(None)
 
-        # Test if query succeeds
-        i.get_one(s, q)
+        # Test if select query succeeds
+        r = i.get(s, Query().eq_two(None))
+#         pout.v(r)
+#         i.insert(s, {"one": 1, "two": 2})
 
     def test_unsafe_delete_table(self):
         i = self.get_interface()
@@ -471,7 +471,8 @@ class BaseTestInterface(BaseTestCase):
         self.assertEqual(5, len(l))
 
     def test_get_pagination(self):
-        """test get but moving through the results a page at a time to make sure limit and offset works"""
+        """test get but moving through the results a page at a time to make sure
+        limit and offset works"""
         i, s = self.get_table()
         _ids = self.insert(i, s, 12)
 
@@ -487,6 +488,18 @@ class BaseTestInterface(BaseTestCase):
             count += len(l)
 
         self.assertEqual(12, count)
+
+    def test_get_pagination_offset_only(self):
+        offset = 5
+        i, s = self.get_table()
+        _ids = self.insert(i, s, 10)[offset:]
+
+        count = 0
+        q = query.Query().offset(offset)
+        for d in i.get(s, q):
+            self.assertTrue(d[s._id.name] in _ids)
+            count += 1
+        self.assertEqual(offset, count)
 
     def test_count(self):
         i, s = self.get_table()

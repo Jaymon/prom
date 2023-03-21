@@ -126,6 +126,8 @@ class PostgreSQL(SQLInterface):
     """
     val_placeholder = '%s'
 
+    LIMIT_NONE = "ALL"
+
     _connection_pool = None
 
     def _connect(self, connection_config):
@@ -400,21 +402,6 @@ class PostgreSQL(SQLInterface):
             fstrs.append([k_opts[k].format(self._normalize_name(field_name)), self.val_placeholder, v])
 
         return fstrs
-
-    def _normalize_bounds_SQL(self, bounds, sql_options):
-        offset = bounds.offset
-        if sql_options.get('one_query', False):
-            limit = 1
-
-        else:
-            limit, offset = bounds.get()
-            if not bounds.has_limit():
-                limit = "ALL"
-
-        return 'LIMIT {} OFFSET {}'.format(
-            limit,
-            offset
-        )
 
     def render_datatype_int_sql(self, field_name, field, **kwargs):
         if field.is_pk():

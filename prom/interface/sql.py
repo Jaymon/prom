@@ -65,6 +65,10 @@ class SQLInterfaceABC(Interface):
     def val_placeholder(self):
         raise NotImplementedError("this property should be set in any children class")
 
+    @property
+    def LIMIT_NONE(self):
+        raise NotImplementedError("this property should be set in any children class")
+
     def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
 
@@ -77,7 +81,7 @@ class SQLInterfaceABC(Interface):
         return -- tuple -- field_sort_str, field_sort_args"""
         raise NotImplemented()
 
-    def _normalize_bounds_SQL(self, bounds):
+    def render_nolimit_sql(limit, **kwargs):
         raise NotImplemented()
 
     def render_datatype_datetime_sql(self, field_name, field, **kwargs):
@@ -232,10 +236,15 @@ class SQLInterface(SQLInterfaceABC):
         #connection = kwargs.get('connection', None)
         with self.connection(**kwargs) as connection:
             cur = connection.cursor()
+
             ignore_result = kwargs.get('ignore_result', False)
             count_result = kwargs.get('count_result', False)
             one_result = kwargs.get('fetchone', kwargs.get('one_result', False))
             cursor_result = kwargs.get('cursor_result', False)
+
+            if cursor_result:
+                # https://stackoverflow.com/a/125140
+                cur.arraysize = kwargs.get("arraysize", 500)
 
             if query_args:
                 self.log_for(
@@ -270,11 +279,14 @@ class SQLInterface(SQLInterfaceABC):
 
             return ret
 
-    def _get_one(self, schema, query, **kwargs):
-        query_str, query_args = self.get_SQL(schema, query, one_query=True)
-        return self._query(query_str, *query_args, fetchone=True, **kwargs)
+#     def _get_one(self, schema, query, **kwargs):
+#         query_str, query_args = self.get_SQL(schema, query, one_query=True)
+#         return self._query(query_str, *query_args, fetchone=True, **kwargs)
 
     def _get(self, schema, query, **kwargs):
+        """
+        https://www.sqlite.org/lang_select.html
+        """
         query_str, query_args = self.get_SQL(schema, query)
         return self._query(query_str, *query_args, **kwargs)
 
@@ -469,6 +481,8 @@ class SQLInterface(SQLInterfaceABC):
         this is the glue method that translates the generic Query() instance to
         the SQL specific query, this is where the magic happens
 
+        https://www.sqlite.org/lang_select.html
+
         **sql_options -- dict
             count_query -- boolean -- true if this is a count query SELECT
             only_where_clause -- boolean -- true to only return after WHERE ...
@@ -556,11 +570,40 @@ class SQLInterface(SQLInterfaceABC):
 
             query_str.append(',{}'.format(os.linesep).join(query_sort_str))
 
-        if query.bounds:
-            query_str.append(self._normalize_bounds_SQL(query.bounds, sql_options))
+        if limit_clause := self.render_bounds_sql(query.bounds, **sql_options):
+            query_str.append(limit_clause)
+#         if query.bounds or sql_options.get("fetchone", False):
+#             query_str.append(self.render_bounds_sql(query.bounds, **sql_options))
 
         query_str = "\n".join(query_str)
         return query_str, query_args
+
+    def render_bounds_sql(self, bounds, **kwargs):
+        """
+        https://www.postgresql.org/docs/current/queries-limit.html
+        https://www.sqlite.org/lang_select.html#the_limit_clause
+        """
+        fetchone = kwargs.get("fetchone", False)
+        if bounds or fetchone:
+            if fetchone:
+                limit = 1
+                offset = bounds.offset
+
+            else:
+                if bounds.has_limit():
+                    limit, offset = bounds.get()
+
+                else:
+                    limit = self.LIMIT_NONE
+                    offset = bounds.offset
+
+            return 'LIMIT {} OFFSET {}'.format(
+                limit,
+                offset
+            )
+
+        else:
+            return ""
 
     def render_insert_sql(self, schema, fields, **kwargs):
         """

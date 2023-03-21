@@ -210,8 +210,8 @@ class InterfaceABC(LogMixin):
     def _delete(self, schema, query, **kwargs):
         raise NotImplementedError()
 
-    def _get_one(self, schema, query, **kwargs):
-        raise NotImplementedError()
+#     def _get_one(self, schema, query, **kwargs):
+#         raise NotImplementedError()
 
     def _get(self, schema, query, **kwargs):
         raise NotImplementedError()
@@ -456,6 +456,7 @@ class Interface(InterfaceABC):
         """
         kwargs.setdefault("nest", True)
         kwargs.setdefault("execute_in_transaction", True)
+
         return self.execute(callback, *args, **kwargs)
 
     def execute_read(self, callback, *args, **kwargs):
@@ -733,13 +734,7 @@ class Interface(InterfaceABC):
         :return: dict, the matching row
         """
         kwargs.setdefault("prefix", "get_one")
-        ret = self.execute_read(
-            self._get_one,
-            schema=schema,
-            query=query or Query(),
-            **kwargs
-        )
-        return ret or {}
+        return self.get(schema, query, fetchone=True, **kwargs) or {}
 
     def get(self, schema, query=None, **kwargs):
         """get matching rows from the db matching filters set in query

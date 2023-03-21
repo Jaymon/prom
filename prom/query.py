@@ -66,7 +66,9 @@ class Iterator(ListIterator):
         ret = False
         if self.query.bounds.has_more():
             cursor = self.cursor()
-            if cursor.rowcount == -1:
+            # https://www.psycopg.org/docs/cursor.html#cursor.rowcount says that
+            # future versions of the spec reserve the right to return None
+            if cursor.rowcount == -1 or cursor.rowcount is None:
                 try:
                     if self[self.query.bounds.find_more_index()]:
                         ret = True
@@ -504,7 +506,6 @@ class Query(object):
     bounds_class = Bounds
     iterator_class = Iterator
 
-
     @property
     def interface(self):
         return self.orm_class.interface if self.orm_class else None
@@ -537,12 +538,10 @@ class Query(object):
         return schemas
 
     def __init__(self, orm_class=None, **kwargs):
-
         # needed to use the db querying methods like get(), if you just want to build
         # a query then you don't need to bother passing this in
         self.orm_class = orm_class
         self.reset()
-        self.kwargs = kwargs
 
     def reset(self):
         #self.interface = None
