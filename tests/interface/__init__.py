@@ -112,7 +112,7 @@ class BaseTestInterface(BaseTestCase):
     def test_query_modified_table(self):
         """Make sure SELECT statements with a non-existent field don't fail.
 
-        NOTE -- SQLite 3.40.1 is not raising an error on selecting on non-existent
+        NOTE -- SQLite 3.40.1 is not raising an error on selecting non-existent
             fields, this feels like a change to me
         """
         i, s = self.get_table(one=Field(int, True))
@@ -122,8 +122,6 @@ class BaseTestInterface(BaseTestCase):
 
         # Test if select query succeeds
         r = i.get(s, Query().eq_two(None))
-#         pout.v(r)
-#         i.insert(s, {"one": 1, "two": 2})
 
     def test_unsafe_delete_table(self):
         i = self.get_interface()

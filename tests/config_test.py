@@ -533,6 +533,21 @@ class FieldTest(EnvironTestCase):
         self.assertTrue(o.foo)
         self.assertTrue(isinstance(o.foo, bool))
 
+    def test_iget_really_big_int(self):
+        """Postgres will return Decimal for a really big int, SQLite will return
+        an int. I'm not sure it's worth slowing down every select statement to
+        check if an int is a decimal since this is such a rare use case but this
+        test is here if I ever do want to address it
+
+        https://github.com/Jaymon/prom/issues/162
+        """
+        orm_class = self.get_orm_class(
+            foo=Field(int, True, precision=78)
+        )
+        o = orm_class.create(foo=int("9" * 77))
+        o2 = orm_class.query.one_pk(o.pk)
+        self.assertTrue(isinstance(o2.foo, (int, decimal.Decimal)))
+
     def test_iset(self):
         dt = datetime.datetime.utcnow()
         orm_class = self.get_orm_class(
