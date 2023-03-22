@@ -41,6 +41,7 @@ from ..exception import (
     FieldError,
     UniqueError,
     CloseError,
+    PlaceholderError,
 )
 
 from ..compat import *
@@ -293,7 +294,7 @@ class SQLite(SQLInterface):
     def _configure_connection(self, **kwargs):
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
-        self._query('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs)
+        self._raw('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs)
 
         # by default we can read/write, so only bother to run this query if we need to
         # make the connection actually readonly
@@ -308,7 +309,7 @@ class SQLite(SQLInterface):
         self._connection = None
 
     def _readonly(self, readonly, **kwargs):
-        self._query(
+        self._raw(
             # https://stackoverflow.com/a/49630725/5006
             'PRAGMA query_only = {}'.format("ON" if readonly else "OFF"),
             ignore_result=True,
@@ -323,7 +324,7 @@ class SQLite(SQLInterface):
             query_str += ' AND name = ?'
             query_args.append(str(table_name))
 
-        ret = self._query(query_str, *query_args, **kwargs)
+        ret = self._raw(query_str, *query_args, **kwargs)
         return [r['tbl_name'] for r in ret]
 
     def _get_indexes(self, schema, **kwargs):
@@ -332,21 +333,21 @@ class SQLite(SQLInterface):
         # http://www.mail-archive.com/sqlite-users@sqlite.org/msg22055.html
         # http://stackoverflow.com/questions/604939/
         ret = {}
-        rs = self._query('PRAGMA index_list({})'.format(self._normalize_table_name(schema)), **kwargs)
+        rs = self._raw('PRAGMA index_list({})'.format(self._normalize_table_name(schema)), **kwargs)
         if rs:
             for r in rs:
                 iname = r['name']
                 ret.setdefault(iname, [])
-                indexes = self._query('PRAGMA index_info({})'.format(r['name']), **kwargs)
+                indexes = self._raw('PRAGMA index_info({})'.format(r['name']), **kwargs)
                 for idict in indexes:
                     ret[iname].append(idict['name'])
 
         return ret
 
     def _delete_tables(self, **kwargs):
-        self._query('PRAGMA foreign_keys = OFF', ignore_result=True, **kwargs);
+        self._raw('PRAGMA foreign_keys = OFF', ignore_result=True, **kwargs);
         ret = super()._delete_tables(**kwargs)
-        self._query('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs);
+        self._raw('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs);
         return ret
 
     def _delete_table(self, schema, **kwargs):
@@ -355,7 +356,7 @@ class SQLite(SQLInterface):
         """
         #query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
         query_str = "DROP TABLE IF EXISTS {}".format(self._normalize_table_name(schema))
-        ret = self.query(query_str, ignore_result=True, **kwargs)
+        self.raw(query_str, ignore_result=True, **kwargs)
 
     def create_error(self, e, **kwargs):
         if isinstance(e, sqlite3.OperationalError):
@@ -385,6 +386,9 @@ class SQLite(SQLInterface):
             if "closed database" in e_msg:
                 e = CloseError(e)
 
+            elif "Incorrect number of bindings supplied" in e_msg:
+                e = PlaceholderError(e, *kwargs.get("error_args", []))
+
         else:
             e = super().create_error(e, **kwargs)
 
@@ -394,11 +398,11 @@ class SQLite(SQLInterface):
         """return all the fields for the given table"""
         ret = {}
         query_str = 'PRAGMA table_info({})'.format(self._normalize_table_name(table_name))
-        fields = self._query(query_str, **kwargs)
+        fields = self._raw(query_str, **kwargs)
         #pout.v([dict(d) for d in fields])
 
         query_str = 'PRAGMA foreign_key_list({})'.format(self._normalize_table_name(table_name))
-        fks = {f["from"]: f for f in self._query(query_str, **kwargs)}
+        fks = {f["from"]: f for f in self._raw(query_str, **kwargs)}
         #pout.v([dict(d) for d in fks.values()])
 
         pg_types = {

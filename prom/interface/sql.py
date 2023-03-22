@@ -11,6 +11,7 @@ from ..exception import (
     TableError,
     FieldError,
     UniqueError,
+    PlaceholderError,
 )
 
 from ..compat import *
@@ -113,7 +114,7 @@ class SQLInterface(SQLInterfaceABC):
         query_str.append(",\n".join(query_fields))
         query_str.append(')')
         query_str = "\n".join(query_str)
-        self._query(query_str, ignore_result=True, **kwargs)
+        self._raw(query_str, ignore_result=True, **kwargs)
 
     def _set_index(self, schema, name, field_names, **kwargs):
         """
@@ -131,7 +132,7 @@ class SQLInterface(SQLInterfaceABC):
             ', '.join(map(self._normalize_name, field_names))
         )
 
-        return self._query(query_str, ignore_result=True, **kwargs)
+        return self._raw(query_str, ignore_result=True, **kwargs)
 
     def _insert(self, schema, fields, **kwargs):
         pk_names = schema.pk_names
@@ -144,7 +145,7 @@ class SQLInterface(SQLInterfaceABC):
             **kwargs,
         )
 
-        r = self._query(query_str, *query_args, **kwargs)
+        r = self._raw(query_str, *query_args, **kwargs)
         if r and pk_names:
             if len(pk_names) > 1:
                 r = r[0]
@@ -160,7 +161,7 @@ class SQLInterface(SQLInterfaceABC):
             **kwargs,
         )
 
-        return self._query(query_str, *query_args, count_result=True, **kwargs)
+        return self._raw(query_str, *query_args, count_result=True, **kwargs)
 
     def _upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
         """
@@ -206,7 +207,7 @@ class SQLInterface(SQLInterfaceABC):
             query_str += ' RETURNING {}'.format(', '.join(map(self._normalize_name, returning_field_names)))
             query_args = insert_args + update_args
 
-        r = self._query(query_str, *query_args, **kwargs)
+        r = self._raw(query_str, *query_args, **kwargs)
         if r and returning_field_names:
             if len(returning_field_names) > 1:
                 r = r[0]
@@ -221,10 +222,10 @@ class SQLInterface(SQLInterfaceABC):
         query_str.append('  {}'.format(self._normalize_table_name(schema)))
         query_str.append(where_query_str)
         query_str = "\n".join(query_str)
-        ret = self._query(query_str, *query_args, count_result=True, **kwargs)
+        ret = self._raw(query_str, *query_args, count_result=True, **kwargs)
         return ret
 
-    def _query(self, query_str, *query_args, **kwargs):
+    def _raw(self, query_str, *query_args, **kwargs):
         """
         **kwargs -- dict
             ignore_result -- boolean -- true to not attempt to fetch results
@@ -251,7 +252,20 @@ class SQLInterface(SQLInterfaceABC):
                     debug=(["0x{:02x} - {}\n{}", id(connection), query_str, query_args],),
                     info=([f"0x{id(connection):02x} - {query_str}"],)
                 )
-                cur.execute(query_str, query_args)
+
+                try:
+                    cur.execute(query_str, query_args)
+
+                except Exception as e:
+                    self.raise_error(
+                        e,
+                        error_args=[
+                            query_str,
+                            query_args,
+                            self.val_placeholder,
+                        ]
+                    )
+
             else:
                 self.log_info(f"0x{id(connection):02x} - {query_str}")
                 cur.execute(query_str)
@@ -279,20 +293,16 @@ class SQLInterface(SQLInterfaceABC):
 
             return ret
 
-#     def _get_one(self, schema, query, **kwargs):
-#         query_str, query_args = self.get_SQL(schema, query, one_query=True)
-#         return self._query(query_str, *query_args, fetchone=True, **kwargs)
-
     def _get(self, schema, query, **kwargs):
         """
         https://www.sqlite.org/lang_select.html
         """
         query_str, query_args = self.get_SQL(schema, query)
-        return self._query(query_str, *query_args, **kwargs)
+        return self._raw(query_str, *query_args, **kwargs)
 
     def _count(self, schema, query, **kwargs):
         query_str, query_args = self.get_SQL(schema, query, count_query=True)
-        ret = self._query(query_str, *query_args, **kwargs)
+        ret = self._raw(query_str, *query_args, **kwargs)
         if ret:
             ret = int(ret[0]['ct'])
         else:
@@ -320,7 +330,7 @@ class SQLInterface(SQLInterfaceABC):
                     query_str.append('ADD COLUMN')
                     query_str.append('  {}'.format(self.render_datatype_sql(field_name, field)))
                     query_str = "\n".join(query_str)
-                    self._query(query_str, ignore_result=True, **kwargs)
+                    self._raw(query_str, ignore_result=True, **kwargs)
 
         return True
 

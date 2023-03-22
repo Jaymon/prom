@@ -101,7 +101,7 @@ class InterfaceTest(BaseTestInterface):
         ])
 
         i = self.create_interface()
-        r = i.query(sql, cursor_result=True)
+        r = i.raw(sql, cursor_result=True)
         self.assertTrue(i.has_table("ZFOOBAR"))
 
         fields = i.get_fields("ZFOOBAR")

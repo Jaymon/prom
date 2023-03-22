@@ -30,6 +30,7 @@ from ...exception import (
     FieldError,
     UniqueError,
     CloseError,
+    PlaceholderError,
 )
 
 
@@ -229,7 +230,7 @@ class PostgreSQL(SQLInterface):
             query_str += ' AND schemaname = %s'
             query_args.append(schema_name)
 
-        ret = self._query(query_str, *query_args, **kwargs)
+        ret = self._raw(query_str, *query_args, **kwargs)
         # http://www.postgresql.org/message-id/CA+mi_8Y6UXtAmYKKBZAHBoY7F6giuT5WfE0wi3hR44XXYDsXzg@mail.gmail.com
         return [r['tablename'] for r in ret]
 
@@ -238,7 +239,7 @@ class PostgreSQL(SQLInterface):
         https://www.postgresql.org/docs/current/sql-droptable.html
         """
         query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(self._normalize_table_name(schema))
-        ret = self._query(query_str, ignore_result=True, **kwargs)
+        ret = self._raw(query_str, ignore_result=True, **kwargs)
 
     def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given schema"""
@@ -283,7 +284,7 @@ class PostgreSQL(SQLInterface):
             'ORDER BY a.attnum ASC',
         ]
         query_str = "\n".join(query_str)
-        fields = self._query(query_str, *query_args, **kwargs)
+        fields = self._raw(query_str, *query_args, **kwargs)
 
         pg_types = {
             "float4": float,
@@ -340,7 +341,7 @@ class PostgreSQL(SQLInterface):
         ]
         query_str = "\n".join(query_str)
 
-        indexes = self._query(query_str, 'r', str(schema), **kwargs)
+        indexes = self._raw(query_str, 'r', str(schema), **kwargs)
 
         # massage the data into more readable {index_name: fields} format
         for idict in indexes:
@@ -511,6 +512,9 @@ class PostgreSQL(SQLInterface):
 
         elif isinstance(e, psycopg2.IntegrityError):
             e = UniqueError(e)
+
+        elif isinstance(e, IndexError) and "error_args" in kwargs:
+            e = PlaceholderError(e, *kwargs.get("error_args", []))
 
         else:
             e = super().create_error(e, **kwargs)

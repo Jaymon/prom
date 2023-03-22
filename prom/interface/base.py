@@ -177,7 +177,7 @@ class InterfaceABC(LogMixin):
     def _readonly(self, readonly, **kwargs):
         raise NotImplementedError()
 
-    def _query(self, query_str, *query_args, **kwargs):
+    def _raw(self, query_str, *query_args, **kwargs):
         raise NotImplementedError()
 
     def _set_table(self, schema, **kwargs):
@@ -209,9 +209,6 @@ class InterfaceABC(LogMixin):
 
     def _delete(self, schema, query, **kwargs):
         raise NotImplementedError()
-
-#     def _get_one(self, schema, query, **kwargs):
-#         raise NotImplementedError()
 
     def _get(self, schema, query, **kwargs):
         raise NotImplementedError()
@@ -702,7 +699,7 @@ class Interface(InterfaceABC):
             **kwargs
         )
 
-    def query(self, query_str, *query_args, **kwargs):
+    def raw(self, query_str, *query_args, **kwargs):
         """
         run a raw query on the db
 
@@ -710,9 +707,9 @@ class Interface(InterfaceABC):
         *query_args -- if the query_str is a formatting string, pass the values in this
         **kwargs -- any query options can be passed in by using key=val syntax
         """
-        kwargs.setdefault("prefix", "query")
+        kwargs.setdefault("prefix", "raw")
         return self.execute(
-            self._query,
+            self._raw,
             query_str,
             *query_args,
             **kwargs

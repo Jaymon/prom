@@ -974,7 +974,7 @@ class Query(object):
         return -- mixed -- depends on the backend and the type of query
         """
         i = self.interface
-        return i.query(query_str, *query_args, **query_options)
+        return i.raw(query_str, *query_args, **query_options)
 
     def execute(self, method_name, **kwargs):
         i = self.interface

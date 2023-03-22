@@ -9,6 +9,7 @@ import datetime
 from datatypes import Datetime
 
 from prom import query, InterfaceError
+from prom.exception import PlaceholderError
 from prom.config import Schema, Field, Index
 from prom.query import Query
 from prom.compat import *
@@ -28,10 +29,25 @@ class BaseTestInterface(BaseTestCase):
         #self.assertTrue(i.connection is None)
         self.assertFalse(i.connected)
 
-    def test_query(self):
+    def test_raw_simple(self):
         i = self.get_interface()
-        rows = i.query('SELECT 1')
+        rows = i.raw('SELECT 1')
         self.assertGreater(len(rows), 0)
+
+    def test_raw_mismatched_placeholders(self):
+        i, s = self.get_table()
+
+        with self.assertRaises(PlaceholderError):
+            i.raw(
+                "SELECT * FROM {} WHERE {} = {} AND {} = {}".format(
+                    s,
+                    "foo",
+                    i.val_placeholder,
+                    "bar",
+                    i.val_placeholder,
+                ),
+                [1]
+            )
 
     def test_transaction_error(self):
         i = self.get_interface()
@@ -109,7 +125,7 @@ class BaseTestInterface(BaseTestCase):
         r = i.get_tables(str(s))
         self.assertTrue(str(s) in r)
 
-    def test_query_modified_table(self):
+    def test_get_with_modified_table(self):
         """Make sure SELECT statements with a non-existent field don't fail.
 
         NOTE -- SQLite 3.40.1 is not raising an error on selecting non-existent

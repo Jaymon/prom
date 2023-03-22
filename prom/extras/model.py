@@ -41,15 +41,10 @@ class MagicOrm(Orm):
         """Adds some syntactic sugar to the Orm
 
         adds support for:
-            .ormname_id = alias for self.pk or self._id
+            .<MODEL-NAME>_id = alias for self.pk or self._id
             .is_fieldname() = if fieldname is a boolean then returns True/False,
                 if fieldname is another value then you can do .is_fieldname(val)
                 to compare val to the fieldname's value
-            .fk = if you have a fieldname like other_id or other_fk that contains
-                the pk value for other orm then you can just omit the _id suffix
-                and it will fetch the actual instance from the other orm (eg, if
-                you have .foo_id and do .foo it will return the Foo instance with
-                instance.pk == self.foo_id)
         """
         if k.startswith("is_"):
             field_name = k[3:]
