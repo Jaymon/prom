@@ -70,3 +70,7 @@ class PlaceholderError(InterfaceError):
 
         super().__init__(e, **kwargs)
 
+        self.query_str = query_str
+        self.query_args = query_args
+        self.placeholder = placeholder
+

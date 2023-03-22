@@ -7,6 +7,7 @@ http://wiki.postgresql.org/wiki/Using_psycopg2_with_PostgreSQL
 http://pythonhosted.org/psycopg2/
 """
 from __future__ import unicode_literals, division, print_function, absolute_import
+import re
 import os
 import sys
 import decimal
@@ -511,6 +512,22 @@ class PostgreSQL(SQLInterface):
                 else:
                     #'relation "<TABLE-NAME>" does not exit'
                     e = TableError(e)
+
+            elif "can't adapt type" in e_msg and "error_args" in kwargs:
+                error_args = kwargs["error_args"]
+                ms = re.search(r"type\s'(\S+)'", e_msg)
+                type_name = ms.group(1)
+                for index, value in enumerate(error_args[1]):
+                    if type_name in str(type(value)):
+                        e = PlaceholderError(
+                            e,
+                            *error_args,
+                            message=f"Placeholder {index} of query has unexpected type {type(value)}",
+                        )
+                        break
+
+            else:
+                e = super().create_error(e, **kwargs)
 
         elif isinstance(e, psycopg2.errors.AdminShutdown):
             e = CloseError(e)

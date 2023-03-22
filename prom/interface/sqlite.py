@@ -395,6 +395,25 @@ class SQLite(SQLInterface):
             elif "Incorrect number of bindings supplied" in e_msg:
                 e = PlaceholderError(e, *kwargs.get("error_args", []))
 
+            else:
+                e = super().create_error(e, **kwargs)
+
+        elif isinstance(e, sqlite3.InterfaceError):
+            e_msg = str(e)
+            if "Error binding parameter" in e_msg and "error_args" in kwargs:
+                error_args = kwargs["error_args"]
+                ms = re.search(r"parameter\s(\d+)", e_msg)
+                index = int(ms.group(1))
+                value = error_args[1][index]
+                e = PlaceholderError(
+                    e,
+                    *error_args,
+                    message=f"Placeholder {index} of query has unexpected type {type(value)}",
+                )
+
+            else:
+                e = super().create_error(e, **kwargs)
+
         else:
             e = super().create_error(e, **kwargs)
 

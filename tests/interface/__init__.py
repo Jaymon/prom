@@ -729,6 +729,16 @@ class BaseTestInterface(BaseTestCase):
         foo_ids = list(Foo.query.select_pk().in_foo(bar_q).values())
         self.assertEqual([], foo_ids) # no error means it worked
 
+    def test_error_unsupported_type(self):
+        class Che(object): pass
+        i, s = self.get_table()
+
+        q = Query().select_foo()
+        q.in_bar([1, 2]).is_che(Che())
+
+        with self.assertRaises(PlaceholderError):
+            i.get(s, q)
+
     def test_handle_error_column(self):
         i, s = self.get_table()
         s.set_field("che", Field(str, True)) # it's required
