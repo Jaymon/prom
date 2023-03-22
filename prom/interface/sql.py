@@ -5,6 +5,7 @@ import datetime
 import decimal
 import logging
 import uuid
+from functools import cached_property
 
 from ..query import Query
 from ..exception import (
@@ -63,18 +64,33 @@ class SQLInterfaceABC(Interface):
     """SQL database interfaces should extend SQLInterface and implement all these
     methods in this class and all the methods in InterfaceABC"""
     @property
-    def val_placeholder(self):
+    def LIMIT_NONE(self):
+        """When an offset is set but not a limit, this is the value that will be
+        put into the LIMIT part of the query
+
+        :returns: str|int|None
+        """
         raise NotImplementedError("this property should be set in any children class")
 
-    @property
-    def LIMIT_NONE(self):
-        raise NotImplementedError("this property should be set in any children class")
+    def get_paramstyle(self):
+        """Returns the paramstyle that is used by self.PLACEHOLDER to decide what
+        val placeholder to use when building queries. This would also be the value
+        to use when calling .raw().
+
+        The dbapi 2.0 spec requires this to be set
+
+        https://peps.python.org/pep-0249/#paramstyle
+
+        :returns: str, something like "qmark" (for ? placeholders) or "pyformat"
+            (for %s placeholders)
+        """
+        raise NotImplemented()
 
     def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
 
     def _normalize_field_SQL(self, schema, field_name, symbol):
-        return self._normalize_name(field_name), self.val_placeholder
+        return self._normalize_name(field_name), self.PLACEHOLDER
 
     def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
         """normalize the sort string
@@ -97,6 +113,40 @@ class SQLInterfaceABC(Interface):
 
 class SQLInterface(SQLInterfaceABC):
     """Generic base class for all SQL derived interfaces"""
+    @cached_property
+    def PLACEHOLDER(self):
+        """What placeholder value this interface uses when building queries.
+
+        This uses .get_paramstyle() to decide what placeholder value to use
+
+        https://www.psycopg.org/docs/usage.html#passing-parameters-to-sql-queries
+
+        NOTE -- It looks like both SQLite and Postgres support "named" so if you
+            want to use .raw() queries that will work in both interface I would use
+            named parameters
+
+        :returns: str, usually something like "?" or "%s"
+        """
+        paramstyle = self.get_paramstyle()
+
+        if paramstyle == "qmark":
+            return "?"
+
+        elif paramstyle == "format":
+            return "%s"
+
+        elif paramstyle == "pyformat":
+            return "%s"
+
+        elif paramstyle == "numeric":
+            raise NotImplementedError("These are :1 :2 :3")
+
+        elif paramstyle == "named":
+            raise NotImplementedError("These are :name")
+
+        else:
+            raise NotImplementedError(f"Unknown paramstyle {paramstyle}")
+
     def _set_table(self, schema, **kwargs):
         """
         http://sqlite.org/lang_createtable.html
@@ -262,7 +312,7 @@ class SQLInterface(SQLInterfaceABC):
                         error_args=[
                             query_str,
                             query_args,
-                            self.val_placeholder,
+                            self.PLACEHOLDER,
                         ]
                     )
 
@@ -624,7 +674,7 @@ class SQLInterface(SQLInterfaceABC):
         query_vals = []
         for field_name, field_val in fields.items():
             field_names.append(self._normalize_name(field_name))
-            field_formats.append(self.val_placeholder)
+            field_formats.append(self.PLACEHOLDER)
             query_vals.append(field_val)
 
         query_str = 'INSERT INTO {} ({}) VALUES ({})'.format(
@@ -650,7 +700,7 @@ class SQLInterface(SQLInterfaceABC):
 
         field_str = []
         for field_name, field_val in fields.items():
-            field_str.append('{} = {}'.format(self._normalize_name(field_name), self.val_placeholder))
+            field_str.append('{} = {}'.format(self._normalize_name(field_name), self.PLACEHOLDER))
             query_args.append(field_val)
 
         query_str += 'SET {}'.format(',\n'.join(field_str))
@@ -789,7 +839,7 @@ class SQLInterface(SQLInterfaceABC):
                 sa = String(sql_arg)
                 if not sa.isnumeric():
                     sa = "'{}'".format(sa)
-                sql = sql.replace(self.val_placeholder, sa, 1)
+                sql = sql.replace(self.PLACEHOLDER, sa, 1)
 
         return (sql, sql_args) if placeholders else sql
 

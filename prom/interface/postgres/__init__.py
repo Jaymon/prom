@@ -125,20 +125,25 @@ class PostgreSQL(SQLInterface):
     https://www.psycopg.org/docs/
     https://www.psycopg.org/docs/usage.html
     """
-    val_placeholder = '%s'
-
     LIMIT_NONE = "ALL"
 
     _connection_pool = None
 
-    def _connect(self, connection_config):
-        database = connection_config.database
-        username = connection_config.username
-        password = connection_config.password
-        host = connection_config.host
+    @classmethod
+    def configure(cls, connection_config):
+        connection_config = super().configure(connection_config)
         port = connection_config.port
-        if not port: port = 5432
+        if not port:
+            connection_config.port = 5432
+        return connection_config
 
+    def get_paramstyle(self):
+        """
+        https://www.psycopg.org/docs/module.html#psycopg2.paramstyle
+        """
+        return psycopg2.paramstyle
+
+    def _connect(self, connection_config):
         # set pool_key to None to use the pool as an actual pool, right now we've
         # turned it back into basically a sync interface since I don't need the gevent
         # stuff right now and I want to switch to using the native async interface
@@ -159,11 +164,11 @@ class PostgreSQL(SQLInterface):
         self._connection_pool = pool_class(
             minconn,
             maxconn,
-            dbname=database,
-            user=username,
-            password=password,
-            host=host,
-            port=port,
+            dbname=connection_config.database,
+            user=connection_config.username,
+            password=connection_config.password,
+            host=connection_config.host,
+            port=connection_config.port,
             cursor_factory=psycopg2.extras.RealDictCursor,
             #cursor_factory=LoggingCursor,
             connection_factory=PostgreSQLConnection,
@@ -239,7 +244,7 @@ class PostgreSQL(SQLInterface):
         https://www.postgresql.org/docs/current/sql-droptable.html
         """
         query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(self._normalize_table_name(schema))
-        ret = self._raw(query_str, ignore_result=True, **kwargs)
+        self._raw(query_str, ignore_result=True, **kwargs)
 
     def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given schema"""
@@ -275,10 +280,10 @@ class PostgreSQL(SQLInterface):
             'LEFT JOIN pg_index i ON a.attrelid = i.indrelid',
             '  AND a.attnum = any(i.indkey)',
             'LEFT JOIN pg_constraint s ON a.attrelid = s.conrelid',
-            '  AND s.contype = {} AND a.attnum = any(s.conkey)'.format(self.val_placeholder),
+            '  AND s.contype = {} AND a.attnum = any(s.conkey)'.format(self.PLACEHOLDER),
             'LEFT JOIN pg_class c ON s.confrelid = c.oid',
             'WHERE',
-            '  a.attrelid = {}::regclass'.format(self.val_placeholder),
+            '  a.attrelid = {}::regclass'.format(self.PLACEHOLDER),
             '  AND a.attisdropped = False',
             '  AND a.attnum > 0',
             'ORDER BY a.attnum ASC',
@@ -355,7 +360,7 @@ class PostgreSQL(SQLInterface):
 
     def _normalize_field_SQL(self, schema, field_name, symbol):
         format_field_name = self._normalize_name(field_name)
-        format_val_str = self.val_placeholder
+        format_val_str = self.PLACEHOLDER
 
         if 'LIKE' in symbol:
             format_field_name += '::text'
@@ -370,7 +375,7 @@ class PostgreSQL(SQLInterface):
         query_args = []
         for v in reversed(field_vals):
             query_sort_str.append('  {} = {} {}'.format(
-                self._normalize_name(field_name), self.val_placeholder, sort_dir_str))
+                self._normalize_name(field_name), self.PLACEHOLDER, sort_dir_str))
             query_args.append(v)
 
         return ',\n'.join(query_sort_str), query_args
@@ -400,7 +405,7 @@ class PostgreSQL(SQLInterface):
         }
 
         for k, v in field_kwargs.items():
-            fstrs.append([k_opts[k].format(self._normalize_name(field_name)), self.val_placeholder, v])
+            fstrs.append([k_opts[k].format(self._normalize_name(field_name)), self.PLACEHOLDER, v])
 
         return fstrs
 
@@ -492,6 +497,9 @@ class PostgreSQL(SQLInterface):
         return field_type
 
     def create_error(self, e, **kwargs):
+        """
+        https://www.psycopg.org/docs/module.html#exceptions
+        """
         if isinstance(e, psycopg2.ProgrammingError):
             e_msg = String(e)
             if "does not exist" in e_msg:

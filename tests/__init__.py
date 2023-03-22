@@ -76,7 +76,6 @@ class BaseTestCase(TestCase):
     def create_interface(cls):
         for inter in cls.create_environ_interfaces():
             return inter
-        #return cls.create_sqlite_interface()
 
     @classmethod
     def create_dsn_interface(cls, dsn):
@@ -116,18 +115,6 @@ class BaseTestCase(TestCase):
         for inter in cls.create_environ_interfaces():
             if isinstance(inter, interface_class):
                 return inter
-
-    @classmethod
-    def create_sqlite_interface(cls):
-        from prom.interface.sqlite import SQLite
-        inter = cls.find_interface(SQLite)
-        return inter
-
-    @classmethod
-    def create_postgres_interface(cls):
-        from prom.interface.postgres import PostgreSQL
-        inter = cls.find_interface(PostgreSQL)
-        return inter
 
     def get_table(self, table_name=None, interface=None, **fields_or_indexes):
         """
@@ -341,10 +328,17 @@ class BaseTestCase(TestCase):
         return fields
 
     def insert(self, *args, **kwargs):
-        """most typically you will call this with (object, count)"""
+        """most typically you will call this with (object, count)
+
+        :param *args:
+            - interface, schema, count
+            - query, count
+            - (interface, schema), count
+            - orm_class, count
+        :returns: list[int]
+        """
         pks = []
         if len(args) == 3:
-            #o = (interface, schema)
             o = (args[0], args[1])
             count = args[2]
 

@@ -34,7 +34,7 @@ from . import BaseTestInterface, testdata
 class InterfaceTest(BaseTestInterface):
     @classmethod
     def create_interface(cls):
-        return cls.create_postgres_interface()
+        return cls.find_interface(PostgreSQL)
 
     def test_table_persist(self):
         i = self.get_interface()

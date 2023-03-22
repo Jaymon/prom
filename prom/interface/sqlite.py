@@ -198,9 +198,9 @@ class DictType(object):
 
 
 class SQLite(SQLInterface):
-
-    val_placeholder = '?'
-
+    """
+    https://docs.python.org/3/library/sqlite3.html
+    """
     LIMIT_NONE = -1
 
     _connection = None
@@ -228,6 +228,12 @@ class SQLite(SQLInterface):
 
         connection_config.path = path
         return connection_config
+
+    def get_paramstyle(self):
+        """
+        https://docs.python.org/3/library/sqlite3.html#sqlite3.paramstyle
+        """
+        return sqlite3.paramstyle
 
     def _connect(self, connection_config):
         """
@@ -356,7 +362,7 @@ class SQLite(SQLInterface):
         """
         #query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
         query_str = "DROP TABLE IF EXISTS {}".format(self._normalize_table_name(schema))
-        self.raw(query_str, ignore_result=True, **kwargs)
+        self._raw(query_str, ignore_result=True, **kwargs)
 
     def create_error(self, e, **kwargs):
         if isinstance(e, sqlite3.OperationalError):
@@ -468,7 +474,7 @@ class SQLite(SQLInterface):
         }
 
         for k, v in field_kwargs.items():
-            fstrs.append([k_opts[k].format(self._normalize_name(field_name)), self.val_placeholder, v])
+            fstrs.append([k_opts[k].format(self._normalize_name(field_name)), self.PLACEHOLDER, v])
 
         return fstrs
 
@@ -488,7 +494,7 @@ class SQLite(SQLInterface):
         query_sort_str = ['  CASE {}'.format(self._normalize_name(field_name))]
         query_args = []
         for i, v in fvi:
-            query_sort_str.append('    WHEN {} THEN {}'.format(self.val_placeholder, i))
+            query_sort_str.append('    WHEN {} THEN {}'.format(self.PLACEHOLDER, i))
             query_args.append(v)
 
         query_sort_str.append('  END')

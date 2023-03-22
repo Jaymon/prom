@@ -3,7 +3,7 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 import os
 import datetime
 
-import testdata
+from prom.interface.sqlite import SQLite
 
 from prom import query, InterfaceError
 from prom.interface.sqlite import SQLite, DatetimeType
@@ -13,7 +13,7 @@ from prom.config import Field
 from prom.compat import *
 from prom.query import Query
 
-from . import BaseTestInterface, BaseTestCase
+from . import BaseTestInterface, BaseTestCase, testdata
 
 
 class DatetimeTypeTest(BaseTestCase):
@@ -57,7 +57,7 @@ class DatetimeTypeTest(BaseTestCase):
 class InterfaceTest(BaseTestInterface):
     @classmethod
     def create_interface(cls):
-        return cls.create_sqlite_interface()
+        return cls.find_interface(SQLite)
 
     def test_change_interface(self):
         """This is testing the actual interface, not the db connection or anything"""

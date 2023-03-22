@@ -42,9 +42,9 @@ class BaseTestInterface(BaseTestCase):
                 "SELECT * FROM {} WHERE {} = {} AND {} = {}".format(
                     s,
                     "foo",
-                    i.val_placeholder,
+                    i.PLACEHOLDER,
                     "bar",
-                    i.val_placeholder,
+                    i.PLACEHOLDER,
                 ),
                 [1]
             )
