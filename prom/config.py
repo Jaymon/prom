@@ -952,7 +952,7 @@ class Field(object, metaclass=FieldMeta):
 
             elif issubclass(field_type, pickle_types):
                 self.serializer = self.options.pop("serializer", "pickle")
-                self._interface_type = str
+                self._interface_type = bytes
 
             else:
                 schema = getattr(field_type, "schema", None)
@@ -962,7 +962,7 @@ class Field(object, metaclass=FieldMeta):
                 else:
                     # We have just some random class that isn't an Orm
                     self.serializer = self.options.pop("serializer", "pickle")
-                    self._interface_type = str
+                    self._interface_type = bytes
 
         elif isinstance(field_type, Schema):
             self._schema = field_type
@@ -1232,7 +1232,8 @@ class Field(object, metaclass=FieldMeta):
         if val is None: return val
 
         if self.serializer == "pickle":
-            return base64.b64encode(pickle.dumps(val, pickle.HIGHEST_PROTOCOL))
+            #return base64.b64encode(pickle.dumps(val, pickle.HIGHEST_PROTOCOL))
+            return pickle.dumps(val, pickle.HIGHEST_PROTOCOL)
 
         elif self.serializer == "json":
             return json.dumps(val)
@@ -1244,7 +1245,8 @@ class Field(object, metaclass=FieldMeta):
         if val is None: return val
 
         if self.serializer == "pickle":
-            return pickle.loads(base64.b64decode(val))
+            #return pickle.loads(base64.b64decode(val))
+            return pickle.loads(val)
 
         elif self.serializer == "json":
             return json.loads(val)

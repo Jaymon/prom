@@ -306,8 +306,9 @@ class PostgreSQL(SQLInterface):
             "varchar": str,
             "bool": bool,
             "date": datetime.date,
-            "blob": bytearray,
-            "jsonb": bytearray,
+            "blob": bytes,
+            "bytea": bytes,
+            "jsonb": bytes,
         }
 
         # the rows we can set: field_type, name, field_required, min_size, max_size,
@@ -488,6 +489,16 @@ class PostgreSQL(SQLInterface):
                 field_type = f'NUMERIC({precision})'
 
         return field_type
+
+    def render_datatype_bytes_sql(self, field_name, field, **kwargs):
+        """Why Postgres? Why?
+
+        https://www.postgresql.org/docs/current/datatype-binary.html
+            The SQL standard defines a different binary string type, called BLOB
+            or BINARY LARGE OBJECT. The input format is different from bytea, but
+            the provided functions and operators are mostly the same.
+        """
+        return 'BYTEA'
 
     def render_datatype_uuid_sql(self, field_name, field, **kwargs):
         # https://www.postgresql.org/docs/current/datatype-uuid.html
