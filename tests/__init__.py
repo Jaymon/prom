@@ -398,7 +398,7 @@ class EnvironTestCase(BaseTestCase):
 
     @classmethod
     def create_interface(cls):
-        return cls.create_dsn_interface(cls.interface.connection_config.dsn)
+        return cls.create_dsn_interface(cls.interface.config.dsn)
 
     def run(self, *args, **kwargs):
         for inter in self.create_environ_interfaces():

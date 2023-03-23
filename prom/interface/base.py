@@ -157,7 +157,7 @@ class InterfaceABC(LogMixin):
     """This is just a convenience abstract base class so child interfaces can easily
     see what methods they need to implement. They should extend Interface and then
     implement the methods in this class"""
-    def _connect(self, connection_config):
+    def _connect(self, config):
         raise NotImplementedError()
 
     def _configure_connection(self, **kwargs):
@@ -249,7 +249,7 @@ class Interface(InterfaceABC):
     connected = False
     """true if a connection has been established, false otherwise"""
 
-    connection_config = None
+    config = None
     """a config.Connection() instance"""
 
     InterfaceError = InterfaceError
@@ -260,15 +260,15 @@ class Interface(InterfaceABC):
     CloseError = CloseError
 
     @classmethod
-    def configure(cls, connection_config):
-        host = connection_config.host
+    def configure(cls, config):
+        host = config.host
         if host:
-            db = connection_config.database
-            connection_config.database = db.strip("/")
-        return connection_config
+            db = config.database
+            config.database = db.strip("/")
+        return config
 
-    def __init__(self, connection_config=None):
-        self.connection_config = connection_config
+    def __init__(self, config=None):
+        self.config = config
 
         # enables cleanup of open sockets even if the object isn't correctly garbage collected
         weakref.finalize(self, self.__del__)
@@ -278,7 +278,7 @@ class Interface(InterfaceABC):
         method for weakref.finalize"""
         self.close()
 
-    def connect(self, connection_config=None, *args, **kwargs):
+    def connect(self, config=None, *args, **kwargs):
         """
         connect to the interface
 
@@ -290,18 +290,18 @@ class Interface(InterfaceABC):
         if self.connected:
             return self.connected
 
-        if connection_config:
-            self.connection_config = connection_config
+        if config:
+            self.config = config
 
         try:
-            self._connect(self.connection_config)
+            self._connect(self.config)
             self.connected = True
 
         except Exception as e:
             self.connected = False
             self.raise_error(e)
 
-        self.log_debug(f"Connected {self.connection_config.interface_name}")
+        self.log_debug(f"Connected {self.config.interface_name}")
         self.configure_connection()
         return self.connected
 
@@ -334,14 +334,14 @@ class Interface(InterfaceABC):
 
         connection.interface = self
 
-        self.log_debug(f"Getting {self.connection_config.interface_name} connection 0x{id(connection):02x}")
+        self.log_debug(f"Getting {self.config.interface_name} connection 0x{id(connection):02x}")
         return connection
 
     def free_connection(self, connection):
         """When .connection is done with a connection it calls this method"""
         connection.interface = None
         if self.is_connected():
-            self.log_debug(f"Freeing {self.connection_config.interface_name} connection 0x{id(connection):02x}")
+            self.log_debug(f"Freeing {self.config.interface_name} connection 0x{id(connection):02x}")
             self._free_connection(connection)
 
     def is_connected(self):
@@ -353,7 +353,7 @@ class Interface(InterfaceABC):
 
         self._close()
         self.connected = False
-        self.log_debug(f"Closed Connection {self.connection_config.interface_name}")
+        self.log_debug(f"Closed Connection {self.config.interface_name}")
         return True
 
     def readonly(self, readonly=True, **kwargs):
@@ -363,10 +363,10 @@ class Interface(InterfaceABC):
             if the connection should be read/write
         """
         self.log_warning([
-            f"Setting interface {self.connection_config.interface_name}",
+            f"Setting interface {self.config.interface_name}",
             f"to readonly={readonly}",
         ])
-        self.connection_config.readonly = readonly
+        self.config.readonly = readonly
 
         if self.connected:
             kwargs.setdefault("prefix", "readonly")

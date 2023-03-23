@@ -109,7 +109,7 @@ class InterfaceTest(BaseTestInterface):
 
     def test_create_path(self):
         i = self.create_interface()
-        config = i.connection_config
+        config = i.config
 
         d = testdata.create_dir()
         config.host = os.path.join(d, "create_path", "db.sqlite")
@@ -208,7 +208,7 @@ class InterfaceTest(BaseTestInterface):
     def test_in_memory_db(self):
         i, s = self.get_table()
         i.close()
-        config = i.connection_config
+        config = i.config
         config.database = ":memory:"
 
         i.connect(config)

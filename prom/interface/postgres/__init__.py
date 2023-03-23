@@ -131,12 +131,12 @@ class PostgreSQL(SQLInterface):
     _connection_pool = None
 
     @classmethod
-    def configure(cls, connection_config):
-        connection_config = super().configure(connection_config)
-        port = connection_config.port
+    def configure(cls, config):
+        config = super().configure(config)
+        port = config.port
         if not port:
-            connection_config.port = 5432
-        return connection_config
+            config.port = 5432
+        return config
 
     def get_paramstyle(self):
         """
@@ -144,14 +144,14 @@ class PostgreSQL(SQLInterface):
         """
         return psycopg2.paramstyle
 
-    def _connect(self, connection_config):
+    def _connect(self, config):
         # set pool_key to None to use the pool as an actual pool, right now we've
         # turned it back into basically a sync interface since I don't need the gevent
         # stuff right now and I want to switch to using the native async interface
-        self.connection_config.options.setdefault("pool_key", "sync_interface")
-        minconn = int(connection_config.options.get('pool_minconn', 1))
-        maxconn = int(connection_config.options.get('pool_maxconn', 1))
-        pool_class_name = connection_config.options.get(
+        self.config.options.setdefault("pool_key", "sync_interface")
+        minconn = int(config.options.get('pool_minconn', 1))
+        maxconn = int(config.options.get('pool_maxconn', 1))
+        pool_class_name = config.options.get(
             'pool_class',
             'psycopg2.pool.SimpleConnectionPool'
         )
@@ -165,11 +165,11 @@ class PostgreSQL(SQLInterface):
         self._connection_pool = pool_class(
             minconn,
             maxconn,
-            dbname=connection_config.database,
-            user=connection_config.username,
-            password=connection_config.password,
-            host=connection_config.host,
-            port=connection_config.port,
+            dbname=config.database,
+            user=config.username,
+            password=config.password,
+            host=config.host,
+            port=config.port,
             cursor_factory=psycopg2.extras.RealDictCursor,
             #cursor_factory=LoggingCursor,
             connection_factory=PostgreSQLConnection,
@@ -177,20 +177,20 @@ class PostgreSQL(SQLInterface):
 
     def _get_connection(self):
         connection = self._connection_pool.getconn(
-            key=self.connection_config.options["pool_key"]
+            key=self.config.options["pool_key"]
         )
 
         connection_id = id(connection)
 
         # change the connection readonly status if they don't match
-        if bool(connection.readonly) != bool(self.connection_config.readonly):
+        if bool(connection.readonly) != bool(self.config.readonly):
             # https://www.psycopg.org/docs/connection.html#connection.readonly
             self.log_warning([
                 f"Changing connection {connection_id:02x}",
-                f"to readonly={self.connection_config.readonly}",
+                f"to readonly={self.config.readonly}",
                 f"from readonly={connection.readonly}",
             ])
-            connection.readonly = self.connection_config.readonly
+            connection.readonly = self.config.readonly
 
         return connection
 
@@ -202,7 +202,7 @@ class PostgreSQL(SQLInterface):
                     self.log_warning(f"Discarding pool connection {id(connection):02x} because it is closed")
                     self._connection_pool.putconn(
                         connection,
-                        key=self.connection_config.options["pool_key"],
+                        key=self.config.options["pool_key"],
                         close=True,
                     )
 
@@ -225,7 +225,7 @@ class PostgreSQL(SQLInterface):
 
     def _get_tables(self, table_name, **kwargs):
         query_str = 'SELECT tablename FROM pg_tables WHERE tableowner = %s'
-        query_args = [self.connection_config.username]
+        query_args = [self.config.username]
 
         if table_name:
             query_str += ' AND tablename = %s'

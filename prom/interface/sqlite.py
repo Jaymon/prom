@@ -206,11 +206,11 @@ class SQLite(SQLInterface):
     _connection = None
 
     @classmethod
-    def configure(cls, connection_config):
-        dsn = getattr(connection_config, 'dsn', '')
+    def configure(cls, config):
+        dsn = getattr(config, 'dsn', '')
         if dsn:
-            host = connection_config.host
-            db = connection_config.database
+            host = config.host
+            db = config.database
             if not host:
                 path = db
 
@@ -221,13 +221,13 @@ class SQLite(SQLInterface):
                 path = os.sep.join([host, db])
 
         else:
-            path = connection_config.database
+            path = config.database
 
         if not path:
-            raise ValueError("no sqlite db path found in connection_config")
+            raise ValueError("no sqlite db path found in config")
 
-        connection_config.path = path
-        return connection_config
+        config.path = path
+        return config
 
     def get_paramstyle(self):
         """
@@ -235,11 +235,11 @@ class SQLite(SQLInterface):
         """
         return sqlite3.paramstyle
 
-    def _connect(self, connection_config):
+    def _connect(self, config):
         """
         https://docs.python.org/3.11/library/sqlite3.html#sqlite3.connect
         """
-        path = connection_config.path
+        path = config.path
 
         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
         options = {
@@ -253,8 +253,8 @@ class SQLite(SQLInterface):
         }
         option_keys = list(options.keys()) + ['timeout', 'cached_statements']
         for k in option_keys:
-            if k in connection_config.options:
-                options[k] = connection_config.options[k]
+            if k in config.options:
+                options[k] = config.options[k]
 
         try:
             self._connection = sqlite3.connect(path, **options)
@@ -304,8 +304,8 @@ class SQLite(SQLInterface):
 
         # by default we can read/write, so only bother to run this query if we need to
         # make the connection actually readonly
-        if self.connection_config.readonly:
-            self._readonly(self.connection_config.readonly, **kwargs)
+        if self.config.readonly:
+            self._readonly(self.config.readonly, **kwargs)
 
     def _get_connection(self):
         return self._connection

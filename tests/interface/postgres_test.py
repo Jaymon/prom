@@ -143,7 +143,7 @@ class InterfaceTest(BaseTestInterface):
     def test_no_db_error(self):
         # we want to replace the db with a bogus db error
         i, s = self.get_table()
-        config = i.connection_config
+        config = i.config
         config.database = 'this_is_a_bogus_db_name'
         i = PostgreSQL(config)
         fields = {

@@ -19,7 +19,7 @@ class PromTest(TestCase):
     def test_configure(self):
         dsn = 'prom.interface.sqlite.SQLite:///path/to/db'
         i = prom.configure(dsn)
-        self.assertTrue(i.connection_config.path)
+        self.assertTrue(i.config.path)
 
         dsn = 'prom.interface.postgres.PostgreSQL://username:password@localhost/db'
         prom.configure(dsn)

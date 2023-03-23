@@ -30,7 +30,7 @@ def patch_all(maxconn=10, **kwargs):
     for name, interface in get_interfaces().items():
         if isinstance(interface, PostgreSQL):
             interface.close()
-            interface.connection_config.options.update(kwargs)
+            interface.config.options.update(kwargs)
 
 
 class ConnectionPool(AbstractConnectionPool):
