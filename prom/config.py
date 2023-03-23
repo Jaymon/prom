@@ -559,9 +559,9 @@ class Field(object, metaclass=FieldMeta):
             return int(val)
 
         @bar.jsonabler
-        def bar(self, val):
-            # convert val to something json safe
-            return val
+        def bar(self, name, val):
+            # convert val to something json safe, you can also change the name
+            return name, val
 
     NOTE -- all these get/set/delete methods are different than traditional python getters
     and setters because they always need to return a value and they always take in the
@@ -602,9 +602,9 @@ class Field(object, metaclass=FieldMeta):
                 print("iquery")
                 return v
 
-            def jsonable(self, orm, v):
+            def jsonable(self, orm, field_name, v):
                 print("jsonable")
-                return v
+                return field_name, v
 
     https://docs.python.org/2/howto/descriptor.html
     """
@@ -730,6 +730,8 @@ class Field(object, metaclass=FieldMeta):
             - ignore_case: bool -- True to ignore case if this field is used in indexes
             - default: mixed -- defaults to None, can be anything the db can support
             - jsonable_name: str, the name of the field when Orm.jsonable() is called
+            - empty: bool, (default is True), set to False if the value cannot be
+                empty when being sent to the db (empty is None, "", 0, False)
         :param **field_options_kwargs: dict, will be combined with field_options
         """
         # we aren't guaranteed to have this field's name when the descriptor is
@@ -754,17 +756,11 @@ class Field(object, metaclass=FieldMeta):
         if choices or not self.choices:
             self.choices = choices
 
-        # we pop this off so we don't accidently overwrite the jsonable_name method
-        jsonable_name = field_options.pop("jsonable_name", "")
-
         for k in list(field_options.keys()):
             if hasattr(self, k):
                 setattr(self, k, field_options.pop(k))
 
         self.options = field_options
-        if jsonable_name:
-            self.options["jsonable_name"] = jsonable_name
-
         self.required = field_required or self.is_pk()
 
         self.set_type(field_type)
@@ -1018,7 +1014,7 @@ class Field(object, metaclass=FieldMeta):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
-        #pout.v("fget {}".format(self.name))
+        logger.debug(f"fget {orm.__class__.__name__}.{self.name}")
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
             val = self.schema.pk.fget(orm, val)
@@ -1040,7 +1036,7 @@ class Field(object, metaclass=FieldMeta):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
-        #pout.v("iget {}".format(self.name))
+        logger.debug(f"iget {orm.__class__.__name__}.{self.name}")
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
             val = self.schema.pk.iget(orm, val)
@@ -1069,7 +1065,7 @@ class Field(object, metaclass=FieldMeta):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
-        #pout.v("fset {}".format(self.name))
+        logger.debug(f"fset {orm.__class__.__name__}.{self.name}")
         if val is not None and self.choices:
             if val not in self.choices:
                 raise ValueError("Value {} not in {} value choices".format(val, self.name))
@@ -1088,13 +1084,16 @@ class Field(object, metaclass=FieldMeta):
     def iset(self, orm, val):
         """Called anytime the field is being fetched to send to the interface
 
-        think of this as when the interface is going to get the field value
+        think of this as when the interface is going to get the field value or
+        when the field is being sent to the db. Alot of the value checks like
+        required and empty are in Orm.to_interface(), this just returns the value
+        and nothing else
 
         :param orm: Orm
-        :param val: mixed, the current value of the field
-        :returns: mixed
+        :param val: Any, the current value of the field
+        :returns: Any
         """
-        #pout.v("iset {}".format(self.name))
+        logger.debug(f"iset {orm.__class__.__name__}.{self.name}")
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
             val = self.schema.pk.iset(orm, val)
@@ -1111,6 +1110,7 @@ class Field(object, metaclass=FieldMeta):
         return self
 
     def fdel(self, orm, val):
+        logger.debug(f"fdel {orm.__class__.__name__}.{self.name}")
         orm.__dict__.pop(self.orm_interface_hash, None)
         return None
 
@@ -1126,6 +1126,7 @@ class Field(object, metaclass=FieldMeta):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
+        logger.debug(f"idel {orm.__class__.__name__}.{self.name}")
         orm.__dict__.pop(self.orm_interface_hash, None)
         return None if self.is_pk() else val
 
@@ -1192,7 +1193,17 @@ class Field(object, metaclass=FieldMeta):
         self.iquery = v
         return self
 
-    def jsonable(self, orm, val):
+    def jsonable(self, orm, name, val):
+        """This is called in Orm.jsonable() to set the field name nad value
+
+        :param orm: Orm, the instance currently calling jsonable
+        :param name: str, the Orm field name that will be used if the jsonable_name
+            option isn't set
+        :param val: Any, the field's value
+        :returns: tuple[str, Any], (name, val) where the name will be the jsonable
+            field name and the value will be the jsonable value
+        """
+        logger.debug(f"jsonable {orm.__class__.__name__}.{self.name} -> {name}")
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
             val = self.schema.pk.jsonable(orm, val)
@@ -1206,16 +1217,7 @@ class Field(object, metaclass=FieldMeta):
                 if isinstance(val, (datetime.datetime, datetime.date)):
                     val = Datetime(val).isoformat()
 
-        return val
-
-    def jsonable_name(self, orm, name):
-        """This is called in Orm.jsonable() to set the field name
-
-        :param orm: Orm, the instance currently calling jsonable
-        :param name: str, the Orm field name that will be used if the jsonable_name
-            option isn't set
-        """
-        return self.options.get("jsonable_name", name)
+        return self.options.get("jsonable_name", name), val
 
     def jsonabler(self, v):
         """Decorator for the method called for a field when an Orm's .jsonable method
@@ -1280,6 +1282,7 @@ class Field(object, metaclass=FieldMeta):
         """return the raw value that this property is holding internally for the orm instance"""
         try:
             val = orm.__dict__[self.orm_field_name]
+
         except KeyError as e:
             #raise AttributeError(str(e))
             val = None

@@ -406,6 +406,22 @@ class OrmTest(EnvironTestCase):
         o.update()
         self.assertEqual(100, o.foo)
 
+    def test_field_iset_empty(self):
+        orm_class = self.get_orm_class(
+            foo=Field(str, False, empty=False),
+            bar=Field(int),
+        )
+
+        # setting foo to empty triggers the empty check
+        o = orm_class(foo="", bar=1)
+        with self.assertRaises(ValueError):
+            o.insert()
+
+        # if foo isn't modified it doesn't trigger the empty check
+        o = orm_class(bar=2)
+        pk = o.insert()
+        self.assertLess(0, pk)
+
     def test_field_iget(self):
         """make sure a field with an iget method will be called at the correct time"""
         orm_class = self.get_orm_class(

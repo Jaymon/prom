@@ -342,8 +342,8 @@ class Orm(object):
     def to_interface(self):
         """Get all the fields that need to be saved
 
-        :param is_udpate: bool, True if update query, False if insert
-        :returns: dict, key is field_name and val is the field value to be saved
+        :returns: dict[str, Any], key is field_name and val is the field value
+            to be saved
         """
         fields = {}
         schema = self.schema
@@ -352,6 +352,9 @@ class Orm(object):
 
             is_modified = field.modified(self, v)
             if is_modified:
+                if not field.options.get("empty", True) and not v:
+                    raise ValueError(f"{self.__class__.__name__}.{k} cannot be empty")
+
                 fields[k] = v
 
             if v is None and field.is_required():
@@ -361,7 +364,7 @@ class Orm(object):
 
                 else:
                     if self.is_insert() or is_modified:
-                        raise KeyError("Missing required field {}".format(k))
+                        raise KeyError(f"Missing required field {self.__class__.__name__}.{k}")
 
         return fields
 
@@ -695,9 +698,11 @@ class Orm(object):
         """
         d = {}
         for field_name, field in self.schema.fields.items():
-            field_val = getattr(self, field_name, None)
-            field_val = field.jsonable(self, field_val)
-            field_name = field.jsonable_name(self, field_name)
+            field_name, field_val = field.jsonable(
+                self,
+                field_name,
+                getattr(self, field_name, None)
+            )
             if field_val is not None:
                 d[field_name] = field_val
 
