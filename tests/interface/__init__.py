@@ -230,6 +230,18 @@ class BaseTestInterface(BaseTestCase):
         o2 = orm_class.query.lt_bar(dt).one()
         self.assertEqual(o.bar, o2.bar)
 
+    def test_field_datetime_string(self):
+        """
+        https://github.com/Jaymon/prom/issues/84
+        """
+        datestr = "2019-10-08 20:18:59.566Z"
+        orm_class = self.get_orm_class(bar=Field(datetime.datetime))
+        o = orm_class(bar=datestr)
+        o.save()
+
+        o2 = o.query.eq_pk(o.pk).one()
+        self.assertEqual(Datetime(datestr), o2.bar)
+
     def test_field_datetime_iso8601(self):
         """make sure ISO 8601 formatted datestamps can be added to the db
 
