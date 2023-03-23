@@ -8,11 +8,12 @@ from datatypes import (
     Pool,
     EnglishWord,
     NamingConvention,
+    classproperty
 )
 
 # first party
 from .query import Query, Iterator
-from . import decorators, utils
+from . import utils
 from .interface import get_interface
 from .config import (
     Schema,
@@ -83,14 +84,14 @@ class Orm(object):
     _created = AutoDatetime(created=True, updated=False, aliases=["created"])
     _updated = AutoDatetime(created=False, updated=True, aliases=["updated"])
 
-    @decorators.classproperty
+    @classproperty
     def table_name(cls):
         return NamingConvention("{}_{}".format(
             cls.__module__.replace(".", "_"),
             cls.__name__
         )).snakecase()
 
-    @decorators.classproperty
+    @classproperty
     def model_name(cls):
         """Returns the name for this orm
 
@@ -105,7 +106,7 @@ class Orm(object):
         """
         return NamingConvention(cls.__name__).snakecase()
 
-    @decorators.classproperty
+    @classproperty
     def models_name(cls):
         """Returns the plural name for this orm
 
@@ -114,12 +115,12 @@ class Orm(object):
         """
         return EnglishWord(cls.model_name).plural()
 
-    @decorators.classproperty
+    @classproperty
     def schema(cls):
         """the Schema() instance that this class will derive all its db info from"""
         return Schema.get_instance(cls)
 
-    @decorators.classproperty
+    @classproperty
     def interface(cls):
         """
         return an Interface instance that can be used to access the db
@@ -128,7 +129,7 @@ class Orm(object):
         """
         return get_interface(cls.connection_name)
 
-    @decorators.classproperty
+    @classproperty
     def query(cls):
         """return a new Query instance ready to make a db call using the child class
 

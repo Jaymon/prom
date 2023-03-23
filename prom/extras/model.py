@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, division, print_function, absolute_import
 
-from .. import decorators
+from datatypes import classproperty
+
 from ..model import Orm
 from ..config import (
     Field,
@@ -21,7 +22,7 @@ class MagicOrm(Orm):
         """
         return self.fields
 
-    @decorators.classproperty
+    @classproperty
     def pk_name(cls):
         """return the preferred primary key name for the Orm
 

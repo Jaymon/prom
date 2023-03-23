@@ -10,7 +10,6 @@ from .config import (
     Index
 )
 from .query import Query, Iterator
-from . import decorators
 from .model import Orm
 from .interface import (
     get_interface,

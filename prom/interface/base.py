@@ -25,7 +25,6 @@ from ..exception import (
     CloseError,
 )
 
-from ..decorators import reconnecting
 from ..compat import *
 from ..utils import make_list
 

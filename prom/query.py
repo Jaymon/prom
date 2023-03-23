@@ -17,7 +17,6 @@ import re
 from datatypes.collections import ListIterator
 from datatypes import property as cachedproperty
 
-from . import decorators
 from .utils import make_list, get_objects, make_dict, make_hash
 from .interface import get_interfaces
 from .compat import *
