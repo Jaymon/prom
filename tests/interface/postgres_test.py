@@ -27,11 +27,90 @@ except ImportError:
 import prom
 import prom.interface
 
-from . import BaseTestInterface, testdata
+from . import _BaseTestInterface, _BaseTestConfig, testdata
+
+
+@skipIf(PostgreSQL is None, "Skipping Postgres config because dependencies not installed")
+class ConfigTest(_BaseTestConfig):
+    def test_configure_postgres(self):
+        dsn = 'prom.interface.postgres.PostgreSQL://username:password@localhost/db'
+        prom.configure(dsn)
+        i = prom.get_interface()
+        self.assertTrue(i is not None)
+
+        dsn += '#postgres'
+        prom.configure(dsn)
+        i = prom.get_interface('postgres')
+        self.assertTrue(i is not None)
+
+        dsn = 'prom.interface.postgres.BogusSdjaksdfInterface://host/dbname#bogus2'
+        with self.assertRaises(AttributeError):
+            prom.configure(dsn)
+
+    def test_dsn(self):
+        tests = [
+            (
+                "prom.interface.postgres.PostgreSQL://username:password@localhost:5000/database?option=1&var=2#fragment",
+                {
+                    'username': "username",
+                    'interface_name': "prom.interface.postgres.PostgreSQL",
+                    'database': "database",
+                    'host': "localhost",
+                    'port': 5000,
+                    'password': "password",
+                    'name': 'fragment',
+                    'options': {
+                        'var': 2,
+                        'option': 1
+                    }
+                }
+            ),
+            (
+                "prom.interface.postgres.PostgreSQL://localhost:5/database2",
+                {
+                    'interface_name': "prom.interface.postgres.PostgreSQL",
+                    'database': "database2",
+                    'host': "localhost",
+                    'port': 5,
+                }
+            ),
+            (
+                "prom.interface.postgres.PostgreSQL://localhost/db3",
+                {
+                    'interface_name': "prom.interface.postgres.PostgreSQL",
+                    'database': "db3",
+                    'host': "localhost",
+                }
+            ),
+            (
+                "prom.interface.postgres.PostgreSQL://localhost/db3?var1=1&var2=2&var3=true&var4=False#name",
+                {
+                    'interface_name': "prom.interface.postgres.PostgreSQL",
+                    'database': "db3",
+                    'host': "localhost",
+                    'name': "name",
+                    'options': {
+                        'var1': 1,
+                        'var2': 2,
+                        'var3': True,
+                        'var4': False
+                    }
+                }
+            ),
+        ]
+
+        for t in tests:
+            c = DsnConnection(t[0])
+            for attr, val in t[1].items():
+                self.assertEqual(
+                    val,
+                    getattr(c, attr),
+                    t[0],
+                )
 
 
 @skipIf(PostgreSQL is None, "Skipping Postgres test because dependencies not installed")
-class InterfaceTest(BaseTestInterface):
+class InterfaceTest(_BaseTestInterface):
     @classmethod
     def create_interface(cls):
         return cls.find_interface(PostgreSQL)
@@ -245,18 +324,4 @@ class XInterfaceGeventTest(InterfaceTest):
         q = Query()
         l = i.get(s, q)
         self.assertEqual([], l)
-
-
-# https://docs.python.org/2/library/unittest.html#load-tests-protocol
-# def load_tests(loader, tests, pattern):
-#     suite = TestSuite()
-#     for tc in [InterfacePostgresTest, InterfacePGBouncerTest, XInterfacePostgresGeventTest]:
-#         suite.addTests(loader.loadTestsFromTestCase(tc))
-#     return suite
-
-# not sure I'm a huge fan of this solution to remove common parent from testing queue
-# http://stackoverflow.com/questions/1323455/python-unit-test-with-base-and-sub-class
-# this works better than the load_tests method above because if I add a new TestCase I don't
-# have to add it to load_tests specifically
-del(BaseTestInterface)
 

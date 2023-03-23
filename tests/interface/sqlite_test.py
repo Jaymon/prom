@@ -3,17 +3,149 @@ from __future__ import unicode_literals, division, print_function, absolute_impo
 import os
 import datetime
 
+import prom
 from prom.interface.sqlite import SQLite
-
 from prom import query, InterfaceError
 from prom.interface.sqlite import SQLite, DatetimeType
 from prom.interface import configure
 from prom.model import Orm
-from prom.config import Field
+from prom.config import Field, DsnConnection
 from prom.compat import *
 from prom.query import Query
 
-from . import BaseTestInterface, BaseTestCase, testdata
+from . import _BaseTestInterface, _BaseTestConfig, BaseTestCase, testdata
+
+
+class ConfigTest(_BaseTestConfig):
+    def test_configure_sqlite(self):
+        dsn = 'prom.interface.sqlite.SQLite:///path/to/db'
+        i = prom.configure(dsn)
+        self.assertTrue(i.config.path)
+
+    def test_dsn(self):
+        tests = [
+            (
+                "prom.interface.sqlite.SQLite://../this/is/the/path",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': '../this/is/the/path'
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite://./this/is/the/path",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': './this/is/the/path'
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///this/is/the/path",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': '/this/is/the/path'
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite://:memory:#fragment_name",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': ":memory:",
+                    'name': 'fragment_name'
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite://:memory:?option=1&var=2#fragment_name",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': ":memory:",
+                    'name': 'fragment_name',
+                    'options': {
+                        'var': 2,
+                        'option': 1
+                    }
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite://:memory:",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': ":memory:",
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///db4",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/db4",
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///relative/path/to/db/4.sqlite",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/relative/path/to/db/4.sqlite",
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/abs/path/to/db/4.sqlite",
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/abs/path/to/db/4.sqlite",
+                    'options': {
+                        'var1': 1,
+                        'var2': 2
+                    }
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2#name",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/abs/path/to/db/4.sqlite",
+                    'name': "name",
+                }
+            ),
+            (
+                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2#name",
+                {
+                    'interface_name': "prom.interface.sqlite.SQLite",
+                    'host': None,
+                    'database': "/abs/path/to/db/4.sqlite",
+                    'name': "name",
+                    'options': {
+                        'var1': 1,
+                        'var2': 2
+                    }
+                }
+            ),
+        ]
+
+        for t in tests:
+            c = DsnConnection(t[0])
+            for attr, val in t[1].items():
+                self.assertEqual(
+                    val,
+                    getattr(c, attr),
+                    t[0],
+                )
 
 
 class DatetimeTypeTest(BaseTestCase):
@@ -54,7 +186,7 @@ class DatetimeTypeTest(BaseTestCase):
         self.assertEqual("2020-03-25T19:34:05.057035Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
 
 
-class InterfaceTest(BaseTestInterface):
+class InterfaceTest(_BaseTestInterface):
     @classmethod
     def create_interface(cls):
         return cls.find_interface(SQLite)
@@ -216,9 +348,4 @@ class InterfaceTest(BaseTestInterface):
 
         _id = self.insert(i, s, 1)[0]
         self.assertTrue(_id)
-
-
-# not sure I'm a huge fan of this solution to remove common parent from testing queue
-# http://stackoverflow.com/questions/1323455/python-unit-test-with-base-and-sub-class
-del(BaseTestInterface)
 

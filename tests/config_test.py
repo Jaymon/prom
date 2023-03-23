@@ -150,11 +150,15 @@ class SchemaTest(BaseTestCase):
 
 
 class DsnConnectionTest(BaseTestCase):
+    """Any general tests should go here and always use sqlite because that's
+    installed with python. If you have SQLite or PostgreSQL specific connection
+    config tests those should go into the appropriate insterface ConfigTest
+    """
     def test_environ(self):
-        os.environ['PROM_DSN'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i0"
-        os.environ['PROM_DSN_1'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i1"
-        os.environ['PROM_DSN_2'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i2"
-        os.environ['PROM_DSN_4'] = "prom.interface.postgres.PostgreSQL://localhost:5000/database#i4"
+        os.environ['PROM_DSN'] = "prom.interface.sqlite.SQLite://:memory:#i0"
+        os.environ['PROM_DSN_1'] = "SQLite://:memory:#i1"
+        os.environ['PROM_DSN_2'] = "sqlite://:memory:#i2"
+        os.environ['PROM_DSN_4'] = "sqlite://:memory:#i4"
         prom.configure_environ()
         self.assertTrue('i0' in prom.get_interfaces())
         self.assertTrue('i1' in prom.get_interfaces())
@@ -178,174 +182,18 @@ class DsnConnectionTest(BaseTestCase):
         c = DsnConnection(dsn)
         self.assertTrue(c.readonly)
 
-    def test_dsn(self):
-        tests = [
-            (
-                "prom.interface.postgres.PostgreSQL://username:password@localhost:5000/database?option=1&var=2#fragment",
-                {
-                    'username': "username",
-                    'interface_name': "prom.interface.postgres.PostgreSQL",
-                    'database': "database",
-                    'host': "localhost",
-                    'port': 5000,
-                    'password': "password",
-                    'name': 'fragment',
-                    'options': {
-                        'var': 2,
-                        'option': 1
-                    }
-                }
-            ),
-            (
-                "prom.interface.postgres.PostgreSQL://localhost:5/database2",
-                {
-                    'interface_name': "prom.interface.postgres.PostgreSQL",
-                    'database': "database2",
-                    'host': "localhost",
-                    'port': 5,
-                }
-            ),
-            (
-                "prom.interface.postgres.PostgreSQL://localhost/db3",
-                {
-                    'interface_name': "prom.interface.postgres.PostgreSQL",
-                    'database': "db3",
-                    'host': "localhost",
-                }
-            ),
-            (
-                "prom.interface.postgres.PostgreSQL://localhost/db3?var1=1&var2=2&var3=true&var4=False#name",
-                {
-                    'interface_name': "prom.interface.postgres.PostgreSQL",
-                    'database': "db3",
-                    'host': "localhost",
-                    'name': "name",
-                    'options': {
-                        'var1': 1,
-                        'var2': 2,
-                        'var3': True,
-                        'var4': False
-                    }
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite://../this/is/the/path",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': '../this/is/the/path'
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite://./this/is/the/path",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': './this/is/the/path'
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite:///this/is/the/path",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': '/this/is/the/path'
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite://:memory:#fragment_name",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': ":memory:",
-                    'name': 'fragment_name'
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite://:memory:?option=1&var=2#fragment_name",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': ":memory:",
-                    'name': 'fragment_name',
-                    'options': {
-                        'var': 2,
-                        'option': 1
-                    }
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite://:memory:",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': ":memory:",
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite:///db4",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': "/db4",
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite:///relative/path/to/db/4.sqlite",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': "/relative/path/to/db/4.sqlite",
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': "/abs/path/to/db/4.sqlite",
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': "/abs/path/to/db/4.sqlite",
-                    'options': {
-                        'var1': 1,
-                        'var2': 2
-                    }
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2#name",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': "/abs/path/to/db/4.sqlite",
-                    'name': "name",
-                }
-            ),
-            (
-                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2#name",
-                {
-                    'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': "/abs/path/to/db/4.sqlite",
-                    'name': "name",
-                    'options': {
-                        'var1': 1,
-                        'var2': 2
-                    }
-                }
-            ),
-        ]
+    def test_bad_classpath(self):
+        dsn = 'bogus.earaskdfaksfk.Interface://host/dbname#bogus2'
+        with self.assertRaises(ImportError):
+            DsnConnection(dsn)
 
-        for t in tests:
-            c = DsnConnection(t[0])
-            for attr, val in t[1].items():
-                self.assertEqual(val, getattr(c, attr))
+        dsn = 'bogus.earaskdfaksfk.Interface://host/dbname'
+        with self.assertRaises(ImportError):
+            DsnConnection(dsn)
+
+        dsn = 'bogus.earaskdfaksfk.Interface://host/dbname#bogus1'
+        with self.assertRaises(ImportError):
+            DsnConnection(dsn)
 
 
 class ConnectionTest(BaseTestCase):
@@ -452,8 +300,8 @@ class FieldTest(EnvironTestCase):
         for field_type in pickle_types:
             f = Field(field_type)
             self.assertEqual(field_type, f.original_type)
-            self.assertEqual(str, f.interface_type)
-            self.assertEqual(str, f.type)
+            self.assertEqual(bytes, f.interface_type)
+            self.assertEqual(bytes, f.type)
             self.assertIsNone(f.schema)
             self.assertTrue(f.is_serialized())
 

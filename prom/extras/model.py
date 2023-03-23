@@ -66,8 +66,10 @@ class MagicOrm(Orm):
 
     def jsonable(self):
         """Switches out _id for pk_name"""
-        d = super().jsonable()
-        d[self.pk_name] = self.pk
-        d.pop("_id", None)
-        return d
+        pk_fields = self.schema.pk_fields
+        if len(pk_fields) == 1:
+            for pk_field in pk_fields.values():
+                pk_field.options.setdefault("jsonable_name", self.pk_name)
+
+        return super().jsonable()
 

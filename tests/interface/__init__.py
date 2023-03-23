@@ -18,7 +18,19 @@ import prom
 from .. import BaseTestCase, testdata
 
 
-class BaseTestInterface(BaseTestCase):
+class _BaseTestConfig(BaseTestCase):
+    """These tests should be for testing config.Connection classes that are
+    specific to a certain interface. Any common config.Connection tests should
+    go into the appropriate config_test class
+    """
+    def setUp(self):
+        prom.interface.interfaces = {}
+
+    def tearDown(self):
+        prom.interface.interfaces = {}
+
+
+class _BaseTestInterface(BaseTestCase):
     @classmethod
     def create_interface(cls):
         raise NotImplementedError()

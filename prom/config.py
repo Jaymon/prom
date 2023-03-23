@@ -9,7 +9,6 @@ import json
 import logging
 import uuid
 
-
 import dsnparse
 from datatypes import (
     Datetime,
@@ -214,6 +213,13 @@ class Schema(object):
     def magic_fields(self):
         """the magic fields for the schema, magic fields start with an underscore"""
         return {f:v for f, v in self.fields.items() if f.startswith('_')}
+
+    @property
+    def pk_fields(self):
+        pk_fields = {}
+        for pk_name in self.pk_names:
+            pk_fields[pk_name] = self.fields[pk_name]
+        return pk_fields
 
     @property
     def pk_name(self):
@@ -711,18 +717,19 @@ class Field(object, metaclass=FieldMeta):
         """
         create a field
 
-        :param field_type: type, the python type of the field, so for a string you would pass str, integer: int,
-            boolean: bool, float: float, big int: long
+        :param field_type: type, the python type of the field, so for a string
+            you would pass str, integer: int, boolean: bool, float: float
         :param field_required: boolean, true if this field has to be there to insert
         :param field_options: dict, everything else in key: val notation. Current options:
-            size -- int -- the size you want the string to be, or the int to be
-            min_size -- int -- the minimum size
-            max_size -- int -- if you want a varchar, set this
-            unique -- boolean -- True to set a unique index on this field, this is just for convenience and is
+            - size: int -- the size you want the string to be, or the int to be
+            - min_size: int -- the minimum size
+            - max_size: int -- if you want a varchar, set this
+            - unique: bool -- True to set a unique index on this field, this is just for convenience and is
                 equal to self.set_index(field_name, [field_name], unique=True). this is a convenience option
                 to set a unique index on the field without having to add a separate index statement
-            ignore_case -- boolean -- True to ignore case if this field is used in indexes
-            default -- mixed -- defaults to None, can be anything the db can support
+            - ignore_case: bool -- True to ignore case if this field is used in indexes
+            - default: mixed -- defaults to None, can be anything the db can support
+            - jsonable_name: str, the name of the field when Orm.jsonable() is called
         :param **field_options_kwargs: dict, will be combined with field_options
         """
         # we aren't guaranteed to have this field's name when the descriptor is
@@ -747,11 +754,17 @@ class Field(object, metaclass=FieldMeta):
         if choices or not self.choices:
             self.choices = choices
 
+        # we pop this off so we don't accidently overwrite the jsonable_name method
+        jsonable_name = field_options.pop("jsonable_name", "")
+
         for k in list(field_options.keys()):
             if hasattr(self, k):
                 setattr(self, k, field_options.pop(k))
 
         self.options = field_options
+        if jsonable_name:
+            self.options["jsonable_name"] = jsonable_name
+
         self.required = field_required or self.is_pk()
 
         self.set_type(field_type)
@@ -1194,6 +1207,15 @@ class Field(object, metaclass=FieldMeta):
                     val = Datetime(val).isoformat()
 
         return val
+
+    def jsonable_name(self, orm, name):
+        """This is called in Orm.jsonable() to set the field name
+
+        :param orm: Orm, the instance currently calling jsonable
+        :param name: str, the Orm field name that will be used if the jsonable_name
+            option isn't set
+        """
+        return self.options.get("jsonable_name", name)
 
     def jsonabler(self, v):
         """Decorator for the method called for a field when an Orm's .jsonable method

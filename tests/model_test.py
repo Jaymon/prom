@@ -4,9 +4,9 @@ import pickle
 import json
 import datetime
 
-import testdata
+from datatypes import Datetime
 
-from . import BaseTestCase, EnvironTestCase
+from . import BaseTestCase, EnvironTestCase, testdata
 from prom.compat import *
 from prom.model import Orm, OrmPool
 from prom.config import Field, Index
@@ -242,7 +242,7 @@ class OrmTest(EnvironTestCase):
     def test_created_updated(self):
         orm_class = self.get_orm_class()
 
-        now = datetime.datetime.utcnow()
+        now = Datetime()
 
         o = orm_class(foo=1, bar="1")
         self.assertIsNone(o._created)
@@ -619,7 +619,6 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(2, count)
 
     def test_creation(self):
-
         class COrm(Orm):
             foo = Field(int)
             bar = Field(str)
@@ -673,6 +672,16 @@ class OrmTest(EnvironTestCase):
         d = t.jsonable()
         self.assertEqual(1, d['foo'])
         self.assertFalse("bar" in d)
+
+    def test_jsonable_name(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, jsonable_name="bar")
+        )
+
+        o = orm_class(foo=1)
+        d = o.jsonable()
+        self.assertFalse("foo" in d)
+        self.assertTrue("bar" in d)
 
     def test_modify_1(self):
         class TM(Orm):
