@@ -711,6 +711,17 @@ class FieldTest(EnvironTestCase):
         r = f.size_info()
         self.assertEqual(78, r["precision"])
 
+    def test_regex(self):
+        orm_class = self.get_orm_class(
+            foo=Field(str, True, regex=r"^[abcd]+$")
+        )
+
+        with self.assertRaises(ValueError):
+            orm_class(foo="aazabbbbbddddd")
+
+        o = orm_class(foo="aaaabbbbbddddd")
+        self.assertTrue(o.foo)
+
 
 class SerializedFieldTest(EnvironTestCase):
     def get_orm(self, field_type=dict, default=None):

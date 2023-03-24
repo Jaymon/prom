@@ -706,6 +706,9 @@ class Field(object, metaclass=FieldMeta):
 
     @property
     def interface_options(self):
+        """When the interface is doing stuff with the field it might call this
+        method to make sure it has all the options it needs to use the field
+        """
         if self.is_ref():
             options = self.schema.pk.options
             options.update(self.options)
@@ -730,19 +733,16 @@ class Field(object, metaclass=FieldMeta):
             - ignore_case: bool -- True to ignore case if this field is used in indexes
             - default: mixed -- defaults to None, can be anything the db can support
             - jsonable_name: str, the name of the field when Orm.jsonable() is called
+            - jsonable_field: bool, if False then this field won't be part of
+                Orm.jsonable() output
+            - jsonable: str|callable|bool,
+                - str, will be set to jsonable_name
+                - callable, will be used as self.jsonable
+                - bool, will set jsonable_field to False
             - empty: bool, (default is True), set to False if the value cannot be
                 empty when being sent to the db (empty is None, "", 0, False)
         :param **field_options_kwargs: dict, will be combined with field_options
         """
-        # we aren't guaranteed to have this field's name when the descriptor is
-        # created, so this will be the field name this descriptor will use to 
-        # set the value onto the orm
-        #self.orm_field_name = "_instance_{}_val".format(id(self))
-
-        # we keep a hash of the field's value when it was pulled from the
-        # interface (see .iget) so we know if the field has been modified
-        #self.orm_interface_hash = "_interface_{}_hash".format(id(self))
-
         field_options = utils.make_dict(field_options, field_options_kwargs)
 
         d = self.get_size(field_options)
@@ -755,6 +755,17 @@ class Field(object, metaclass=FieldMeta):
         choices = field_options.pop("choices", set())
         if choices or not self.choices:
             self.choices = choices
+
+        if jsonable := field_options.pop("jsonable", None):
+            if isinstance(jsonable, str):
+                field_options.setdefault("jsonable_name", jsonable)
+
+            elif isinstance(jsonable, bool):
+                field_options.setdefault("jsonable_field", jsonable)
+
+            else:
+                field_options["jsonable"] = jsonable
+
 
         for k in list(field_options.keys()):
             if hasattr(self, k):
@@ -1066,9 +1077,13 @@ class Field(object, metaclass=FieldMeta):
         :returns: mixed
         """
         logger.debug(f"fset {orm.__class__.__name__}.{self.name}")
-        if val is not None and self.choices:
-            if val not in self.choices:
+        if val is not None:
+            if self.choices and val not in self.choices:
                 raise ValueError("Value {} not in {} value choices".format(val, self.name))
+
+            if regex := self.options.get("regex", ""):
+                if not re.search(regex, val):
+                    raise ValueError(f"regex failed for {orm.__class__.__name__}.{self.name}")
 
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
@@ -1203,21 +1218,27 @@ class Field(object, metaclass=FieldMeta):
         :returns: tuple[str, Any], (name, val) where the name will be the jsonable
             field name and the value will be the jsonable value
         """
-        logger.debug(f"jsonable {orm.__class__.__name__}.{self.name} -> {name}")
-        if self.is_ref():
-            # Foreign Keys get passed through their Field methods
-            val = self.schema.pk.jsonable(orm, val)
+        if self.options.get("jsonable_field", True):
+            logger.debug(f"jsonable {orm.__class__.__name__}.{self.name} -> {name}")
+
+            if self.is_ref():
+                # Foreign Keys get passed through their Field methods
+                val = self.schema.pk.jsonable(orm, val)
+
+            else:
+                if val is None:
+                    val = self.fdefault(orm, val)
+
+                if val is not None:
+                    format_str = ""
+                    if isinstance(val, (datetime.datetime, datetime.date)):
+                        val = Datetime(val).isoformat()
+
+            return self.options.get("jsonable_name", name), val
 
         else:
-            if val is None:
-                val = self.fdefault(orm, val)
-
-            if val is not None:
-                format_str = ""
-                if isinstance(val, (datetime.datetime, datetime.date)):
-                    val = Datetime(val).isoformat()
-
-        return self.options.get("jsonable_name", name), val
+            logger.debug(f"jsonable ignored for {orm.__class__.__name__}.{self.name}")
+            return "", None
 
     def jsonabler(self, v):
         """Decorator for the method called for a field when an Orm's .jsonable method

@@ -699,6 +699,15 @@ class OrmTest(EnvironTestCase):
         self.assertFalse("foo" in d)
         self.assertTrue("bar" in d)
 
+    def test_jsonable_field(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, jsonable_field=False)
+        )
+
+        o = orm_class(foo=1)
+        d = o.jsonable()
+        self.assertFalse("foo" in d)
+
     def test_modify_1(self):
         class TM(Orm):
             table_name = self.get_table_name()
