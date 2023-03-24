@@ -360,14 +360,14 @@ class PostgreSQL(SQLInterface):
 
         return ret
 
-    def _normalize_field_SQL(self, schema, field_name, symbol):
-        format_field_name = self._normalize_name(field_name)
-        format_val_str = self.PLACEHOLDER
-
-        if 'LIKE' in symbol:
-            format_field_name += '::text'
-
-        return format_field_name, format_val_str
+#     def _normalize_field_SQL(self, schema, field_name, symbol):
+#         format_field_name = self._normalize_name(field_name)
+#         format_val_str = self.PLACEHOLDER
+# 
+#         if 'LIKE' in symbol:
+#             format_field_name += '::text'
+# 
+#         return format_field_name, format_val_str
 
     def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
         # this solution is based off:

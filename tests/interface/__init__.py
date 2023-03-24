@@ -389,31 +389,31 @@ class _BaseTestInterface(BaseTestCase):
         pk = i.insert(s, d)
         self.assertGreater(pk, 0)
 
-    def test_get_sql(self):
+    def test_render_sql(self):
         i = self.get_interface()
         s = self.get_schema()
         q = query.Query()
         q.in__id(range(1, 5))
-        sql, sql_args = i.get_SQL(s, q)
+        sql, sql_args = i.render_sql(s, q)
         self.assertTrue('_id' in sql)
         self.assertEqual(4, len(sql_args))
 
         q.gt_foo(5)
 
-        sql, sql_args = i.get_SQL(s, q)
+        sql, sql_args = i.render_sql(s, q)
         self.assertTrue('foo' in sql)
         self.assertTrue('AND' in sql)
         self.assertEqual(5, len(sql_args))
 
         q.asc_foo().desc_bar()
-        sql, sql_args = i.get_SQL(s, q)
+        sql, sql_args = i.render_sql(s, q)
         self.assertTrue('ORDER BY' in sql)
         self.assertTrue('ASC' in sql)
         self.assertTrue('DESC' in sql)
 
         q.limit(222).offset(111)
 
-        sql, sql_args = i.get_SQL(s, q)
+        sql, sql_args = i.render_sql(s, q)
         self.assertTrue('LIMIT' in sql)
         self.assertTrue('OFFSET' in sql)
         self.assertTrue('222' in sql)

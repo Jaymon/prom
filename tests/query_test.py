@@ -4,6 +4,7 @@ import datetime
 import time
 from threading import Thread
 import sys
+import re
 
 import testdata
 
@@ -841,6 +842,14 @@ class QueryTest(EnvironTestCase):
         self.assertEqual(5, orm_class.query.limit(5).count())
         self.assertEqual(10, orm_class.query.count())
 
+    def test_or_clause(self):
+        q = self.get_query()
+        q.eq_foo(1).OR.gte_foo(10).OR.ne_foo(None).eq_bar(1)
+        query_str = re.sub(r"\s+", " ", q.render())
+        self.assertTrue(
+            '( "foo" = 1 OR "foo" >= 10 OR "foo" IS NOT NULL ) AND "bar" = 1' in query_str
+        )
+
 
 class IteratorTest(EnvironTestCase):
     def get_iterator(self, count=5, limit=5, page=0):
@@ -889,9 +898,7 @@ class IteratorTest(EnvironTestCase):
     def test___getitem___positive_index(self):
         count = 10
         orm_class = self.get_orm_class()
-        pout.b()
         orm_class.install()
-        pout.b()
         pks = self.insert(orm_class, count)
 
         q = orm_class.query.asc_pk()

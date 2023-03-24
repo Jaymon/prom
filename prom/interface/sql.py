@@ -89,9 +89,6 @@ class SQLInterfaceABC(Interface):
     def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
 
-    def _normalize_field_SQL(self, schema, field_name, symbol):
-        return self._normalize_name(field_name), self.PLACEHOLDER
-
     def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
         """normalize the sort string
 
@@ -266,7 +263,7 @@ class SQLInterface(SQLInterfaceABC):
         return r
 
     def _delete(self, schema, query, **kwargs):
-        where_query_str, query_args = self.get_SQL(schema, query, only_where_clause=True)
+        where_query_str, query_args = self.render_sql(schema, query, only_where_clause=True)
         query_str = []
         query_str.append('DELETE FROM')
         query_str.append('  {}'.format(self._normalize_table_name(schema)))
@@ -347,11 +344,11 @@ class SQLInterface(SQLInterfaceABC):
         """
         https://www.sqlite.org/lang_select.html
         """
-        query_str, query_args = self.get_SQL(schema, query)
+        query_str, query_args = self.render_sql(schema, query)
         return self._raw(query_str, *query_args, **kwargs)
 
     def _count(self, schema, query, **kwargs):
-        query_str, query_args = self.get_SQL(schema, query, count_query=True)
+        query_str, query_args = self.render_sql(schema, query, count_query=True)
         ret = self._raw(query_str, *query_args, **kwargs)
         if ret:
             ret = int(ret[0]['ct'])
@@ -410,7 +407,10 @@ class SQLInterface(SQLInterfaceABC):
         self.set_table(schema, **kwargs)
         return True
 
-    def _normalize_val_SQL(self, schema, symbol_map, field):
+#     def render_field_sql(self, schema, field_name, symbol):
+#         return self._normalize_name(field_name), self.PLACEHOLDER
+
+    def render_field_sql(self, schema, symbol_map, field):
         format_str = ''
         format_args = []
         symbol = symbol_map['symbol']
@@ -452,7 +452,10 @@ class SQLInterface(SQLInterfaceABC):
         else:
             if is_list and not isinstance(field_val, Query):
                 field_val = make_list(field_val) if field_val else []
-                field_name, format_val_str = self._normalize_field_SQL(schema, field_name, symbol)
+                field_name = self._normalize_name(field_name)
+                format_val_str = self.PLACEHOLDER
+
+#                 field_name, format_val_str = self.render_field_sql(schema, field_name, symbol)
                 if field_val:
                     format_str = '{} {} ({})'.format(
                         field_name,
@@ -484,22 +487,32 @@ class SQLInterface(SQLInterfaceABC):
                         raise ValueError("Unsure what to do here")
 
             else:
+                field_name = self._normalize_name(field_name)
+                format_val_str = self.PLACEHOLDER
+
                 # special handling for NULL
                 if field_val is None:
                     symbol = symbol_map['none_symbol']
+#                     format_str = '{} {} NULL'.format(
+#                         field_name,
+#                         symbol,
+#                     )
+#                     format_args.append(field_val)
 
-                field_name, format_val_str = self._normalize_field_SQL(
-                    schema,
-                    field_name,
-                    symbol
-                )
+
+
+#                 field_name, format_val_str = self._normalize_field_SQL(
+#                     schema,
+#                     field_name,
+#                     symbol
+#                 )
 
                 if isinstance(field_val, Query):
                     subquery_schema = field_val.schema
                     if not subquery_schema:
                         raise ValueError("{} subquery has no schema".format(field_name))
 
-                    subquery_sql, subquery_args = self.get_SQL(
+                    subquery_sql, subquery_args = self.render_sql(
                         field_val.schema,
                         field_val
                     )
@@ -515,7 +528,7 @@ class SQLInterface(SQLInterfaceABC):
                     format_str = '{} {} {}'.format(
                         field_name,
                         symbol,
-                        format_val_str
+                        format_val_str,
                     )
                     format_args.append(field_val)
 
@@ -534,7 +547,7 @@ class SQLInterface(SQLInterfaceABC):
         """
         return '"{}"'.format(name)
 
-    def get_SQL(self, schema, query, **sql_options):
+    def render_sql(self, schema, query, **sql_options):
         """
         convert the query instance into SQL
 
@@ -598,22 +611,34 @@ class SQLInterface(SQLInterfaceABC):
 
         if query.fields_where:
             query_str.append('WHERE')
+            or_clause = False
 
             for i, field in enumerate(query.fields_where):
-                if i > 0: query_str.append('AND')
+                if i > 0:
+                    query_str.append('OR' if or_clause else 'AND')
 
                 field_str = ''
                 field_args = []
                 sd = symbol_map[field.operator]
 
-                field_str, field_args = self._normalize_val_SQL(
+                field_str, field_args = self.render_field_sql(
                     schema,
                     sd,
                     field,
                 )
 
+                if field.or_clause:
+                    if not or_clause:
+                        query_str.append("(")
+                        or_clause = True
+
                 query_str.append('  {}'.format(field_str))
                 query_args.extend(field_args)
+
+                if or_clause:
+                    if not field.or_clause:
+                        query_str.append(")")
+                        or_clause = False
 
         if query.fields_sort:
             query_sort_str = []
@@ -632,8 +657,6 @@ class SQLInterface(SQLInterfaceABC):
 
         if limit_clause := self.render_bounds_sql(query.bounds, **sql_options):
             query_str.append(limit_clause)
-#         if query.bounds or sql_options.get("fetchone", False):
-#             query_str.append(self.render_bounds_sql(query.bounds, **sql_options))
 
         query_str = "\n".join(query_str)
         return query_str, query_args
@@ -706,7 +729,7 @@ class SQLInterface(SQLInterfaceABC):
         query_str += 'SET {}'.format(',\n'.join(field_str))
 
         if query:
-            where_query_str, where_query_args = self.get_SQL(schema, query, only_where_clause=True)
+            where_query_str, where_query_args = self.render_sql(schema, query, only_where_clause=True)
             query_str += ' {}'.format(where_query_str)
             query_args.extend(where_query_args)
 
@@ -831,14 +854,19 @@ class SQLInterface(SQLInterfaceABC):
             placeholders: boolean, True if place holders should remain
         :returns: string if placeholders is False, (string, list) if placeholders is True
         """
-        sql, sql_args = self.get_SQL(schema, query)
+        sql, sql_args = self.render_sql(schema, query)
         placeholders = kwargs.get("placeholders", kwargs.get("placeholder", False))
 
         if not placeholders:
             for sql_arg in sql_args:
-                sa = String(sql_arg)
-                if not sa.isnumeric():
-                    sa = "'{}'".format(sa)
+                if sql_arg is None:
+                    sa = 'NULL'
+
+                else:
+                    sa = String(sql_arg)
+                    if not sa.isnumeric():
+                        sa = "'{}'".format(sa)
+
                 sql = sql.replace(self.PLACEHOLDER, sa, 1)
 
         return (sql, sql_args) if placeholders else sql

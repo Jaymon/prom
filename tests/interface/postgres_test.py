@@ -181,7 +181,7 @@ class InterfaceTest(_BaseTestInterface):
         finally:
             postgresql.start()
 
-    def test__normalize_val_SQL_eq(self):
+    def test_render_sql_eq(self):
         orm_class = self.get_orm_class(
             ts=Field(datetime.datetime, True)
         )
@@ -204,7 +204,7 @@ class InterfaceTest(_BaseTestInterface):
         with self.assertRaises(KeyError):
             fstr, fargs = orm_class.query.is_ts(bogus=5).render(placeholder=True)
 
-    def test__normalize_val_SQL_in(self):
+    def test_render_sql_in(self):
         orm_class = self.get_orm_class(
             ts=Field(datetime.datetime, True)
         )

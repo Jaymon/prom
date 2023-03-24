@@ -403,6 +403,7 @@ class Field(object):
         self.operator = kwargs.pop("operator", None)
         self.is_list = kwargs.pop("is_list", False)
         self.direction = kwargs.pop("direction", None) # 1 = ASC, -1 = DESC
+        self.or_clause = False
         self.kwargs = kwargs
 
         self.set_name(field_name)
@@ -535,6 +536,27 @@ class Query(object):
                     schemas.append(s)
 
         return schemas
+
+    @property
+    def OR(self):
+        """Wraps left and right field statements with an OR clause, you can chain
+        as many OR calls as you want to create an any length OR clause
+
+        I don't love that I had to use OR instead of or but "or" is a reserved
+        keyword and I thought OR was better than like _or or _or_
+
+        :Example:
+            self.eq_foo(1).OR.eq_foo(5).OR.eq_foo(10) # (foo=1 OR foo=5 OR foo=10)
+        """
+        self.fields_where[-1].or_clause = True
+        return self
+
+    @property
+    def AND(self):
+        """This is just here for completeness with .OR since, by default, any
+        statements will be joined by AND"""
+        self.fields_where[-1].or_clause = False
+        return self
 
     def __init__(self, orm_class=None, **kwargs):
         # needed to use the db querying methods like get(), if you just want to build
