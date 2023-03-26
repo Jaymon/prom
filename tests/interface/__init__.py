@@ -1231,7 +1231,7 @@ class _BaseTestInterface(BaseTestCase):
         d = i.get_one(s, q)
         self.assertEqual(len(d), 0)
 
-    def test__normalize_date_SQL(self):
+    def test_render_date_field_sql(self):
         """this tests the common date kwargs you can use (in both SQLight and Postgres)
         if we ever add other backends this might need to be moved out of the general
         generator test"""

@@ -86,7 +86,7 @@ class SQLInterfaceABC(Interface):
         """
         raise NotImplemented()
 
-    def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
+    def render_date_field_sql(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
 
     def render_sort_field_sql(self, field_name, field_vals, sort_dir_str):
@@ -407,9 +407,6 @@ class SQLInterface(SQLInterfaceABC):
         self.set_table(schema, **kwargs)
         return True
 
-#     def render_field_sql(self, schema, field_name, symbol):
-#         return self.render_field_name_sql(field_name), self.PLACEHOLDER
-
     def render_field_sql(self, schema, symbol_map, field):
         format_str = ''
         format_args = []
@@ -423,7 +420,7 @@ class SQLInterface(SQLInterfaceABC):
             # kwargs take precedence because None is a perfectly valid field_val
             f = schema.fields[field_name]
             if issubclass(f.type, (datetime.datetime, datetime.date)):
-                format_strs = self._normalize_date_SQL(field_name, field_kwargs, symbol)
+                format_strs = self.render_date_field_sql(field_name, field_kwargs, symbol)
                 for fname, fvstr, farg in format_strs:
                     if format_str:
                         format_str += ' AND '
@@ -455,7 +452,6 @@ class SQLInterface(SQLInterfaceABC):
                 field_name = self.render_field_name_sql(field_name)
                 format_val_str = self.PLACEHOLDER
 
-#                 field_name, format_val_str = self.render_field_sql(schema, field_name, symbol)
                 if field_val:
                     format_str = '{} {} ({})'.format(
                         field_name,
@@ -493,19 +489,6 @@ class SQLInterface(SQLInterfaceABC):
                 # special handling for NULL
                 if field_val is None:
                     symbol = symbol_map['none_symbol']
-#                     format_str = '{} {} NULL'.format(
-#                         field_name,
-#                         symbol,
-#                     )
-#                     format_args.append(field_val)
-
-
-
-#                 field_name, format_val_str = self._normalize_field_SQL(
-#                     schema,
-#                     field_name,
-#                     symbol
-#                 )
 
                 if isinstance(field_val, Query):
                     subquery_schema = field_val.schema

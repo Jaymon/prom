@@ -111,15 +111,6 @@ class PostgreSQLConnection(SQLConnection, psycopg2.extensions.connection):
         # https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.register_adapter
         psycopg2.extensions.register_adapter(dict, DictType.adapt)
 
-        # http://initd.org/psycopg/docs/connection.html#connection.set_client_encoding
-        # https://www.postgresql.org/docs/current/static/multibyte.html
-        # > The default is the encoding defined by the database
-        # Not sure we want to override db encoding which is probably why I didn't
-        # set this previously
-        #self.set_client_encoding("UTF8")
-
-        #self.initialize(logger)
-
 
 class PostgreSQL(SQLInterface):
     """
@@ -360,15 +351,6 @@ class PostgreSQL(SQLInterface):
 
         return ret
 
-#     def _normalize_field_SQL(self, schema, field_name, symbol):
-#         format_field_name = self.render_field_name_sql(field_name)
-#         format_val_str = self.PLACEHOLDER
-# 
-#         if 'LIKE' in symbol:
-#             format_field_name += '::text'
-# 
-#         return format_field_name, format_val_str
-
     def render_sort_field_sql(self, field_name, field_vals, sort_dir_str):
         # this solution is based off:
         # http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
@@ -382,7 +364,7 @@ class PostgreSQL(SQLInterface):
 
         return ',\n'.join(query_sort_str), query_args
 
-    def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
+    def render_date_field_sql(self, field_name, field_kwargs, symbol):
         """
         allow extracting information from date
 

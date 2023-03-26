@@ -65,31 +65,6 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
         self.closed = 1
         return r
 
-#         self.cursors = set()
-# 
-#     def cursor(self, *args, **kwargs):
-#         """https://docs.python.org/3.11/library/sqlite3.html#cursor-objects"""
-#         cur = super().cursor(*args, **kwargs)
-#         self.cursors.add(cur)
-#         return cur
-# 
-#     def close(self, *args, **kwargs):
-#         for cur in self.cursors:
-#             try:
-#                 cur.close()
-# 
-#             except Exception:
-#                 pass
-# 
-#         r = super().close(*args, **kwargs)
-#         self.closed = 1
-#         return r
-# 
-#     def _execute(self, query_str):
-#         pout.v(self.in_transaction)
-#         return super()._execute(query_str)
-#         pout.v(self.in_transaction)
-
 
 class BooleanType(object):
     FIELD_TYPE = 'BOOL'
@@ -473,7 +448,7 @@ class SQLite(SQLInterface):
 
         return ret
 
-    def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
+    def render_date_field_sql(self, field_name, field_kwargs, symbol):
         """
         allow extracting information from date
 

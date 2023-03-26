@@ -864,21 +864,6 @@ class QueryTest(EnvironTestCase):
         inter = o1.interface
         schema = o1.schema
 
-#         query = o1.query.select_v1()
-#         q, a = inter.render_compound_sql(schema, query)
-#         pout.v(q, a)
-#         return
-
-#         query = o1.query.intersect(
-#             o1.query.select_v1(),
-#             o2.query.select_v2()
-#         )
-# 
-#         q, a = inter.render_compound_sql(schema, query)
-#         pout.v(q, a)
-#         return
-
-
         ret = o1.query.difference(
             o1.query.select_v1(),
             o2.query.select_v2().eq_v2(2)
@@ -908,16 +893,6 @@ class QueryTest(EnvironTestCase):
             o2.query.select_v2().eq_v2(2)
         ).limit(1).all()
         self.assertEqual(1, len(ret))
-
-#     def test_copy_select_fields(self):
-#         q = self.get_query()
-#         #q.select_foo()
-#         q.intersect(
-#             q.select_foo().copy(),
-#             q.select_foo().copy(),
-#         )
-# 
-#         q2 = q.copy()
 
 
 class IteratorTest(EnvironTestCase):
