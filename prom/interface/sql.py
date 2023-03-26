@@ -89,7 +89,7 @@ class SQLInterfaceABC(Interface):
     def _normalize_date_SQL(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
 
-    def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
+    def render_sort_field_sql(self, field_name, field_vals, sort_dir_str):
         """normalize the sort string
 
         return -- tuple -- field_sort_str, field_sort_args"""
@@ -513,7 +513,7 @@ class SQLInterface(SQLInterfaceABC):
                         raise ValueError("{} subquery has no schema".format(field_name))
 
                     subquery_sql, subquery_args = self.render_sql(
-                        field_val.schema,
+                        subquery_schema,
                         field_val
                     )
 
@@ -547,20 +547,85 @@ class SQLInterface(SQLInterfaceABC):
         """
         return '"{}"'.format(name)
 
-    def render_sql(self, schema, query, **sql_options):
-        """
-        convert the query instance into SQL
+    def render_select_sql(self, schema, query, **kwargs):
+        query_str = []
+        query_args = []
 
-        this is the glue method that translates the generic Query() instance to
-        the SQL specific query, this is where the magic happens
+        only_where_clause = kwargs.get('only_where_clause', False)
+        if not only_where_clause:
+            query_str.append('SELECT')
+            is_count_query = kwargs.get('count_query', False)
 
-        https://www.sqlite.org/lang_select.html
+            if query.compounds:
+                select_fields_str = "*"
 
-        **sql_options -- dict
-            count_query -- boolean -- true if this is a count query SELECT
-            only_where_clause -- boolean -- true to only return after WHERE ...
-        """
-        only_where_clause = sql_options.get('only_where_clause', False)
+            else:
+                select_fields = query.fields_select
+                if select_fields:
+                    distinct_fields = select_fields.options.get(
+                        "distinct",
+                        select_fields.options.get("unique", False)
+                    )
+                    distinct = "DISTINCT " if distinct_fields else ""
+                    select_fields_str = distinct + ", ".join(
+                        (self._normalize_name(f.name) for f in select_fields)
+                    )
+
+                else:
+                    if is_count_query or select_fields.options.get("all", False):
+                        select_fields_str = "*"
+
+                    else:
+                        select_fields_str = ", ".join(
+                            (self._normalize_name(fname) for fname in schema.fields.keys())
+                        )
+
+            if is_count_query:
+                query_str.append('  count({}) as ct'.format(select_fields_str))
+
+            else:
+                query_str.append('  {}'.format(select_fields_str))
+
+            query_str.append('FROM')
+
+            if not query.compounds:
+                query_str.append("  {}".format(self._normalize_table_name(schema)))
+
+        return query_str, query_args
+
+    def render_compound_sql(self, schema, query, **kwargs):
+        query_str = []
+        query_args = []
+
+        if query.compounds:
+            query_str.append("(")
+            for operator, queries in query.compounds:
+                for i, query in enumerate(queries):
+                    if i > 0:
+                        query_str.append(operator.upper())
+
+                    subquery_str, subquery_args = self.render_sql(
+                        query.schema,
+                        query,
+                    )
+
+                    if query.bounds:
+                        query_str.append("  (")
+                        query_str.append(subquery_str)
+                        query_str.append("  )")
+
+                    else:
+                        query_str.append(subquery_str)
+
+                    query_args.extend(subquery_args)
+
+            query_str.append(") I")
+        return query_str, query_args
+
+    def render_where_sql(self, schema, query, **kwargs):
+        query_str = []
+        query_args = []
+
         symbol_map = {
             'in': {'symbol': 'IN', 'list': True},
             'nin': {'symbol': 'NOT IN', 'list': True},
@@ -575,39 +640,6 @@ class SQLInterface(SQLInterfaceABC):
             'like': {'symbol': 'LIKE'},
             'nlike': {'symbol': 'NOT LIKE'},
         }
-
-        query_args = []
-        query_str = []
-
-        if not only_where_clause:
-            query_str.append('SELECT')
-            is_count_query = sql_options.get('count_query', False)
-            select_fields = query.fields_select
-            if select_fields:
-                distinct_fields = select_fields.options.get(
-                    "distinct",
-                    select_fields.options.get("unique", False)
-                )
-                distinct = "DISTINCT " if distinct_fields else ""
-                select_fields_str = distinct + ", ".join(
-                    (self._normalize_name(f.name) for f in select_fields)
-                )
-            else:
-                if is_count_query or select_fields.options.get("all", False):
-                    select_fields_str = "*"
-                else:
-                    select_fields_str = ", ".join(
-                        (self._normalize_name(fname) for fname in schema.fields.keys())
-                    )
-
-            if is_count_query:
-                query_str.append('  count({}) as ct'.format(select_fields_str))
-
-            else:
-                query_str.append('  {}'.format(select_fields_str))
-
-            query_str.append('FROM')
-            query_str.append("  {}".format(self._normalize_table_name(schema)))
 
         if query.fields_where:
             query_str.append('WHERE')
@@ -640,32 +672,43 @@ class SQLInterface(SQLInterfaceABC):
                         query_str.append(")")
                         or_clause = False
 
+        return query_str, query_args
+
+    def render_sort_sql(self, schema, query, **kwargs):
+        query_str = []
+        query_args = []
+
         if query.fields_sort:
-            query_sort_str = []
             query_str.append('ORDER BY')
+
+            query_sort_str = []
             for field in query.fields_sort:
                 sort_dir_str = 'ASC' if field.direction > 0 else 'DESC'
                 if field.value:
-                    field_sort_str, field_sort_args = self._normalize_sort_SQL(field.name, field.value, sort_dir_str)
+                    field_sort_str, field_sort_args = self.render_sort_field_sql(
+                        field.name,
+                        field.value,
+                        sort_dir_str
+                    )
                     query_sort_str.append(field_sort_str)
                     query_args.extend(field_sort_args)
 
                 else:
                     query_sort_str.append('  {} {}'.format(field.name, sort_dir_str))
 
-            query_str.append(',{}'.format(os.linesep).join(query_sort_str))
+            query_str.append(',\n'.join(query_sort_str))
 
-        if limit_clause := self.render_bounds_sql(query.bounds, **sql_options):
-            query_str.append(limit_clause)
-
-        query_str = "\n".join(query_str)
         return query_str, query_args
 
-    def render_bounds_sql(self, bounds, **kwargs):
+    def render_bounds_sql(self, schema, query, **kwargs):
         """
         https://www.postgresql.org/docs/current/queries-limit.html
         https://www.sqlite.org/lang_select.html#the_limit_clause
         """
+        query_str = []
+        query_args = []
+
+        bounds = query.bounds
         fetchone = kwargs.get("fetchone", False)
         if bounds or fetchone:
             if fetchone:
@@ -680,13 +723,69 @@ class SQLInterface(SQLInterfaceABC):
                     limit = self.LIMIT_NONE
                     offset = bounds.offset
 
-            return 'LIMIT {} OFFSET {}'.format(
-                limit,
-                offset
-            )
+            query_str.append(f'LIMIT {limit} OFFSET {offset}')
 
-        else:
-            return ""
+        return query_str, query_args
+
+    def render_sql(self, schema, query, **kwargs):
+        """
+        convert the query instance into SQL
+
+        this is the glue method that translates the generic Query() instance to
+        the SQL specific query, this is where the magic happens
+
+        https://www.sqlite.org/lang_select.html
+
+        :param **kwargs:
+            - count_query: bool, True if this is a count query SELECT
+            - only_where_clause, bool, True to only return after WHERE ...
+        :returns: tuple[str, list[Any]], (query_str, query_args)
+        """
+        query_str = []
+        query_args = []
+
+        select_str, select_args = self.render_select_sql(
+            schema,
+            query,
+            **kwargs
+        )
+        query_str.extend(select_str)
+        query_args.extend(select_args)
+
+        compound_str, compound_args = self.render_compound_sql(
+            schema,
+            query,
+            **kwargs
+        )
+        query_str.extend(compound_str)
+        query_args.extend(compound_args)
+
+        where_str, where_args = self.render_where_sql(
+            schema,
+            query,
+            **kwargs
+        )
+        query_str.extend(where_str)
+        query_args.extend(where_args)
+
+        sort_str, sort_args = self.render_sort_sql(
+            schema,
+            query,
+            **kwargs
+        )
+        query_str.extend(sort_str)
+        query_args.extend(sort_args)
+
+        limit_str, limit_args = self.render_bounds_sql(
+            schema,
+            query,
+            **kwargs
+        )
+        query_str.extend(limit_str)
+        query_args.extend(limit_args)
+
+        query_str = "\n".join(query_str)
+        return query_str, query_args
 
     def render_insert_sql(self, schema, fields, **kwargs):
         """

@@ -805,6 +805,7 @@ class Interface(InterfaceABC):
 
         if ret:
             self.log_info(["Successfully handled", prefix, "error"])
+
         else:
             self.log_warning(["Failed to handle", prefix, "error"])
 

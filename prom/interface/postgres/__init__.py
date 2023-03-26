@@ -369,7 +369,7 @@ class PostgreSQL(SQLInterface):
 # 
 #         return format_field_name, format_val_str
 
-    def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
+    def render_sort_field_sql(self, field_name, field_vals, sort_dir_str):
         # this solution is based off:
         # http://postgresql.1045698.n5.nabble.com/ORDER-BY-FIELD-feature-td1901324.html
         # see also: https://gist.github.com/cpjolicoeur/3590737

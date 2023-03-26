@@ -1069,7 +1069,7 @@ class Field(object, metaclass=FieldMeta):
     def fset(self, orm, val):
         """This is called on Orm instantiation and any time field is set (eg Orm.foo = ...)
 
-        on Orm creation val will be None if the field wasn't pass to Orm.__init__ otherwise
+        on Orm creation val will be None if the field wasn't passed to Orm.__init__ otherwise
         it will be the value passed into Orm.__init__
 
         :param orm: Orm, the Orm instance the field is being set on

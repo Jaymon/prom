@@ -250,7 +250,6 @@ class Iterator(ListIterator):
 
 
 class Bounds(object):
-
     @property
     def limit(self):
         l = self._limit
@@ -572,6 +571,7 @@ class Query(object):
         self.fields_where = self.fields_where_class()
         self.fields_sort = self.fields_sort_class()
         self.bounds = self.bounds_class()
+        self.compounds = []
 
     def ref(self, orm_classpath):
         """
@@ -675,6 +675,21 @@ class Query(object):
     def create_iterator(self, query):
         return self.orm_class.iterator_class(query) if self.orm_class else self.iterator_class(query)
 
+    def append_compound(self, operator, queries, **kwargs):
+        """Internal method used by .intersect(), .union(), and .difference()"""
+        for i, query in enumerate(queries):
+            if self.fields_select:
+                if not query.fields_select:
+                    if self.schema == query.schema:
+                        query.select(*self.fields_select.names())
+
+            else:
+                if i == 0 and query.fields_select:
+                    self.select(*query.fields_select.names())
+
+        self.compounds.append((operator, queries))
+        return self
+
     def append_operation(self, operator, field_name, field_val=None, **kwargs):
         kwargs["operator"] = operator
         f = self.create_field(field_name, field_val, **kwargs)
@@ -741,6 +756,46 @@ class Query(object):
         for field_name, field_val in fields.items():
             self.set_field(field_name, field_val)
         return self
+
+    def intersect(self, *queries, **kwargs):
+        """Intersect a set of queries. Returns rows that are common in all the 
+        queries.
+
+        Compound Query instances will only return values, not Orm instances
+
+        :Example:
+            Query().intersect(
+                Query().select_foo(),
+                Query().select_foo(),
+            ).all()
+
+        https://www.sqlite.org/syntax/compound-operator.html
+
+        :param *queries: two or more queries, they should all select the same
+            field types, the first query sets the name of the return columns
+        """
+        return self.append_compound("intersect", queries, **kwargs)
+
+    def union(self, *queries, **kwargs):
+        """Return all the rows from all the queries
+
+        See .intersect() since this works very similar
+        """
+        return self.append_compound("union", queries, **kwargs)
+
+    def difference(self, *queries, **kwargs):
+        """Return everything in the first query that isn't in any of the other
+        queries.
+
+        Return the rows with rows in the first query that are not in the other
+        queries
+
+        This is named .difference() instead of .except() because except is a python
+        keyword.
+
+        See .intersect() since this works very similar
+        """
+        return self.append_compound("except", queries, **kwargs)
 
     def is_field(self, field_name, field_val=None, **field_kwargs):
         return self.append_operation("eq", field_name, field_val, **field_kwargs)

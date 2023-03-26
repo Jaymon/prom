@@ -497,7 +497,7 @@ class SQLite(SQLInterface):
 
         return fstrs
 
-    def _normalize_sort_SQL(self, field_name, field_vals, sort_dir_str):
+    def render_sort_field_sql(self, field_name, field_vals, sort_dir_str):
         """
         allow sorting by a set of values
 

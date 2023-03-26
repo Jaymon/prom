@@ -16,6 +16,7 @@ from prom.query import (
     Fields,
     Iterator,
 )
+from prom.config import Field as OrmField
 from prom.compat import *
 import prom
 
@@ -849,6 +850,74 @@ class QueryTest(EnvironTestCase):
         self.assertTrue(
             '( "foo" = 1 OR "foo" >= 10 OR "foo" IS NOT NULL ) AND "bar" = 1' in query_str
         )
+
+    def test_compound_queries(self):
+        o1 = self.get_orm_class(v1=OrmField(int))
+        o2 = self.get_orm_class(v2=OrmField(int))
+
+        for v in [1, 2, 3]:
+            o1.create(v1=v)
+
+        for v in [2, 3, 4]:
+            o2.create(v2=v)
+
+        inter = o1.interface
+        schema = o1.schema
+
+#         query = o1.query.select_v1()
+#         q, a = inter.render_compound_sql(schema, query)
+#         pout.v(q, a)
+#         return
+
+#         query = o1.query.intersect(
+#             o1.query.select_v1(),
+#             o2.query.select_v2()
+#         )
+# 
+#         q, a = inter.render_compound_sql(schema, query)
+#         pout.v(q, a)
+#         return
+
+
+        ret = o1.query.difference(
+            o1.query.select_v1(),
+            o2.query.select_v2().eq_v2(2)
+        ).all()
+        self.assertEqual(set([1, 3]), set(ret))
+
+        ret = o1.query.intersect(
+            o1.query.select_v1(),
+            o2.query.select_v2()
+        ).count()
+        self.assertEqual(2, ret)
+
+        ret = o1.query.intersect(
+            o1.query.select_v1(),
+            o2.query.select_v2()
+        ).all()
+        self.assertEqual(set([3, 2]), set(ret))
+
+        ret = o1.query.union(
+            o1.query.select_v1().eq_v1(1),
+            o2.query.select_v2().eq_v2(2)
+        ).all()
+        self.assertEqual(set([1, 2]), set(ret))
+
+        ret = o1.query.union(
+            o1.query.select_v1().eq_v1(1),
+            o2.query.select_v2().eq_v2(2)
+        ).limit(1).all()
+        self.assertEqual(1, len(ret))
+
+#     def test_copy_select_fields(self):
+#         q = self.get_query()
+#         #q.select_foo()
+#         q.intersect(
+#             q.select_foo().copy(),
+#             q.select_foo().copy(),
+#         )
+# 
+#         q2 = q.copy()
 
 
 class IteratorTest(EnvironTestCase):
