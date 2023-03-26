@@ -34,7 +34,7 @@ class SQLConnection(Connection):
 
     def _transaction_started(self, name):
         # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-        self._execute("SAVEPOINT {}".format(self.interface._normalize_name(name)))
+        self._execute("SAVEPOINT {}".format(self.interface.render_field_name_sql(name)))
 
     def _transaction_stop(self):
         """
@@ -44,14 +44,14 @@ class SQLConnection(Connection):
         self._execute("COMMIT")
 
     def _transaction_stopping(self, name):
-        self._execute("RELEASE {}".format(self.interface._normalize_name(name)))
+        self._execute("RELEASE {}".format(self.interface.render_field_name_sql(name)))
 
     def _transaction_fail(self):
         self._execute("ROLLBACK")
 
     def _transaction_failing(self, name):
         # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-        self._execute("ROLLBACK TO SAVEPOINT {}".format(self.interface._normalize_name(name)))
+        self._execute("ROLLBACK TO SAVEPOINT {}".format(self.interface.render_field_name_sql(name)))
 
     def _execute(self, query_str):
         self.log_info(f"0x{id(self):02x} - {query_str}")
@@ -152,7 +152,7 @@ class SQLInterface(SQLInterfaceABC):
         http://pythonhosted.org/psycopg2/usage.html#adaptation-of-python-values-to-sql-types
         """
         query_str = []
-        query_str.append("CREATE TABLE IF NOT EXISTS {} (".format(self._normalize_table_name(schema)))
+        query_str.append("CREATE TABLE IF NOT EXISTS {} (".format(self.render_table_name_sql(schema)))
 
         query_fields = []
         for field_name, field in schema.fields.items():
@@ -174,9 +174,9 @@ class SQLInterface(SQLInterfaceABC):
         """
         query_str = 'CREATE {}INDEX IF NOT EXISTS {} ON {} ({})'.format(
             'UNIQUE ' if kwargs.get('unique', False) else '',
-            self._normalize_name(f"{schema}_{name}"),
-            self._normalize_table_name(schema),
-            ', '.join(map(self._normalize_name, field_names))
+            self.render_field_name_sql(f"{schema}_{name}"),
+            self.render_table_name_sql(schema),
+            ', '.join(map(self.render_field_name_sql, field_names))
         )
 
         return self._raw(query_str, ignore_result=True, **kwargs)
@@ -244,14 +244,14 @@ class SQLInterface(SQLInterfaceABC):
 
         query_str = '{} ON CONFLICT({}) DO UPDATE {}'.format(
             insert_sql,
-            ', '.join(map(self._normalize_name, conflict_field_names)),
+            ', '.join(map(self.render_field_name_sql, conflict_field_names)),
             update_sql,
         )
 
         returning_field_names = schema.pk_names
         if returning_field_names:
             # https://www.sqlite.org/lang_returning.html
-            query_str += ' RETURNING {}'.format(', '.join(map(self._normalize_name, returning_field_names)))
+            query_str += ' RETURNING {}'.format(', '.join(map(self.render_field_name_sql, returning_field_names)))
             query_args = insert_args + update_args
 
         r = self._raw(query_str, *query_args, **kwargs)
@@ -266,7 +266,7 @@ class SQLInterface(SQLInterfaceABC):
         where_query_str, query_args = self.render_sql(schema, query, only_where_clause=True)
         query_str = []
         query_str.append('DELETE FROM')
-        query_str.append('  {}'.format(self._normalize_table_name(schema)))
+        query_str.append('  {}'.format(self.render_table_name_sql(schema)))
         query_str.append(where_query_str)
         query_str = "\n".join(query_str)
         ret = self._raw(query_str, *query_args, count_result=True, **kwargs)
@@ -373,7 +373,7 @@ class SQLInterface(SQLInterfaceABC):
                 else:
                     query_str = []
                     query_str.append('ALTER TABLE')
-                    query_str.append('  {}'.format(self._normalize_table_name(schema)))
+                    query_str.append('  {}'.format(self.render_table_name_sql(schema)))
                     query_str.append('ADD COLUMN')
                     query_str.append('  {}'.format(self.render_datatype_sql(field_name, field)))
                     query_str = "\n".join(query_str)
@@ -408,7 +408,7 @@ class SQLInterface(SQLInterfaceABC):
         return True
 
 #     def render_field_sql(self, schema, field_name, symbol):
-#         return self._normalize_name(field_name), self.PLACEHOLDER
+#         return self.render_field_name_sql(field_name), self.PLACEHOLDER
 
     def render_field_sql(self, schema, symbol_map, field):
         format_str = ''
@@ -452,7 +452,7 @@ class SQLInterface(SQLInterfaceABC):
         else:
             if is_list and not isinstance(field_val, Query):
                 field_val = make_list(field_val) if field_val else []
-                field_name = self._normalize_name(field_name)
+                field_name = self.render_field_name_sql(field_name)
                 format_val_str = self.PLACEHOLDER
 
 #                 field_name, format_val_str = self.render_field_sql(schema, field_name, symbol)
@@ -487,7 +487,7 @@ class SQLInterface(SQLInterfaceABC):
                         raise ValueError("Unsure what to do here")
 
             else:
-                field_name = self._normalize_name(field_name)
+                field_name = self.render_field_name_sql(field_name)
                 format_val_str = self.PLACEHOLDER
 
                 # special handling for NULL
@@ -534,10 +534,10 @@ class SQLInterface(SQLInterfaceABC):
 
         return format_str, format_args
 
-    def _normalize_table_name(self, schema):
-        return self._normalize_name(schema)
+    def render_table_name_sql(self, schema):
+        return self.render_field_name_sql(schema)
 
-    def _normalize_name(self, name):
+    def render_field_name_sql(self, name):
         """normalize a non value name for the query
 
         https://blog.christosoft.de/2012/10/sqlite-escaping-table-acolumn-names/
@@ -568,7 +568,7 @@ class SQLInterface(SQLInterfaceABC):
                     )
                     distinct = "DISTINCT " if distinct_fields else ""
                     select_fields_str = distinct + ", ".join(
-                        (self._normalize_name(f.name) for f in select_fields)
+                        (self.render_field_name_sql(f.name) for f in select_fields)
                     )
 
                 else:
@@ -577,7 +577,7 @@ class SQLInterface(SQLInterfaceABC):
 
                     else:
                         select_fields_str = ", ".join(
-                            (self._normalize_name(fname) for fname in schema.fields.keys())
+                            (self.render_field_name_sql(fname) for fname in schema.fields.keys())
                         )
 
             if is_count_query:
@@ -589,7 +589,7 @@ class SQLInterface(SQLInterfaceABC):
             query_str.append('FROM')
 
             if not query.compounds:
-                query_str.append("  {}".format(self._normalize_table_name(schema)))
+                query_str.append("  {}".format(self.render_table_name_sql(schema)))
 
         return query_str, query_args
 
@@ -795,12 +795,12 @@ class SQLInterface(SQLInterfaceABC):
         field_names = []
         query_vals = []
         for field_name, field_val in fields.items():
-            field_names.append(self._normalize_name(field_name))
+            field_names.append(self.render_field_name_sql(field_name))
             field_formats.append(self.PLACEHOLDER)
             query_vals.append(field_val)
 
         query_str = 'INSERT INTO {} ({}) VALUES ({})'.format(
-            self._normalize_table_name(schema),
+            self.render_table_name_sql(schema),
             ', '.join(field_names),
             ', '.join(field_formats),
         )
@@ -809,7 +809,7 @@ class SQLInterface(SQLInterfaceABC):
             # https://www.sqlite.org/lang_returning.html
             pk_name = schema.pk_name
             if pk_name:
-                query_str += ' RETURNING {}'.format(self._normalize_name(pk_name))
+                query_str += ' RETURNING {}'.format(self.render_field_name_sql(pk_name))
 
         return query_str, query_vals
 
@@ -818,11 +818,11 @@ class SQLInterface(SQLInterfaceABC):
         query_args = []
 
         if not kwargs.get("only_set_clause", False):
-            query_str = 'UPDATE {} '.format(self._normalize_table_name(schema))
+            query_str = 'UPDATE {} '.format(self.render_table_name_sql(schema))
 
         field_str = []
         for field_name, field_val in fields.items():
-            field_str.append('{} = {}'.format(self._normalize_name(field_name), self.PLACEHOLDER))
+            field_str.append('{} = {}'.format(self.render_field_name_sql(field_name), self.PLACEHOLDER))
             query_args.append(field_val)
 
         query_str += 'SET {}'.format(',\n'.join(field_str))
@@ -886,7 +886,7 @@ class SQLInterface(SQLInterfaceABC):
             if field.is_ref():
                 field_type += ' ' + self.render_datatype_ref_sql(field_name, field)
 
-        return '{} {}'.format(self._normalize_name(field_name), field_type)
+        return '{} {}'.format(self.render_field_name_sql(field_name), field_type)
 
     def render_datatype_bool_sql(self, field_name, field, **kwargs):
         return 'BOOL'
@@ -938,8 +938,8 @@ class SQLInterface(SQLInterfaceABC):
             format_str = 'REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'
 
         ret = format_str.format(
-            self._normalize_table_name(ref_s),
-            self._normalize_name(ref_s.pk.name)
+            self.render_table_name_sql(ref_s),
+            self.render_field_name_sql(ref_s.pk.name)
         )
 
         return ret

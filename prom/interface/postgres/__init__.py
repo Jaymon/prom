@@ -244,13 +244,13 @@ class PostgreSQL(SQLInterface):
         """
         https://www.postgresql.org/docs/current/sql-droptable.html
         """
-        query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(self._normalize_table_name(schema))
+        query_str = 'DROP TABLE IF EXISTS {} CASCADE'.format(self.render_table_name_sql(schema))
         self._raw(query_str, ignore_result=True, **kwargs)
 
     def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given schema"""
         ret = {}
-        query_args = ['f', self._normalize_table_name(table_name)]
+        query_args = ['f', self.render_table_name_sql(table_name)]
 
         # I had to brush up on my join knowledge while writing this query
         # https://en.wikipedia.org/wiki/Join_(SQL)
@@ -361,7 +361,7 @@ class PostgreSQL(SQLInterface):
         return ret
 
 #     def _normalize_field_SQL(self, schema, field_name, symbol):
-#         format_field_name = self._normalize_name(field_name)
+#         format_field_name = self.render_field_name_sql(field_name)
 #         format_val_str = self.PLACEHOLDER
 # 
 #         if 'LIKE' in symbol:
@@ -377,7 +377,7 @@ class PostgreSQL(SQLInterface):
         query_args = []
         for v in reversed(field_vals):
             query_sort_str.append('  {} = {} {}'.format(
-                self._normalize_name(field_name), self.PLACEHOLDER, sort_dir_str))
+                self.render_field_name_sql(field_name), self.PLACEHOLDER, sort_dir_str))
             query_args.append(v)
 
         return ',\n'.join(query_sort_str), query_args
@@ -407,7 +407,7 @@ class PostgreSQL(SQLInterface):
         }
 
         for k, v in field_kwargs.items():
-            fstrs.append([k_opts[k].format(self._normalize_name(field_name)), self.PLACEHOLDER, v])
+            fstrs.append([k_opts[k].format(self.render_field_name_sql(field_name)), self.PLACEHOLDER, v])
 
         return fstrs
 

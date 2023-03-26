@@ -339,7 +339,7 @@ class SQLite(SQLInterface):
         # http://www.mail-archive.com/sqlite-users@sqlite.org/msg22055.html
         # http://stackoverflow.com/questions/604939/
         ret = {}
-        rs = self._raw('PRAGMA index_list({})'.format(self._normalize_table_name(schema)), **kwargs)
+        rs = self._raw('PRAGMA index_list({})'.format(self.render_table_name_sql(schema)), **kwargs)
         if rs:
             for r in rs:
                 iname = r['name']
@@ -361,7 +361,7 @@ class SQLite(SQLInterface):
         https://www.sqlite.org/lang_droptable.html
         """
         #query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
-        query_str = "DROP TABLE IF EXISTS {}".format(self._normalize_table_name(schema))
+        query_str = "DROP TABLE IF EXISTS {}".format(self.render_table_name_sql(schema))
         self._raw(query_str, ignore_result=True, **kwargs)
 
     def create_error(self, e, **kwargs):
@@ -422,11 +422,11 @@ class SQLite(SQLInterface):
     def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given table"""
         ret = {}
-        query_str = 'PRAGMA table_info({})'.format(self._normalize_table_name(table_name))
+        query_str = 'PRAGMA table_info({})'.format(self.render_table_name_sql(table_name))
         fields = self._raw(query_str, **kwargs)
         #pout.v([dict(d) for d in fields])
 
-        query_str = 'PRAGMA foreign_key_list({})'.format(self._normalize_table_name(table_name))
+        query_str = 'PRAGMA foreign_key_list({})'.format(self.render_table_name_sql(table_name))
         fks = {f["from"]: f for f in self._raw(query_str, **kwargs)}
         #pout.v([dict(d) for d in fks.values()])
 
@@ -493,7 +493,7 @@ class SQLite(SQLInterface):
         }
 
         for k, v in field_kwargs.items():
-            fstrs.append([k_opts[k].format(self._normalize_name(field_name)), self.PLACEHOLDER, v])
+            fstrs.append([k_opts[k].format(self.render_field_name_sql(field_name)), self.PLACEHOLDER, v])
 
         return fstrs
 
@@ -510,7 +510,7 @@ class SQLite(SQLInterface):
         else:
             fvi = (t for t in enumerate(reversed(field_vals))) 
 
-        query_sort_str = ['  CASE {}'.format(self._normalize_name(field_name))]
+        query_sort_str = ['  CASE {}'.format(self.render_field_name_sql(field_name))]
         query_args = []
         for i, v in fvi:
             query_sort_str.append('    WHEN {} THEN {}'.format(self.PLACEHOLDER, i))
