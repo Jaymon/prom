@@ -339,7 +339,7 @@ class Interface(InterfaceABC):
 
     def free_connection(self, connection):
         """When .connection is done with a connection it calls this method"""
-        connection.interface = None
+        #connection.interface = None
         if self.is_connected():
             self.log_debug(f"Freeing {self.config.interface_name} connection 0x{id(connection):02x}")
             self._free_connection(connection)

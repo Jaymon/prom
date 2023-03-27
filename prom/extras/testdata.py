@@ -11,6 +11,7 @@ from datatypes import (
 
 from ..model import Orm
 from ..interface import get_interfaces
+from ..exception import UniqueError
 
 
 logger = logging.getLogger(__name__)
@@ -283,7 +284,31 @@ class ModelData(TestData):
 
         return kwargs
 
-    def assure_orm_refs(self, orm_class, **kwargs):
+    def assure_ref_field_names(self, orm_class, ref_class, **kwargs):
+        """Make sure the kwargs destined for orm_class don't impact the kwargs
+        that will be used to create a ref_class instance
+
+        Sometimes, we have multiple Orm classes that have the same field names and
+        when those fields get set for orm_class they can cause ref_class to fail
+        so we want to strip those common field names out
+
+        :param orm_class: Orm, the main orm class
+        :param ref_class: Orm, the Orm that orm_class references in some way
+        :param **kwargs: the fields that were passed in for orm_class, if these
+            fields are also in ref_class they will be stripped
+        :returns: dict, the kwargs suitable to be used to create an instance of
+            ref_class
+        """
+        ref_kwargs = {}
+        orm_fields = orm_class.schema.fields
+        ref_fields = ref_class.schema.fields
+        for field_name, field_value in kwargs.items():
+            if (field_name not in orm_fields) or (field_name not in ref_fields):
+                ref_kwargs[field_name] = field_value
+
+        return ref_kwargs
+
+    def assure_orm_refs(self, orm_class, assure_orm_class=None, **kwargs):
         """When creating an orm, they will often need foreign key values, this will
         go through any of the foreign key ref fields and create a foreign key if
         it wasn't included.
@@ -294,6 +319,9 @@ class ModelData(TestData):
         can propogate all the way down the dependency chain
 
         :param orm_class: Orm
+        :param assure_orm_class: Orm|None, the orm that is getting its references
+            assured. If this is None then orm_class is considered the orm that is
+            being checked
         :param **kwargs: orm_class's actual field name value will be checked and
             the ref's orm_class.model_name will be checked
             * ignore_refs: bool, default False, if True then refs will not be checked,
@@ -306,6 +334,12 @@ class ModelData(TestData):
         """
         logger.debug(f"Assuring orm refs for orm_class {orm_class.__name__}")
         kwargs = self.assure_orm_field_names(orm_class, **kwargs)
+
+        # if assure class isn't passed in then we assume the passed in orm_class
+        # is the class to be assured and all recursive calls will now have it
+        # set
+        if assure_orm_class is None:
+            assure_orm_class = orm_class
 
         ignore_refs = kwargs.get("ignore_refs", False)
         require_fields = kwargs.get("require_fields", True)
@@ -328,11 +362,19 @@ class ModelData(TestData):
                             if require_fields or field.is_required() or self.yes():
                                 # handle all ref_class's refs before we handle
                                 # ref_class
-                                kwargs.update(self.assure_orm_refs(ref_class, **kwargs))
+                                kwargs.update(self.assure_orm_refs(
+                                    ref_class,
+                                    assure_orm_class,
+                                    **kwargs
+                                ))
 
                                 kwargs[ref_field_name] = self._create(
                                     ref_class,
-                                    **kwargs
+                                    **self.assure_ref_field_names(
+                                        assure_orm_class,
+                                        ref_class,
+                                        **kwargs
+                                    )
                                 )
                                 kwargs[field_name] = kwargs[ref_field_name].pk
 
@@ -347,7 +389,16 @@ class ModelData(TestData):
         """
         kwargs.setdefault("ignore_refs", False)
         instance = self._get(orm_class, **kwargs)
-        instance.save()
+        try:
+            instance.save()
+
+        except UniqueError as e:
+            logger.warning(" ".join([
+                f"Creating {orm_class.__name__} failed because it exists.",
+                "Fetching the existing instance without updating it",
+            ]))
+            instance = instance.requery()
+
         return instance
 
     def create_orms(self, orm_class, **kwargs):

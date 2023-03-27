@@ -14,6 +14,7 @@ import decimal
 import datetime
 import uuid
 import json
+from collections import Counter
 
 # third party
 import psycopg2
@@ -166,9 +167,12 @@ class PostgreSQL(SQLInterface):
             connection_factory=PostgreSQLConnection,
         )
 
+        self._connection_pool.keys = Counter()
+
     def _get_connection(self):
+        key = self.config.options["pool_key"]
         connection = self._connection_pool.getconn(
-            key=self.config.options["pool_key"]
+            key=key,
         )
 
         connection_id = id(connection)
@@ -183,27 +187,36 @@ class PostgreSQL(SQLInterface):
             ])
             connection.readonly = self.config.readonly
 
+        self._connection_pool.keys[key] += 1
+
         return connection
 
     def _free_connection(self, connection):
         # if an error was handled there is a chance that the connection was reset
         # and we don't want to put a dead connection back into the pool
-            if connection.closed:
-                try:
-                    self.log_warning(f"Discarding pool connection {id(connection):02x} because it is closed")
-                    self._connection_pool.putconn(
-                        connection,
-                        key=self.config.options["pool_key"],
-                        close=True,
-                    )
+        key = self.config.options["pool_key"]
+        self._connection_pool.keys[key] -= 1
 
-                except KeyError:
-                    # something happened and so we just discard this instead of
-                    # trying to clean it up
-                    pass
+        if connection.closed:
+            try:
+                self.log_warning(f"Discarding pool connection {id(connection):02x} because it is closed")
+                self._connection_pool.putconn(
+                    connection,
+                    key=key,
+                    close=True,
+                )
 
-            else:
-                self._connection_pool.putconn(connection)
+            except KeyError:
+                # something happened and so we just discard this instead of
+                # trying to clean it up
+                pass
+
+        else:
+            if self._connection_pool.keys[key] <= 0:
+                self._connection_pool.putconn(
+                    connection,
+                    key=key,
+                )
 
     def _close(self):
         self._connection_pool.closeall()

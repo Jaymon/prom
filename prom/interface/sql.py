@@ -390,14 +390,14 @@ class SQLInterface(SQLInterfaceABC):
         if query := kwargs.pop("query", None):
             if schemas := query.schemas:
                 for s in schemas:
-                    self.log_warning(f"Verifying foreign key table: {s}")
+                    self.log_warning(f"Verifying {schema} query foreign key table: {s}")
                     if not self._handle_table_error(s, e=e, **kwargs):
                         return False
 
         for field_name, field_val in schema.fields.items():
             s = field_val.schema
             if s:
-                self.log_warning(f"Verifying foreign key table: {s}")
+                self.log_warning(f"Verifying {schema} foreign key table: {s}")
                 if not self._handle_table_error(schema=s, e=e, **kwargs):
                     return False
 
