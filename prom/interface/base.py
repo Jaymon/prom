@@ -822,7 +822,6 @@ class Interface(InterfaceABC):
             raise e2 from e
         else:
             raise e
-        #raise self.create_error(e, **kwargs) from e
 
     def create_error(self, e, **kwargs):
         """create the error that you want to raise, this gives you an opportunity
@@ -836,9 +835,17 @@ class Interface(InterfaceABC):
             of that class
         :param **kwargs:
             - error_class: InterfaceError
+            - error_module: module, the dbapi module
         """
         error_class = kwargs.get("error_class", InterfaceError)
-        if not isinstance(e, error_class) and not hasattr(builtins, e.__class__.__name__):
-            e = error_class(e)
+        if not isinstance(e, error_class):
+            if not hasattr(builtins, e.__class__.__name__):
+                if "error_module" in kwargs:
+                    if kwargs["error_module"].__name__ in e.__class__.__module__:
+                        e = error_class(e)
+
+                else:
+                    e = error_class(e)
+
         return e
 

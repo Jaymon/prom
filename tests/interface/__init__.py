@@ -763,6 +763,14 @@ class _BaseTestInterface(BaseTestCase):
         with self.assertRaises(PlaceholderError):
             i.get(s, q)
 
+    def test_create_custom_error(self):
+        i = self.get_interface()
+        class CustomError(Exception): pass
+
+        e = CustomError()
+        e2 = i.create_error(e)
+        self.assertIsInstance(e2, CustomError)
+
     def test_handle_error_column(self):
         i, s = self.get_table()
         s.set_field("che", Field(str, True)) # it's required

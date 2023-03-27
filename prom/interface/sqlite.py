@@ -340,6 +340,7 @@ class SQLite(SQLInterface):
         self._raw(query_str, ignore_result=True, **kwargs)
 
     def create_error(self, e, **kwargs):
+        kwargs.setdefault("error_module", sqlite3)
         if isinstance(e, sqlite3.OperationalError):
             e_msg = str(e)
             if "no such column" in e_msg or "has no column" in e_msg:

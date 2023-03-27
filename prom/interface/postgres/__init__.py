@@ -494,6 +494,7 @@ class PostgreSQL(SQLInterface):
         """
         https://www.psycopg.org/docs/module.html#exceptions
         """
+        kwargs.setdefault("error_module", psycopg2)
         if isinstance(e, psycopg2.ProgrammingError):
             e_msg = String(e)
             if "does not exist" in e_msg:

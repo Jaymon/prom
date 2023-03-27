@@ -35,7 +35,8 @@ class InterfaceError(Error):
         first line since the other lines aren't usually helpful, if you want the
         full message just call .unwrapped_e()"""
         s = super().__str__()
-        return s.splitlines()[0]
+        lines = s.splitlines()
+        return lines[0] if lines else ""
 
 
 class TableError(InterfaceError):
