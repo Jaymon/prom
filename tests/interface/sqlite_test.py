@@ -52,8 +52,8 @@ class ConfigTest(_BaseTestConfig):
                 "prom.interface.sqlite.SQLite://:memory:#fragment_name",
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': ":memory:",
+                    'host': ":memory:",
+                    'database': "",
                     'name': 'fragment_name'
                 }
             ),
@@ -61,8 +61,8 @@ class ConfigTest(_BaseTestConfig):
                 "prom.interface.sqlite.SQLite://:memory:?option=1&var=2#fragment_name",
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': ":memory:",
+                    'host': ":memory:",
+                    'database': "",
                     'name': 'fragment_name',
                     'options': {
                         'var': 2,
@@ -74,8 +74,8 @@ class ConfigTest(_BaseTestConfig):
                 "prom.interface.sqlite.SQLite://:memory:",
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
-                    'host': None,
-                    'database': ":memory:",
+                    'host': ":memory:",
+                    'database': "",
                 }
             ),
             (

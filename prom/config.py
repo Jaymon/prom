@@ -116,27 +116,27 @@ class DsnConnection(Connection):
     def __init__(self, dsn):
         # get the scheme, which is actually our interface_name
         kwargs = self.parse(dsn)
-        super(DsnConnection, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
-    @classmethod
-    def parse(cls, dsn):
-        d = dsnparse.ParseResult.parse(dsn)
+    def parse(self, dsn):
+        parser = dsnparse.parse(dsn)
+
+        d = parser.fields
+        d["dsn"] = parser.parser.dsn
 
         # remap certain values
         d["name"] = d.pop("fragment")
-        d["interface_name"] = cls.normalize_scheme(d.pop("scheme"))
+        d["interface_name"] = self.normalize_scheme(d.pop("scheme"))
         d["database"] = d.pop("path")
-        d["options"] = cls.normalize_options(d.pop("query"))
+        d["options"] = d.pop("query_params", {})
         d["host"] = d.pop("hostname")
-        d["readonly"] = bool(d["options"].pop("readonly", cls.readonly))
+        d["readonly"] = bool(d["options"].pop("readonly", self.readonly))
 
         # get rid of certain values
         d.pop("params", None)
-        d.pop("query_str", None)
         return d
 
-    @classmethod
-    def normalize_scheme(cls, v):
+    def normalize_scheme(self, v):
         ret = v
         d = {
             "prom.interface.sqlite.SQLite": set(["sqlite"]),
@@ -150,26 +150,6 @@ class DsnConnection(Connection):
                 break
 
         return ret
-
-    @classmethod
-    def normalize_options(cls, d):
-        if not d: return d
-
-        for k, v in d.items():
-            if isinstance(v, basestring):
-                if re.match(r"^\d+\.\d+$", v):
-                    d[k] = float(v)
-
-                elif re.match(r"^\d+$", v):
-                    d[k] = int(v)
-
-                elif re.match(r"^true$", v, flags=re.I):
-                    d[k] = True
-
-                elif re.match(r"^false$", v, flags=re.I):
-                    d[k] = False
-
-        return d
 
 
 class Schema(object):
