@@ -266,6 +266,17 @@ class InterfaceTest(_BaseTestInterface):
             o3 = orm_class2(fk='foo')
             o3.save()
 
+    def test_get_fields_postgres(self):
+        orm_class = self.get_orm_class(
+            _id=Field(UUID, True, pk=True),
+            foo=Field(str, True, ignore_case=True),
+        )
+        orm_class.install()
+
+        fields = orm_class.interface.get_fields(orm_class.schema)
+        self.assertTrue(fields["foo"]["ignore_case"])
+        self.assertEqual(UUID, fields["_id"]["field_type"])
+
 
 @skipIf(gevent is None, "Skipping Gevent test because gevent module not installed")
 class XInterfaceGeventTest(InterfaceTest):

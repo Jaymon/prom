@@ -1252,8 +1252,8 @@ class _BaseTestInterface(BaseTestCase):
         )
         i.set_table(s)
 
-        pk20 = i.insert(s, {'foo': datetime.datetime(2014, 4, 20)})
-        pk21 = i.insert(s, {'foo': datetime.datetime(2014, 4, 21)})
+        pk20 = i.insert(s, {'foo': Datetime(2014, 4, 20)})
+        pk21 = i.insert(s, {'foo': Datetime(2014, 4, 21)})
 
         q = query.Query()
         q.is_foo(day=20)
