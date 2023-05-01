@@ -407,33 +407,31 @@ class PostgreSQL(SQLInterface):
         return fstrs
 
     def render_datatype_int_sql(self, field_name, field, **kwargs):
-        if field.is_pk():
-            field_type = 'BIGSERIAL PRIMARY KEY' # INT8
+        if field.is_ref():
+            field_type = 'BIGINT' # INT8
 
         else:
-            if field.is_ref():
-                field_type = 'BIGINT' # INT8
+            # https://www.postgresql.org/docs/current/datatype-numeric.html
+            size_info = field.size_info()
+            size = size_info["size"]
+
+            if size == 0:
+                field_type = 'INTEGER' # INT4
+
+            elif size <= 32767:
+                field_type = 'SMALLINT' # INT2
+
+            elif size <= 2147483647:
+                # INT4
+                field_type = 'SERIAL' if field.is_auto() else 'INTEGER'
+
+            elif size <= 9223372036854775807:
+                # INT8
+                field_type = 'BIGSERIAL' if field.is_auto() else 'BIGINT'
 
             else:
-                # https://www.postgresql.org/docs/current/datatype-numeric.html
-                size_info = field.size_info()
-                size = size_info["size"]
-
-                if size == 0:
-                    field_type = 'INTEGER' # INT4
-
-                elif size < 32767:
-                    field_type = 'SMALLINT' # INT2
-
-                elif size < 2147483647:
-                    field_type = 'INTEGER' # INT4
-
-                elif size < 9223372036854775807:
-                    field_type = 'BIGINT' # INT8
-
-                else:
-                    precision = size_info["precision"]
-                    field_type = f'NUMERIC({precision}, 0)'
+                precision = size_info["precision"]
+                field_type = f'NUMERIC({precision}, 0)'
 
         return field_type
 
@@ -499,8 +497,9 @@ class PostgreSQL(SQLInterface):
         # https://www.postgresql.org/docs/current/datatype-uuid.html
         # https://www.postgresql.org/docs/current/functions-uuid.html
         field_type = 'UUID'
-        if field.is_pk():
-            field_type += ' DEFAULT gen_random_uuid() PRIMARY KEY'
+        if field.is_auto():
+            field_type += ' DEFAULT gen_random_uuid()'
+
         return field_type
 
     def create_error(self, e, **kwargs):

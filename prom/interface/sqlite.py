@@ -497,8 +497,8 @@ class SQLite(SQLInterface):
         return query_sort_str, query_args
 
     def render_datatype_int_sql(self, field_name, field, **kwargs):
-        if field.is_pk():
-            field_type = 'INTEGER PRIMARY KEY'
+        if field.is_auto():
+            field_type = 'INTEGER'
 
         else:
             # we could break these up into tiny, small, and big but it
@@ -506,7 +506,7 @@ class SQLite(SQLInterface):
             # https://www.sqlite.org/datatype3.html
             size = field.size_info()["size"]
 
-            if size < 9223372036854775807:
+            if size <= 9223372036854775807:
                 field_type = 'INTEGER'
 
             else:

@@ -865,7 +865,10 @@ class SQLInterface(SQLInterfaceABC):
 
         field_type += ' ' + self.render_datatype_required_sql(field_name, field)
 
-        if not field.is_pk():
+        if field.is_pk():
+            field_type += ' PRIMARY KEY'
+
+        else:
             if field.is_ref():
                 field_type += ' ' + self.render_datatype_ref_sql(field_name, field)
 
@@ -894,9 +897,6 @@ class SQLInterface(SQLInterfaceABC):
 
             else:
                 field_type += f" CHECK(length({field_name}) <= {size_info['size']})"
-
-        if field.is_pk():
-            field_type += ' PRIMARY KEY'
 
         return field_type
 

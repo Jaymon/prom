@@ -16,7 +16,7 @@ from testdata import TestCase, SkipTest
 from prom import query
 from prom.compat import *
 from prom.model import Orm
-from prom.config import Schema, DsnConnection, Field, Index
+from prom.config import Schema, DsnConnection, Field, Index, AutoIncrement
 from prom.interface.base import Interface, Connection
 from prom.interface import get_interfaces, find_environ
 from prom.utils import make_dict
@@ -210,7 +210,7 @@ class BaseTestCase(TestCase):
             fields_or_indexes.setdefault("bar", Field(str, True))
             fields_or_indexes.setdefault("ifoobar", Index("foo", "bar"))
 
-        fields_or_indexes.setdefault("_id", Field(int, True, pk=True))
+        fields_or_indexes.setdefault("_id", AutoIncrement())
 
         # remove any None values
         for k in list(fields_or_indexes.keys()):
@@ -259,7 +259,7 @@ class BaseTestCase(TestCase):
 
         s = Schema(
             self.get_table_name(),
-            _id=Field(long, pk=True),
+            _id=AutoIncrement(),
             a_bool_y=Field(bool, True),
             a_bool_n=Field(bool, False),
             a_sint_y=Field(int, True, size=50),

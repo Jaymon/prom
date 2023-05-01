@@ -136,10 +136,10 @@ class InterfaceTest(_BaseTestInterface):
         i = self.get_interface()
         s = prom.Schema(
             self.get_table_name(),
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             four=Field(float, True, size=10),
             five=Field(float, True),
-            six=Field(long, True),
+            six=Field(int, True, max_size=9000000000),
         )
         r = i.set_table(s)
         d = {
@@ -234,7 +234,7 @@ class InterfaceTest(_BaseTestInterface):
 
     def test_uuid_pk(self):
         i, s = self.create_schema(
-            _id=Field(UUID, True, pk=True),
+            _id=Field(UUID, True, autopk=True),
             foo=Field(int, True),
         )
 
@@ -248,7 +248,7 @@ class InterfaceTest(_BaseTestInterface):
 
     def test_invalid_text_repr(self):
         orm_class1 = self.get_orm_class(
-            _id=Field(UUID, True, pk=True),
+            _id=Field(UUID, True, autopk=True),
         )
         orm_class2 = self.get_orm_class(
             fk=Field(orm_class1, True),

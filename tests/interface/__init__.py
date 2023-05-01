@@ -100,7 +100,7 @@ class _BaseTestInterface(BaseTestCase):
 
         s = prom.Schema(
             self.get_table_name(),
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             one=Field(bool, True),
             two=Field(int, True, size=50),
             three=Field(decimal.Decimal),
@@ -195,7 +195,7 @@ class _BaseTestInterface(BaseTestCase):
         self.assertTrue(i.has_table(s))
 
     def test_custom_pk_int(self):
-        i, s = self.get_table(_id=Field(int, pk=True), bar=Field(str))
+        i, s = self.get_table(_id=Field(int, autopk=True), bar=Field(str))
 
         pk = i.insert(s, {"bar": "barvalue"})
         self.assertLess(0, pk)
@@ -625,12 +625,12 @@ class _BaseTestInterface(BaseTestCase):
 
         s_1 = Schema(
             table_name_1,
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             foo=Field(int, True)
         )
         s_2 = Schema(
             table_name_2,
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             s_pk=Field(s_1, True),
         )
 
@@ -661,12 +661,12 @@ class _BaseTestInterface(BaseTestCase):
 
         s_1 = Schema(
             table_name_1,
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             foo=Field(int, True)
         )
         s_2 = Schema(
             table_name_2,
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             s_pk=Field(s_1, False),
         )
 
@@ -697,12 +697,12 @@ class _BaseTestInterface(BaseTestCase):
 
         s_1 = Schema(
             table_name_1,
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             foo=Field(int, True)
         )
         s_2 = Schema(
             table_name_2,
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             bar=Field(int, True),
             s_pk=Field(s_1),
         )
@@ -792,7 +792,7 @@ class _BaseTestInterface(BaseTestCase):
         i = self.get_interface()
         s = Schema(
             self.get_table_name(),
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             foo=Field(int, False),
             bar=Field(int, False),
         )
@@ -813,11 +813,11 @@ class _BaseTestInterface(BaseTestCase):
         """make sure 2 new tables in a wrapped transaction work as expected"""
         i = self.get_interface()
         s1 = self.get_schema(
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             foo=Field(int, True)
         )
         s2 = self.get_schema(
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             bar=Field(int, True),
             s_pk=Field(s1),
         )
@@ -968,14 +968,14 @@ class _BaseTestInterface(BaseTestCase):
         # these 2 tables exist before the transaction starts
         s1 = Schema(
             table_name_1,
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             foo=Field(int, True)
         )
         i.set_table(s1)
 
         s2 = Schema(
             table_name_2,
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             bar=Field(int, True),
             s_pk=Field(s1, True),
         )
@@ -1043,7 +1043,7 @@ class _BaseTestInterface(BaseTestCase):
         i = self.get_interface()
         s = Schema(
             self.get_table_name(),
-            _id=Field(int, pk=True),
+            _id=Field(int, autopk=True),
             foo=Field(str, True, ignore_case=True),
             bar=Field(str, True),
             index_foo=Index('foo', 'bar'),
@@ -1247,7 +1247,7 @@ class _BaseTestInterface(BaseTestCase):
         s = Schema(
             self.get_table_name(),
             foo=Field(datetime.datetime, True),
-            _id=Field(int, True, pk=True),
+            _id=Field(int, True, autopk=True),
             index_foo=Index('foo'),
         )
         i.set_table(s)
@@ -1274,7 +1274,7 @@ class _BaseTestInterface(BaseTestCase):
         i = self.get_interface()
         s = Schema(
             self.get_table_name(),
-            _id=Field(int, True, pk=True),
+            _id=Field(int, True, autopk=True),
             group=Field(str, True),
         )
         i.set_table(s)

@@ -704,23 +704,28 @@ class Field(object, metaclass=FieldMeta):
             you would pass str, integer: int, boolean: bool, float: float
         :param field_required: boolean, true if this field has to be there to insert
         :param field_options: dict, everything else in key: val notation. Current options:
-            - size: int -- the size you want the string to be, or the int to be
-            - min_size: int -- the minimum size
-            - max_size: int -- if you want a varchar, set this
-            - unique: bool -- True to set a unique index on this field, this is just for convenience and is
+            * size: int -- the size you want the string to be, or the int to be
+            * min_size: int -- the minimum size
+            * max_size: int -- if you want a varchar, set this
+            * unique: bool -- True to set a unique index on this field, this is just for convenience and is
                 equal to self.set_index(field_name, [field_name], unique=True). this is a convenience option
                 to set a unique index on the field without having to add a separate index statement
-            - ignore_case: bool -- True to ignore case if this field is used in indexes
-            - default: mixed -- defaults to None, can be anything the db can support
-            - jsonable_name: str, the name of the field when Orm.jsonable() is called
-            - jsonable_field: bool, if False then this field won't be part of
+            * ignore_case: bool -- True to ignore case if this field is used in indexes
+            * default: mixed -- defaults to None, can be anything the db can support
+            * jsonable_name: str, the name of the field when Orm.jsonable() is called
+            * jsonable_field: bool, if False then this field won't be part of
                 Orm.jsonable() output
-            - jsonable: str|callable|bool,
+            * jsonable: str|callable|bool,
                 - str, will be set to jsonable_name
                 - callable, will be used as self.jsonable
                 - bool, will set jsonable_field to False
-            - empty: bool, (default is True), set to False if the value cannot be
+            * empty: bool, (default is True), set to False if the value cannot be
                 empty when being sent to the db (empty is None, "", 0, False)
+            * pk: bool, True to make this field the primary key
+            * auto: bool, True to tag this field as an auto-generated field. Used
+                with an int to set it to an auto-increment, use it with UUID to
+                have uuids auto generated
+            * autopk: bool, shortcut for setting pk=True, auto=True
         :param **field_options_kwargs: dict, will be combined with field_options
         """
         field_options = utils.make_dict(field_options, field_options_kwargs)
@@ -728,7 +733,6 @@ class Field(object, metaclass=FieldMeta):
         d = self.get_size(field_options)
         field_options.update(d)
 
-        #self.orm_class = field_options.pop("orm_class", None)
         name = field_options.pop("name", "")
         orm_class = field_options.pop("orm_class", None)
 
@@ -746,6 +750,9 @@ class Field(object, metaclass=FieldMeta):
             else:
                 field_options["jsonable"] = jsonable
 
+        if autopk := field_options.pop("autopk", False):
+            field_options["pk"] = autopk
+            field_options["auto"] = autopk
 
         for k in list(field_options.keys()):
             if hasattr(self, k):
@@ -759,6 +766,12 @@ class Field(object, metaclass=FieldMeta):
         # this class is being created manually so mimic what the python parser
         # would do
         if name and orm_class:
+            self.__set_name__(orm_class, name)
+
+        elif orm_class:
+            self.orm_class = orm_class
+
+        elif name:
             self.__set_name__(orm_class, name)
 
     def __set_name__(self, orm_class, name):
@@ -1346,6 +1359,7 @@ class AutoIncrement(Field):
     def __init__(self, **kwargs):
         kwargs.setdefault("pk", True)
         kwargs.setdefault("auto", True)
+        kwargs.setdefault("max_size", 9223372036854775807)
         super().__init__(
             field_type=int,
             field_required=True,
