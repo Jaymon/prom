@@ -260,13 +260,13 @@ class PostgreSQL(SQLInterface):
         # https://en.wikipedia.org/wiki/Join_(SQL)
         #
         # other helpful links
-        # https://wiki.postgresql.org/wiki/Retrieve_primary_key_columns
-        # https://www.postgresql.org/docs/9.4/static/catalog-pg-attribute.html
-        # https://www.postgresql.org/docs/9.3/static/catalog-pg-type.html
+        # * https://wiki.postgresql.org/wiki/Retrieve_primary_key_columns
+        # * https://www.postgresql.org/docs/9.4/static/catalog-pg-attribute.html
+        # * https://www.postgresql.org/docs/9.3/static/catalog-pg-type.html
         # 
         # another approach
-        # http://dba.stackexchange.com/questions/22362/how-do-i-list-all-columns-for-a-specified-table
-        # http://gis.stackexchange.com/questions/94049/how-to-get-the-data-type-of-each-column-from-a-postgis-table
+        # * http://dba.stackexchange.com/questions/22362/
+        # * http://gis.stackexchange.com/questions/94049/
         query_str = [
             'SELECT',
             ',  '.join([
@@ -306,6 +306,7 @@ class PostgreSQL(SQLInterface):
             "int8": long,
             "numeric": decimal.Decimal,
             "text": str,
+            "citext": str,
             "bpchar": str,
             "varchar": str,
             "bool": bool,
@@ -313,6 +314,7 @@ class PostgreSQL(SQLInterface):
             "blob": bytes,
             "bytea": bytes,
             "jsonb": bytes,
+            "uuid": uuid.UUID,
         }
 
         # the rows we can set: field_type, name, field_required, min_size, max_size,
@@ -330,6 +332,9 @@ class PostgreSQL(SQLInterface):
                 # TODO -- I can't decide which name I like
                 field["schema_table_name"] = row["confrelname"]
                 field["ref_table_name"] = row["confrelname"]
+
+            if row["typname"] == "citext":
+                field["ignore_case"] = True
 
             ret[field["name"]] = field
 
