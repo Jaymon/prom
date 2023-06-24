@@ -2,6 +2,7 @@
 import datetime
 import functools
 import logging
+import uuid
 
 from testdata.base import TestData
 from datatypes import (
@@ -235,7 +236,10 @@ class ModelData(TestData):
                         orm_method = self.get_orm_fields
 
                     if orm_method:
-                        method = functools.partial(orm_method, orm_class=orm_class)
+                        method = functools.partial(
+                            orm_method,
+                            orm_class=orm_class,
+                        )
                         self.method_cache[method_name] = method
 
         if not method:
@@ -565,6 +569,9 @@ class ModelData(TestData):
 
                             elif issubclass(field_type, datetime.date):
                                 ret[field_name] = self.get_past_date()
+
+                            elif issubclass(field_type, uuid.UUID):
+                                ret[field_name] = str(uuid.uuid4())
 
                             else:
                                 raise ValueError(f"Not sure what to do with {field.type}")
