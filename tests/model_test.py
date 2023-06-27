@@ -470,7 +470,6 @@ class OrmTest(EnvironTestCase):
         self.assertTrue(isinstance(o2.foo, dict))
         self.assertEqual(o.foo, o2.foo)
 
-
     def test_field_getattr(self):
         class FOFieldGAOrm(Orm):
             table_name = "fofgaorm_table"
@@ -1301,4 +1300,21 @@ class OrmTest(EnvironTestCase):
         o3.load()
         for field_name, field_value in o.fields.items():
             self.assertEqual(field_value, getattr(o3, field_name), field_name)
+
+    def test_new_fields_read(self):
+        """Makes sure a new field added to the orm is seemlessly handled on a
+        select query
+
+        SQLite actually won't raise an error when a field doesn't exist, it will
+        return the field (ie, SELECT "foo" ... would return {'"foo"': 'foo'} as
+        a raw value), but prom should still handle it correctly
+        """
+        orm_class = self.get_orm_class()
+        pks = self.insert(orm_class, 1)
+
+        orm_class.che = Field(str, False)
+        orm_class.schema.set_field("che", orm_class.che)
+
+        o = orm_class.query.eq_pk(pks[0]).one()
+        self.assertIsNone(o.che)
 

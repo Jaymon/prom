@@ -330,7 +330,6 @@ class Orm(object):
         """
         schema = self.schema
         for field_name, v in fields.items():
-            fields[field_name] = schema.fields[field_name].iget(self, v)
             if field_name in schema.fields:
                 fields[field_name] = schema.fields[field_name].iget(self, v)
 
