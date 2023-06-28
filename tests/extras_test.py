@@ -176,3 +176,55 @@ class ModelDataTest(BaseTestCase):
         d = OtherData()
         foo = d.get_foo()
 
+    def test_children_create(self):
+        """
+        https://github.com/Jaymon/prom/issues/166
+        """
+        modpath = self.create_module([
+            "from prom import Orm, Field",
+            "",
+            "class Foo(Orm):",
+            "    one = Field(str)",
+            "",
+            "class Bar(Orm):",
+            "    foo_id = Field(Foo, True)",
+            "    two = Field(str)",
+        ])
+        m = modpath.module()
+        m.Foo.interface = self.get_interface()
+        m.Bar.interface = m.Foo.interface
+
+        count = 2
+
+        foo = self.create_foo(bar_count=count)
+        bar_count = 0
+        for b in foo.bars:
+            bar_count += 1
+            self.assertIsInstance(b, m.Bar)
+            self.assertEqual(foo.pk, b.foo_id)
+        self.assertEqual(count, bar_count)
+
+        foo = self.create_foo(bars_count=count)
+        bar_count = 0
+        for b in foo.bars:
+            bar_count += 1
+            self.assertIsInstance(b, m.Bar)
+            self.assertEqual(foo.pk, b.foo_id)
+        self.assertEqual(count, bar_count)
+
+    def test__gets_count(self):
+        orm_class = self.get_orm_class()
+
+        self.assertEqual(
+            2,
+            self._gets_count(orm_class, **{f"{orm_class.model_name}_count": 2})
+        )
+        self.assertEqual(
+            4,
+            self._gets_count(orm_class, **{f"{orm_class.models_name}_count": 4})
+        )
+        self.assertEqual(
+            5,
+            self._gets_count(orm_class, **{"count": 5})
+        )
+

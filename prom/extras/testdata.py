@@ -85,9 +85,8 @@ class ModelData(TestData):
             model_name = "foo_bar"
             models_name = "foo_bars"
     """
-    method_cache = {}
-
     model_cache = {}
+    """Caches the found models for a given model name"""
 
     def _orm_classes(self):
         """Iterate through a list of orms that should be injected into testdata
@@ -131,6 +130,25 @@ class ModelData(TestData):
         a get_<ORM-NAME> method and fallback to get_orm"""
         method_name, method = self._get_method(orm_class)
         return self._run_method(method_name, method, orm_class, **kwargs)
+
+    def _gets_count(self, orm_class, **kwargs):
+        """Find how many orm_class should be created
+
+        :param orm_class: Orm
+        :param **kwargs: this will be checked for the correct *_count or count
+            value
+        :returns: int, how many of orm_class is wanted
+        """
+        return kwargs.get(
+            f"{orm_class.model_name}_count",
+            kwargs.get(
+                f"{orm_class.models_name}_count",
+                kwargs.get(
+                    "count",
+                    1
+                )
+            )
+        )
 
     def _gets_method(self, orm_class, **kwargs):
         """Return the .get_orms() type method for orm_class"""
@@ -202,89 +220,76 @@ class ModelData(TestData):
         :returns: callable, the method that should be ran for the passed in
             method_name
         """
-        method = None
-
         logger.debug(
             f"Finding {self.__class__.__name__}.{method_name} method"
         )
 
-        if method_name in self.method_cache:
-            method = self.method_cache[method_name]
+        try:
+            # check for <NAME>_<MODEL_NAME>
+            name, model_name = method_name.split("_", 1)
+
+            if model_name.endswith("_fields"):
+                name = "fields"
+                model_name, _ = model_name.rsplit("_", 1)
+
+        except ValueError as e:
+            raise AttributeError(
+                f"invalid potential method: {method_name}"
+            ) from e
 
         else:
             try:
-                # check for <NAME>_<MODEL_NAME>
-                name, model_name = method_name.split("_", 1)
-
-                if model_name.endswith("_fields"):
-                    name = "fields"
-                    model_name, _ = model_name.rsplit("_", 1)
+                orm_class = self.get_orm_class(model_name)
 
             except ValueError as e:
                 raise AttributeError(
-                    f"invalid potential method: {method_name}"
+                    f"Could not find orm class from {method_name}"
                 ) from e
 
             else:
-                try:
-                    orm_class = self.get_orm_class(model_name)
+                orm_method = None
+                if name == "get":
+                    if orm_class.model_name == model_name:
+                        orm_method = self.get_orm
 
-                except ValueError as e:
-                    raise AttributeError(
-                        f"Could not find orm class from {method_name}"
-                    ) from e
+                    else:
+                        orm_method = self.get_orms
 
-                else:
-                    orm_method = None
-                    if name == "get":
-                        if orm_class.model_name == model_name:
-                            orm_method = self.get_orm
+                elif name == "create":
+                    if orm_class.model_name == model_name:
+                        orm_method = self.create_orm
 
-                        else:
-                            orm_method = self.get_orms
+                    else:
+                        orm_method = self.create_orms
 
-                    elif name == "create":
-                        if orm_class.model_name == model_name:
-                            orm_method = self.create_orm
+                elif name == "fields":
+                    orm_method = self.get_orm_fields
 
-                        else:
-                            orm_method = self.create_orms
+                if orm_method:
+                    logger.debug(
+                        f"Found {orm_method.__name__} for {orm_class.__name__}"
+                    )
 
-                    elif name == "fields":
-                        orm_method = self.get_orm_fields
+                    def method(**kwargs):
+                        # https://github.com/Jaymon/prom/issues/166
+                        # we want to override the passed in orm_class if it
+                        # doesn't match our found orm class because this has
+                        # most likely been called internally by another magic
+                        # method that just passed kwargs
+                        kwargs.setdefault("orm_class", orm_class)
+                        if not isinstance(orm_class, kwargs["orm_class"]):
+                            kwargs["orm_class"] = orm_class
 
-                    if orm_method:
-                        logger.debug(
-                            f"Found {orm_method.__name__} for {orm_class.__name__}"
-                        )
+                        return orm_method(**kwargs)
 
-                        def method(**kwargs):
-                            # https://github.com/Jaymon/prom/issues/166
-                            # we want to override the passed in orm_class if it
-                            # doesn't match our found orm class because this has
-                            # most likely been called internally by another magic
-                            # method that just passed kwargs
-                            kwargs.setdefault("orm_class", orm_class)
-                            if not isinstance(orm_class, kwargs["orm_class"]):
-                                kwargs["orm_class"] = orm_class
+                    # could also use functools.wraps here on method instead of
+                    # just setting the name, but I like that it explicitely
+                    # says it is wrapped in the name instead of just
+                    # transparantly using orm_method's name
+                    method.__name__ = f"wrapped_{orm_method.__name__}"
+                    return method
 
-                            return orm_method(**kwargs)
-                        # could also use functools.wraps here on method instead of
-                        # just setting the name, but I like that it explicitely
-                        # says it is wrapped in the name instead of just
-                        # transparantly using orm_method's name
-                        method.__name__ = f"wrapped_{orm_method.__name__}"
-
-#                         method = functools.partial(
-#                             orm_method,
-#                             orm_class=orm_class,
-#                         )
-#                         self.method_cache[method_name] = method
-
-        if not method:
-            raise AttributeError(f"Could not find an orm matching {method_name}")
-
-        return method
+        raise AttributeError(f"Could not find an orm matching {method_name}")
 
     def __getattr__(self, method_name):
         try:
@@ -442,6 +447,21 @@ class ModelData(TestData):
             ]))
             instance = instance.requery()
 
+        for k in list(kwargs.keys()):
+            # We want to create any orms with FK references to orm_class if  counts
+            # were passed in
+            if k.endswith("_count"):
+                k_model_name = k[0:-6]
+                k_orm_class = self.get_orm_class(k_model_name)
+                if k_orm_class:
+                    logger.debug("Creating {} {} instances tied to {} instance".format(
+                        kwargs[k],
+                        k_orm_class.__name__,
+                        orm_class.__name__,
+                    ))
+                    kwargs.setdefault(instance.model_name, instance)
+                    self.create_orms(k_orm_class, **kwargs)
+
         return instance
 
     def create_orms(self, orm_class, **kwargs):
@@ -514,14 +534,13 @@ class ModelData(TestData):
         :returns: list, a list of Orm instances
         """
         ret = []
-        orm_field_name = orm_class.model_name
         if kwargs.get("related_refs", True):
             # because we need related refs, we will need to create refs if they
             # don't exist
             kwargs.setdefault("ignore_refs", False)
             kwargs = self.assure_orm_refs(orm_class, **kwargs)
 
-        count = kwargs.get(f"{orm_field_name}_count", kwargs.get("count", 1))
+        count = self._gets_count(orm_class, **kwargs)
         for _ in range(count):
             ret.append(self._get(orm_class, **kwargs))
 
