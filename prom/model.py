@@ -509,16 +509,30 @@ class Orm(object):
                 break
 
         if not conflict_fields:
-            # no luck with the primary key, so let's check unique indexes 
+            conflict_missing_count = 0
+
+            # no luck with the primary key, so let's check unique indexes , we're
+            # looking for the unique index with the least amount of missing fields
             for index in schema.indexes.values():
                 if index.unique:
+                    cmc = 0
+                    cfs = []
                     for field_name in index.field_names:
                         if field_name in fields:
-                            conflict_fields.append((field_name, fields[field_name]))
+                            cfs.append((field_name, fields[field_name]))
 
                         else:
-                            conflict_fields = []
-                            break
+                            cfs.append((field_name, None))
+                            cmc += 1
+
+                    if cmc == 0:
+                        conflict_fields = cfs
+                        break
+
+                    else:
+                        if not conflict_fields or (cmc < conflict_missing_count):
+                            conflict_fields = cfs
+                            conflict_missing_count = cmc
 
         return conflict_fields
 
