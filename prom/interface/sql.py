@@ -218,18 +218,24 @@ class SQLInterface(SQLInterfaceABC):
             raise ValueError(f"Upsert is missing conflict fields for {schema}")
 
         for field_name in conflict_field_names:
-
-            if field_name not in insert_fields:
-                insert_fields[field_name] = None
-
             # conflict fields need to be in the insert fields
-#             if field_name not in insert_fields:
-#                 raise ValueError(f"Upsert insert fields on {schema} missing conflict field {field_name}")
+            if field_name not in insert_fields:
+                raise ValueError(
+                    "Upsert insert fields on {} missing conflict field {}".format(
+                        schema,
+                        field_name,
+                    )
+                )
 
-            # conflict fields should not be in the udpate fields (this is more
+            # conflict fields should not be in the update fields (this is more
             # for safety, they should use .update if they want to change them)
             if field_name in update_fields:
-                raise ValueError(f"Upsert update fields on {schema} contains conflict field {field_name}")
+                raise ValueError(
+                    "Upsert update fields on {} contains conflict field {}".format(
+                        schema,
+                        field_name,
+                    )
+                )
 
         insert_sql, insert_args = self.render_insert_sql(
             schema,
@@ -255,7 +261,9 @@ class SQLInterface(SQLInterfaceABC):
         returning_field_names = schema.pk_names
         if returning_field_names:
             # https://www.sqlite.org/lang_returning.html
-            query_str += ' RETURNING {}'.format(', '.join(map(self.render_field_name_sql, returning_field_names)))
+            query_str += ' RETURNING {}'.format(', '.join(
+                map(self.render_field_name_sql, returning_field_names))
+            )
             query_args = insert_args + update_args
 
         r = self._raw(query_str, *query_args, **kwargs)

@@ -435,7 +435,12 @@ class Orm(object):
 
         conflict_fields = self.conflict_fields(fields)
         if not conflict_fields:
-            raise ValueError(f"Upsert failed to find the conflict field names")
+            raise ValueError(
+                "{}.upsert() failed to find conflict field names from: {}".format(
+                    self.__class__.__name__,
+                    list(fields.keys())
+                )
+            )
 
         q = self.query
         q.set(fields)
@@ -495,9 +500,9 @@ class Orm(object):
             unique indexes or a primary key
         :returns: list<tuple>, a list of (field_name, field_value) tuples
         """
-        schema = self.schema
-
         conflict_fields = []
+
+        schema = self.schema
 
         # we'll start with checking the primary key
         for field_name in schema.pk_names:
@@ -509,30 +514,19 @@ class Orm(object):
                 break
 
         if not conflict_fields:
-            conflict_missing_count = 0
-
-            # no luck with the primary key, so let's check unique indexes , we're
-            # looking for the unique index with the least amount of missing fields
+            # no luck with the primary key, so let's check unique indexes
             for index in schema.indexes.values():
                 if index.unique:
-                    cmc = 0
-                    cfs = []
                     for field_name in index.field_names:
                         if field_name in fields:
-                            cfs.append((field_name, fields[field_name]))
+                            conflict_fields.append((field_name, fields[field_name]))
 
                         else:
-                            cfs.append((field_name, None))
-                            cmc += 1
+                            conflict_fields = []
+                            break
 
-                    if cmc == 0:
-                        conflict_fields = cfs
+                    if conflict_fields:
                         break
-
-                    else:
-                        if not conflict_fields or (cmc < conflict_missing_count):
-                            conflict_fields = cfs
-                            conflict_missing_count = cmc
 
         return conflict_fields
 

@@ -130,9 +130,7 @@ class ModelData(TestData):
         """Internal dispatcher method for get_orm, this will first try and find
         a get_<ORM-NAME> method and fallback to get_orm"""
         method_name, method = self._get_method(orm_class)
-        kwargs.setdefault("orm_class", orm_class)
-        logger.debug(f"Running {method_name} for orm_class {orm_class.__name__}")
-        return method(**kwargs)
+        return self._run_method(method_name, method, orm_class, **kwargs)
 
     def _gets_method(self, orm_class, **kwargs):
         """Return the .get_orms() type method for orm_class"""
@@ -144,9 +142,7 @@ class ModelData(TestData):
         """Internal dispatcher method for get_orms, this will first try and find
         a get_<ORM-MODELS-NAME> method and fallback to get_orms"""
         method_name, method = self._gets_method(orm_class)
-        kwargs.setdefault("orm_class", orm_class)
-        logger.debug(f"Running {method_name} for orm_class {orm_class.__name__}")
-        return method(**kwargs)
+        return self._run_method(method_name, method, orm_class, **kwargs)
 
     def _create_method(self, orm_class, **kwargs):
         """Return the .create_orm() type method for orm_class"""
@@ -158,9 +154,7 @@ class ModelData(TestData):
         """Internal dispatcher method for create_orm, this will first try and find
         a create_<ORM-NAME> method and fallback to create_orm"""
         method_name, method = self._create_method(orm_class)
-        kwargs.setdefault("orm_class", orm_class)
-        logger.debug(f"Running {method_name} for orm_class {orm_class.__name__}")
-        return method(**kwargs)
+        return self._run_method(method_name, method, orm_class, **kwargs)
 
     def _creates_method(self, orm_class, **kwargs):
         """Return the .create_orms() type method for orm_class"""
@@ -172,9 +166,7 @@ class ModelData(TestData):
         """Internal dispatcher method for create_orms, this will first try and find
         a create_<ORM-MODELS-NAME> method and fallback to create_orm"""
         method_name, method = self._creates_method(orm_class)
-        kwargs.setdefault("orm_class", orm_class)
-        logger.debug(f"Running {method_name} for orm_class {orm_class.__name__}")
-        return method(**kwargs)
+        return self._run_method(method_name, method, orm_class, **kwargs)
 
     def _fields_method(self, orm_class, **kwargs):
         """Return the .get_orm_fields() type method for orm_class"""
@@ -186,13 +178,35 @@ class ModelData(TestData):
         """Internal dispatcher method for get_orm_fields, this will first try and find
         a get_<ORM-NAME>_fields method and fallback to get_orm_fields"""
         method_name, method = self._fields_method(orm_class)
+        return self._run_method(method_name, method, orm_class, **kwargs)
+
+    def _run_method(self, method_name, method, orm_class, **kwargs):
         kwargs.setdefault("orm_class", orm_class)
-        logger.debug(f"Running {method_name} for orm_class {orm_class.__name__}")
+        logger.debug(
+            "Running {} as {} for orm_class {}".format(
+                method.__name__,
+                method_name,
+                orm_class.__name__,
+            )
+        )
         return method(**kwargs)
 
     def _find_attr(self, method_name):
+        """Internal method used by self.__getattr__ to find the orm and create a
+        wrapper method to call
 
+        NOTE -- this method must raise AttributeError on expected errors
+
+        :param method_name: str, the method name that contains the model class
+            we're ultimately looking for
+        :returns: callable, the method that should be ran for the passed in
+            method_name
+        """
         method = None
+
+        logger.debug(
+            f"Finding {self.__class__.__name__}.{method_name} method"
+        )
 
         if method_name in self.method_cache:
             method = self.method_cache[method_name]
@@ -206,15 +220,19 @@ class ModelData(TestData):
                     name = "fields"
                     model_name, _ = model_name.rsplit("_", 1)
 
-            except ValueError:
-                raise AttributeError("invalid potential method: {}".format(method_name))
+            except ValueError as e:
+                raise AttributeError(
+                    f"invalid potential method: {method_name}"
+                ) from e
 
             else:
                 try:
                     orm_class = self.get_orm_class(model_name)
 
                 except ValueError as e:
-                    raise AttributeError() from e
+                    raise AttributeError(
+                        f"Could not find orm class from {method_name}"
+                    ) from e
 
                 else:
                     orm_method = None
@@ -236,11 +254,32 @@ class ModelData(TestData):
                         orm_method = self.get_orm_fields
 
                     if orm_method:
-                        method = functools.partial(
-                            orm_method,
-                            orm_class=orm_class,
+                        logger.debug(
+                            f"Found {orm_method.__name__} for {orm_class.__name__}"
                         )
-                        self.method_cache[method_name] = method
+
+                        def method(**kwargs):
+                            # https://github.com/Jaymon/prom/issues/166
+                            # we want to override the passed in orm_class if it
+                            # doesn't match our found orm class because this has
+                            # most likely been called internally by another magic
+                            # method that just passed kwargs
+                            kwargs.setdefault("orm_class", orm_class)
+                            if not isinstance(orm_class, kwargs["orm_class"]):
+                                kwargs["orm_class"] = orm_class
+
+                            return orm_method(**kwargs)
+                        # could also use functools.wraps here on method instead of
+                        # just setting the name, but I like that it explicitely
+                        # says it is wrapped in the name instead of just
+                        # transparantly using orm_method's name
+                        method.__name__ = f"wrapped_{orm_method.__name__}"
+
+#                         method = functools.partial(
+#                             orm_method,
+#                             orm_class=orm_class,
+#                         )
+#                         self.method_cache[method_name] = method
 
         if not method:
             raise AttributeError(f"Could not find an orm matching {method_name}")
