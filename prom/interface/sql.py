@@ -218,9 +218,13 @@ class SQLInterface(SQLInterfaceABC):
             raise ValueError(f"Upsert is missing conflict fields for {schema}")
 
         for field_name in conflict_field_names:
-            # conflict fields need to be in the insert fields
+
             if field_name not in insert_fields:
-                raise ValueError(f"Upsert insert fields on {schema} missing conflict field {field_name}")
+                insert_fields[field_name] = None
+
+            # conflict fields need to be in the insert fields
+#             if field_name not in insert_fields:
+#                 raise ValueError(f"Upsert insert fields on {schema} missing conflict field {field_name}")
 
             # conflict fields should not be in the udpate fields (this is more
             # for safety, they should use .update if they want to change them)
