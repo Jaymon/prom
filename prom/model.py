@@ -636,14 +636,16 @@ class Orm(object):
 
                     return ret
 
-            # Go through all the orm_classes looking for a models_name match and
-            # query that model using the field name that matches the FK value in self
+            # Go through all the orm_classes looking for a model_name or models_name
+            # match and query that model using that model's FK field name that
+            # matches self.pk
             for orm_class in self.orm_classes.values():
-                if k == orm_class.models_name:
+                if k == orm_class.models_name or k == orm_class.model_name:
                     for ref_field_name, ref_field in orm_class.schema.ref_fields.items():
                         ref_class = ref_field.ref
                         if ref_class and isinstance(self, ref_class):
-                            return orm_class.query.eq_field(ref_field_name, self.pk).all()
+                            query = orm_class.query.eq_field(ref_field_name, self.pk)
+                            return query.all() if k == orm_class.models_name else query.one()
 
             raise
 
