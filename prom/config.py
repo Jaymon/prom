@@ -361,13 +361,17 @@ class Schema(object):
         self.fields[field_name] = field
 
         for fn in field.names:
-            if fn in self.lookup["field_names"]:
+            if fn in self.lookup["field_names"] and fn in field.aliases:
                 self.lookup["field_names"].pop(fn)
                 logger.warning(
-                    "{} removed alias {} because it is used by multiple fields".format(
-                        self,
-                        fn,
-                    )
+                    " ".join([
+                        "{} ignored alias {} for {} because it is".format(
+                            self,
+                            fn,
+                            field.name,
+                        ),
+                        "used by another field",
+                    ])
                 )
 
             else:
@@ -376,8 +380,7 @@ class Schema(object):
         return self
 
     def set_index(self, index_name, index):
-        """
-        add an index to the schema
+        """Add an index to the schema
 
         for the most part, you will use the __getattr__ method of adding indexes for a more fluid interface,
         but you can use this if you want to get closer to the bare metal
@@ -401,8 +404,7 @@ class Schema(object):
         return self
 
     def field_name(self, field_name, *default):
-        """
-        get the canonical field name of field_name
+        """Get the canonical field name of field_name
 
         most of the time, the field name of field_name will just be field_name,
         but this checks the configured aliases to return the canonical name
@@ -424,6 +426,21 @@ class Schema(object):
 
                 else:
                     raise
+
+    def field_model_name(self, field_name):
+        """Check field_name against all the field's ref model names to see if there
+        is a match, this is separate from .field_name because there are times when
+        this behavior might not be desirable
+
+        :param field_name: str, the field/model name you want the canonical field
+            name for
+        :returns: str, the canonical field name
+        """
+        for fn, field in self.fields.items():
+            if field_name in field.ref_names:
+                return fn
+
+        raise AttributeError(field_name)
 
     def create_orm(self, orm_class=None):
         """If you have a schema but don't have an Orm for it, you can call this method
@@ -679,11 +696,22 @@ class Field(object, metaclass=FieldMeta):
         return schema.orm_class if schema else None
 
     @property
+    def ref_class(self):
+        return self.ref
+
+    @property
     def names(self):
         names = set()
         if self.name:
             names.add(self.name)
 
+        names.update(self.aliases)
+
+        return names
+
+    @property
+    def aliases(self):
+        names = set()
         names.update(self.options.get("names", []))
         names.update(self.options.get("aliases", []))
 
@@ -697,11 +725,14 @@ class Field(object, metaclass=FieldMeta):
                 names.add(f"{model_name}_id")
                 names.add(f"{model_name}_pk")
 
-        else:
-            if ref_class := self.ref:
-                names.add(ref_class.model_name)
-                names.add(ref_class.models_name)
+        return names
 
+    @property
+    def ref_names(self):
+        names = set()
+        if ref_class := self.ref:
+            names.add(ref_class.model_name)
+            names.add(ref_class.models_name)
         return names
 
     @property

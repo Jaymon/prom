@@ -916,6 +916,16 @@ class QueryTest(EnvironTestCase):
         o2r = o2_class.query.eq_field(o1.models_name, o1).one()
         self.assertEqual(o2.pk, o2r.pk)
 
+    def test_raw_field_1(self):
+        orm_class = self.get_orm_class()
+
+        q = orm_class.query.raw_field(
+            "MAX(foo) = {}".format(orm_class.interface.PLACEHOLDER),
+            1
+        ).eq_bar("blah blah").render()
+
+        self.assertTrue("MAX(foo) = 1" in q)
+
 
 class IteratorTest(EnvironTestCase):
     def get_iterator(self, count=5, limit=5, page=0):

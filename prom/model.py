@@ -310,6 +310,9 @@ class Orm(object):
         """
         return self.query.ref(orm_classpath).orm_class
 
+    def ref_class(self, orm_classpath):
+        return self.ref(orm_classpath)
+
     def is_hydrated(self):
         """return True if this orm was populated from the interface/db"""
         return self._interface_hydrate

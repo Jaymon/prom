@@ -402,11 +402,17 @@ class Field(object):
         self.operator = kwargs.pop("operator", None)
         self.is_list = kwargs.pop("is_list", False)
         self.direction = kwargs.pop("direction", None) # 1 = ASC, -1 = DESC
+        self.raw = kwargs.pop("raw", False)
         self.or_clause = False
         self.kwargs = kwargs
 
-        self.set_name(field_name)
-        self.set_value(field_val)
+        if self.raw:
+            self.name = field_name
+            self.value = field_val
+
+        else:
+            self.set_name(field_name)
+            self.set_value(field_val)
 
     def set_name(self, field_name):
         field_name, function_name = self.parse(field_name, self.schema)
@@ -447,7 +453,11 @@ class Field(object):
                 function_name = m.group(1)
                 field_name = m.group(2)
 
-            field_name = schema.field_name(field_name)
+            try:
+                field_name = schema.field_name(field_name)
+
+            except AttributeError:
+                field_name = schema.field_model_name(field_name)
 
         return field_name, function_name
 
@@ -649,6 +659,9 @@ class Query(object):
             elif name in {"get", "values", "all", "cursor"}:
                 field_method = self.in_field
                 query_method = getattr(self, name)
+
+            elif name in {"raw"}:
+                raise AttributeError(method_name)
 
             else:
                 query_method = None
@@ -882,6 +895,10 @@ class Query(object):
         if not field_val:
             raise ValueError("Cannot NOT LIKE nothing")
         return self.append_operation("nlike", field_name, field_val, **field_kwargs)
+
+    def raw_field(self, field_name, *field_vals, **field_kwargs):
+        field_kwargs["raw"] = True
+        return self.append_operation("raw", field_name, field_vals, **field_kwargs)
 
     def asc(self, *field_names):
         for field_name in field_names:
