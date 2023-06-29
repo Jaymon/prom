@@ -294,6 +294,9 @@ class Schema(object):
         self.orm_class = None
         self.lookup = {
             "field_names": {},
+            # holds parent's Field.names that have been set to None in children
+            # classes. Basically, if a parent class sets foo and then a child class
+            # later on sets foo = None then foo.names will be here
             "field_names_deleted": {},
         }
 
@@ -340,13 +343,14 @@ class Schema(object):
         return self.has_field(field_name)
 
     def set_field(self, field_name, field):
-        if not field_name: raise ValueError("field_name is empty")
-        if field_name in self.fields: raise ValueError("{} already exists and cannot be changed".format(field_name))
-        if not isinstance(field, Field): raise ValueError("{} is not a Field instance".format(type(field)))
+        if not field_name:
+            raise ValueError("field_name is empty")
+        if field_name in self.fields:
+            raise ValueError(f"{field_name} already exists and cannot be changed")
+        if not isinstance(field, Field):
+            raise ValueError(f"{type(field)} is not a Field instance")
 
         field.__set_name__(self.orm_class, field_name)
-        #field.name = field_name
-        #field.orm_class = self.orm_class
 
         if field.unique:
             self.set_index(field_name, Index(field_name, unique=True))
@@ -357,13 +361,26 @@ class Schema(object):
         self.fields[field_name] = field
 
         for fn in field.names:
-            self.lookup["field_names"][fn] = field
+            if fn in self.lookup["field_names"] and fn in field.aliases:
+                self.lookup["field_names"].pop(fn)
+                logger.warning(
+                    " ".join([
+                        "{} ignored alias {} for {} because it is".format(
+                            self,
+                            fn,
+                            field.name,
+                        ),
+                        "used by another field",
+                    ])
+                )
+
+            else:
+                self.lookup["field_names"][fn] = field
 
         return self
 
     def set_index(self, index_name, index):
-        """
-        add an index to the schema
+        """Add an index to the schema
 
         for the most part, you will use the __getattr__ method of adding indexes for a more fluid interface,
         but you can use this if you want to get closer to the bare metal
@@ -377,7 +394,8 @@ class Schema(object):
             raise ValueError("index_name {} has already been defined on {}".format(
                 index_name, str(self.indexes[index_name].field_names)
             ))
-        if not isinstance(index, Index): raise ValueError("{} is not an Index instance".format(type(index)))
+        if not isinstance(index, Index):
+            raise ValueError(f"{type(index)} is not an Index instance")
 
         index.name = index_name
         index.orm_class = self.orm_class
@@ -386,8 +404,7 @@ class Schema(object):
         return self
 
     def field_name(self, field_name, *default):
-        """
-        get the canonical field name of field_name
+        """Get the canonical field name of field_name
 
         most of the time, the field name of field_name will just be field_name,
         but this checks the configured aliases to return the canonical name
@@ -409,6 +426,21 @@ class Schema(object):
 
                 else:
                     raise
+
+    def field_model_name(self, field_name):
+        """Check field_name against all the field's ref model names to see if there
+        is a match, this is separate from .field_name because there are times when
+        this behavior might not be desirable
+
+        :param field_name: str, the field/model name you want the canonical field
+            name for
+        :returns: str, the canonical field name
+        """
+        for fn, field in self.fields.items():
+            if field_name in field.ref_names:
+                return fn
+
+        raise AttributeError(field_name)
 
     def create_orm(self, orm_class=None):
         """If you have a schema but don't have an Orm for it, you can call this method
@@ -664,11 +696,22 @@ class Field(object, metaclass=FieldMeta):
         return schema.orm_class if schema else None
 
     @property
+    def ref_class(self):
+        return self.ref
+
+    @property
     def names(self):
         names = set()
         if self.name:
             names.add(self.name)
 
+        names.update(self.aliases)
+
+        return names
+
+    @property
+    def aliases(self):
+        names = set()
         names.update(self.options.get("names", []))
         names.update(self.options.get("aliases", []))
 
@@ -682,6 +725,14 @@ class Field(object, metaclass=FieldMeta):
                 names.add(f"{model_name}_id")
                 names.add(f"{model_name}_pk")
 
+        return names
+
+    @property
+    def ref_names(self):
+        names = set()
+        if ref_class := self.ref:
+            names.add(ref_class.model_name)
+            names.add(ref_class.models_name)
         return names
 
     @property

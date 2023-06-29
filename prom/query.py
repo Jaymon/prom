@@ -402,11 +402,17 @@ class Field(object):
         self.operator = kwargs.pop("operator", None)
         self.is_list = kwargs.pop("is_list", False)
         self.direction = kwargs.pop("direction", None) # 1 = ASC, -1 = DESC
+        self.raw = kwargs.pop("raw", False)
         self.or_clause = False
         self.kwargs = kwargs
 
-        self.set_name(field_name)
-        self.set_value(field_val)
+        if self.raw:
+            self.name = field_name
+            self.value = field_val
+
+        else:
+            self.set_name(field_name)
+            self.set_value(field_val)
 
     def set_name(self, field_name):
         field_name, function_name = self.parse(field_name, self.schema)
@@ -431,6 +437,10 @@ class Field(object):
         schema = self.schema
         if query and schema:
             schema_field = getattr(schema, self.name)
+            if ref_class := schema_field.ref:
+                if isinstance(field_val, ref_class):
+                    field_val = field_val.pk
+
             field_val = schema_field.iquery(query, field_val)
         return field_val
 
@@ -443,7 +453,11 @@ class Field(object):
                 function_name = m.group(1)
                 field_name = m.group(2)
 
-            field_name = schema.field_name(field_name)
+            try:
+                field_name = schema.field_name(field_name)
+
+            except AttributeError:
+                field_name = schema.field_model_name(field_name)
 
         return field_name, function_name
 
@@ -542,7 +556,7 @@ class Query(object):
         as many OR calls as you want to create an any length OR clause
 
         I don't love that I had to use OR instead of or but "or" is a reserved
-        keyword and I thought OR was better than like _or or _or_
+        keyword and I thought OR was better than like _or, or_ or _or_
 
         :Example:
             self.eq_foo(1).OR.eq_foo(5).OR.eq_foo(10) # (foo=1 OR foo=5 OR foo=10)
@@ -551,11 +565,21 @@ class Query(object):
         return self
 
     @property
+    def or_(self): return self.OR
+    @property
+    def _or(self): return self.OR
+
+    @property
     def AND(self):
         """This is just here for completeness with .OR since, by default, any
         statements will be joined by AND"""
         self.fields_where[-1].or_clause = False
         return self
+
+    @property
+    def and_(self): return self.AND
+    @property
+    def _and(self): return self.AND
 
     def __init__(self, orm_class=None, **kwargs):
         # needed to use the db querying methods like get(), if you just want to build
@@ -635,6 +659,9 @@ class Query(object):
             elif name in {"get", "values", "all", "cursor"}:
                 field_method = self.in_field
                 query_method = getattr(self, name)
+
+            elif name in {"raw"}:
+                raise AttributeError(method_name)
 
             else:
                 query_method = None
@@ -798,14 +825,14 @@ class Query(object):
         return self.append_compound("except", queries, **kwargs)
 
     def is_field(self, field_name, field_val=None, **field_kwargs):
-        return self.append_operation("eq", field_name, field_val, **field_kwargs)
+        return self.eq_field(field_name, field_val, **field_kwargs)
     def eq_field(self, field_name, field_val=None, **field_kwargs):
-        return self.is_field(field_name, field_val, **field_kwargs)
+        return self.append_operation("eq", field_name, field_val, **field_kwargs)
 
     def not_field(self, field_name, field_val=None, **field_kwargs):
-        return self.append_operation("ne", field_name, field_val, **field_kwargs)
+        return self.ne_field(field_name, field_val, **field_kwargs)
     def ne_field(self, field_name, field_val=None, **field_kwargs):
-        return self.not_field(field_name, field_val, **field_kwargs)
+        return self.append_operation("ne", field_name, field_val, **field_kwargs)
 
     def between_field(self, field_name, low, high):
         self.gte_field(field_name, low)
@@ -868,6 +895,10 @@ class Query(object):
         if not field_val:
             raise ValueError("Cannot NOT LIKE nothing")
         return self.append_operation("nlike", field_name, field_val, **field_kwargs)
+
+    def raw_field(self, field_name, *field_vals, **field_kwargs):
+        field_kwargs["raw"] = True
+        return self.append_operation("raw", field_name, field_vals, **field_kwargs)
 
     def asc(self, *field_names):
         for field_name in field_names:

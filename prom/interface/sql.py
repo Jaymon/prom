@@ -220,12 +220,22 @@ class SQLInterface(SQLInterfaceABC):
         for field_name in conflict_field_names:
             # conflict fields need to be in the insert fields
             if field_name not in insert_fields:
-                raise ValueError(f"Upsert insert fields on {schema} missing conflict field {field_name}")
+                raise ValueError(
+                    "Upsert insert fields on {} missing conflict field {}".format(
+                        schema,
+                        field_name,
+                    )
+                )
 
-            # conflict fields should not be in the udpate fields (this is more
+            # conflict fields should not be in the update fields (this is more
             # for safety, they should use .update if they want to change them)
             if field_name in update_fields:
-                raise ValueError(f"Upsert update fields on {schema} contains conflict field {field_name}")
+                raise ValueError(
+                    "Upsert update fields on {} contains conflict field {}".format(
+                        schema,
+                        field_name,
+                    )
+                )
 
         insert_sql, insert_args = self.render_insert_sql(
             schema,
@@ -251,7 +261,9 @@ class SQLInterface(SQLInterfaceABC):
         returning_field_names = schema.pk_names
         if returning_field_names:
             # https://www.sqlite.org/lang_returning.html
-            query_str += ' RETURNING {}'.format(', '.join(map(self.render_field_name_sql, returning_field_names)))
+            query_str += ' RETURNING {}'.format(', '.join(
+                map(self.render_field_name_sql, returning_field_names))
+            )
             query_args = insert_args + update_args
 
         r = self._raw(query_str, *query_args, **kwargs)
@@ -407,116 +419,6 @@ class SQLInterface(SQLInterfaceABC):
         self.set_table(schema, **kwargs)
         return True
 
-    def render_field_sql(self, schema, symbol_map, field):
-        format_str = ''
-        format_args = []
-        symbol = symbol_map['symbol']
-        is_list = field.is_list
-        field_name = field.name
-        field_val = field.value
-        field_kwargs = field.kwargs
-
-        if field_kwargs:
-            # kwargs take precedence because None is a perfectly valid field_val
-            f = schema.fields[field_name]
-            if issubclass(f.type, (datetime.datetime, datetime.date)):
-                format_strs = self.render_date_field_sql(field_name, field_kwargs, symbol)
-                for fname, fvstr, farg in format_strs:
-                    if format_str:
-                        format_str += ' AND '
-
-                    if is_list:
-                        # you can pass in things like day=..., month=... to
-                        # date fields, this converts those values to lists to
-                        # make sure we can handle something like in_foo(day=1)
-                        # and in_foo(day=[1, 2, 3]) the same way
-                        farg = make_list(farg)
-
-                        format_str += '{} {} ({})'.format(
-                            fname,
-                            symbol,
-                            ', '.join([fvstr] * len(farg))
-                        )
-                        format_args.extend(farg)
-
-                    else:
-                        format_str += '{} {} {}'.format(fname, symbol, fvstr)
-                        format_args.append(farg)
-
-            else:
-                raise ValueError('Field {} does not support extended kwarg values'.format(field_name))
-
-        else:
-            if is_list and not isinstance(field_val, Query):
-                field_val = make_list(field_val) if field_val else []
-                field_name = self.render_field_name_sql(field_name)
-                format_val_str = self.PLACEHOLDER
-
-                if field_val:
-                    format_str = '{} {} ({})'.format(
-                        field_name,
-                        symbol,
-                        ', '.join([format_val_str] * len(field_val))
-                    )
-                    format_args.extend(field_val)
-
-                else:
-                    # field value is empty, so we need to customize the SQL to
-                    # compensate for the empty set since SQL doesn't like empty
-                    # sets
-                    #
-                    # the idea here is this is a condition that will
-                    # automatically cause the query to fail but not necessarily be an error, 
-                    # the best example is the IN (...) queries, if you do self.in_foo([]).get()
-                    # that will fail because the list was empty, but a value error shouldn't
-                    # be raised because a common case is: self.if_foo(Bar.query.is_che(True).pks).get()
-                    # which should result in an empty set if there are no rows where che = TRUE
-                    #
-                    # https://stackoverflow.com/a/58078468/5006
-                    if symbol == "IN":
-                        format_str = '{} <> {}'.format(field_name, field_name)
-
-                    elif symbol == "NOT IN":
-                        format_str = '{} = {}'.format(field_name, field_name)
-
-                    else:
-                        raise ValueError("Unsure what to do here")
-
-            else:
-                field_name = self.render_field_name_sql(field_name)
-                format_val_str = self.PLACEHOLDER
-
-                # special handling for NULL
-                if field_val is None:
-                    symbol = symbol_map['none_symbol']
-
-                if isinstance(field_val, Query):
-                    subquery_schema = field_val.schema
-                    if not subquery_schema:
-                        raise ValueError("{} subquery has no schema".format(field_name))
-
-                    subquery_sql, subquery_args = self.render_sql(
-                        subquery_schema,
-                        field_val
-                    )
-
-                    format_str = '{} {} ({})'.format(
-                        field_name,
-                        symbol,
-                        subquery_sql
-                    )
-                    format_args.extend(subquery_args)
-
-                else:
-                    format_str = '{} {} {}'.format(
-                        field_name,
-                        symbol,
-                        format_val_str,
-                    )
-                    format_args.append(field_val)
-
-        return format_str, format_args
-
     def render_table_name_sql(self, schema):
         return self.render_field_name_sql(schema)
 
@@ -605,9 +507,15 @@ class SQLInterface(SQLInterfaceABC):
             query_str.append(") I")
         return query_str, query_args
 
-    def render_where_sql(self, schema, query, **kwargs):
-        query_str = []
-        query_args = []
+    def render_field_raw_sql(self, schema, field):
+        return field.name, field.value
+
+    def render_field_sql(self, schema, field):
+        format_str = ''
+        format_args = []
+        is_list = field.is_list
+        field_name = field.name
+        field_val = field.value
 
         symbol_map = {
             'in': {'symbol': 'IN', 'list': True},
@@ -623,6 +531,124 @@ class SQLInterface(SQLInterfaceABC):
             'like': {'symbol': 'LIKE'},
             'nlike': {'symbol': 'NOT LIKE'},
         }
+        sd = symbol_map[field.operator]
+        symbol = sd['symbol']
+
+        field_kwargs = field.kwargs
+        if field_kwargs:
+            # kwargs take precedence because None is a perfectly valid field_val
+            f = schema.fields[field_name]
+            if issubclass(f.type, (datetime.datetime, datetime.date)):
+                format_strs = self.render_date_field_sql(
+                    field_name,
+                    field_kwargs,
+                    symbol
+                )
+                for fname, fvstr, farg in format_strs:
+                    if format_str:
+                        format_str += ' AND '
+
+                    if is_list:
+                        # you can pass in things like day=..., month=... to
+                        # date fields, this converts those values to lists to
+                        # make sure we can handle something like in_foo(day=1)
+                        # and in_foo(day=[1, 2, 3]) the same way
+                        farg = make_list(farg)
+
+                        format_str += '{} {} ({})'.format(
+                            fname,
+                            symbol,
+                            ', '.join([fvstr] * len(farg))
+                        )
+                        format_args.extend(farg)
+
+                    else:
+                        format_str += '{} {} {}'.format(fname, symbol, fvstr)
+                        format_args.append(farg)
+
+            else:
+                raise ValueError(
+                    'Field {} does not support extended kwarg values'.format(
+                        field_name
+                    )
+                )
+
+        else:
+            if is_list and not isinstance(field_val, Query):
+                field_val = make_list(field_val) if field_val else []
+                field_name = self.render_field_name_sql(field_name)
+                format_val_str = self.PLACEHOLDER
+
+                if field_val:
+                    format_str = '{} {} ({})'.format(
+                        field_name,
+                        symbol,
+                        ', '.join([format_val_str] * len(field_val))
+                    )
+                    format_args.extend(field_val)
+
+                else:
+                    # field value is empty, so we need to customize the SQL to
+                    # compensate for the empty set since SQL doesn't like empty
+                    # sets
+                    #
+                    # the idea here is this is a condition that will
+                    # automatically cause the query to fail but not necessarily 
+                    # be an error, the best example is the IN (...) queries, if
+                    # you do self.in_foo([]).get() that will fail because the list
+                    # was empty, but a value error shouldn't be raised because a
+                    # common case is: self.if_foo(Bar.query.is_che(True).pks).get()
+                    # which should result in an empty set if there are no rows
+                    # where che = TRUE
+                    #
+                    # https://stackoverflow.com/a/58078468/5006
+                    if symbol == "IN":
+                        format_str = '{} <> {}'.format(field_name, field_name)
+
+                    elif symbol == "NOT IN":
+                        format_str = '{} = {}'.format(field_name, field_name)
+
+                    else:
+                        raise ValueError("Unsure what to do here")
+
+            else:
+                field_name = self.render_field_name_sql(field_name)
+                format_val_str = self.PLACEHOLDER
+
+                # special handling for NULL
+                if field_val is None:
+                    symbol = sd['none_symbol']
+
+                if isinstance(field_val, Query):
+                    subquery_schema = field_val.schema
+                    if not subquery_schema:
+                        raise ValueError(f"{field_name} subquery has no schema")
+
+                    subquery_sql, subquery_args = self.render_sql(
+                        subquery_schema,
+                        field_val
+                    )
+
+                    format_str = '{} {} ({})'.format(
+                        field_name,
+                        symbol,
+                        subquery_sql
+                    )
+                    format_args.extend(subquery_args)
+
+                else:
+                    format_str = '{} {} {}'.format(
+                        field_name,
+                        symbol,
+                        format_val_str,
+                    )
+                    format_args.append(field_val)
+
+        return format_str, format_args
+
+    def render_where_sql(self, schema, query, **kwargs):
+        query_str = []
+        query_args = []
 
         if query.fields_where:
             query_str.append('WHERE')
@@ -634,13 +660,18 @@ class SQLInterface(SQLInterfaceABC):
 
                 field_str = ''
                 field_args = []
-                sd = symbol_map[field.operator]
 
-                field_str, field_args = self.render_field_sql(
-                    schema,
-                    sd,
-                    field,
-                )
+                if field.raw:
+                    field_str, field_args = self.render_field_raw_sql(
+                        schema,
+                        field,
+                    )
+
+                else:
+                    field_str, field_args = self.render_field_sql(
+                        schema,
+                        field,
+                    )
 
                 if field.or_clause:
                     if not or_clause:

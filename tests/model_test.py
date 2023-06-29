@@ -633,6 +633,23 @@ class OrmTest(EnvironTestCase):
             self.assertEqual(o1.pk, o2.o1_id)
         self.assertEqual(2, count)
 
+    def test___getattr___model_name(self):
+        """Makes sure that getting an attribute by model_name works as expected"""
+        o1_class = self.get_orm_class(
+            bar=Field(str),
+            model_name="o1model",
+        )
+        o2_class = self.get_orm_class(
+            o1_id=Field(o1_class),
+            model_name="o2model",
+        )
+
+        o1 = self.insert_orm(o1_class, bar="1")
+        o2 = self.insert_orm(o2_class, o1_id=o1.pk)
+
+        o2r = o1.o2model
+        self.assertEqual(o2.pk, o2r.pk)
+
     def test_creation(self):
         class COrm(Orm):
             foo = Field(int)

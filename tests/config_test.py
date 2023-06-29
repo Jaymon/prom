@@ -148,6 +148,17 @@ class SchemaTest(BaseTestCase):
         r = s.field_name("bogus", None)
         self.assertIsNone(r)
 
+    def test_field_model_name(self):
+        o1_class = self.get_orm_class(
+            bar=Field(str),
+        )
+        o2_class = self.get_orm_class(
+            o1_id=Field(o1_class),
+        )
+
+        field_name = o2_class.schema.field_model_name(o1_class.model_name)
+        self.assertEqual("o1_id", field_name)
+
 
 class DsnConnectionTest(BaseTestCase):
     """Any general tests should go here and always use sqlite because that's

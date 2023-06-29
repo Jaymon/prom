@@ -310,6 +310,9 @@ class Orm(object):
         """
         return self.query.ref(orm_classpath).orm_class
 
+    def ref_class(self, orm_classpath):
+        return self.ref(orm_classpath)
+
     def is_hydrated(self):
         """return True if this orm was populated from the interface/db"""
         return self._interface_hydrate
@@ -435,7 +438,12 @@ class Orm(object):
 
         conflict_fields = self.conflict_fields(fields)
         if not conflict_fields:
-            raise ValueError(f"Upsert failed to find the conflict field names")
+            raise ValueError(
+                "{}.upsert() failed to find conflict field names from: {}".format(
+                    self.__class__.__name__,
+                    list(fields.keys())
+                )
+            )
 
         q = self.query
         q.set(fields)
@@ -495,9 +503,9 @@ class Orm(object):
             unique indexes or a primary key
         :returns: list<tuple>, a list of (field_name, field_value) tuples
         """
-        schema = self.schema
-
         conflict_fields = []
+
+        schema = self.schema
 
         # we'll start with checking the primary key
         for field_name in schema.pk_names:
@@ -509,7 +517,7 @@ class Orm(object):
                 break
 
         if not conflict_fields:
-            # no luck with the primary key, so let's check unique indexes 
+            # no luck with the primary key, so let's check unique indexes
             for index in schema.indexes.values():
                 if index.unique:
                     for field_name in index.field_names:
@@ -519,6 +527,9 @@ class Orm(object):
                         else:
                             conflict_fields = []
                             break
+
+                    if conflict_fields:
+                        break
 
         return conflict_fields
 
@@ -628,14 +639,16 @@ class Orm(object):
 
                     return ret
 
-            # Go through all the orm_classes looking for a models_name match and
-            # query that model using the field name that matches the FK value in self
+            # Go through all the orm_classes looking for a model_name or models_name
+            # match and query that model using that model's FK field name that
+            # matches self.pk
             for orm_class in self.orm_classes.values():
-                if k == orm_class.models_name:
+                if k == orm_class.models_name or k == orm_class.model_name:
                     for ref_field_name, ref_field in orm_class.schema.ref_fields.items():
                         ref_class = ref_field.ref
                         if ref_class and isinstance(self, ref_class):
-                            return orm_class.query.eq_field(ref_field_name, self.pk).all()
+                            query = orm_class.query.eq_field(ref_field_name, self.pk)
+                            return query.all() if k == orm_class.models_name else query.one()
 
             raise
 
