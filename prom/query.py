@@ -431,6 +431,10 @@ class Field(object):
         schema = self.schema
         if query and schema:
             schema_field = getattr(schema, self.name)
+            if ref_class := schema_field.ref:
+                if isinstance(field_val, ref_class):
+                    field_val = field_val.pk
+
             field_val = schema_field.iquery(query, field_val)
         return field_val
 
@@ -542,7 +546,7 @@ class Query(object):
         as many OR calls as you want to create an any length OR clause
 
         I don't love that I had to use OR instead of or but "or" is a reserved
-        keyword and I thought OR was better than like _or or _or_
+        keyword and I thought OR was better than like _or, or_ or _or_
 
         :Example:
             self.eq_foo(1).OR.eq_foo(5).OR.eq_foo(10) # (foo=1 OR foo=5 OR foo=10)
@@ -551,11 +555,21 @@ class Query(object):
         return self
 
     @property
+    def or_(self): return self.OR
+    @property
+    def _or(self): return self.OR
+
+    @property
     def AND(self):
         """This is just here for completeness with .OR since, by default, any
         statements will be joined by AND"""
         self.fields_where[-1].or_clause = False
         return self
+
+    @property
+    def and_(self): return self.AND
+    @property
+    def _and(self): return self.AND
 
     def __init__(self, orm_class=None, **kwargs):
         # needed to use the db querying methods like get(), if you just want to build
@@ -798,14 +812,14 @@ class Query(object):
         return self.append_compound("except", queries, **kwargs)
 
     def is_field(self, field_name, field_val=None, **field_kwargs):
-        return self.append_operation("eq", field_name, field_val, **field_kwargs)
+        return self.eq_field(field_name, field_val, **field_kwargs)
     def eq_field(self, field_name, field_val=None, **field_kwargs):
-        return self.is_field(field_name, field_val, **field_kwargs)
+        return self.append_operation("eq", field_name, field_val, **field_kwargs)
 
     def not_field(self, field_name, field_val=None, **field_kwargs):
-        return self.append_operation("ne", field_name, field_val, **field_kwargs)
+        return self.ne_field(field_name, field_val, **field_kwargs)
     def ne_field(self, field_name, field_val=None, **field_kwargs):
-        return self.not_field(field_name, field_val, **field_kwargs)
+        return self.append_operation("ne", field_name, field_val, **field_kwargs)
 
     def between_field(self, field_name, low, high):
         self.gte_field(field_name, low)

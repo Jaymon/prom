@@ -645,8 +645,6 @@ class OrmTest(EnvironTestCase):
         )
 
         o1 = self.insert_orm(o1_class, bar="1")
-        self.insert_orm(o1_class, bar="ignored")
-
         o2 = self.insert_orm(o2_class, o1_id=o1.pk)
 
         o2r = o1.o2model

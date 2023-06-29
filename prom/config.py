@@ -294,6 +294,9 @@ class Schema(object):
         self.orm_class = None
         self.lookup = {
             "field_names": {},
+            # holds parent's Field.names that have been set to None in children
+            # classes. Basically, if a parent class sets foo and then a child class
+            # later on sets foo = None then foo.names will be here
             "field_names_deleted": {},
         }
 
@@ -340,13 +343,14 @@ class Schema(object):
         return self.has_field(field_name)
 
     def set_field(self, field_name, field):
-        if not field_name: raise ValueError("field_name is empty")
-        if field_name in self.fields: raise ValueError("{} already exists and cannot be changed".format(field_name))
-        if not isinstance(field, Field): raise ValueError("{} is not a Field instance".format(type(field)))
+        if not field_name:
+            raise ValueError("field_name is empty")
+        if field_name in self.fields:
+            raise ValueError(f"{field_name} already exists and cannot be changed")
+        if not isinstance(field, Field):
+            raise ValueError(f"{type(field)} is not a Field instance")
 
         field.__set_name__(self.orm_class, field_name)
-        #field.name = field_name
-        #field.orm_class = self.orm_class
 
         if field.unique:
             self.set_index(field_name, Index(field_name, unique=True))
@@ -357,7 +361,17 @@ class Schema(object):
         self.fields[field_name] = field
 
         for fn in field.names:
-            self.lookup["field_names"][fn] = field
+            if fn in self.lookup["field_names"]:
+                self.lookup["field_names"].pop(fn)
+                logger.warning(
+                    "{} removed alias {} because it is used by multiple fields".format(
+                        self,
+                        fn,
+                    )
+                )
+
+            else:
+                self.lookup["field_names"][fn] = field
 
         return self
 
@@ -377,7 +391,8 @@ class Schema(object):
             raise ValueError("index_name {} has already been defined on {}".format(
                 index_name, str(self.indexes[index_name].field_names)
             ))
-        if not isinstance(index, Index): raise ValueError("{} is not an Index instance".format(type(index)))
+        if not isinstance(index, Index):
+            raise ValueError(f"{type(index)} is not an Index instance")
 
         index.name = index_name
         index.orm_class = self.orm_class
@@ -681,6 +696,11 @@ class Field(object, metaclass=FieldMeta):
                 model_name = self.orm_class.model_name
                 names.add(f"{model_name}_id")
                 names.add(f"{model_name}_pk")
+
+        else:
+            if ref_class := self.ref:
+                names.add(ref_class.model_name)
+                names.add(ref_class.models_name)
 
         return names
 
