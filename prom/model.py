@@ -433,30 +433,34 @@ class Orm(object):
         """
         ret = True
 
-        schema = self.schema
-        fields = self.to_interface()
-
-        conflict_fields = self.conflict_fields(fields)
-        if not conflict_fields:
-            raise ValueError(
-                "{}.upsert() failed to find conflict field names from: {}".format(
-                    self.__class__.__name__,
-                    list(fields.keys())
-                )
-            )
-
-        q = self.query
-        q.set(fields)
-        pk = q.upsert([t[0] for t in conflict_fields], **kwargs)
-        if pk:
-            fields = q.fields_set.fields
-            pk_name = schema.pk_name
-            if pk_name:
-                fields[pk_name] = pk
-                self.from_interface(fields)
+        if pk := self._interface_pk:
+            ret = self.update()
 
         else:
-            ret = False
+            schema = self.schema
+            fields = self.to_interface()
+
+            conflict_fields = self.conflict_fields(fields)
+            if not conflict_fields:
+                raise ValueError(
+                    "{}.upsert() failed to find conflict field names from: {}".format(
+                        self.__class__.__name__,
+                        list(fields.keys())
+                    )
+                )
+
+            q = self.query
+            q.set(fields)
+            pk = q.upsert([t[0] for t in conflict_fields], **kwargs)
+            if pk:
+                fields = q.fields_set.fields
+                pk_name = schema.pk_name
+                if pk_name:
+                    fields[pk_name] = pk
+                self.from_interface(fields)
+
+            else:
+                ret = False
 
         return ret
 

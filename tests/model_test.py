@@ -1261,12 +1261,6 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(o.baz, o2.baz)
         self.assertEqual(o.pk, o2.pk)
 
-        # we only want to upsert on specific occasions where we know we've set
-        # the conflict values
-        with self.assertRaises(ValueError):
-            o2.baz = 2
-            o2.upsert()
-
         o3 = orm_class({"foo": "1", "bar": "1", "che": "1", "baz": 2})
         o3.upsert()
         self.assertEqual(o.pk, o3.pk)
@@ -1281,10 +1275,25 @@ class OrmTest(EnvironTestCase):
         )
 
         o = orm_class(foo=1, bar=1)
-        o.upsert()
+        r1 = o.upsert()
+        self.assertTrue(r1)
+        r2 = o.upsert()
+        self.assertTrue(r2)
 
-        with self.assertRaises(ValueError):
-            o.upsert()
+    def test_upsert_with_pk(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, True),
+            bar=Field(int, True),
+            baz=Field(int, False),
+            foo_bar=Index("foo", "bar", unique=True),
+        )
+
+        o = orm_class.create(foo=1, bar=2)
+
+        o.baz = 3
+        o.upsert()
+        o2 = o.requery()
+        self.assertEqual(o.baz, o2.baz)
 
     def test_load(self):
         orm_class = self.get_orm_class(
