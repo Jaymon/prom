@@ -31,7 +31,7 @@ from .exception import (
 from . import utils
 
 
-__version__ = '4.5.1'
+__version__ = '4.6.0'
 
 
 def transaction(connection_name="", **kwargs):
@@ -50,8 +50,12 @@ def transaction(connection_name="", **kwargs):
     :param connection_name: str, the connection name corresponding to the anchor
         of the DSN, defaults to the default "" connection
     :param **kwargs: passed through to the Interface.transaction context manager
-        prefix: the name of the transaction you want to use
+        * prefix: str, the name of the transaction you want to use
+        * nest: bool, True if you want nested transactions to be created, False
+            to ignore nested transactions
     :returns: Connection instance
     """
+    kwargs.setdefault("nest", False)
+    kwargs.setdefault("prefix", f"prom_{connection_name}_tx")
     return get_interface(connection_name).transaction(**kwargs)
 

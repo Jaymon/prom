@@ -32,9 +32,11 @@ class SQLConnection(Connection):
     def _transaction_start(self):
         self._execute("BEGIN")
 
-    def _transaction_started(self, name):
+    def _transaction_starting(self, tx):
         # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-        self._execute("SAVEPOINT {}".format(self.interface.render_field_name_sql(name)))
+        self._execute("SAVEPOINT {}".format(
+            self.interface.render_field_name_sql(tx["name"])
+        ))
 
     def _transaction_stop(self):
         """
@@ -43,18 +45,22 @@ class SQLConnection(Connection):
         """
         self._execute("COMMIT")
 
-    def _transaction_stopping(self, name):
-        self._execute("RELEASE {}".format(self.interface.render_field_name_sql(name)))
+    def _transaction_stopping(self, tx):
+        self._execute("RELEASE {}".format(
+            self.interface.render_field_name_sql(tx["name"])
+        ))
 
     def _transaction_fail(self):
         self._execute("ROLLBACK")
 
-    def _transaction_failing(self, name):
+    def _transaction_failing(self, tx):
         # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-        self._execute("ROLLBACK TO SAVEPOINT {}".format(self.interface.render_field_name_sql(name)))
+        self._execute("ROLLBACK TO SAVEPOINT {}".format(
+            self.interface.render_field_name_sql(tx["name"])
+        ))
 
     def _execute(self, query_str):
-        self.log_info(f"0x{id(self):02x} - {query_str}")
+        self.log_info(f"{self} - {query_str}")
         cur = self.cursor()
         cur.execute(query_str)
         cur.close()
@@ -308,8 +314,8 @@ class SQLInterface(SQLInterfaceABC):
 
             if query_args:
                 self.log_for(
-                    debug=(["0x{:02x} - {}\n{}", id(connection), query_str, query_args],),
-                    info=([f"0x{id(connection):02x} - {query_str}"],)
+                    debug=(["0x{} - {}\n{}", connection, query_str, query_args],),
+                    info=([f"{connection} - {query_str}"],)
                 )
 
                 try:
@@ -326,7 +332,7 @@ class SQLInterface(SQLInterfaceABC):
                     )
 
             else:
-                self.log_info(f"0x{id(connection):02x} - {query_str}")
+                self.log_info(f"{connection} - {query_str}")
                 cur.execute(query_str)
 
             if cursor_result:

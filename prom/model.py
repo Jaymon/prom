@@ -181,6 +181,25 @@ class Orm(object):
         return OrmPool(orm_class=cls, maxsize=maxsize)
 
     @classmethod
+    def transaction(cls, **kwargs):
+        """Create a transaction for this Orm
+
+        :Example:
+            with FooOrm.transaction() as conn:
+                o = FooOrm(foo=1)
+                o.save(connection=conn)
+
+        :param **kwargs: passed through to the Interface.transaction context manager
+            * prefix: str, the name of the transaction you want to use
+            * nest: bool, True if you want nested transactions to be created, False
+                to ignore nested transactions
+        :returns: Connection instance
+        """
+        kwargs.setdefault("nest", False)
+        kwargs.setdefault("prefix", f"{cls.__name__}_{cls.connection_name}_tx")
+        return cls.interface.transaction(**kwargs)
+
+    @classmethod
     def create(cls, *args, **kwargs):
         """
         create an instance of cls with the passed in fields and set it into the db

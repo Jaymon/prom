@@ -335,16 +335,23 @@ class BaseTestCase(TestCase):
             - query, count
             - (interface, schema), count
             - orm_class, count
-        :returns: list[int]
+        :returns: list[Any], a list of primary keys
         """
         pks = []
-        if len(args) == 3:
+        if len(args) == 1:
+            o = args[0]
+            count = 1
+
+        elif len(args) == 2:
+            o = args[0]
+            count = args[1]
+
+        elif len(args) == 3:
             o = (args[0], args[1])
             count = args[2]
 
         else:
-            o = args[0]
-            count = args[1]
+            raise ValueError(f"Passed in {len(args)} arguments")
 
         for i in range(count):
             pks.append(self.insert_fields(o))
@@ -352,6 +359,13 @@ class BaseTestCase(TestCase):
         return pks
 
     def insert_fields(self, o, fields=None, **fields_kwargs):
+        """Insert fields
+
+        :param o: Query|tuple[Interface, Schema]|orm
+        :param fields: dict|None
+        :param **fields_kwargs: merged with fields
+        :returns: Any, the primary key for the row containing the inserted fields
+        """
         fields = make_dict(fields, fields_kwargs)
 
         if isinstance(o, query.Query):

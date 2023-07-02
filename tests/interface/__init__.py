@@ -35,6 +35,12 @@ class _BaseTestInterface(BaseTestCase):
     def create_interface(cls):
         raise NotImplementedError()
 
+    def test_connection___str__(self):
+        i = self.get_interface()
+        with i.connection() as conn:
+            s = f"{conn}"
+            self.assertRegex(s, r"0x[a-f0-9]{12}")
+
     def test_connect_close(self):
         i = self.get_interface()
         i.close()
@@ -929,7 +935,7 @@ class _BaseTestInterface(BaseTestCase):
 
         self.assertEqual(1, i.count(s2, query.Query()))
 
-    def test_transaction_connection(self):
+    def test_transaction_connection_1(self):
         """This is the best test for seeing if transactions are working as expected"""
         orm_class = self.get_orm_class()
         i = self.get_interface()
@@ -959,6 +965,42 @@ class _BaseTestInterface(BaseTestCase):
         conn.transaction_stop()
         conn.cursor().execute("SELECT true")
         conn.transaction_stop()
+
+    def test_transaction_connection_2(self):
+        """Make sure descendant txs inherit settings from ancestors unless explicitely
+        overridden"""
+        i = self.get_interface()
+        conn = i.get_connection()
+
+        conn.transaction_start(nest=False)
+        tx = conn.transaction_current()
+        self.assertFalse(tx["ignored"])
+        self.assertFalse(tx["nest"])
+
+        conn.transaction_start()
+        tx = conn.transaction_current()
+        self.assertTrue(tx["ignored"])
+        self.assertFalse(tx["nest"])
+
+        conn.transaction_start(nest=True)
+        tx = conn.transaction_current()
+        self.assertFalse(tx["ignored"])
+        self.assertTrue(tx["nest"])
+
+        conn.transaction_start()
+        tx = conn.transaction_current()
+        self.assertFalse(tx["ignored"])
+        self.assertTrue(tx["nest"])
+
+        # finish the two previous txs that allowed nesting
+        conn.transaction_stop()
+        conn.transaction_stop()
+
+        # a new tx that doesn't set nest should inherit ancestor's setting
+        conn.transaction_start()
+        tx = conn.transaction_current()
+        self.assertTrue(tx["ignored"])
+        self.assertFalse(tx["nest"])
 
     def test_transaction_context(self):
         i = self.get_interface()
@@ -997,6 +1039,25 @@ class _BaseTestInterface(BaseTestCase):
 
         self.assertEqual(0, i.count(s1, query.Query().is__id(pk1)))
         self.assertEqual(0, i.count(s2, query.Query().is__id(pk2)))
+
+    def test_transaction_no_nest(self):
+        """Make sure you can turn off nesting in transactions"""
+        i = self.get_interface()
+        s = self.get_schema()
+        i.set_table(s)
+
+        try:
+            with i.transaction(nest=False, prefix="trans_no_nest") as conn:
+                i.insert(s, self.get_fields(s))
+
+                with i.transaction() as conn:
+                    i.insert(s, self.get_fields(s))
+                    raise RuntimeError("testing")
+
+        except Exception as e:
+            pass
+
+        self.assertEqual(0, i.count(s, Query()))
 
     def test_unique(self):
         i = self.get_interface()
