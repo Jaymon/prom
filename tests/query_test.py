@@ -754,24 +754,6 @@ class QueryTest(EnvironTestCase):
         self.assertEqual(o._created, o2._created)
         self.assertEqual(o._updated, o2._updated)
 
-#     def test_insert_multiple(self):
-#         """Test inserting multiple rows in one query"""
-#         orm_class = self.get_orm_class()
-#         q = orm_class.query
-# 
-#         q.set(self.get_fields(orm_class.schema))
-#         #pout.v(q)
-# 
-#         fs = QueryFields()
-# 
-# 
-#         #fs.append(QueryField(q, "foo", None))
-# 
-#         fs.append(QueryField(q, "foo", 1))
-#         fs.append(QueryField(q, "foo", 2))
-#         for row in fs.rows():
-#             pout.v(row)
-
     def test_update_bubble_up(self):
         """
         https://github.com/jaymon/prom/issues/11

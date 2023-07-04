@@ -827,29 +827,10 @@ class SQLInterface(SQLInterfaceABC):
 
         return query_str, query_vals
 
-#         field_formats = []
-#         field_names = []
-#         query_vals = []
-#         for field_name, field_val in fields.items():
-#             field_names.append(self.render_field_name_sql(field_name))
-#             field_formats.append(self.PLACEHOLDER)
-#             query_vals.append(field_val)
-# 
-#         query_str = 'INSERT INTO {} ({}) VALUES ({})'.format(
-#             self.render_table_name_sql(schema),
-#             ', '.join(field_names),
-#             ', '.join(field_formats),
-#         )
-# 
-#         if not kwargs.get("ignore_return_clause", False):
-#             # https://www.sqlite.org/lang_returning.html
-#             pk_name = schema.pk_name
-#             if pk_name:
-#                 query_str += ' RETURNING {}'.format(self.render_field_name_sql(pk_name))
-# 
-#         return query_str, query_vals
-
     def render_inserts_sql(self, schema, field_names, **kwargs):
+        """
+        https://www.sqlite.org/lang_insert.html
+        """
         sql_names = []
         sql_formats = []
         for field_name in field_names:

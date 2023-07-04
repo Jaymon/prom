@@ -307,6 +307,25 @@ class ModelData(TestData):
             for inter in get_interfaces().values():
                 inter.unsafe_delete_tables()
 
+    def unsafe_install_orms(self, modulepaths):
+        """Go through and install all the Orm subclasses found in the passed in
+        module paths
+
+        :param modulepaths: Sequence[str], a list of modpaths (eg ["foo.bar", "che"])
+        """
+        # import the module paths to load the Orms into memory
+        for modulepath in modulepaths:
+            rm = ReflectModule(modulepath)
+            m = rm.module() 
+
+        # now go through all the orm classes that have been loaded and install them
+        seen_table_names = set()
+        for orm_class in self._orm_classes():
+            for s in orm_class.schema.schemas:
+                if s.table_name not in seen_table_names:
+                    s.orm_class.install()
+                    seen_table_names.add(s.table_name)
+
     def assure_orm_field_names(self, orm_class, **kwargs):
         """Field instances can have aliases, in order to allow you to pass in aliases,
         this will go through kwargs and normalize the field names
@@ -438,7 +457,7 @@ class ModelData(TestData):
         kwargs.setdefault("ignore_refs", False)
         instance = self._get(orm_class, **kwargs)
         try:
-            instance.save()
+            instance.save(nest=True)
 
         except UniqueError as e:
             logger.warning(" ".join([
@@ -476,7 +495,7 @@ class ModelData(TestData):
         kwargs.setdefault("ignore_refs", False)
         instances = self._gets(orm_class, **kwargs)
         for instance in instances:
-            instance.save()
+            instance.save(nest=True)
         return instances
 
     def get_orm_class(self, model_name, **kwargs):

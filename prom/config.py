@@ -217,6 +217,23 @@ class Schema(object):
         pk_name = self.pk_name
         return [pk_name] if pk_name else []
 
+    @property
+    def schemas(self):
+        """Find and return all the schemas that are needed for this schema to 
+        install successfully
+
+        Another way to put this is all the schemas this Schema touches
+
+        :returns: list, a list of Schema instances, self will be at the end
+        """
+        schemas = []
+        for f in self.fields.values():
+            if s := f.schema:
+                schemas.extend(s.schemas)
+        schemas.append(self)
+
+        return schemas
+
     @classmethod
     def get_instance(cls, orm_class, **kwargs):
         """return a Schema singleton instance for the given orm_class
@@ -650,7 +667,7 @@ class Field(object, metaclass=FieldMeta):
 
     @cachedproperty(cached="_schema")
     def schema(self):
-        """return the schema instance if this is reference to another table
+        """return the schema instance if this field is a reference to another table
 
         see .set_type() for an explanation on why we defer figuring this out until now
         """

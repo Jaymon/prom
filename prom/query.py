@@ -489,14 +489,6 @@ class QueryFields(list):
         super().append(field)
         self.field_names[field.name].append(index)
 
-#     def rows(self):
-#         i = 0
-#         names = self.names()
-#         row = {}
-#         for name in names:
-#             row[name] = self[self.field_names[name][i]]
-#         yield row
-
     def __contains__(self, field_name):
         return field_name in self.field_names
 
