@@ -244,6 +244,21 @@ class PostgreSQL(SQLInterface):
         # http://www.postgresql.org/message-id/CA+mi_8Y6UXtAmYKKBZAHBoY7F6giuT5WfE0wi3hR44XXYDsXzg@mail.gmail.com
         return [r['tablename'] for r in ret]
 
+    def _inserts(self, schema, field_names, field_values, **kwargs):
+        """
+        https://www.psycopg.org/docs/cursor.html#cursor.executemany
+        https://www.psycopg.org/docs/extras.html#fast-exec
+        https://www.psycopg.org/docs/extras.html#psycopg2.extras.execute_batch
+        """
+        query_str = self.render_inserts_sql(schema, field_names, **kwargs)
+        with self.connection(**kwargs) as connection:
+            cur = connection.cursor()
+            psycopg2.extras.execute_batch(
+                cur,
+                query_str,
+                field_values,
+            )
+
     def _delete_table(self, schema, **kwargs):
         """
         https://www.postgresql.org/docs/current/sql-droptable.html

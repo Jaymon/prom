@@ -143,7 +143,7 @@ class Iterator(ListIterator):
 
         b = q.bounds
         limit = b.limit if b.has_limit() else self.count()
-        b = Bounds(limit=limit, offset=q.bounds.offset)
+        b = q.bounds_class(limit=limit, offset=q.bounds.offset)
 
         if isinstance(i, slice):
             if i.step:
@@ -249,7 +249,7 @@ class Iterator(ListIterator):
         return r
 
 
-class Bounds(object):
+class QueryBounds(object):
     @property
     def limit(self):
         l = self._limit
@@ -392,7 +392,7 @@ class Bounds(object):
         return self.offset + self.limit
 
 
-class Field(object):
+class QueryField(object):
     @property
     def schema(self):
         return self.query.schema if self.query else None
@@ -462,7 +462,7 @@ class Field(object):
         return field_name, function_name
 
 
-class Fields(list):
+class QueryFields(list):
     @property
     def fields(self):
         """Returns a dict of field_name: field_value"""
@@ -486,8 +486,16 @@ class Fields(list):
 
     def append(self, field):
         index = len(self)
-        super(Fields, self).append(field)
+        super().append(field)
         self.field_names[field.name].append(index)
+
+#     def rows(self):
+#         i = 0
+#         names = self.names()
+#         row = {}
+#         for name in names:
+#             row[name] = self[self.field_names[name][i]]
+#         yield row
 
     def __contains__(self, field_name):
         return field_name in self.field_names
@@ -499,24 +507,30 @@ class Fields(list):
     def clear(self):
         self.field_names = defaultdict(list)
         self.options = {}
-        self[:]
+        super().clear()
 
 
 class Query(object):
-    """
-    Handle standard query creation and allow interface querying
+    """Handle standard query creation and allow interface querying
 
     :example:
         q = Query(orm_class)
         q.eq_foo(1).desc_bar().limit(10).page(2).get()
-        # SELECT * FROM <orm_class.table_name> WHERE foo = 1 ORDER BY bar DESC LIMIT 10 OFFSET 20
+        # SELECT
+        #   *
+        # FROM
+        #   <orm_class.table_name>
+        # WHERE
+        #   foo = 1
+        # ORDER BY bar DESC
+        # LIMIT 10 OFFSET 20
     """
-    field_class = Field
-    fields_set_class = Fields
-    fields_select_class = Fields
-    fields_where_class = Fields
-    fields_sort_class = Fields
-    bounds_class = Bounds
+    field_class = QueryField
+    fields_set_class = QueryFields
+    fields_select_class = QueryFields
+    fields_where_class = QueryFields
+    fields_sort_class = QueryFields
+    bounds_class = QueryBounds
     iterator_class = Iterator
 
     @property
@@ -588,7 +602,6 @@ class Query(object):
         self.reset()
 
     def reset(self):
-        #self.interface = None
         self._ifilter = None
         self.fields_set = self.fields_set_class()
         self.fields_select = self.fields_select_class()
@@ -618,6 +631,9 @@ class Query(object):
             orm_class = orm_classpath
 
         return orm_class.query
+
+    def ref_class(self, orm_classpath):
+        return self.ref(orm_classpath)
 
     def __iter__(self):
         return self.get()
@@ -700,7 +716,11 @@ class Query(object):
         return f
 
     def create_iterator(self, query):
-        return self.orm_class.iterator_class(query) if self.orm_class else self.iterator_class(query)
+        if self.orm_class:
+            iterator = self.orm_class.iterator_class(query)
+        else:
+            iterator = self.iterator_class(query)
+        return iterator
 
     def append_compound(self, operator, queries, **kwargs):
         """Internal method used by .intersect(), .union(), and .difference()"""

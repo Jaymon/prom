@@ -339,6 +339,18 @@ class SQLite(SQLInterface):
         query_str = "DROP TABLE IF EXISTS {}".format(self.render_table_name_sql(schema))
         self._raw(query_str, ignore_result=True, **kwargs)
 
+    def _inserts(self, schema, field_names, field_values, **kwargs):
+        """
+        https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.executemany
+        """
+        query_str = self.render_inserts_sql(schema, field_names, **kwargs)
+        with self.connection(**kwargs) as connection:
+            cur = connection.cursor()
+            cur.executemany(
+                query_str,
+                field_values,
+            )
+
     def create_error(self, e, **kwargs):
         kwargs.setdefault("error_module", sqlite3)
         if isinstance(e, sqlite3.OperationalError):

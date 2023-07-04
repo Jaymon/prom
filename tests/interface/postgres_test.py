@@ -14,7 +14,7 @@ except ImportError as e:
     gevent = None
 
 from prom import query
-from prom.query import Query, Field as QueryField
+from prom.query import Query
 from prom.compat import *
 from prom.config import Schema, DsnConnection, Field
 

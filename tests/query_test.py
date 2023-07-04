@@ -11,9 +11,9 @@ import testdata
 from . import BaseTestCase, EnvironTestCase, TestCase, SkipTest
 from prom.query import (
     Query,
-    Bounds,
-    Field,
-    Fields,
+    QueryBounds,
+    QueryField,
+    QueryFields,
     Iterator,
 )
 from prom.config import Field as OrmField
@@ -21,23 +21,23 @@ from prom.compat import *
 import prom
 
 
-class FieldTest(BaseTestCase):
+class QueryFieldTest(BaseTestCase):
     def test___new__(self):
         q = self.get_query()
-        f = Field(q, "MAX(foo)")
-        #f = Field("MAX(foo)", schema=testdata.mock(field_name="foo"))
+        f = QueryField(q, "MAX(foo)")
+        #f = QueryField("MAX(foo)", schema=testdata.mock(field_name="foo"))
         self.assertEqual("foo", f.name)
         self.assertEqual("MAX", f.function_name)
 
 
-class FieldsTest(BaseTestCase):
+class QueryFieldsTest(BaseTestCase):
     def test_fields(self):
         q = self.get_query()
-        fs = Fields()
-        fs.append(Field(q, "foo", 1))
-        fs.append(Field(q, "foo", 2))
-        fs.append(Field(q, "bar", 3))
-        #fs.append(Field(q, "che", 4))
+        fs = QueryFields()
+        fs.append(QueryField(q, "foo", 1))
+        fs.append(QueryField(q, "foo", 2))
+        fs.append(QueryField(q, "bar", 3))
+        #fs.append(QueryField(q, "che", 4))
 
         fields = fs.fields
         self.assertEqual(2, fields["foo"])
@@ -45,26 +45,26 @@ class FieldsTest(BaseTestCase):
         #self.assertEqual(4, fields["che"])
 
     def test___bool__(self):
-        fs = Fields()
+        fs = QueryFields()
         self.assertFalse(fs)
 
         q = self.get_query()
-        fs.append(Field(q, "foo", 1))
+        fs.append(QueryField(q, "foo", 1))
         self.assertTrue(fs)
 
     def test_names(self):
         q = self.get_query()
-        fs = Fields()
+        fs = QueryFields()
 
-        fs.append(Field(q, "foo", None))
-        fs.append(Field(q, "bar", None))
-        fs.append(Field(q, "foo", None))
+        fs.append(QueryField(q, "foo", None))
+        fs.append(QueryField(q, "bar", None))
+        fs.append(QueryField(q, "foo", None))
         self.assertEqual(["foo", "bar"], list(fs.names()))
 
 
-class BoundsTest(TestCase):
+class QueryBoundsTest(TestCase):
     def test_find_more_index(self):
-        b = Bounds()
+        b = QueryBounds()
         b.limit = 3
 
         b.page = 0
@@ -76,23 +76,23 @@ class BoundsTest(TestCase):
         self.assertEqual(6, index)
 
     def test___nonzero__(self):
-        b = Bounds()
+        b = QueryBounds()
 
         self.assertFalse(b)
 
     def test_offset_from_page(self):
-        lc = Bounds()
+        lc = QueryBounds()
         lc.page = 2
         self.assertEqual(1, lc.offset)
 
-        lc = Bounds()
+        lc = QueryBounds()
         lc.limit = 5
         lc.page = 2
         self.assertEqual(5, lc.offset)
         self.assertEqual(5, lc.limit)
 
     def test_non_paginate_limit(self):
-        lc = Bounds()
+        lc = QueryBounds()
 
         self.assertEqual((0, 0), lc.get())
 
@@ -131,7 +131,7 @@ class BoundsTest(TestCase):
             lc.limit = -10
 
     def test_paginate_limit(self):
-        lc = Bounds()
+        lc = QueryBounds()
 
         lc.limit = 10
         lc.paginate = True
@@ -753,6 +753,24 @@ class QueryTest(EnvironTestCase):
         self.assertEqual("value 2", o2.bar)
         self.assertEqual(o._created, o2._created)
         self.assertEqual(o._updated, o2._updated)
+
+#     def test_insert_multiple(self):
+#         """Test inserting multiple rows in one query"""
+#         orm_class = self.get_orm_class()
+#         q = orm_class.query
+# 
+#         q.set(self.get_fields(orm_class.schema))
+#         #pout.v(q)
+# 
+#         fs = QueryFields()
+# 
+# 
+#         #fs.append(QueryField(q, "foo", None))
+# 
+#         fs.append(QueryField(q, "foo", 1))
+#         fs.append(QueryField(q, "foo", 2))
+#         for row in fs.rows():
+#             pout.v(row)
 
     def test_update_bubble_up(self):
         """

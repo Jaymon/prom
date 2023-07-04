@@ -266,6 +266,9 @@ class InterfaceABC(LogMixin):
     def _insert(self, schema, fields, **kwargs):
         raise NotImplementedError()
 
+    def _inserts(self, schema, field_names, field_values, **kwargs):
+        raise NotImplementedError()
+
     def _update(self, schema, fields, query, **kwargs):
         raise NotImplementedError()
 
@@ -708,6 +711,41 @@ class Interface(InterfaceABC):
             fields=fields,
             **kwargs
         )
+
+    def inserts(self, schema, field_names, field_rows, **kwargs):
+        """Persist the field names found in all the field rows
+
+        :param schema: Schema
+        :param field_names: list, the field names that will be checked for each
+            row in field_rows and used to turn each dict in field_rows to a tuple
+        :param field_rows: Sequence, if an iterator of dict instances with keys found
+            in field_names, if a key is missing it will have None set as the value,
+            if it's an iterator of values then the tuple value ordering should match
+            with field_names
+        :param **kwargs: passed through
+        :returns: bool, True if the query executed successfully
+        """
+        kwargs.setdefault("prefix", "inserts")
+
+        def field_values(field_names, field_rows):
+            for fields in field_rows:
+                if isinstance(fields, Mapping):
+                    row = []
+                    for field_name in field_names:
+                        row.append(fields.get(field_name, None))
+                    yield row
+
+                else:
+                    yield fields
+
+        self.execute_write(
+            self._inserts,
+            schema=schema,
+            field_names=field_names,
+            field_values=field_values(field_names, field_rows),
+            **kwargs,
+        )
+        return True
 
     def update(self, schema, fields, query, **kwargs):
         """Persist the query.fields into the db that match query.fields_where

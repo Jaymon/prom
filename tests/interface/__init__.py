@@ -385,7 +385,7 @@ class _BaseTestInterface(BaseTestCase):
                     q = query.Query().is__id(pk)
                     i.get_one(s, q)
 
-    def test_insert(self):
+    def test_insert_1(self):
         i, s = self.get_table()
         d = {
             'foo': 1,
@@ -394,6 +394,34 @@ class _BaseTestInterface(BaseTestCase):
 
         pk = i.insert(s, d)
         self.assertGreater(pk, 0)
+
+    def test_inserts(self):
+        i, s = self.get_table()
+        count = 1000
+
+        self.assertEqual(0, i.count(s, Query()))
+        def rows():
+            for x in range(count):
+                yield {
+                    "foo": x,
+                    "bar": str(x),
+                }
+
+        i.inserts(
+            s,
+            ["foo", "bar"],
+            rows(),
+        )
+
+        self.assertEqual(count, i.count(s, Query()))
+
+#         with pout.p("transaction multi insert"):
+#             with i.transaction(nest=False) as conn:
+#                 for x in range(1000):
+#                     i.insert(s, {
+#                         "foo": x,
+#                         "bar": str(x),
+#                     })
 
     def test_render_sql(self):
         i = self.get_interface()
