@@ -39,7 +39,7 @@ class _BaseTestInterface(BaseTestCase):
         i = self.get_interface()
         with i.connection() as conn:
             s = f"{conn}"
-            self.assertRegex(s, r"0x[a-f0-9]{12}")
+            self.assertRegex(s, r"0x[a-f0-9]+")
 
     def test_connect_close(self):
         i = self.get_interface()

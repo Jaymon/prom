@@ -156,6 +156,8 @@ class InterfaceTest(_BaseTestInterface):
 
     def test_db_disconnect(self):
         """make sure interface can recover if the db disconnects mid script execution"""
+        self.skip_test("this test does not work with docker")
+
         i, s = self.get_table()
         _id = self.insert(i, s, 1)[0]
         d = i.get_one(s, Query().eq__id(_id))
@@ -168,6 +170,8 @@ class InterfaceTest(_BaseTestInterface):
 
     def test_no_connection(self):
         """this will make sure prom handles it gracefully if there is no connection available ever"""
+        self.skip_test("this test does not work with docker")
+
         postgresql = testdata.stop_service("postgresql", ignore_failure=False)
         time.sleep(1)
 

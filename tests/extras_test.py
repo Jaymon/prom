@@ -104,7 +104,6 @@ class FieldTest(EnvironTestCase):
 
 class ModelDataTest(BaseTestCase):
     def test_model_name(self):
-        pout.b(5)
         modpath = self.create_module([
             "from prom import Orm, Field",
             "",
