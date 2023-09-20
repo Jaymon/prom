@@ -1,0 +1,72 @@
+[project]
+requires-python = ">=3.10"
+description = "A sensible orm for PostgreSQL or SQLite"
+authors = [
+  { name = "Jay Marcyes", email = "jay@marcyes.com" }
+]
+keywords = [
+  "async",
+  "postgresql",
+  "postgres",
+  "database",
+  "db",
+  "sqlite",
+  "orm",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Web Environment",
+  "Environment :: Other Environment",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Database",
+  "Topic :: Software Development :: Libraries",
+  "Topic :: Utilities",
+  "Programming Language :: Python :: 3"
+]
+dependencies = [
+  "dsnparse",
+  "datatypes",
+  "aiosqlite",
+]
+name = "prom"
+dynamic = [
+  "version"
+]
+readme = "README.md"
+license = { file = "LICENSE.txt" }
+
+[project.urls]
+Homepage = "https://github.com/Jaymon/prom"
+Repository = "https://github.com/Jaymon/prom"
+
+[project.optional-dependencies]
+tests = [
+  "testdata"
+]
+postgres = [
+  "psycopg" # psycopg[binary]
+]
+
+[build-system]
+requires = [
+  "setuptools>=62.3.0"
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+exclude = [
+  "tests*",
+  "example*",
+  "*_test*",
+  "docs*"
+]
+include = [
+  "prom*"
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "prom.__version__" }
+
