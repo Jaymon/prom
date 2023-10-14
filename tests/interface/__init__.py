@@ -30,14 +30,14 @@ class _BaseTestConfig(BaseTestCase):
         prom.interface.interfaces = {}
 
 
-class _BaseTestInterface(BaseTestCase):
+class _BaseTestInterface(testdata.IsolatedAsyncioTestCase, BaseTestCase):
     @classmethod
     def create_interface(cls):
         raise NotImplementedError()
 
-    def test_connection___str__(self):
+    async def test_connection___str__(self):
         i = self.get_interface()
-        with i.connection() as conn:
+        async with i.connection() as conn:
             s = f"{conn}"
             self.assertRegex(s, r"0x[a-f0-9]+")
 
@@ -1502,9 +1502,4 @@ class _BaseTestInterface(BaseTestCase):
         except InterfaceError as e:
             # we want to make sure we aren't wrapping errors again and again
             self.assertFalse(isinstance(e.e, InterfaceError))
-
-
-# https://docs.python.org/2/library/unittest.html#load-tests-protocol
-def load_tests(loader, tests, pattern):
-    return TestSuite()
 

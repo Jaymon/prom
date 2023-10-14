@@ -1,0 +1,18 @@
+version: "3.4"
+
+services:
+  database:
+    image: postgres:15
+    restart: always
+    env_file:
+      - .env.local
+#     environment:
+#       - POSTGRES_DB=pgdb
+#       - POSTGRES_PASSWORD=pgpassword
+#       - POSTGRES_USER=postgres
+    volumes:
+      - ./cache/postgres/data:/var/lib/postgresql/data
+      - ./cache/postgres/initdb.d/extensions.sql:/docker-entrypoint-initdb.d/extensions.sql
+    ports:
+      - "5432:5432"
+

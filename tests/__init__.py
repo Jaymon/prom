@@ -50,12 +50,12 @@ class BaseTestCase(TestCase):
         """make sure there is a default interface for any class"""
         for inter in cls.create_environ_interfaces():
             try:
-                inter.unsafe_delete_tables()
+                cls.mock_async(inter.unsafe_delete_tables())
             except inter.InterfaceError as e:
                 logger.exception(e)
 
             finally:
-                inter.close()
+                cls.mock_async(inter.close())
 
     def tearDown(self):
         self.tearDownClass()
@@ -63,13 +63,13 @@ class BaseTestCase(TestCase):
     @classmethod
     def tearDownClass(cls):
         for inter in cls.interfaces:
-            inter.close()
+            cls.mock_async(inter.close())
         cls.interfaces = set()
 
     @classmethod
     def get_interface(cls):
         i = cls.create_interface()
-        i.connect()
+        cls.mock_async(i.connect())
         return i
 
     @classmethod

@@ -29,41 +29,41 @@ class SQLConnection(Connection):
     https://www.sqlite.org/lockingv3.html
     https://www.sqlite.org/lang_transaction.html
     """
-    def _transaction_start(self):
-        self._execute("BEGIN")
+    async def _transaction_start(self):
+        await self.execute("BEGIN")
 
-    def _transaction_starting(self, tx):
+    async def _transaction_starting(self, tx):
         # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-        self._execute("SAVEPOINT {}".format(
-            self.interface.render_field_name_sql(tx["name"])
+        await self.execute("SAVEPOINT {}".format(
+            await self.interface.render_field_name_sql(tx["name"])
         ))
 
-    def _transaction_stop(self):
+    async def _transaction_stop(self):
         """
         http://initd.org/psycopg/docs/usage.html#transactions-control
         https://news.ycombinator.com/item?id=4269241
         """
-        self._execute("COMMIT")
+        await self.execute("COMMIT")
 
-    def _transaction_stopping(self, tx):
-        self._execute("RELEASE {}".format(
-            self.interface.render_field_name_sql(tx["name"])
+    async def _transaction_stopping(self, tx):
+        await self.execute("RELEASE {}".format(
+            await self.interface.render_field_name_sql(tx["name"])
         ))
 
-    def _transaction_fail(self):
-        self._execute("ROLLBACK")
+    async def _transaction_fail(self):
+        await self.execute("ROLLBACK")
 
-    def _transaction_failing(self, tx):
+    async def _transaction_failing(self, tx):
         # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-        self._execute("ROLLBACK TO SAVEPOINT {}".format(
-            self.interface.render_field_name_sql(tx["name"])
+        await self.execute("ROLLBACK TO SAVEPOINT {}".format(
+            await self.interface.render_field_name_sql(tx["name"])
         ))
 
-    def _execute(self, query_str):
-        self.log_info(f"{self} - {query_str}")
-        cur = self.cursor()
-        cur.execute(query_str)
-        cur.close()
+#     async def _execute(self, query_str):
+#         self.log_info("{} - {}", self, query_str)
+#         cur = await self.cursor()
+#         await cur.execute(query_str)
+#         await cur.close()
 
 
 class SQLInterfaceABC(Interface):
@@ -76,7 +76,7 @@ class SQLInterfaceABC(Interface):
 
         :returns: str|int|None
         """
-        raise NotImplementedError("this property should be set in any children class")
+        raise NotImplementedError("this property should be set in a child class")
 
     def get_paramstyle(self):
         """Returns the paramstyle that is used by self.PLACEHOLDER to decide what
@@ -92,25 +92,25 @@ class SQLInterfaceABC(Interface):
         """
         raise NotImplemented()
 
-    def render_date_field_sql(self, field_name, field_kwargs, symbol):
+    async def render_date_field_sql(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
 
-    def render_sort_field_sql(self, field_name, field_vals, sort_dir_str):
+    async def render_sort_field_sql(self, field_name, field_vals, sort_dir_str):
         """normalize the sort string
 
         return -- tuple -- field_sort_str, field_sort_args"""
         raise NotImplemented()
 
-    def render_nolimit_sql(limit, **kwargs):
+    async def render_nolimit_sql(limit, **kwargs):
         raise NotImplemented()
 
-    def render_datatype_datetime_sql(self, field_name, field, **kwargs):
+    async def render_datatype_datetime_sql(self, field_name, field, **kwargs):
         raise NotImplementedError()
 
-    def render_datatype_dict_sql(self, field_name, field, **kwargs):
+    async def render_datatype_dict_sql(self, field_name, field, **kwargs):
         raise NotImplementedError()
 
-    def render_datatype_uuid_sql(self, field_name, field, **kwargs):
+    async def render_datatype_uuid_sql(self, field_name, field, **kwargs):
         raise NotImplementedError()
 
 
@@ -290,7 +290,7 @@ class SQLInterface(SQLInterfaceABC):
         ret = self._raw(query_str, *query_args, count_result=True, **kwargs)
         return ret
 
-    def _raw(self, query_str, *query_args, **kwargs):
+    async def _raw(self, query_str, *query_args, **kwargs):
         """
         **kwargs -- dict
             ignore_result -- boolean -- true to not attempt to fetch results
@@ -300,8 +300,8 @@ class SQLInterface(SQLInterfaceABC):
         ret = True
         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
         #connection = kwargs.get('connection', None)
-        with self.connection(**kwargs) as connection:
-            cur = connection.cursor()
+        async with self.connection(**kwargs) as connection:
+            cur = await connection.cursor()
 
             ignore_result = kwargs.get('ignore_result', False)
             count_result = kwargs.get('count_result', False)
@@ -315,14 +315,14 @@ class SQLInterface(SQLInterfaceABC):
             if query_args:
                 self.log_for(
                     debug=(["0x{} - {}\n{}", connection, query_str, query_args],),
-                    info=([f"{connection} - {query_str}"],)
+                    info=(["{} - {}", connection, query_str],)
                 )
 
                 try:
-                    cur.execute(query_str, query_args)
+                    await cur.execute(query_str, query_args)
 
                 except Exception as e:
-                    self.raise_error(
+                    await self.raise_error(
                         e,
                         error_args=[
                             query_str,
@@ -332,19 +332,19 @@ class SQLInterface(SQLInterfaceABC):
                     )
 
             else:
-                self.log_info(f"{connection} - {query_str}")
-                cur.execute(query_str)
+                self.log_info("{} - {}", connection, query_str)
+                await cur.execute(query_str)
 
             if cursor_result:
                 ret = cur
 
             elif ignore_result:
-                cur.close()
+                await cur.close()
 
             else:
                 if one_result:
                     # https://www.psycopg.org/docs/cursor.html#cursor.fetchone
-                    ret = cur.fetchone()
+                    ret = await cur.fetchone()
 
                 elif count_result:
                     # https://www.psycopg.org/docs/cursor.html#cursor.rowcount
@@ -352,9 +352,9 @@ class SQLInterface(SQLInterfaceABC):
 
                 else:
                     # https://www.psycopg.org/docs/cursor.html#cursor.fetchall
-                    ret = cur.fetchall()
+                    ret = await cur.fetchall()
 
-                cur.close()
+                await cur.close()
 
             return ret
 

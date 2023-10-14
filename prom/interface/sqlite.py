@@ -32,6 +32,7 @@ import json
 import uuid
 
 from datatypes import Datetime
+import aiosqlite
 
 # first party
 from ..exception import (
@@ -48,22 +49,32 @@ from ..compat import *
 from .sql import SQLInterface, SQLConnection
 
 
-class SQLiteConnection(SQLConnection, sqlite3.Connection):
-    """
-    Thin wrapper around the default connection to make sure it has a similar interface
-    to Postgres' connection instance so the common code can all be the same in the
-    parent class
-
-    https://docs.python.org/3.11/library/sqlite3.html#sqlite3.Connection
-    """
+class AsyncSQLiteConnection(SQLConnection, aiosqlite.Connection):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.closed = 0
 
-    def close(self, *args, **kwargs):
-        r = super().close(*args, **kwargs)
+    async def close(self, *args, **kwargs):
+        r = await super().close(*args, **kwargs)
         self.closed = 1
         return r
+
+# class SQLiteConnection(SQLConnection, sqlite3.Connection):
+#     """
+#     Thin wrapper around the default connection to make sure it has a similar interface
+#     to Postgres' connection instance so the common code can all be the same in the
+#     parent class
+# 
+#     https://docs.python.org/3.11/library/sqlite3.html#sqlite3.Connection
+#     """
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         self.closed = 0
+# 
+#     async def close(self, *args, **kwargs):
+#         r = await super().close(*args, **kwargs)
+#         self.closed = 1
+#         return r
 
 
 class BooleanType(object):
@@ -181,27 +192,29 @@ class SQLite(SQLInterface):
     _connection = None
 
     @classmethod
-    def configure(cls, config):
-        dsn = getattr(config, 'dsn', '')
-        if dsn:
-            host = config.host
-            db = config.database
-            if not host:
-                path = db
+    async def configure(cls, config):
+        if not config.get("path"):
+            dsn = config.get("dsn", "")
+            if dsn:
+                host = config.host
+                db = config.database
+                if not host:
+                    path = db
 
-            elif not db:
-                path = host
+                elif not db:
+                    path = host
+
+                else:
+                    path = os.sep.join([host, db])
 
             else:
-                path = os.sep.join([host, db])
+                path = config.database
 
-        else:
-            path = config.database
+            if not path:
+                raise ValueError("no sqlite db path found in config")
 
-        if not path:
-            raise ValueError("no sqlite db path found in config")
+            config.path = path
 
-        config.path = path
         return config
 
     def get_paramstyle(self):
@@ -210,10 +223,11 @@ class SQLite(SQLInterface):
         """
         return sqlite3.paramstyle
 
-    def _connect(self, config):
+    def _connector(self):
         """
         https://docs.python.org/3.11/library/sqlite3.html#sqlite3.connect
         """
+        config = self.config
         path = config.path
 
         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
@@ -222,7 +236,7 @@ class SQLite(SQLInterface):
             #'isolation_level': "IMMEDIATE",
             #'isolation_level': "EXCLUSIVE",
             'detect_types': sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
-            'factory': SQLiteConnection,
+            #'factory': SQLiteConnection,
             'check_same_thread': True, # https://stackoverflow.com/a/2578401/5006
             #'timeout': 100,
         }
@@ -232,8 +246,7 @@ class SQLite(SQLInterface):
                 options[k] = config.options[k]
 
         try:
-            self._connection = sqlite3.connect(path, **options)
-            self.log_debug(f"Connected to connection 0x{id(self._connection):02x}")
+            connection = sqlite3.connect(path, **options)
 
         except sqlite3.DatabaseError as e:
             path_d = os.path.dirname(path)
@@ -243,12 +256,12 @@ class SQLite(SQLInterface):
             else:
                 # let's try and make the directory path and connect again
                 dir_util.mkpath(path_d)
-                self._connection = sqlite3.connect(path, **options)
+                connection = sqlite3.connect(path, **options)
 
         # https://docs.python.org/2/library/sqlite3.html#row-objects
-        self._connection.row_factory = sqlite3.Row
+        connection.row_factory = sqlite3.Row
         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
-        self._connection.text_factory = StringType.adapt
+        connection.text_factory = StringType.adapt
 
         # for some reason this is needed in python 3.6 in order for saved bytes
         # to be ran through the converter, not sure why
@@ -272,32 +285,112 @@ class SQLite(SQLInterface):
         sqlite3.register_adapter(dict, DictType.adapt)
         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
 
-    def _configure_connection(self, **kwargs):
+        return connection
+
+    async def _connect(self, config):
+        self._connection = AsyncSQLiteConnection(
+            self._connector,
+            iter_chunk_size=config.options.get("iter_chunk_size", 64)
+        )
+        self._connection.start()
+        await self._connection._connect()
+
+        self.log_debug("Connected to connection {}", self._connection)
+
+#     async def x_connect(self, config):
+#         """
+#         https://docs.python.org/3.11/library/sqlite3.html#sqlite3.connect
+#         """
+#         path = config.path
+# 
+#         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
+#         options = {
+#             'isolation_level': None,
+#             #'isolation_level': "IMMEDIATE",
+#             #'isolation_level': "EXCLUSIVE",
+#             'detect_types': sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
+#             #'factory': SQLiteConnection,
+#             'check_same_thread': True, # https://stackoverflow.com/a/2578401/5006
+#             #'timeout': 100,
+#         }
+#         option_keys = list(options.keys()) + ['timeout', 'cached_statements']
+#         for k in option_keys:
+#             if k in config.options:
+#                 options[k] = config.options[k]
+# 
+#         try:
+#             connection = sqlite3.connect(path, **options)
+# 
+#         except sqlite3.DatabaseError as e:
+#             path_d = os.path.dirname(path)
+#             if os.path.isdir(path_d):
+#                 raise
+# 
+#             else:
+#                 # let's try and make the directory path and connect again
+#                 dir_util.mkpath(path_d)
+#                 connection = sqlite3.connect(path, **options)
+# 
+#         self.log_debug("Connected to connection {}", connection)
+# 
+#         # https://docs.python.org/2/library/sqlite3.html#row-objects
+#         connection.row_factory = sqlite3.Row
+#         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
+#         connection.text_factory = StringType.adapt
+# 
+#         # for some reason this is needed in python 3.6 in order for saved bytes
+#         # to be ran through the converter, not sure why
+#         sqlite3.register_converter(StringType.FIELD_TYPE, StringType.adapt)
+# 
+#         sqlite3.register_adapter(bool, BooleanType.adapt)
+#         sqlite3.register_converter(BooleanType.FIELD_TYPE, BooleanType.convert)
+# 
+#         # sadly, it doesn't look like these work for child classes so each class
+#         # has to be adapted even if its parent is already registered
+#         sqlite3.register_adapter(datetime.datetime, DatetimeType.adapt)
+#         sqlite3.register_adapter(Datetime, DatetimeType.adapt)
+#         sqlite3.register_converter(DatetimeType.FIELD_TYPE, DatetimeType.convert)
+# 
+#         sqlite3.register_adapter(int, NumericType.adapt)
+#         sqlite3.register_converter(NumericType.FIELD_TYPE, NumericType.convert)
+# 
+#         sqlite3.register_adapter(decimal.Decimal, DecimalType.adapt)
+#         sqlite3.register_converter(DecimalType.FIELD_TYPE, DecimalType.convert)
+# 
+#         sqlite3.register_adapter(dict, DictType.adapt)
+#         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
+# 
+#         self._connection = AsyncSQLiteConnection(
+#             connection,
+#             iter_chunk_size=config.options.get("iter_chunk_size", 64)
+#         )
+
+    async def _configure_connection(self, **kwargs):
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
-        self._raw('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs)
+        await self._raw('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs)
 
         # by default we can read/write, so only bother to run this query if we need to
         # make the connection actually readonly
         if self.config.readonly:
-            self._readonly(self.config.readonly, **kwargs)
+            await self._readonly(self.config.readonly, **kwargs)
 
-    def _get_connection(self):
+    async def _get_connection(self):
         return self._connection
 
-    def _close(self):
-        self._connection.close()
+    async def _close(self):
+        await self._connection.close()
         self._connection = None
 
-    def _readonly(self, readonly, **kwargs):
-        self._raw(
+    async def _readonly(self, readonly, **kwargs):
+        await self._raw(
             # https://stackoverflow.com/a/49630725/5006
             'PRAGMA query_only = {}'.format("ON" if readonly else "OFF"),
             ignore_result=True,
             **kwargs
         )
 
-    def _get_tables(self, table_name, **kwargs):
+    async def _get_tables(self, table_name, **kwargs):
         query_str = 'SELECT tbl_name FROM sqlite_master WHERE type = ?'
         query_args = ['table']
 
@@ -305,7 +398,7 @@ class SQLite(SQLInterface):
             query_str += ' AND name = ?'
             query_args.append(str(table_name))
 
-        ret = self._raw(query_str, *query_args, **kwargs)
+        ret = await self._raw(query_str, *query_args, **kwargs)
         return [r['tbl_name'] for r in ret]
 
     def _get_indexes(self, schema, **kwargs):
@@ -331,13 +424,13 @@ class SQLite(SQLInterface):
         self._raw('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs);
         return ret
 
-    def _delete_table(self, schema, **kwargs):
+    async def _delete_table(self, schema, **kwargs):
         """
         https://www.sqlite.org/lang_droptable.html
         """
         #query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
         query_str = "DROP TABLE IF EXISTS {}".format(self.render_table_name_sql(schema))
-        self._raw(query_str, ignore_result=True, **kwargs)
+        await self._raw(query_str, ignore_result=True, **kwargs)
 
     def _inserts(self, schema, field_names, field_values, **kwargs):
         """

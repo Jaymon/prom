@@ -32,7 +32,8 @@ class Connection(object):
     """string -- the name of this connection (eg, Postgres, or SQLite)"""
 
     interface_name = ""
-    """string -- full Interface class name -- the interface the connection should use to talk with the db"""
+    """string -- full Interface class name -- the interface the connection
+    should use to talk with the db"""
 
     host = ""
     """the hostname"""
@@ -63,7 +64,8 @@ class Connection(object):
 
     def __init__(self, fields=None, **fields_kwargs):
         """
-        set all the values by passing them into this constructor, any unrecognized kwargs get put into .options
+        set all the values by passing them into this constructor, any
+        unrecognized kwargs get put into .options
 
         :example:
             c = Connection(
@@ -90,7 +92,11 @@ class Connection(object):
 
         interface_module, interface_class = utils.get_objects(self.interface_name)
         self.interface_class = interface_class
-        interface_class.configure(self)
+        #interface_class.configure(self)
+
+    def get(self, key, default=None):
+        """Works similar dict.get"""
+        return getattr(self, key, default)
 
 
 class DsnConnection(Connection):
