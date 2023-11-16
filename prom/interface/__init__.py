@@ -80,7 +80,8 @@ def set_interface(interface, name=''):
 
     # close down the interface before we discard it
     if name in interfaces:
-        interfaces[name].close()
+        if interfaces[name].is_connected():
+            raise ValueError("Cannot replace an open interface")
 
     interfaces[name] = interface
 

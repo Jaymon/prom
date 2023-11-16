@@ -396,7 +396,7 @@ class Interface(InterfaceABC):
 
         :returns: Connection instance
         """
-        if not await self.is_connected():
+        if not self.is_connected():
             await self.connect()
 
         connection = await self._get_connection()
@@ -418,7 +418,7 @@ class Interface(InterfaceABC):
     async def free_connection(self, connection):
         """When .connection is done with a connection it calls this method"""
         #connection.interface = None
-        if await self.is_connected():
+        if self.is_connected():
             self.log_debug(
                 "Freeing {} connection {}",
                 self.config.interface_name,
@@ -426,7 +426,8 @@ class Interface(InterfaceABC):
             )
             await self._free_connection(connection)
 
-    async def is_connected(self):
+    def is_connected(self):
+        """Returns True if this Interface has been connected"""
         return self.connected
 
     async def close(self):
@@ -509,11 +510,12 @@ class Interface(InterfaceABC):
             else:
                 await connection.transaction_stop()
 
-    def readonly(self, readonly=True, **kwargs):
-        """Make the connection read only (pass in True) or read/write (pass in False)
+    async def readonly(self, readonly=True, **kwargs):
+        """Make the connection read only (pass in True) or read/write (pass in
+        False)
 
-        :param readonly: boolean, True if this connection should be readonly, False
-            if the connection should be read/write
+        :param readonly: boolean, True if this connection should be readonly,
+            False if the connection should be read/write
         """
         self.log_warning([
             f"Setting interface {self.config.interface_name}",
@@ -523,12 +525,11 @@ class Interface(InterfaceABC):
 
         if self.connected:
             kwargs.setdefault("prefix", "readonly")
-            self.execute(
+            await self.execute(
                 self._readonly,
                 readonly,
                 **kwargs
             )
-            #self._readonly(readonly, **kwargs)
 
     async def execute_write(self, callback, *args, **kwargs):
         """Any write statements will use this method
@@ -536,8 +537,7 @@ class Interface(InterfaceABC):
         CREATE, DELETE, DROP, INSERT, or UPDATE (collectively "write statements")
         """
         kwargs.setdefault("execute_in_transaction", True)
-
-        return self.execute(callback, *args, **kwargs)
+        return await self.execute(callback, *args, **kwargs)
 
     async def execute_read(self, callback, *args, **kwargs):
         """Any write statements will use this method
@@ -571,7 +571,7 @@ class Interface(InterfaceABC):
             return await self._execute(callback, *args, prefix=prefix, **kwargs)
 
         except Exception as e:
-            if self.handle_error(e=e, prefix=prefix, **kwargs):
+            if await self.handle_error(e=e, prefix=prefix, **kwargs):
                 return await self._execute(
                     callback,
                     *args,
@@ -597,11 +597,10 @@ class Interface(InterfaceABC):
                 return await callback(*args, **kwargs)
 
     async def has_table(self, table_name, **kwargs):
-        """
-        check to see if a table is in the db
+        """Check to see if a table is in the db
 
-        table_name -- string -- the table to check
-        return -- boolean -- True if the table exists, false otherwise
+        :param table_name: str, the table to check
+        :returns: bool, True if the table exists, false otherwise
         """
         kwargs.setdefault("prefix", "has_table")
         tables = await self.execute_read(
@@ -612,11 +611,11 @@ class Interface(InterfaceABC):
         return len(tables) > 0
 
     async def get_tables(self, table_name="", **kwargs):
-        """
-        get all the tables of the currently connected db
+        """Get all the tables of the currently connected db
 
-        table_name -- string -- if you would like to filter the tables list to only include matches with this name
-        return -- list -- a list of table names
+        :param table_name: str, if you would like to filter the tables list to
+            only include matches with this name
+        :returns: list, a list of table names
         """
         kwargs.setdefault("prefix", "get_tables")
         return await self.execute_read(
@@ -629,7 +628,8 @@ class Interface(InterfaceABC):
         """
         add the table to the db
 
-        :param schema: Schema instance, contains all the information about the table
+        :param schema: Schema instance, contains all the information about the
+            table
         """
         kwargs.setdefault("prefix", "set_table")
         async with self.transaction(**kwargs) as connection:
@@ -647,8 +647,8 @@ class Interface(InterfaceABC):
                 )
 
     async def unsafe_delete_table(self, schema, **kwargs):
-        """wrapper around delete_table that matches the *_tables variant and denotes
-        that this is a serious operation
+        """wrapper around delete_table that matches the *_tables variant and
+        denotes that this is a serious operation
 
         remove a table matching schema from the db
 
@@ -709,7 +709,7 @@ class Interface(InterfaceABC):
         )
         return True
 
-    def insert(self, schema, fields, **kwargs):
+    async def insert(self, schema, fields, **kwargs):
         """Persist fields into the db
 
         :param schema: Schema instance, the table the query will run against
@@ -718,14 +718,14 @@ class Interface(InterfaceABC):
         :returns: mixed, will return the primary key values
         """
         kwargs.setdefault("prefix", "insert")
-        return self.execute_write(
+        return await self.execute_write(
             self._insert,
             schema=schema,
             fields=fields,
             **kwargs
         )
 
-    def inserts(self, schema, field_names, field_rows, **kwargs):
+    async def inserts(self, schema, field_names, field_rows, **kwargs):
         """Persist the field names found in all the field rows
 
         :param schema: Schema
@@ -751,7 +751,7 @@ class Interface(InterfaceABC):
                 else:
                     yield fields
 
-        self.execute_write(
+        await self.execute_write(
             self._inserts,
             schema=schema,
             field_names=field_names,
@@ -760,7 +760,7 @@ class Interface(InterfaceABC):
         )
         return True
 
-    def update(self, schema, fields, query, **kwargs):
+    async def update(self, schema, fields, query, **kwargs):
         """Persist the query.fields into the db that match query.fields_where
 
         :param schema: Schema instance, the table the query will run against
@@ -770,7 +770,7 @@ class Interface(InterfaceABC):
         :returns: int, how many rows where updated
         """
         kwargs.setdefault("prefix", "update")
-        return self.execute_write(
+        return await self.execute_write(
             self._update,
             schema=schema,
             fields=fields,
@@ -778,7 +778,7 @@ class Interface(InterfaceABC):
             **kwargs,
         )
 
-    def upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
+    async def upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
         """Perform an upsert (insert or update) on the table
 
         :param schema: Schema instance, the table the query will run against
@@ -791,7 +791,7 @@ class Interface(InterfaceABC):
         :returns: mixed, the primary key
         """
         kwargs.setdefault("prefix", "upsert")
-        return self.execute_write(
+        return await self.execute_write(
             self._upsert,
             schema=schema,
             insert_fields=insert_fields,
@@ -800,7 +800,7 @@ class Interface(InterfaceABC):
             **kwargs,
         )
 
-    def delete(self, schema, query, **kwargs):
+    async def delete(self, schema, query, **kwargs):
         """delete matching rows according to query filter criteria
 
         :param schema: Schema instance, the table the query will run against
@@ -811,14 +811,14 @@ class Interface(InterfaceABC):
             raise ValueError('aborting delete because there is no where clause')
 
         kwargs.setdefault("prefix", "delete")
-        return self.execute_write(
+        return await self.execute_write(
             self._delete,
             schema=schema,
             query=query,
             **kwargs
         )
 
-    def raw(self, query_str, *query_args, **kwargs):
+    async def raw(self, query_str, *query_args, **kwargs):
         """
         run a raw query on the db
 
@@ -827,32 +827,32 @@ class Interface(InterfaceABC):
         **kwargs -- any query options can be passed in by using key=val syntax
         """
         kwargs.setdefault("prefix", "raw")
-        return self.execute(
+        return await self.execute(
             self._raw,
             query_str,
             *query_args,
             **kwargs
         )
 
-    def get_fields(self, table_name, **kwargs):
+    async def get_fields(self, table_name, **kwargs):
         kwargs.setdefault("prefix", "get_fields")
-        return self.execute_read(
+        return await self.execute_read(
             self._get_fields,
             str(table_name),
             **kwargs
         )
 
-    def get_one(self, schema, query=None, **kwargs):
+    async def one(self, schema, query=None, **kwargs):
         """get one row from the db matching filters set in query
 
         :param schema: Schema instance, the table the query will run against
         :param query: Query instance, the filter criteria
         :return: dict, the matching row
         """
-        kwargs.setdefault("prefix", "get_one")
-        return self.get(schema, query, fetchone=True, **kwargs) or {}
+        kwargs.setdefault("prefix", "one")
+        return await self.get(schema, query, fetchone=True, **kwargs) or {}
 
-    def get(self, schema, query=None, **kwargs):
+    async def get(self, schema, query=None, **kwargs):
         """get matching rows from the db matching filters set in query
 
         :param schema: Schema instance, the table the query will run against
@@ -860,7 +860,7 @@ class Interface(InterfaceABC):
         :returns: list, a list of matching dicts
         """
         kwargs.setdefault("prefix", "get")
-        ret = self.execute_read(
+        ret = await self.execute_read(
             self._get,
             schema=schema,
             query=query or Query(),
@@ -868,7 +868,7 @@ class Interface(InterfaceABC):
         )
         return ret or []
 
-    def count(self, schema, query=None, **kwargs):
+    async def count(self, schema, query=None, **kwargs):
         """count matching rows according to query filter criteria
 
         :param schema: Schema instance, the table the query will run against
@@ -876,7 +876,7 @@ class Interface(InterfaceABC):
         :returns: list, a list of matching dicts
         """
         kwargs.setdefault("prefix", "count")
-        ret = self.execute_read(
+        ret = await self.execute_read(
             self._count,
             schema=schema,
             query=query or Query(),
@@ -884,7 +884,7 @@ class Interface(InterfaceABC):
         )
         return int(ret) if ret else 0
 
-    def handle_error(self, e, **kwargs):
+    async def handle_error(self, e, **kwargs):
         """Try and handle the error, return False if the error can't be handled
 
         :param e: Exception, the caught exception
@@ -901,27 +901,27 @@ class Interface(InterfaceABC):
 
         if isinstance(e, CloseError):
             self.log_debug("Handling a close error")
-            ret = self._handle_close_error(e=e, **kwargs)
+            ret = await self._handle_close_error(e=e, **kwargs)
 
         else:
-            with self.transaction(**kwargs) as connection:
+            async with self.transaction(**kwargs) as connection:
                 kwargs["connection"] = connection
 
                 if isinstance(e, UniqueError):
                     self.log_debug("Handling a unique error")
-                    ret = self._handle_unique_error(e=e, **kwargs)
+                    ret = await self._handle_unique_error(e=e, **kwargs)
 
                 elif isinstance(e, FieldError):
                     self.log_debug("Handling a field error")
-                    ret = self._handle_field_error(e=e, **kwargs)
+                    ret = await self._handle_field_error(e=e, **kwargs)
 
                 elif isinstance(e, TableError):
                     self.log_debug("Handling a table error")
-                    ret = self._handle_table_error(e=e, **kwargs)
+                    ret = await self._handle_table_error(e=e, **kwargs)
 
                 else:
                     self.log_debug("Handling a general error")
-                    ret = self._handle_general_error(e=e, **kwargs)
+                    ret = await self._handle_general_error(e=e, **kwargs)
 
         if ret:
             self.log_info(["Successfully handled", prefix, "error"])

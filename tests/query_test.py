@@ -926,6 +926,114 @@ class QueryTest(EnvironTestCase):
 
         self.assertTrue("MAX(foo) = 1" in q)
 
+    def test_sort_order(self):
+        q = self.get_query()
+        self.insert(q.orm_class.interface, q.orm_class.schema, 10)
+
+        q2 = q.copy()
+
+        foos = list(q2.select_foo().asc__id().values())
+        foos.sort()
+
+        for x in range(2, 9):
+            q3 = q.copy()
+            rows = list(q3.select_foo().asc_foo().limit(1).page(x).values())
+            #pout.v(x, foos[x], rows[0])
+            self.assertEqual(foos[x - 1], rows[0])
+
+            q3 = q.copy()
+            row = q3.select_foo().asc_foo().limit(1).page(x).value()
+            self.assertEqual(foos[x - 1], row)
+
+            q3 = q.copy()
+            row = q3.select_foo().asc_foo().limit(1).page(x).value()
+            self.assertEqual(foos[x - 1], row)
+
+            q3 = q.copy()
+            rows = list(q3.select_foo().in_foo(foos).asc_foo(foos).limit(1).page(x).values())
+            self.assertEqual(foos[x - 1], rows[0])
+
+            q3 = q.copy()
+            row = q3.select_foo().in_foo(foos).asc_foo(foos).limit(1).page(x).value()
+            self.assertEqual(foos[x - 1], row)
+
+        for x in range(1, 9):
+            q3 = q.copy()
+            rows = list(q3.select_foo().asc_foo().limit(x).offset(x).values())
+            #pout.v(x, foos[x], rows[0])
+            self.assertEqual(foos[x], rows[0])
+
+            q3 = q.copy()
+            row = q3.select_foo().asc_foo().limit(x).offset(x).value()
+            self.assertEqual(foos[x], row)
+
+            q3 = q.copy()
+            row = q3.select_foo().asc_foo().limit(x).offset(x).value()
+            self.assertEqual(foos[x], row)
+
+            q3 = q.copy()
+            rows = list(q3.select_foo().in_foo(foos).asc_foo(foos).limit(1).offset(x).values())
+            self.assertEqual(foos[x], rows[0])
+
+            q3 = q.copy()
+            row = q3.select_foo().in_foo(foos).asc_foo(foos).limit(1).offset(x).value()
+            self.assertEqual(foos[x], row)
+
+    def test_sort_list(self):
+        q = self.get_query()
+        self.insert(q.orm_class.interface, q.orm_class.schema, 10)
+
+        q2 = q.copy()
+        foos = list(q2.select_foo().values())
+        random.shuffle(foos)
+
+        q3 = q.copy()
+        rows = list(q3.select_foo().in_foo(foos).asc_foo(foos).values())
+        for i, r in enumerate(rows):
+            self.assertEqual(foos[i], r)
+
+        q4 = q.copy()
+        rfoos = list(reversed(foos))
+        rows = list(q4.select_foo().in_foo(foos).desc_foo(foos).values())
+        for i, r in enumerate(rows):
+            self.assertEqual(rfoos[i], r)
+
+        qb = q.copy()
+        rows = list(qb.in_foo(foos).asc_foo(foos).limit(2).offset(2).get())
+        for i, r in enumerate(rows, 2):
+            self.assertEqual(foos[i], r.foo)
+
+        # now test a string value
+        qb = q.copy()
+        bars = list(qb.select_bar().values())
+        random.shuffle(bars)
+
+        qb = q.copy()
+        rows = list(qb.in_bar(bars).asc_bar(bars).get())
+        for i, r in enumerate(rows):
+            self.assertEqual(bars[i], r.bar)
+
+        # make sure limits and offsets work
+        qb = q.copy()
+        rows = list(qb.in_bar(bars).asc_bar(bars).limit(5).get())
+        for i, r in enumerate(rows):
+            self.assertEqual(bars[i], r.bar)
+
+        qb = q.copy()
+        rows = list(qb.in_bar(bars).asc_bar(bars).limit(2).offset(2).get())
+        for i, r in enumerate(rows, 2):
+            self.assertEqual(bars[i], r.bar)
+
+        # make sure you can select on one row and sort on another
+        qv = q.copy()
+        vs = list(qv.select_foo().select_bar().values())
+        random.shuffle(vs)
+
+        qv = q.copy()
+        rows = list(qv.select_foo().asc_bar((v[1] for v in vs)).values())
+        for i, r in enumerate(rows):
+            self.assertEqual(vs[i][0], r)
+
 
 class IteratorTest(EnvironTestCase):
     def get_iterator(self, count=5, limit=5, page=0):

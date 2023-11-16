@@ -297,74 +297,6 @@ class SQLite(SQLInterface):
 
         self.log_debug("Connected to connection {}", self._connection)
 
-#     async def x_connect(self, config):
-#         """
-#         https://docs.python.org/3.11/library/sqlite3.html#sqlite3.connect
-#         """
-#         path = config.path
-# 
-#         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
-#         options = {
-#             'isolation_level': None,
-#             #'isolation_level': "IMMEDIATE",
-#             #'isolation_level': "EXCLUSIVE",
-#             'detect_types': sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
-#             #'factory': SQLiteConnection,
-#             'check_same_thread': True, # https://stackoverflow.com/a/2578401/5006
-#             #'timeout': 100,
-#         }
-#         option_keys = list(options.keys()) + ['timeout', 'cached_statements']
-#         for k in option_keys:
-#             if k in config.options:
-#                 options[k] = config.options[k]
-# 
-#         try:
-#             connection = sqlite3.connect(path, **options)
-# 
-#         except sqlite3.DatabaseError as e:
-#             path_d = os.path.dirname(path)
-#             if os.path.isdir(path_d):
-#                 raise
-# 
-#             else:
-#                 # let's try and make the directory path and connect again
-#                 dir_util.mkpath(path_d)
-#                 connection = sqlite3.connect(path, **options)
-# 
-#         self.log_debug("Connected to connection {}", connection)
-# 
-#         # https://docs.python.org/2/library/sqlite3.html#row-objects
-#         connection.row_factory = sqlite3.Row
-#         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
-#         connection.text_factory = StringType.adapt
-# 
-#         # for some reason this is needed in python 3.6 in order for saved bytes
-#         # to be ran through the converter, not sure why
-#         sqlite3.register_converter(StringType.FIELD_TYPE, StringType.adapt)
-# 
-#         sqlite3.register_adapter(bool, BooleanType.adapt)
-#         sqlite3.register_converter(BooleanType.FIELD_TYPE, BooleanType.convert)
-# 
-#         # sadly, it doesn't look like these work for child classes so each class
-#         # has to be adapted even if its parent is already registered
-#         sqlite3.register_adapter(datetime.datetime, DatetimeType.adapt)
-#         sqlite3.register_adapter(Datetime, DatetimeType.adapt)
-#         sqlite3.register_converter(DatetimeType.FIELD_TYPE, DatetimeType.convert)
-# 
-#         sqlite3.register_adapter(int, NumericType.adapt)
-#         sqlite3.register_converter(NumericType.FIELD_TYPE, NumericType.convert)
-# 
-#         sqlite3.register_adapter(decimal.Decimal, DecimalType.adapt)
-#         sqlite3.register_converter(DecimalType.FIELD_TYPE, DecimalType.convert)
-# 
-#         sqlite3.register_adapter(dict, DictType.adapt)
-#         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
-# 
-#         self._connection = AsyncSQLiteConnection(
-#             connection,
-#             iter_chunk_size=config.options.get("iter_chunk_size", 64)
-#         )
-
     async def _configure_connection(self, **kwargs):
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
@@ -379,8 +311,15 @@ class SQLite(SQLInterface):
         return self._connection
 
     async def _close(self):
-        await self._connection.close()
-        self._connection = None
+        try:
+            await self._connection.close()
+
+        except ValueError:
+            # aiosqlite: ValueError: no active connection
+            pass
+
+        finally:
+            self._connection = None
 
     async def _readonly(self, readonly, **kwargs):
         await self._raw(
@@ -401,45 +340,62 @@ class SQLite(SQLInterface):
         ret = await self._raw(query_str, *query_args, **kwargs)
         return [r['tbl_name'] for r in ret]
 
-    def _get_indexes(self, schema, **kwargs):
+    async def _get_indexes(self, schema, **kwargs):
         """return all the indexes for the given schema"""
         # http://www.sqlite.org/pragma.html#schema
         # http://www.mail-archive.com/sqlite-users@sqlite.org/msg22055.html
         # http://stackoverflow.com/questions/604939/
         ret = {}
-        rs = self._raw('PRAGMA index_list({})'.format(self.render_table_name_sql(schema)), **kwargs)
+        rs = await self._raw(
+            'PRAGMA index_list({})'.format(self.render_table_name_sql(schema)),
+            **kwargs
+        )
         if rs:
             for r in rs:
                 iname = r['name']
                 ret.setdefault(iname, [])
-                indexes = self._raw('PRAGMA index_info({})'.format(r['name']), **kwargs)
+                indexes = await self._raw(
+                    'PRAGMA index_info({})'.format(r['name']),
+                    **kwargs
+                )
                 for idict in indexes:
                     ret[iname].append(idict['name'])
 
         return ret
 
-    def _delete_tables(self, **kwargs):
-        self._raw('PRAGMA foreign_keys = OFF', ignore_result=True, **kwargs);
-        ret = super()._delete_tables(**kwargs)
-        self._raw('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs);
-        return ret
+#     async def unsafe_delete_tables(self, **kwargs):
+#         await self._raw(
+#             'PRAGMA foreign_keys = OFF',
+#             ignore_result=True,
+#             **kwargs
+#         )
+# 
+#         ret = await super().unsafe_delete_tables(**kwargs)
+# 
+#         await self._raw(
+#             'PRAGMA foreign_keys = ON',
+#             ignore_result=True,
+#             **kwargs
+#         )
+#         return ret
 
     async def _delete_table(self, schema, **kwargs):
         """
         https://www.sqlite.org/lang_droptable.html
         """
-        #query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
-        query_str = "DROP TABLE IF EXISTS {}".format(self.render_table_name_sql(schema))
+        query_str = "DROP TABLE IF EXISTS {}".format(
+            self.render_table_name_sql(schema)
+        )
         await self._raw(query_str, ignore_result=True, **kwargs)
 
-    def _inserts(self, schema, field_names, field_values, **kwargs):
+    async def _inserts(self, schema, field_names, field_values, **kwargs):
         """
         https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.executemany
         """
         query_str = self.render_inserts_sql(schema, field_names, **kwargs)
-        with self.connection(**kwargs) as connection:
-            cur = connection.cursor()
-            cur.executemany(
+        async with self.connection(**kwargs) as connection:
+            cur = await connection.cursor()
+            await cur.executemany(
                 query_str,
                 field_values,
             )
@@ -486,11 +442,24 @@ class SQLite(SQLInterface):
                 ms = re.search(r"parameter\s(\d+)", e_msg)
                 index = int(ms.group(1))
                 value = error_args[1][index]
+                errmsg = "Query Placeholder {} has unexpected type {}".format(
+                    index,
+                    type(value)
+                )
+
                 e = PlaceholderError(
                     e,
                     *error_args,
-                    message=f"Placeholder {index} of query has unexpected type {type(value)}",
+                    message=errmsg,
                 )
+
+            else:
+                e = super().create_error(e, **kwargs)
+
+        elif isinstance(e, ValueError):
+            e_msg = str(e)
+            if "no active connection" in e_msg: # aiosqlite specific
+                e = CloseError(e)
 
             else:
                 e = super().create_error(e, **kwargs)
@@ -500,16 +469,18 @@ class SQLite(SQLInterface):
 
         return e
 
-    def _get_fields(self, table_name, **kwargs):
+    async def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given table"""
         ret = {}
-        query_str = 'PRAGMA table_info({})'.format(self.render_table_name_sql(table_name))
-        fields = self._raw(query_str, **kwargs)
-        #pout.v([dict(d) for d in fields])
+        query_str = 'PRAGMA table_info({})'.format(
+            self.render_table_name_sql(table_name)
+        )
+        fields = await self._raw(query_str, **kwargs)
 
-        query_str = 'PRAGMA foreign_key_list({})'.format(self.render_table_name_sql(table_name))
-        fks = {f["from"]: f for f in self._raw(query_str, **kwargs)}
-        #pout.v([dict(d) for d in fks.values()])
+        query_str = 'PRAGMA foreign_key_list({})'.format(
+            self.render_table_name_sql(table_name)
+        )
+        fks = {f["from"]: f for f in await self._raw(query_str, **kwargs)}
 
         pg_types = {
             "INTEGER": int,

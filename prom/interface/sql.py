@@ -35,7 +35,7 @@ class SQLConnection(Connection):
     async def _transaction_starting(self, tx):
         # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
         await self.execute("SAVEPOINT {}".format(
-            await self.interface.render_field_name_sql(tx["name"])
+            self.interface.render_field_name_sql(tx["name"])
         ))
 
     async def _transaction_stop(self):
@@ -47,7 +47,7 @@ class SQLConnection(Connection):
 
     async def _transaction_stopping(self, tx):
         await self.execute("RELEASE {}".format(
-            await self.interface.render_field_name_sql(tx["name"])
+            self.interface.render_field_name_sql(tx["name"])
         ))
 
     async def _transaction_fail(self):
@@ -56,7 +56,7 @@ class SQLConnection(Connection):
     async def _transaction_failing(self, tx):
         # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
         await self.execute("ROLLBACK TO SAVEPOINT {}".format(
-            await self.interface.render_field_name_sql(tx["name"])
+            self.interface.render_field_name_sql(tx["name"])
         ))
 
 #     async def _execute(self, query_str):
@@ -150,7 +150,7 @@ class SQLInterface(SQLInterfaceABC):
         else:
             raise NotImplementedError(f"Unknown paramstyle {paramstyle}")
 
-    def _set_table(self, schema, **kwargs):
+    async def _set_table(self, schema, **kwargs):
         """
         http://sqlite.org/lang_createtable.html
         http://www.postgresql.org/docs/9.1/static/sql-createtable.html
@@ -167,7 +167,7 @@ class SQLInterface(SQLInterfaceABC):
         query_str.append(",\n".join(query_fields))
         query_str.append(')')
         query_str = "\n".join(query_str)
-        self._raw(query_str, ignore_result=True, **kwargs)
+        await self._raw(query_str, ignore_result=True, **kwargs)
 
     def _set_index(self, schema, name, field_names, **kwargs):
         """
@@ -187,7 +187,7 @@ class SQLInterface(SQLInterfaceABC):
 
         return self._raw(query_str, ignore_result=True, **kwargs)
 
-    def _insert(self, schema, fields, **kwargs):
+    async def _insert(self, schema, fields, **kwargs):
         pk_names = schema.pk_names
         kwargs.setdefault("ignore_return_clause", len(pk_names) == 0)
         kwargs.setdefault("ignore_result", len(pk_names) == 0)
@@ -198,7 +198,7 @@ class SQLInterface(SQLInterfaceABC):
             **kwargs,
         )
 
-        r = self._raw(query_str, *query_args, **kwargs)
+        r = await self._raw(query_str, *query_args, **kwargs)
         if r and pk_names:
             if len(pk_names) > 1:
                 r = r[0]
@@ -206,7 +206,7 @@ class SQLInterface(SQLInterfaceABC):
                 r = r[0][pk_names[0]]
         return r
 
-    def _update(self, schema, fields, query, **kwargs):
+    async def _update(self, schema, fields, query, **kwargs):
         query_str, query_args = self.render_update_sql(
             schema,
             fields,
@@ -214,9 +214,14 @@ class SQLInterface(SQLInterfaceABC):
             **kwargs,
         )
 
-        return self._raw(query_str, *query_args, count_result=True, **kwargs)
+        return await self._raw(
+            query_str,
+            *query_args,
+            count_result=True,
+            **kwargs
+        )
 
-    def _upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
+    async def _upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
         """
         https://www.sqlite.org/lang_UPSERT.html
         """
@@ -272,7 +277,7 @@ class SQLInterface(SQLInterfaceABC):
             )
             query_args = insert_args + update_args
 
-        r = self._raw(query_str, *query_args, **kwargs)
+        r = await self._raw(query_str, *query_args, **kwargs)
         if r and returning_field_names:
             if len(returning_field_names) > 1:
                 r = r[0]
@@ -280,15 +285,23 @@ class SQLInterface(SQLInterfaceABC):
                 r = r[0][returning_field_names[0]]
         return r
 
-    def _delete(self, schema, query, **kwargs):
-        where_query_str, query_args = self.render_sql(schema, query, only_where_clause=True)
+    async def _delete(self, schema, query, **kwargs):
+        where_query_str, query_args = self.render_sql(
+            schema,
+            query,
+            only_where_clause=True
+        )
         query_str = []
         query_str.append('DELETE FROM')
         query_str.append('  {}'.format(self.render_table_name_sql(schema)))
         query_str.append(where_query_str)
         query_str = "\n".join(query_str)
-        ret = self._raw(query_str, *query_args, count_result=True, **kwargs)
-        return ret
+        return await self._raw(
+            query_str,
+            *query_args,
+            count_result=True,
+            **kwargs
+        )
 
     async def _raw(self, query_str, *query_args, **kwargs):
         """
@@ -358,16 +371,16 @@ class SQLInterface(SQLInterfaceABC):
 
             return ret
 
-    def _get(self, schema, query, **kwargs):
+    async def _get(self, schema, query, **kwargs):
         """
         https://www.sqlite.org/lang_select.html
         """
         query_str, query_args = self.render_sql(schema, query)
-        return self._raw(query_str, *query_args, **kwargs)
+        return await self._raw(query_str, *query_args, **kwargs)
 
-    def _count(self, schema, query, **kwargs):
+    async def _count(self, schema, query, **kwargs):
         query_str, query_args = self.render_sql(schema, query, count_query=True)
-        ret = self._raw(query_str, *query_args, **kwargs)
+        ret = await self._raw(query_str, *query_args, **kwargs)
         if ret:
             ret = int(ret[0]['ct'])
         else:
@@ -375,31 +388,38 @@ class SQLInterface(SQLInterfaceABC):
 
         return ret
 
-    def _handle_field_error(self, schema, e, **kwargs):
+    async def _handle_field_error(self, schema, e, **kwargs):
+        """This will add fields that don't exist in the table if they can be
+        set to NULL, the reason they have to be NULL is adding fields to
+        Postgres that can be NULL is really light, but if they have a default
+        value, then it can be costly
         """
-        this will add fields that don't exist in the table if they can be set to NULL,
-        the reason they have to be NULL is adding fields to Postgres that can be NULL
-        is really light, but if they have a default value, then it can be costly
-        """
-        current_fields = self._get_fields(schema, **kwargs)
+        current_fields = await self._get_fields(schema, **kwargs)
         for field_name, field in schema.fields.items():
             if field_name not in current_fields:
                 if field.required:
-                    self.log_error(f"Cannot safely add {field_name} on the fly because it is required")
+                    self.log_error(
+                        "Cannot safely add {} on the fly because it is required",
+                        field_name
+                    )
                     return False
 
                 else:
                     query_str = []
                     query_str.append('ALTER TABLE')
-                    query_str.append('  {}'.format(self.render_table_name_sql(schema)))
+                    query_str.append('  {}'.format(
+                        self.render_table_name_sql(schema)
+                    ))
                     query_str.append('ADD COLUMN')
-                    query_str.append('  {}'.format(self.render_datatype_sql(field_name, field)))
+                    query_str.append('  {}'.format(
+                        self.render_datatype_sql(field_name, field)
+                    ))
                     query_str = "\n".join(query_str)
-                    self._raw(query_str, ignore_result=True, **kwargs)
+                    await self._raw(query_str, ignore_result=True, **kwargs)
 
         return True
 
-    def _handle_table_error(self, schema, e, **kwargs):
+    async def _handle_table_error(self, schema, e, **kwargs):
         """
         You can run into a problem when you are trying to set a table and it has a 
         foreign key to a table that doesn't exist, so this method will go through 
@@ -409,20 +429,20 @@ class SQLInterface(SQLInterfaceABC):
             if schemas := query.schemas:
                 for s in schemas:
                     self.log_warning(f"Verifying {schema} query foreign key table: {s}")
-                    if not self._handle_table_error(s, e=e, **kwargs):
+                    if not await self._handle_table_error(s, e=e, **kwargs):
                         return False
 
         for field_name, field_val in schema.fields.items():
             s = field_val.schema
             if s:
                 self.log_warning(f"Verifying {schema} foreign key table: {s}")
-                if not self._handle_table_error(schema=s, e=e, **kwargs):
+                if not await self._handle_table_error(schema=s, e=e, **kwargs):
                     return False
 
         # now that we know all fk tables exist, create this table
         # !!! This uses the external .set_table so it will run through all the 
         # indexes also
-        self.set_table(schema, **kwargs)
+        await self.set_table(schema, **kwargs)
         return True
 
     def render_table_name_sql(self, schema):
