@@ -21,7 +21,6 @@ https://www.sqlite.org/lang_altertable.html
 other links that were helpful
 http://www.numericalexpert.com/blog/sqlite_blob_time/
 """
-from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import decimal
 import datetime
@@ -50,31 +49,28 @@ from .sql import SQLInterface, SQLConnection
 
 
 class AsyncSQLiteConnection(SQLConnection, aiosqlite.Connection):
+    """Thin wrapper around the default connection to make sure it has a similar
+    interface to Postgres' connection instance so the common code can all be the
+    same in the Interface class
+
+    https://docs.python.org/3.11/library/sqlite3.html#sqlite3.Connection
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.closed = 0
 
     async def close(self, *args, **kwargs):
-        r = await super().close(*args, **kwargs)
-        self.closed = 1
-        return r
+        try:
+            r = await super().close(*args, **kwargs)
 
-# class SQLiteConnection(SQLConnection, sqlite3.Connection):
-#     """
-#     Thin wrapper around the default connection to make sure it has a similar interface
-#     to Postgres' connection instance so the common code can all be the same in the
-#     parent class
-# 
-#     https://docs.python.org/3.11/library/sqlite3.html#sqlite3.Connection
-#     """
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         self.closed = 0
-# 
-#     async def close(self, *args, **kwargs):
-#         r = await super().close(*args, **kwargs)
-#         self.closed = 1
-#         return r
+        except ValueError:
+            # aiosqlite: ValueError: no active connection
+            pass
+
+        finally:
+            self.closed = 1
+
+        return r
 
 
 class BooleanType(object):
@@ -121,7 +117,6 @@ class DatetimeType(StringType):
     @classmethod
     def convert(cls, val):
         return Datetime(super().adapt(val)).datetime()
-        #return Datetime(super().adapt(val)).datetime().replace(tzinfo=datetime.timezone.utc)
 
 
 class NumericType(object):
@@ -169,7 +164,8 @@ class DecimalType(object):
 class DictType(object):
     """Converts a dict to json text and back again
 
-    Uses JSONBTEXT to be as close to Postgres while still triggering SQLite's affinity rule 2
+    Uses JSONBTEXT to be as close to Postgres while still triggering SQLite's
+    affinity rule 2
     """
     FIELD_TYPE = 'JSONBTEXT'
 
@@ -311,15 +307,8 @@ class SQLite(SQLInterface):
         return self._connection
 
     async def _close(self):
-        try:
-            await self._connection.close()
-
-        except ValueError:
-            # aiosqlite: ValueError: no active connection
-            pass
-
-        finally:
-            self._connection = None
+        await self._connection.close()
+        self._connection = None
 
     async def _readonly(self, readonly, **kwargs):
         await self._raw(
@@ -362,22 +351,6 @@ class SQLite(SQLInterface):
                     ret[iname].append(idict['name'])
 
         return ret
-
-#     async def unsafe_delete_tables(self, **kwargs):
-#         await self._raw(
-#             'PRAGMA foreign_keys = OFF',
-#             ignore_result=True,
-#             **kwargs
-#         )
-# 
-#         ret = await super().unsafe_delete_tables(**kwargs)
-# 
-#         await self._raw(
-#             'PRAGMA foreign_keys = ON',
-#             ignore_result=True,
-#             **kwargs
-#         )
-#         return ret
 
     async def _delete_table(self, schema, **kwargs):
         """

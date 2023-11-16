@@ -25,62 +25,6 @@ class InterfaceData(testdata.TestData):
 
     interfaces = set()
 
-#     @classmethod
-#     def get_interfaces(cls):
-#         """Return all currently configured interfaces in a list"""
-#         return list(cls.interfaces)
-# 
-#     @classmethod
-#     def get_interface(cls, interface=None):
-#         return interface or cls.create_interface()
-# 
-#     @classmethod
-#     def create_interface(cls):
-#         for inter in cls.create_environ_interfaces():
-#             return inter
-# 
-#     @classmethod
-#     def create_dsn_interface(cls, dsn):
-#         conn = DsnConnection(dsn)
-#         inter = conn.interface
-#         cls.interfaces.add(inter)
-#         return inter
-# 
-#     @classmethod
-#     def create_environ_connections(cls, dsn_env_name="PROM_TEST_DSN"):
-#         """creates all the connections that are defined in the environment under
-#         <dsn_env_name>_N where N can be any integer"""
-#         found = False
-#         if dsn_index := os.environ.get("PROM_TEST_DSN_INDEX", 0):
-#             for conn in find_environ(f"{dsn_env_name}_{dsn_index}"):
-#                 found = True
-#                 yield conn
-# 
-#         else:
-#             for conn in find_environ(dsn_env_name):
-#                 found = True
-#                 yield conn
-# 
-#         if not found:
-#             raise ValueError("No connection found, set PROM_TEST_DSN")
-# 
-#     @classmethod
-#     def create_environ_interfaces(cls):
-#         """find any interfaces that match dsn_env_name and yield them"""
-#         for conn in cls.create_environ_connections():
-#             inter = conn.interface
-#             cls.interfaces.add(inter)
-#             yield inter
-# 
-#     @classmethod
-#     def find_interface(cls, interface_class):
-#         for inter in cls.create_environ_interfaces():
-#             if isinstance(inter, interface_class):
-#                 return inter
-
-
-
-
     def get_interfaces(self):
         """Return all currently configured interfaces in a list"""
         return list(self.interfaces)
@@ -240,17 +184,6 @@ class InterfaceData(testdata.TestData):
         )
         return s
 
-#     async def acreate_schema(self, interface=None, table_name=None, **fields_or_indexes):
-#         if not inter:
-#             inter = self.get_interface()
-# 
-#         s = self.get_schema(table_name, **fields_or_indexes)
-#         await inter.set_table(s)
-#         return inter, s
-# 
-#     def create_schema(self, *args, **kwargs):
-#         return self.mock_async(self.acreate_schema(*args, **kwargs))
-
     def find_schema(self, v):
         if isinstance(v, Schema):
             schema = v
@@ -306,10 +239,6 @@ class InterfaceData(testdata.TestData):
             a_char_y=Field(str, True, size=32),
             a_char_n=Field(str, False, size=32),
         )
-
-#         if inter:
-#             #i = self.get_interface()
-#             #inter.set_table(s)
 
         return s
 
@@ -402,87 +331,4 @@ class InterfaceData(testdata.TestData):
             fields_list.append(self.get_fields(schema, **kwargs))
 
         return interface, schema, orm_class, fields_list
-
-#     def insert(self, *args, **kwargs):
-#         return self.mock_async(self.ainsert(*args, **kwargs))
-# 
-#     async def ainsert(self, *args, **kwargs):
-#         """most typically you will call this with (object, count)
-# 
-#         :param *args:
-#             - interface, schema, count
-#             - query, count
-#             - (interface, schema), count
-#             - orm_class, count
-#         :returns: list[Any], a list of primary keys
-#         """
-#         pks = []
-#         if len(args) == 1:
-#             o = args[0]
-#             count = 1
-# 
-#         elif len(args) == 2:
-#             o = args[0]
-#             count = args[1]
-# 
-#         elif len(args) == 3:
-#             o = (args[0], args[1])
-#             count = args[2]
-# 
-#         else:
-#             raise ValueError(f"Passed in {len(args)} arguments")
-# 
-#         for i in range(count):
-#             pks.append(await self.ainsert_fields(o))
-# 
-#         return pks
-# 
-#     async def ainsert_fields(self, o, fields=None, **fields_kwargs):
-#         """Insert fields
-# 
-#         :param o: Query|tuple[Interface, Schema]|orm
-#         :param fields: dict|None
-#         :param **fields_kwargs: merged with fields
-#         :returns: Any, the primary key for the row containing the inserted
-#             fields
-#         """
-#         fields = make_dict(fields, fields_kwargs)
-# 
-#         if isinstance(o, Query):
-#             schema = o.orm_class.schema
-#             pk = await self.ainsert_fields(o.orm_class, fields)
-# 
-#         elif isinstance(o, tuple):
-#             interface, schema = o
-#             fields = self.get_fields(schema, **fields)
-#             pk = await interface.insert(schema, fields)
-#             pout.v(pk)
-# 
-#         else:
-#             orm_class = None
-#             if isinstance(o, Orm):
-#                 orm_class = type(o)
-#                 schema = orm_class.schema
-# 
-#             elif issubclass(o, Orm):
-#                 orm_class = o
-#                 schema = orm_class.schema
-# 
-#             if orm_class:
-#                 fields = self.get_fields(schema, **fields)
-#                 o = orm_class.create(fields)
-#                 pk = o.pk
-# 
-#             else:
-#                 raise ValueError("couldn't insert for object {}".format(o))
-# 
-#         pk_name = schema.pk_name
-#         if pk_name:
-#             assert pk > 0
-# 
-#         return pk
-# 
-#     def insert_orm(self, orm_class, fields=None, **fields_kwargs):
-#         pk = self.insert_fields(orm_class, fields, **fields_kwargs)
-#         return orm_class.query.eq_pk(pk).one()
 

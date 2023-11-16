@@ -59,12 +59,6 @@ class SQLConnection(Connection):
             self.interface.render_field_name_sql(tx["name"])
         ))
 
-#     async def _execute(self, query_str):
-#         self.log_info("{} - {}", self, query_str)
-#         cur = await self.cursor()
-#         await cur.execute(query_str)
-#         await cur.close()
-
 
 class SQLInterfaceABC(Interface):
     """SQL database interfaces should extend SQLInterface and implement all these

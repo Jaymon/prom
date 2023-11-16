@@ -219,36 +219,6 @@ class InterfaceTest(_BaseTestInterface):
             await orm_class.interface.has_table(orm_class.table_name)
         )
 
-#     def test_field_datetime_type(self):
-#         s = self.get_schema(
-#             self.get_table_name(),
-#             foo=Field(datetime.datetime)
-#         )
-#         i = self.create_interface()
-#         i.set_table(s)
-# 
-#         foo = testdata.get_past_datetime().astimezone(datetime.timezone.utc)
-#         pk = i.insert(s, {"foo": foo})
-#         r = i.get_one(s, query.Query().eq__id(pk))
-#         self.assertEqual(foo, r["foo"])
-
-#     def test_get_fields_float(self):
-#         sql = "\n".join([
-#             "CREATE TABLE ZFOOBAR (",
-#             "ZPK INTEGER PRIMARY KEY,",
-#             "ZINTEGER INTEGER,",
-#             "ZFLOAT FLOAT,",
-#             "ZTIMESTAMP TIMESTAMP,",
-#             "ZVARCHAR VARCHAR)",
-#         ])
-# 
-#         i = self.create_interface()
-#         r = i.raw(sql, cursor_result=True)
-#         self.assertTrue(i.has_table("ZFOOBAR"))
-# 
-#         fields = i.get_fields("ZFOOBAR")
-#         self.assertEqual(float, fields["ZFLOAT"]["field_type"])
-
     async def test_create_path(self):
         i = self.get_interface()
         config = i.config
