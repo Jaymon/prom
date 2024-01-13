@@ -21,6 +21,7 @@ class _BaseTestConfig(BaseTestCase):
     specific to a certain interface. Any common config.Connection tests should
     go into the appropriate config_test class
     """
+    pass
 #     def setUp(self):
 #         for name, inter in prom.interface.interfaces.items():
 #             inter.close()
@@ -1018,13 +1019,10 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
         self.assertIsNotNone(conn.interface)
 
         await conn.execute("SELECT true")
-#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_start(prefix="c2")
         await conn.execute("SELECT true")
-#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_start(prefix="c3")
         await conn.execute("SELECT true")
-#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_start(prefix="c4")
 
         self.assertIsNotNone(conn.interface)
@@ -1033,13 +1031,10 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
 
         await conn.transaction_stop()
         await conn.execute("SELECT true")
-#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_stop()
         await conn.execute("SELECT true")
-#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_stop()
         await conn.execute("SELECT true")
-#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_stop()
 
     async def test_transaction_connection_2(self):

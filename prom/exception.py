@@ -61,20 +61,4 @@ class PlaceholderError(InterfaceError):
     https://github.com/Jaymon/prom/issues/74
     """
     pass
-#     def __init__(self, e, query_str, query_args, placeholder, **kwargs):
-#         if "message" not in kwargs:
-#             count = query_str.count(placeholder)
-#             if "message" not in kwargs:
-#                 e_msg = "Query has {} placeholder(s) but {} value(s)".format(
-#                     count,
-#                     len(query_args),
-#                 )
-# 
-#                 kwargs["message"] = e_msg
-# 
-#         super().__init__(e, **kwargs)
-# 
-#         self.query_str = query_str
-#         self.query_args = query_args
-#         self.placeholder = placeholder
 

@@ -372,24 +372,8 @@ class Interface(InterfaceABC):
     UniqueError = UniqueError
     CloseError = CloseError
 
-#         host = config.host
-#         if host:
-#             db = config.database
-#             config.database = db.strip("/")
-#         return config
-
     def __init__(self, config=None):
         self.config = config
-#         self.connection_count = 0
-
-        # enables cleanup of open sockets even if the object isn't correctly
-        # garbage collected
-#         weakref.finalize(self, self.__del__)
-
-#     def __del__(self):
-#         """Whenever this gets garbage collected close everything. This is also
-#         the method for weakref.finalize"""
-#         self.close()
 
     async def connect(self, config=None, *args, **kwargs):
         """connect to the interface
@@ -470,13 +454,6 @@ class Interface(InterfaceABC):
         :param **kwargs:
             - connection: Any, the connection to configure
         """
-#         kwargs.setdefault("prefix", "configure_connection")
-#         async with self.connection(
-#             prefix="configure_connection",
-#             **kwargs
-#         ) as connection:
-#             kwargs["connection"] = connection
-
         await self.execute(
             self._configure_connection,
             **kwargs
@@ -519,7 +496,6 @@ class Interface(InterfaceABC):
 
     async def free_connection(self, connection):
         """When .connection is done with a connection it calls this method"""
-        #connection.interface = None
         if self.is_connected():
             self.log_debug(
                 "Freeing {} connection {}",
@@ -553,8 +529,6 @@ class Interface(InterfaceABC):
             with self.connection(**kwargs) as connection:
                 # do something with connection
         """
-#         self.connection_count += 1
-#         connection_count = self.connection_count
         free_connection = False
 
         prefix = kwargs.get("prefix", "")
@@ -620,7 +594,8 @@ class Interface(InterfaceABC):
     @asynccontextmanager
     async def transaction(self, connection=None, **kwargs):
         """A simple context manager useful for when you want to wrap a bunch of
-        db calls in a transaction, this is used internally for any write statements
+        db calls in a transaction, this is used internally for any write
+        statements
 
         NOTE -- psycopg3 now has a transaction context manager:
             https://www.psycopg.org/psycopg3/docs/api/connections.html#psycopg.Connection.transaction
@@ -664,15 +639,6 @@ class Interface(InterfaceABC):
             **kwargs
         )
 
-#         async with self.connection(prefix="readonly", **kwargs) as connection:
-#             kwargs["connection"] = connection
-#             kwargs.setdefault("prefix", "readonly")
-#             await self.execute(
-#                 self._readonly,
-#                 readonly,
-#                 **kwargs
-#             )
-
     async def execute_write(self, callback, *args, **kwargs):
         """Any write statements will use this method
 
@@ -714,9 +680,7 @@ class Interface(InterfaceABC):
         """
         # we want to override the prefix at this point
         kwargs.pop("prefix", None)
-#         prefix = kwargs.pop("prefix", callback.__name__)
         prefix = callback.__name__
-#         kwargs["prefix"] = callback.__name__
 
         try:
             return await self._execute(
@@ -778,7 +742,6 @@ class Interface(InterfaceABC):
         :param table_name: str, the table to check
         :returns: bool, True if the table exists, false otherwise
         """
-#         kwargs.setdefault("prefix", "has_table")
         tables = await self.execute_read(
             self._get_tables,
             table_name,
@@ -793,7 +756,6 @@ class Interface(InterfaceABC):
             only include matches with this name
         :returns: list, a list of table names
         """
-#         kwargs.setdefault("prefix", "get_tables")
         return await self.execute_read(
             self._get_tables,
             str(table_name),
@@ -807,9 +769,6 @@ class Interface(InterfaceABC):
         :param schema: Schema instance, contains all the information about the
             table
         """
-#         pout.v(schema.table_name, kwargs.get("prefix", ""))
-#         kwargs.setdefault("prefix", "set_table")
-#         prefix = "set_table"
         kwargs["prefix"] = "set_table"
         async with self.transaction(**kwargs) as connection:
             kwargs["connection"] = connection
@@ -833,17 +792,6 @@ class Interface(InterfaceABC):
                     **index.options,
                 )
 
-#             await self._set_table(schema=schema, **kwargs)
-# 
-#             for index_name, index in schema.indexes.items():
-#                 await self._set_index(
-#                     schema=schema,
-#                     name=index.name,
-#                     field_names=index.field_names,
-#                     connection=connection,
-#                     **index.options,
-#                 )
-
     async def unsafe_delete_table(self, schema, **kwargs):
         """wrapper around delete_table that matches the *_tables variant and
         denotes that this is a serious operation
@@ -852,7 +800,6 @@ class Interface(InterfaceABC):
 
         :param schema: Schema instance, the table to delete
         """
-#         kwargs.setdefault("prefix", "unsafe_delete_table")
         await self.execute_write(
             self._delete_table,
             schema=schema,
@@ -865,9 +812,6 @@ class Interface(InterfaceABC):
 
         https://github.com/Jaymon/prom/issues/75
         """
-#         kwargs.setdefault("prefix", "unsafe_delete_tables")
-
-#         prefix = "unsafe_delete_tables"
         kwargs["prefix"] = "unsafe_delete_tables"
         async with self.transaction(**kwargs) as connection:
             kwargs['connection'] = connection
@@ -886,7 +830,6 @@ class Interface(InterfaceABC):
 
         return -- dict -- the indexes in {indexname: fields} format
         """
-#         kwargs.setdefault("prefix", "get_indexes")
         return await self.execute_read(
             self._get_indexes,
             schema=schema,
@@ -903,7 +846,6 @@ class Interface(InterfaceABC):
         :param **index_options: any index options that might be useful to
             create the index
         """
-#         kwargs.setdefault("prefix", "set_index")
         await self.execute_write(
             self._set_index,
             schema=schema,
@@ -921,7 +863,6 @@ class Interface(InterfaceABC):
         :param **kwargs: passed through
         :returns: mixed, will return the primary key values
         """
-#         kwargs.setdefault("prefix", "insert")
         return await self.execute_write(
             self._insert,
             schema=schema,
@@ -934,16 +875,15 @@ class Interface(InterfaceABC):
 
         :param schema: Schema
         :param field_names: list, the field names that will be checked for each
-            row in field_rows and used to turn each dict in field_rows to a tuple
-        :param field_rows: Sequence, if an iterator of dict instances with keys found
-            in field_names, if a key is missing it will have None set as the value,
-            if it's an iterator of values then the tuple value ordering should match
-            with field_names
+            row in field_rows and used to turn each dict in field_rows to a
+            tuple
+        :param field_rows: Sequence, if an iterator of dict instances with keys
+            found in field_names, if a key is missing it will have None set as
+            the value, if it's an iterator of values then the tuple value
+            ordering should match with field_names
         :param **kwargs: passed through
         :returns: bool, True if the query executed successfully
         """
-#         kwargs.setdefault("prefix", "inserts")
-
         def field_values(field_names, field_rows):
             for fields in field_rows:
                 if isinstance(fields, Mapping):
@@ -973,7 +913,6 @@ class Interface(InterfaceABC):
         :param **kwargs: passed through
         :returns: int, how many rows where updated
         """
-#         kwargs.setdefault("prefix", "update")
         return await self.execute_write(
             self._update,
             schema=schema,
@@ -1001,7 +940,6 @@ class Interface(InterfaceABC):
         :param **kwargs: anything else
         :returns: mixed, the primary key
         """
-#         kwargs.setdefault("prefix", "upsert")
         return await self.execute_write(
             self._upsert,
             schema=schema,
@@ -1022,7 +960,6 @@ class Interface(InterfaceABC):
         if not query or not query.fields_where:
             raise ValueError('aborting delete because there is no where clause')
 
-#         kwargs.setdefault("prefix", "delete")
         return await self.execute_write(
             self._delete,
             schema=schema,
@@ -1040,7 +977,6 @@ class Interface(InterfaceABC):
         :param **kwargs: any query options can be passed in by using key=val
             syntax
         """
-#         kwargs.setdefault("prefix", "raw")
         return await self.execute(
             self._raw,
             query_str,
@@ -1049,7 +985,6 @@ class Interface(InterfaceABC):
         )
 
     async def get_fields(self, table_name, **kwargs):
-#         kwargs.setdefault("prefix", "get_fields")
         return await self.execute_read(
             self._get_fields,
             str(table_name),
@@ -1063,7 +998,6 @@ class Interface(InterfaceABC):
         :param query: Query instance, the filter criteria
         :return: dict, the matching row
         """
-#         kwargs.setdefault("prefix", "one")
         return await self.get(schema, query, fetchone=True, **kwargs) or {}
 
     async def get(self, schema, query=None, **kwargs):
@@ -1073,7 +1007,6 @@ class Interface(InterfaceABC):
         :param query: Query instance, the filter criteria
         :returns: list, a list of matching dicts
         """
-#         kwargs.setdefault("prefix", "get")
         ret = await self.execute_read(
             self._get,
             schema=schema,
@@ -1089,7 +1022,6 @@ class Interface(InterfaceABC):
         :param query: Query instance, the filter criteria
         :returns: list, a list of matching dicts
         """
-#         kwargs.setdefault("prefix", "count")
         ret = await self.execute_read(
             self._count,
             schema=schema,
@@ -1149,8 +1081,8 @@ class Interface(InterfaceABC):
     def raise_error(self, e, **kwargs):
         """raises e
 
-        :param e: Exception, if a built-in exception then it's raised, if any other
-            error then it will be wrapped in an InterfaceError
+        :param e: Exception, if a built-in exception then it's raised, if any
+            other error then it will be wrapped in an InterfaceError
         """
         e2 = self.create_error(e, **kwargs)
         if e2 is not e:
@@ -1159,8 +1091,8 @@ class Interface(InterfaceABC):
             raise e
 
     def create_error(self, e, **kwargs):
-        """create the error that you want to raise, this gives you an opportunity
-        to customize the error
+        """create the error that you want to raise, this gives you an
+        opportunity to customize the error
 
         allow python's built in errors to filter up through
         https://docs.python.org/2/library/exceptions.html
@@ -1176,7 +1108,8 @@ class Interface(InterfaceABC):
         if not isinstance(e, error_class):
             if not hasattr(builtins, e.__class__.__name__):
                 if "error_module" in kwargs:
-                    if kwargs["error_module"].__name__ in e.__class__.__module__:
+                    errmod_name = kwargs["error_module"].__name__
+                    if errmod_name in e.__class__.__module__:
                         e = error_class(e)
 
                 else:

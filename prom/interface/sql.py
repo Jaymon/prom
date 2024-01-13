@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import datetime
 import decimal
@@ -265,8 +264,9 @@ class SQLInterface(SQLInterfaceABC):
         for field_name in conflict_field_names:
             # conflict fields need to be in the insert fields
             if field_name not in insert_fields:
+                errmsg = "Upsert insert fields on {} missing conflict field {}"
                 raise ValueError(
-                    "Upsert insert fields on {} missing conflict field {}".format(
+                    errmsg.format(
                         schema,
                         field_name,
                     )
@@ -275,8 +275,9 @@ class SQLInterface(SQLInterfaceABC):
             # conflict fields should not be in the update fields (this is more
             # for safety, they should use .update if they want to change them)
             if field_name in update_fields:
+                errmsg = "Upsert update fields on {} contains conflict field {}"
                 raise ValueError(
-                    "Upsert update fields on {} contains conflict field {}".format(
+                    errmsg.format(
                         schema,
                         field_name,
                     )
@@ -561,7 +562,9 @@ class SQLInterface(SQLInterfaceABC):
             query_str.append('FROM')
 
             if not query.compounds:
-                query_str.append("  {}".format(self.render_table_name_sql(schema)))
+                query_str.append("  {}".format(
+                    self.render_table_name_sql(schema)
+                ))
 
         return query_str, query_args
 
@@ -685,9 +688,10 @@ class SQLInterface(SQLInterfaceABC):
                     # the idea here is this is a condition that will
                     # automatically cause the query to fail but not necessarily 
                     # be an error, the best example is the IN (...) queries, if
-                    # you do self.in_foo([]).get() that will fail because the list
-                    # was empty, but a value error shouldn't be raised because a
-                    # common case is: self.if_foo(Bar.query.is_che(True).pks).get()
+                    # you do self.in_foo([]).get() that will fail because the
+                    # list was empty, but a value error shouldn't be raised
+                    # because a common case is:
+                    #   self.if_foo(Bar.query.is_che(True).pks).get()
                     # which should result in an empty set if there are no rows
                     # where che = TRUE
                     #
@@ -798,7 +802,10 @@ class SQLInterface(SQLInterfaceABC):
                     query_args.extend(field_sort_args)
 
                 else:
-                    query_sort_str.append('  {} {}'.format(field.name, sort_dir_str))
+                    query_sort_str.append('  {} {}'.format(
+                        field.name,
+                        sort_dir_str
+                    ))
 
             query_str.append(',\n'.join(query_sort_str))
 
@@ -907,7 +914,9 @@ class SQLInterface(SQLInterfaceABC):
             # https://www.sqlite.org/lang_returning.html
             pk_name = schema.pk_name
             if pk_name:
-                query_str += ' RETURNING {}'.format(self.render_field_name_sql(pk_name))
+                query_str += ' RETURNING {}'.format(
+                    self.render_field_name_sql(pk_name)
+                )
 
         return query_str, query_vals
 
@@ -936,13 +945,20 @@ class SQLInterface(SQLInterfaceABC):
 
         field_str = []
         for field_name, field_val in fields.items():
-            field_str.append('{} = {}'.format(self.render_field_name_sql(field_name), self.PLACEHOLDER))
+            field_str.append('{} = {}'.format(
+                self.render_field_name_sql(field_name),
+                self.PLACEHOLDER
+            ))
             query_args.append(field_val)
 
         query_str += 'SET {}'.format(',\n'.join(field_str))
 
         if query:
-            where_query_str, where_query_args = self.render_sql(schema, query, only_where_clause=True)
+            where_query_str, where_query_args = self.render_sql(
+                schema,
+                query,
+                only_where_clause=True
+            )
             query_str += ' {}'.format(where_query_str)
             query_args.extend(where_query_args)
 
@@ -1001,9 +1017,15 @@ class SQLInterface(SQLInterfaceABC):
 
         else:
             if field.is_ref():
-                field_type += ' ' + self.render_datatype_ref_sql(field_name, field)
+                field_type += ' ' + self.render_datatype_ref_sql(
+                    field_name,
+                    field
+                )
 
-        return '{} {}'.format(self.render_field_name_sql(field_name), field_type)
+        return '{} {}'.format(
+            self.render_field_name_sql(field_name),
+            field_type
+        )
 
     def render_datatype_bool_sql(self, field_name, field, **kwargs):
         return 'BOOL'

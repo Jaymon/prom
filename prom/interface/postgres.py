@@ -1,11 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-http://pythonhosted.org/psycopg2/module.html
-
-http://zetcode.com/db/postgresqlpythontutorial/
-http://wiki.postgresql.org/wiki/Using_psycopg2_with_PostgreSQL
-http://pythonhosted.org/psycopg2/
-"""
 import re
 import os
 import sys
@@ -18,10 +11,6 @@ from collections import Counter
 # third party
 import psycopg
 from psycopg.adapt import Dumper
-
-import psycopg2
-import psycopg2.extras
-import psycopg2.extensions
 
 # first party
 from .sql import SQLInterface, SQLConnection
@@ -36,19 +25,6 @@ from ..exception import (
     CloseError,
     PlaceholderError,
 )
-
-
-# class NoneType(Dumper):
-# 
-#     TYPE = None
-# 
-#     def dump(self, val):
-#         pout.v(val)
-#         return ""
-# 
-#     def quote(self, val):
-#         pout.v(val)
-#         return "NULL"
 
 
 class DictType(Dumper):
@@ -73,62 +49,19 @@ class DictType(Dumper):
         """
         return ByteString(json.dumps(val))
 
-# 
-# class StringType(object):
-#     @classmethod
-#     def convert(cls, val, cur):
-#         """Convert a db string to a python str type
-# 
-#         https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.new_type
-# 
-#             These functions are used to manipulate type casters to convert from
-#             PostgreSQL types to Python objects.
-# 
-#             adapter should have signature fun(value, cur) where value is the
-#             string representation returned by PostgreSQL and cur is the cursor
-#             from which data are read. In case of NULL, value will be None. The
-#             adapter should return the converted object.
-# 
-#         :param val: str, the value coming from Postgres and destined for Python
-#         :param cur: cursor
-#         :returns: str
-#         """
-#         if isinstance(val, str) and val.startswith("\\x"):
-#             buf = psycopg2.BINARY(val, cur)
-#             val = bytes(buf).decode(cur.connection.encoding)
-# 
-#         return val
-
 
 class AsyncPostgreSQLConnection(SQLConnection, psycopg.AsyncConnection):
     """
     https://www.psycopg.org/docs/connection.html
-    http://initd.org/psycopg/docs/advanced.html
-    http://initd.org/psycopg/docs/extensions.html#psycopg2.extensions.connection
     """
     pass
-
-#     @classmethod
-#     async def create_async_cursor(cls, *args, **kwargs):
-#         return psycopg.AsyncCursor(*args, **kwargs)
-
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-# 
-#         # http://initd.org/psycopg/docs/connection.html#connection.autocommit
-#         self.autocommit = True
-# 
-#         psycopg2.extensions.register_type(
-#             # https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.new_type
-#             psycopg2.extensions.new_type(psycopg2.STRING.values, "STRING", StringType.convert)
-#         )
-# 
-#         # https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.register_adapter
-#         psycopg2.extensions.register_adapter(dict, DictType.adapt)
 
 
 class PostgreSQL(SQLInterface):
     """
+    https://www.psycopg.org/psycopg3/docs/advanced/async.html
+    https://www.psycopg.org/psycopg3/docs/basic/from_pg2.html
+
     https://www.psycopg.org/docs/
     https://www.psycopg.org/docs/usage.html
     """
@@ -152,6 +85,9 @@ class PostgreSQL(SQLInterface):
     async def _connect(self, config):
         """
         https://www.psycopg.org/psycopg3/docs/api/connections.html
+
+        If I ever wanted to add pool support back:
+            https://www.psycopg.org/psycopg3/docs/advanced/pool.html
         """
         self._connection = await AsyncPostgreSQLConnection.connect(
             dbname=config.database,
@@ -170,23 +106,9 @@ class PostgreSQL(SQLInterface):
         await self.configure_connection(connection=self._connection)
 
     async def _configure_connection(self, **kwargs):
-
         kwargs["prefix"] = "_configure_connection"
         async with self.connection(**kwargs) as connection:
             connection.adapters.register_dumper(DictType.TYPE, DictType)
-            #psycopg2.extensions.register_adapter(dict, DictType.adapt)
-
-        pass
-        # http://initd.org/psycopg/docs/connection.html#connection.autocommit
-        #self.autocommit = True
-
-#         psycopg2.extensions.register_type(
-#             # https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.new_type
-#             psycopg2.extensions.new_type(psycopg2.STRING.values, "STRING", StringType.convert)
-#         )
-# 
-#         # https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.register_adapter
-#         psycopg2.extensions.register_adapter(dict, DictType.adapt)
 
     async def _get_connection(self):
         return self._connection
@@ -200,7 +122,6 @@ class PostgreSQL(SQLInterface):
         https://www.psycopg.org/psycopg3/docs/api/connections.html#psycopg.Connection.set_read_only
         https://www.psycopg.org/psycopg3/docs/api/connections.html#psycopg.AsyncConnection.set_read_only
         """
-#         readonly = bool(readonly)
         async with self.connection(**kwargs) as connection:
             kwargs["connection"] = connection
 
@@ -215,14 +136,6 @@ class PostgreSQL(SQLInterface):
                 ignore_result=True,
                 **kwargs
             )
-
-            # https://www.psycopg.org/docs/connection.html#connection.readonly
-#             self.log_warning([
-#                 f"Changing connection {connection}",
-#                 f"to readonly={readonly}",
-#                 f"from readonly={connection.readonly}",
-#             ])
-#             connection.readonly = readonly
 
     async def _get_tables(self, table_name, **kwargs):
         query_str = "\n".join([
@@ -294,23 +207,6 @@ class PostgreSQL(SQLInterface):
             ret[idict['index_name']][i] = idict['field_name']
 
         return ret
-
-#     async def _inserts(self, schema, field_names, field_values, **kwargs):
-#         """
-#         https://www.psycopg.org/psycopg3/docs/api/cursors.html#psycopg.AsyncCursor.executemany
-#         https://www.psycopg.org/docs/cursor.html#cursor.executemany
-#         https://www.psycopg.org/docs/extras.html#fast-exec
-#         https://www.psycopg.org/docs/extras.html#psycopg2.extras.execute_batch
-#         """
-#         query_str = self.render_inserts_sql(schema, field_names, **kwargs)
-#         with self.connection(**kwargs) as connection:
-#             cur = connection.cursor()
-#             await cur.executemany(query_str, field_values)
-# #             psycopg2.extras.execute_batch(
-# #                 cur,
-# #                 query_str,
-# #                 field_values,
-# #             )
 
     async def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given schema"""

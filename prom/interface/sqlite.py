@@ -2,14 +2,15 @@
 """
 Bindings for SQLite
 
-https://docs.python.org/2/library/sqlite3.html
+https://docs.python.org/3/library/sqlite3.html
+https://github.com/omnilib/aiosqlite
 
 Notes, certain SQLite versions might have a problem with long integers
 http://jakegoulding.com/blog/2011/02/06/sqlite-64-bit-integers/
 
 Looking at the docs, it says it will set an integer value to 1-4, 6, or 8 bytes
-depending on the size, but I couldn't get it to accept anything over the 32-bit signed
-integer value of around 2billion
+depending on the size, but I couldn't get it to accept anything over the 32-bit
+signed integer value of around 2billion
 
 savepoints and transactions are similar to Postgres
 https://www.sqlite.org/lang_savepoint.html
@@ -81,7 +82,8 @@ class BooleanType(object):
 
     @classmethod
     def convert(cls, val):
-        """from the db you get values like b'0' and b'1', convert those to True/False"""
+        """from the db you get values like b'0' and b'1', convert those to
+        True/False"""
         return bool(int(val))
 
 
@@ -95,14 +97,15 @@ class StringType(object):
 
 
 class DatetimeType(StringType):
-    """External sqlite3 databases can store the TIMESTAMP type as unix timestamps,
-    this caused parsing problems when pulling the values out of the db because the
-    default adapter expected TIMESTAMP to be in the form of YYYY-MM-DD HH:MM:SS.SSSSSS
-    and so it would fail to convert the DDDDDD.DDD values, this handles that conversion
+    """External sqlite3 databases can store the TIMESTAMP type as unix
+    timestamps, this caused parsing problems when pulling the values out of the
+    db because the default adapter expected TIMESTAMP to be in the form of
+    YYYY-MM-DD HH:MM:SS.SSSSSS and so it would fail to convert the DDDDDD.DDD
+    values, this handles that conversion
 
     https://www.sqlite.org/lang_datefunc.html
-    the "unixepoch" modifier only works for dates between 0000-01-01 00:00:00 and
-    5352-11-01 10:52:47 (unix times of -62167219200 through 106751991167)
+    the "unixepoch" modifier only works for dates between 0000-01-01 00:00:00
+    and 5352-11-01 10:52:47 (unix times of -62167219200 through 106751991167)
 
     uses the name TIMESTAMP over DATETIME to be consistent with Postgres
     """
@@ -120,7 +123,8 @@ class DatetimeType(StringType):
 class NumericType(object):
     """numbers bigger than 64bit integers can be stored as this
 
-    This is named to be as consistent with Postgres's NUMERIC(<precision>, 0) type
+    This is named to be as consistent with Postgres's NUMERIC(<precision>, 0)
+    type
 
     This has TEXT in the name so it is treated as text according to SQLite's
     order of affinity rule 2:
@@ -142,7 +146,8 @@ class NumericType(object):
 
     @classmethod
     def convert(cls, val):
-        """This should only be called when the column type is actually FIELD_TYPE"""
+        """This should only be called when the column type is actually
+        FIELD_TYPE"""
         return int(val)
 
 
@@ -173,7 +178,8 @@ class DictType(object):
 
     @classmethod
     def convert(cls, val):
-        """This should only be called when the column type is actually FIELD_TYPE"""
+        """This should only be called when the column type is actually
+        FIELD_TYPE"""
         return json.loads(val)
 
 
@@ -256,6 +262,12 @@ class SQLite(SQLInterface):
         connection.row_factory = sqlite3.Row
         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
         connection.text_factory = StringType.adapt
+
+        # NOTE -- it's bad encapsulation that these are saved on the module,
+        # Psycopg3 allows these adapters to be placed on the connection instead
+        # of the moduel and I like that a lot better since once prom is
+        # connected the first time then raw sqlite3 is basically borked for the
+        # life of the script
 
         # for some reason this is needed in python 3.6 in order for saved bytes
         # to be ran through the converter, not sure why
@@ -363,18 +375,6 @@ class SQLite(SQLInterface):
         )
         await self._raw(query_str, ignore_result=True, **kwargs)
 
-#     async def _inserts(self, schema, field_names, field_values, **kwargs):
-#         """
-#         https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.executemany
-#         """
-#         query_str = self.render_inserts_sql(schema, field_names, **kwargs)
-#         async with self.connection(**kwargs) as connection:
-#             cur = await connection.cursor()
-#             await cur.executemany(
-#                 query_str,
-#                 field_values,
-#             )
-
     def create_error(self, e, **kwargs):
         kwargs.setdefault("error_module", sqlite3)
         if isinstance(e, sqlite3.OperationalError):
@@ -477,8 +477,9 @@ class SQLite(SQLInterface):
                 if adapter_class.FIELD_TYPE not in pg_types:
                     pg_types[adapter_class.FIELD_TYPE] = field_type[0]
 
-        # the rows we can set: field_type, name, field_required, min_size, max_size,
-        #   size, unique, pk, <foreign key info>
+        # the rows we can set:
+        #   field_type, name, field_required, min_size, max_size, size, unique,
+        #   pk, <foreign key info>
         for row in fields:
             field = {
                 "name": row["name"],
@@ -513,13 +514,17 @@ class SQLite(SQLInterface):
             'julian_day': "strftime('%J', {})", # YYYY-MM-DD
             'month': "CAST(strftime('%m', {}) AS integer)",
             'minute': "CAST(strftime('%M', {}) AS integer)",
-            'dow': "CAST(strftime('%w', {}) AS integer)", # day of week 0 = sunday
+            'dow': "CAST(strftime('%w', {}) AS integer)", # day of week 0=sunday
             'week': "CAST(strftime('%W', {}) AS integer)",
             'year': "CAST(strftime('%Y', {}) AS integer)"
         }
 
         for k, v in field_kwargs.items():
-            fstrs.append([k_opts[k].format(self.render_field_name_sql(field_name)), self.PLACEHOLDER, v])
+            fstrs.append([k_opts[k].format(
+                self.render_field_name_sql(field_name)),
+                self.PLACEHOLDER,
+                v
+            ])
 
         return fstrs
 
@@ -536,10 +541,15 @@ class SQLite(SQLInterface):
         else:
             fvi = (t for t in enumerate(reversed(field_vals))) 
 
-        query_sort_str = ['  CASE {}'.format(self.render_field_name_sql(field_name))]
+        query_sort_str = ['  CASE {}'.format(
+            self.render_field_name_sql(field_name)
+        )]
         query_args = []
         for i, v in fvi:
-            query_sort_str.append('    WHEN {} THEN {}'.format(self.PLACEHOLDER, i))
+            query_sort_str.append('    WHEN {} THEN {}'.format(
+                self.PLACEHOLDER,
+                i
+            ))
             query_args.append(v)
 
         query_sort_str.append('  END')
@@ -565,7 +575,11 @@ class SQLite(SQLInterface):
         return field_type
 
     def render_datatype_str_sql(self, field_name, field, **kwargs):
-            field_type = super().render_datatype_str_sql(field_name, field, **kwargs)
+            field_type = super().render_datatype_str_sql(
+                field_name,
+                field,
+                **kwargs
+            )
 
             fo = field.interface_options
             if fo.get('ignore_case', False):

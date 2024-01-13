@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import datetime
 
@@ -200,11 +199,6 @@ class InterfaceTest(_BaseTestInterface):
 
         interface = get_interface(connection_name)
         schema = self.get_schema()
-
-#         orm_class = self.get_orm_class(
-#             connection_name=connection_name,
-#             interface=get_interface(connection_name)
-#         )
 
         await interface.set_table(schema)
         self.assertTrue(

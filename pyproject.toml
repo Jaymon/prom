@@ -29,7 +29,6 @@ classifiers = [
 dependencies = [
   "dsnparse",
   "datatypes",
-  "aiosqlite",
 ]
 name = "prom"
 dynamic = [
@@ -45,6 +44,9 @@ Repository = "https://github.com/Jaymon/prom"
 [project.optional-dependencies]
 tests = [
   "testdata"
+]
+sqlite = [
+  "aiosqlite"
 ]
 postgres = [
   "psycopg" # psycopg[binary]
