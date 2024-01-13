@@ -12,7 +12,17 @@ testdata.basic_logging(
         #"prom": "ERROR",
         #"prom": "INFO",
         "datatypes": "WARNING",
-    }
+        "dsnparse": "WARNING",
+        "psycopg": "WARNING",
+        "aiosqlite": "WARNING",
+        "asyncio": "WARNING",
+    },
+#     format="|".join(['[%(levelname).1s',
+#         '%(asctime)s',
+#         '%(process)d.%(thread)d',
+#         '%(name)s',
+#         '%(filename)s:%(lineno)s] %(message)s',
+#     ])
 )
 
 
@@ -26,6 +36,7 @@ class BaseTestCase(TestCase):
         for inter in cls.create_environ_interfaces():
             try:
                 cls.mock_async(inter.unsafe_delete_tables())
+
             except inter.InterfaceError as e:
                 logger.exception(e)
 

@@ -6,6 +6,7 @@ import decimal
 import logging
 import uuid
 from functools import cached_property
+import inspect
 
 from ..query import Query
 from ..exception import (
@@ -61,8 +62,8 @@ class SQLConnection(Connection):
 
 
 class SQLInterfaceABC(Interface):
-    """SQL database interfaces should extend SQLInterface and implement all these
-    methods in this class and all the methods in InterfaceABC"""
+    """SQL database interfaces should extend SQLInterface and implement all
+    these methods in this class and all the methods in InterfaceABC"""
     @property
     def LIMIT_NONE(self):
         """When an offset is set but not a limit, this is the value that will be
@@ -70,12 +71,14 @@ class SQLInterfaceABC(Interface):
 
         :returns: str|int|None
         """
-        raise NotImplementedError("this property should be set in a child class")
+        raise NotImplementedError(
+            "this property should be set in a child class"
+        )
 
     def get_paramstyle(self):
-        """Returns the paramstyle that is used by self.PLACEHOLDER to decide what
-        val placeholder to use when building queries. This would also be the value
-        to use when calling .raw().
+        """Returns the paramstyle that is used by self.PLACEHOLDER to decide
+        what val placeholder to use when building queries. This would also be
+        the value to use when calling .raw().
 
         The dbapi 2.0 spec requires this to be set
 
@@ -118,9 +121,9 @@ class SQLInterface(SQLInterfaceABC):
 
         https://www.psycopg.org/docs/usage.html#passing-parameters-to-sql-queries
 
-        NOTE -- It looks like both SQLite and Postgres support "named" so if you
-            want to use .raw() queries that will work in both interface I would use
-            named parameters
+        NOTE -- It looks like both SQLite and Postgres support "named" so if
+        you want to use .raw() queries that will work in both interface I would
+        use named parameters
 
         :returns: str, usually something like "?" or "%s"
         """
@@ -151,26 +154,31 @@ class SQLInterface(SQLInterfaceABC):
         http://www.postgresql.org/docs/8.1/static/datatype.html
         http://pythonhosted.org/psycopg2/usage.html#adaptation-of-python-values-to-sql-types
         """
-        query_str = []
-        query_str.append("CREATE TABLE IF NOT EXISTS {} (".format(self.render_table_name_sql(schema)))
+        query_str = [
+            "CREATE TABLE IF NOT EXISTS {} (".format(
+                self.render_table_name_sql(schema)
+            )
+        ]
 
         query_fields = []
         for field_name, field in schema.fields.items():
-            query_fields.append('  {}'.format(self.render_datatype_sql(field_name, field)))
-
+            query_fields.append("  {}".format(
+                self.render_datatype_sql(field_name, field)
+            ))
         query_str.append(",\n".join(query_fields))
-        query_str.append(')')
+
+        query_str.append(")")
         query_str = "\n".join(query_str)
         await self._raw(query_str, ignore_result=True, **kwargs)
 
     def _set_index(self, schema, name, field_names, **kwargs):
         """
-        NOTE -- we set the index name using <table_name>_<name> format since indexes have to have
-        a globally unique name in postgres
+        NOTE -- we set the index name using <table_name>_<name> format since
+        indexes have to have a globally unique name in postgres
 
         * https://www.sqlite.org/lang_createindex.html
-        * https://www.postgresql.org/docs/14/sql-createindex.html - "IF NOT EXISTS support
-        was added around 9.5
+        * https://www.postgresql.org/docs/14/sql-createindex.html - "IF NOT
+            EXISTS support was added around 9.5
         """
         query_str = 'CREATE {}INDEX IF NOT EXISTS {} ON {} ({})'.format(
             'UNIQUE ' if kwargs.get('unique', False) else '',
@@ -200,6 +208,31 @@ class SQLInterface(SQLInterfaceABC):
                 r = r[0][pk_names[0]]
         return r
 
+    async def _inserts(self, schema, field_names, field_values, **kwargs):
+        """Do a mutli insert
+
+        The query this will run is roughly:
+
+            INSERT INTO
+                (<field_names>)
+            VALUES
+                (tuple for tuple in <field_values>)
+
+        :param schema: Schema, the table
+        :param field_names: list[str], the field names
+        :param field_values: Iterable[Iterable[Any]], each row in the iterable
+            is a tuple of values that correspond to field_names
+        :param **kwargs: passed through
+        """
+        query_str = self.render_inserts_sql(schema, field_names, **kwargs)
+        await self._raw(
+            query_str,
+            *field_values,
+            ignore_result=True,
+            execute_many=True,
+            **kwargs
+        )
+
     async def _update(self, schema, fields, query, **kwargs):
         query_str, query_args = self.render_update_sql(
             schema,
@@ -215,7 +248,14 @@ class SQLInterface(SQLInterfaceABC):
             **kwargs
         )
 
-    async def _upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
+    async def _upsert(
+        self,
+        schema,
+        insert_fields,
+        update_fields,
+        conflict_field_names,
+        **kwargs
+    ):
         """
         https://www.sqlite.org/lang_UPSERT.html
         """
@@ -299,21 +339,34 @@ class SQLInterface(SQLInterfaceABC):
 
     async def _raw(self, query_str, *query_args, **kwargs):
         """
-        **kwargs -- dict
-            ignore_result -- boolean -- true to not attempt to fetch results
-            fetchone -- boolean -- true to only fetch one result
-            count_result -- boolean -- true to return the int count of rows affected
+        :param **kwargs:
+            - ignore_result: bool, true to not attempt to fetch results
+            - fetchone: bool, true to only fetch one result
+            - count_result: bool, true to return the int count of rows affected
+            - execute_many: bool, True to call cursor.executemany instead of
+                cursor.execute
         """
         ret = True
         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
         #connection = kwargs.get('connection', None)
         async with self.connection(**kwargs) as connection:
-            cur = await connection.cursor()
+            cur = connection.cursor()
+            # depending on the api, cursor() could either return a coroutine
+            # or something different like a cursor class instance
+            if inspect.isawaitable(cur):
+                cur = await cur
 
-            ignore_result = kwargs.get('ignore_result', False)
-            count_result = kwargs.get('count_result', False)
-            one_result = kwargs.get('fetchone', kwargs.get('one_result', False))
-            cursor_result = kwargs.get('cursor_result', False)
+            ignore_result = kwargs.get("ignore_result", False)
+            count_result = kwargs.get("count_result", False)
+            one_result = kwargs.get(
+                "fetchone",
+                kwargs.get("one_result", False)
+            )
+            cursor_result = kwargs.get("cursor_result", False)
+            execute_many = kwargs.get(
+                "execute_many",
+                kwargs.get("executemany", False)
+            )
 
             if cursor_result:
                 # https://stackoverflow.com/a/125140
@@ -321,26 +374,38 @@ class SQLInterface(SQLInterfaceABC):
 
             if query_args:
                 self.log_for(
-                    debug=(["0x{} - {}\n{}", connection, query_str, query_args],),
+                    debug=(
+                        ["{} - {}\n{}", connection, query_str, query_args],
+                    ),
                     info=(["{} - {}", connection, query_str],)
                 )
 
-                try:
-                    await cur.execute(query_str, query_args)
-
-                except Exception as e:
-                    await self.raise_error(
-                        e,
-                        error_args=[
-                            query_str,
-                            query_args,
-                            self.PLACEHOLDER,
-                        ]
-                    )
+                execute_args = [query_str, query_args]
 
             else:
                 self.log_info("{} - {}", connection, query_str)
-                await cur.execute(query_str)
+
+                execute_args = [query_str]
+
+            try:
+                if execute_many:
+                    # https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.executemany
+                    # https://www.psycopg.org/psycopg3/docs/api/cursors.html#psycopg.AsyncCursor.executemany
+                    # https://www.psycopg.org/docs/cursor.html#cursor.executemany
+                    await cur.executemany(*execute_args)
+
+                else:
+                    await cur.execute(*execute_args)
+
+            except Exception as e:
+                await self.raise_error(
+                    e,
+                    error_args=[
+                        query_str,
+                        query_args,
+                        self.PLACEHOLDER,
+                    ]
+                )
 
             if cursor_result:
                 ret = cur
@@ -393,7 +458,7 @@ class SQLInterface(SQLInterfaceABC):
             if field_name not in current_fields:
                 if field.required:
                     self.log_error(
-                        "Cannot safely add {} on the fly because it is required",
+                        "Required field {} cannot be safely add on the fly",
                         field_name
                     )
                     return False
@@ -415,14 +480,16 @@ class SQLInterface(SQLInterfaceABC):
 
     async def _handle_table_error(self, schema, e, **kwargs):
         """
-        You can run into a problem when you are trying to set a table and it has a 
-        foreign key to a table that doesn't exist, so this method will go through 
-        all fk refs and make sure all the tables exist
+        You can run into a problem when you are trying to set a table and it
+        has a foreign key to a table that doesn't exist, so this method will go
+        through all fk refs and make sure all the tables exist
         """
         if query := kwargs.pop("query", None):
             if schemas := query.schemas:
                 for s in schemas:
-                    self.log_warning(f"Verifying {schema} query foreign key table: {s}")
+                    self.log_warning(
+                        f"Verifying {schema} query foreign key table: {s}"
+                    )
                     if not await self._handle_table_error(s, e=e, **kwargs):
                         return False
 
@@ -540,8 +607,11 @@ class SQLInterface(SQLInterfaceABC):
         symbol_map = {
             'in': {'symbol': 'IN', 'list': True},
             'nin': {'symbol': 'NOT IN', 'list': True},
-            'eq': {'symbol': '=', 'none_symbol': 'IS'},
-            'ne': {'symbol': '!=', 'none_symbol': 'IS NOT'},
+            # Previously we used "IS" and "IS NOT" but psycopg3 changed behavior
+            # https://stackoverflow.com/a/76396765
+            # https://www.psycopg.org/psycopg3/docs/basic/from_pg2.html#you-cannot-use-is-s
+            'eq': {'symbol': '=', 'none_symbol': 'IS NOT DISTINCT FROM'},
+            'ne': {'symbol': '!=', 'none_symbol': 'IS DISTINCT FROM'},
             'gt': {'symbol': '>'},
             'gte': {'symbol': '>='},
             'lt': {'symbol': '<'},
@@ -995,10 +1065,14 @@ class SQLInterface(SQLInterfaceABC):
         :param query: Query, the query to render
         :param **kwargs: named arguments
             placeholders: boolean, True if place holders should remain
-        :returns: string if placeholders is False, (string, list) if placeholders is True
+        :returns: str if placeholders is False, tuple[str, list] if
+            placeholders is True
         """
         sql, sql_args = self.render_sql(schema, query)
-        placeholders = kwargs.get("placeholders", kwargs.get("placeholder", False))
+        placeholders = kwargs.get(
+            "placeholders",
+            kwargs.get("placeholder", False)
+        )
 
         if not placeholders:
             for sql_arg in sql_args:

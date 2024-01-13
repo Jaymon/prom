@@ -33,21 +33,54 @@ class _BaseTestConfig(BaseTestCase):
 
 class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # close any global connections
         for name, inter in prom.interface.interfaces.items():
             await inter.close()
 
-        prom.interface.interfaces = {}
+        # we need to delete all the tables
+        inter = self.get_interface()
+        try:
+            await inter.unsafe_delete_tables()
 
+        except inter.InterfaceError as e:
+            logger.exception(e)
+
+        finally:
+            await inter.close()
+
+        # close any test class connections
         for inter in self.get_interfaces():
             await inter.close()
 
+        # discard all the old connections
         self.interfaces = set()
+        prom.interface.interfaces = {}
 
     async def asyncTearDown(self):
         await self.asyncSetUp()
 
-    def create_interface(cls):
-        raise NotImplementedError()
+    def get_interface(self, interface=None):
+        """We have to override certain testdata methods to make sure interface
+        handling works as expected for each interface"""
+        return interface or self.create_interface()
+
+    def create_interface(self):
+        # interface_class needs to be set on each child class
+        return self.find_interface(self.interface_class)
+
+    def get_orm_class(self, **kwargs):
+        if "interface" not in kwargs:
+            kwargs["interface"] = self.get_interface(
+                kwargs.get("interface", None)
+            )
+        return self.td.get_orm_class(**kwargs)
+
+    def get_table(self, **kwargs):
+        if "interface" not in kwargs:
+            kwargs["interface"] = self.get_interface(
+                kwargs.get("interface", None)
+            )
+        return self.td.get_table(**kwargs)
 
     async def create_table(self, *args, **kwargs):
         interface, schema = self.get_table(*args, **kwargs)
@@ -103,7 +136,7 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
             async with i.transaction():
                 raise RuntimeError()
 
-    async def test_set_table(self):
+    async def test_set_table_1(self):
         i, s = self.get_table()
         r = await i.has_table(str(s))
         self.assertFalse(r)
@@ -128,8 +161,7 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
         await i.set_table(s_ref)
         s_ref_id = (await self.insert(i, s_ref, 1))[0]
 
-        s = prom.Schema(
-            self.get_table_name(),
+        s = self.get_schema(
             _id=Field(int, autopk=True),
             one=Field(bool, True),
             two=Field(int, True, size=50),
@@ -176,6 +208,9 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
 
         NOTE -- SQLite 3.40.1 is not raising an error on selecting non-existent
             fields, this feels like a change to me
+
+        NOTE -- Psycopg3 also changed how it handles None/NULL values:
+            https://www.psycopg.org/psycopg3/docs/basic/from_pg2.html#you-cannot-use-is-s
         """
         i, s = await self.create_table(one=Field(int, True))
 
@@ -183,7 +218,7 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
         s.set_field("two", Field(int, False))
 
         # Test if select query succeeds
-        r = await i.get(s, Query().eq_two(None))
+        await i.get(s, Query().eq_two(None))
 
     async def test_unsafe_delete_table_single(self):
         i, s = self.get_table()
@@ -333,20 +368,6 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
                     "microsecond": 50
                 }
             },
-
-#             { # this fails in postgres
-#                 "input": "1570565939.566850",
-#                 "output": {
-#                     "year": 2019,
-#                     "month": 10,
-#                     "day": 8,
-#                     "hour": 20,
-#                     "minute": 18,
-#                     "second": 59,
-#                     "microsecond": 566850,
-#                 }
-#             },
-
             {
                 "input": "20191008T201859",
                 "output": {
@@ -435,22 +456,23 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
                     pk = await i.insert(s, {"bar": dt["input"]})
                     i.one(s, Query().is__id(pk))
 
-    async def test_get_fields_float(self):
-        """I pulled this over and simplified it from the SQLite specific tests,
-        I'm not completely sure what this is testing anymore but I'm sure it
-        was a bug from some app that used ActiveRecord"""
-        sql = "\n".join([
-            "CREATE TABLE ZFOOBAR (",
-            "ZFLOAT FLOAT",
-            ")",
-        ])
+    async def test_field_none(self):
+        """Make sure we can query fields using None"""
+        i, s = await self.create_table(
+            one=Field(int, True),
+            two=Field(int, False)
+        )
 
-        i = self.get_interface()
-        r = await i.raw(sql)
-        self.assertTrue(await i.has_table("ZFOOBAR"))
+        pk_eq_null = await i.insert(s, {"one": 1})
+        pk_ne_null = await i.insert(s, {"one": 1, "two": 2})
 
-        fields = await i.get_fields("ZFOOBAR")
-        self.assertEqual(float, fields["ZFLOAT"]["field_type"])
+        r = await i.get(s, Query().eq_two(None))
+        self.assertEqual(1, len(r))
+        self.assertEqual(pk_eq_null, r[0]["_id"])
+
+        r = await i.get(s, Query().ne_two(None))
+        self.assertEqual(1, len(r))
+        self.assertEqual(pk_ne_null, r[0]["_id"])
 
     async def test_insert_1(self):
         i, s = await self.create_table()
@@ -470,10 +492,7 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
         self.assertEqual(0, await i.count(s, Query()))
         def rows():
             for x in range(count):
-                yield {
-                    "foo": x,
-                    "bar": str(x),
-                }
+                yield (x, f"s{x}")
 
         await i.inserts(
             s,
@@ -483,7 +502,7 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
 
         self.assertEqual(count, await i.count(s, Query()))
 
-    async def test_render_sql(self):
+    async def test_render_sql_1(self):
         i, s = self.get_table()
         q = Query()
 
@@ -998,11 +1017,14 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
         await i.insert(s, self.get_fields(s), connection=conn)
         self.assertIsNotNone(conn.interface)
 
-        await (await conn.cursor()).execute("SELECT true")
+        await conn.execute("SELECT true")
+#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_start(prefix="c2")
-        await (await conn.cursor()).execute("SELECT true")
+        await conn.execute("SELECT true")
+#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_start(prefix="c3")
-        await (await conn.cursor()).execute("SELECT true")
+        await conn.execute("SELECT true")
+#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_start(prefix="c4")
 
         self.assertIsNotNone(conn.interface)
@@ -1010,11 +1032,14 @@ class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
         self.assertIsNotNone(conn.interface)
 
         await conn.transaction_stop()
-        await (await conn.cursor()).execute("SELECT true")
+        await conn.execute("SELECT true")
+#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_stop()
-        await (await conn.cursor()).execute("SELECT true")
+        await conn.execute("SELECT true")
+#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_stop()
-        await (await conn.cursor()).execute("SELECT true")
+        await conn.execute("SELECT true")
+#         await (await conn.cursor()).execute("SELECT true")
         await conn.transaction_stop()
 
     async def test_transaction_connection_2(self):

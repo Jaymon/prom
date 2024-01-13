@@ -2,6 +2,7 @@ version: "3.4"
 
 services:
   database:
+    # https://hub.docker.com/_/postgres
     image: postgres:15
     restart: always
     env_file:
@@ -15,4 +16,21 @@ services:
       - ./cache/postgres/initdb.d/extensions.sql:/docker-entrypoint-initdb.d/extensions.sql
     ports:
       - "5432:5432"
+    # https://stackoverflow.com/questions/57015003/log-all-queries-in-the-official-postgres-docker-image
+    command: [
+      "postgres",
+      # https://www.postgresql.org/docs/current/runtime-config-logging.html
+      "-c",
+      #"log_statement=all",
+      "log_statement=mod",
+#       "-c",
+#       "log_min_error_statement=WARNING",
+#       "-c",
+#       "log_min_messages=WARNING",
+#       "-c",
+#       "log_error_verbosity=TERSE",
+      "-c",
+      #"log_min_duration_statement=2000"
+      "log_min_duration_statement=0"
+    ]
 

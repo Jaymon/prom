@@ -76,10 +76,12 @@ def set_interface(interface, name=''):
     """
     global interfaces
 
-    if not interface: raise ValueError('interface is empty')
+    if not interface:
+        raise ValueError('interface is empty')
 
     # close down the interface before we discard it
     if name in interfaces:
+        pout.v(interfaces[name].is_connected())
         if interfaces[name].is_connected():
             raise ValueError("Cannot replace an open interface")
 

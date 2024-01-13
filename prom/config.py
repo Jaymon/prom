@@ -90,9 +90,10 @@ class Connection(object):
             else:
                 self.options[key] = val
 
-        interface_module, interface_class = utils.get_objects(self.interface_name)
+        interface_module, interface_class = utils.get_objects(
+            self.interface_name
+        )
         self.interface_class = interface_class
-        #interface_class.configure(self)
 
     def get(self, key, default=None):
         """Works similar dict.get"""
@@ -107,7 +108,8 @@ class DsnConnection(Connection):
 
         <full.python.path.InterfaceClass>://<username>:<password>@<host>:<port>/<database>?<options=val&query=string>#<name>
 
-    This is useful to allow connections coming in through environment variables as described in :
+    This is useful to allow connections coming in through environment variables
+    as described in :
         http://www.12factor.net/backing-services
 
     It tooks its inspiration from this project:
@@ -133,20 +135,23 @@ class DsnConnection(Connection):
         # remap certain values
         d["name"] = d.pop("fragment")
         d["interface_name"] = self.normalize_scheme(d.pop("scheme"))
-        d["database"] = d.pop("path")
+        d["database"] = parser.database
         d["options"] = d.pop("query_params", {})
         d["host"] = d.pop("hostname")
         d["readonly"] = bool(d["options"].pop("readonly", self.readonly))
 
         # get rid of certain values
         d.pop("params", None)
+
         return d
 
     def normalize_scheme(self, v):
         ret = v
         d = {
             "prom.interface.sqlite.SQLite": set(["sqlite"]),
-            "prom.interface.postgres.PostgreSQL": set(["postgres", "postgresql", "psql"])
+            "prom.interface.postgres.PostgreSQL": set(
+                ["postgres", "postgresql", "psql"]
+            )
         }
 
         kv = v.lower()
@@ -162,8 +167,8 @@ class Schema(object):
     """
     handles all table schema definition
 
-    the table schema definition includes the table name, the fields the table has, and
-    the indexes that are on the table
+    the table schema definition includes the table name, the fields the table
+    has, and the indexes that are on the table
     """
     instances = {}
     """class variable, holds different schema instances for various orms"""
@@ -187,7 +192,9 @@ class Schema(object):
 
     @property
     def required_fields(self):
-        """The normal required fields (eg, no magic fields like _id are included)"""
+        """The normal required fields (eg, no magic fields like _id are
+        included)
+        """
         return {f:v for f, v in self.normal_fields.items() if v.required}
 
     @property
@@ -197,7 +204,9 @@ class Schema(object):
 
     @property
     def magic_fields(self):
-        """the magic fields for the schema, magic fields start with an underscore"""
+        """the magic fields for the schema, magic fields start with an
+        underscore
+        """
         return {f:v for f, v in self.fields.items() if f.startswith('_')}
 
     @property
@@ -245,7 +254,8 @@ class Schema(object):
         """return a Schema singleton instance for the given orm_class
 
         if there isn't already an instance in cache then a new instance will be
-        created. If a Schema instance is already in cache then it will be returned
+        created. If a Schema instance is already in cache then it will be
+        returned
 
         :param orm_class: Orm, the class to create the schema for
         :returns: Schema

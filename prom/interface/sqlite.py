@@ -61,7 +61,7 @@ class AsyncSQLiteConnection(SQLConnection, aiosqlite.Connection):
 
     async def close(self, *args, **kwargs):
         try:
-            r = await super().close(*args, **kwargs)
+            return await super().close(*args, **kwargs)
 
         except ValueError:
             # aiosqlite: ValueError: no active connection
@@ -69,8 +69,6 @@ class AsyncSQLiteConnection(SQLConnection, aiosqlite.Connection):
 
         finally:
             self.closed = 1
-
-        return r
 
 
 class BooleanType(object):
@@ -233,7 +231,7 @@ class SQLite(SQLInterface):
             #'isolation_level': "EXCLUSIVE",
             'detect_types': sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
             #'factory': SQLiteConnection,
-            'check_same_thread': True, # https://stackoverflow.com/a/2578401/5006
+            'check_same_thread': True, # https://stackoverflow.com/a/2578401
             #'timeout': 100,
         }
         option_keys = list(options.keys()) + ['timeout', 'cached_statements']
@@ -270,7 +268,10 @@ class SQLite(SQLInterface):
         # has to be adapted even if its parent is already registered
         sqlite3.register_adapter(datetime.datetime, DatetimeType.adapt)
         sqlite3.register_adapter(Datetime, DatetimeType.adapt)
-        sqlite3.register_converter(DatetimeType.FIELD_TYPE, DatetimeType.convert)
+        sqlite3.register_converter(
+            DatetimeType.FIELD_TYPE,
+            DatetimeType.convert
+        )
 
         sqlite3.register_adapter(int, NumericType.adapt)
         sqlite3.register_converter(NumericType.FIELD_TYPE, NumericType.convert)
@@ -293,15 +294,16 @@ class SQLite(SQLInterface):
 
         self.log_debug("Connected to connection {}", self._connection)
 
+        await self.configure_connection(connection=self._connection)
+
     async def _configure_connection(self, **kwargs):
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
-        await self._raw('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs)
-
-        # by default we can read/write, so only bother to run this query if we need to
-        # make the connection actually readonly
-        if self.config.readonly:
-            await self._readonly(self.config.readonly, **kwargs)
+        await self._raw(
+            "PRAGMA foreign_keys = ON",
+            ignore_result=True,
+            **kwargs
+        )
 
     async def _get_connection(self):
         return self._connection
@@ -361,17 +363,17 @@ class SQLite(SQLInterface):
         )
         await self._raw(query_str, ignore_result=True, **kwargs)
 
-    async def _inserts(self, schema, field_names, field_values, **kwargs):
-        """
-        https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.executemany
-        """
-        query_str = self.render_inserts_sql(schema, field_names, **kwargs)
-        async with self.connection(**kwargs) as connection:
-            cur = await connection.cursor()
-            await cur.executemany(
-                query_str,
-                field_values,
-            )
+#     async def _inserts(self, schema, field_names, field_values, **kwargs):
+#         """
+#         https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.executemany
+#         """
+#         query_str = self.render_inserts_sql(schema, field_names, **kwargs)
+#         async with self.connection(**kwargs) as connection:
+#             cur = await connection.cursor()
+#             await cur.executemany(
+#                 query_str,
+#                 field_values,
+#             )
 
     def create_error(self, e, **kwargs):
         kwargs.setdefault("error_module", sqlite3)
@@ -403,28 +405,27 @@ class SQLite(SQLInterface):
                 e = CloseError(e)
 
             elif "Incorrect number of bindings supplied" in e_msg:
-                e = PlaceholderError(e, *kwargs.get("error_args", []))
+                e = PlaceholderError(e)
 
             else:
                 e = super().create_error(e, **kwargs)
 
         elif isinstance(e, sqlite3.InterfaceError):
             e_msg = str(e)
-            if "Error binding parameter" in e_msg and "error_args" in kwargs:
-                error_args = kwargs["error_args"]
-                ms = re.search(r"parameter\s(\d+)", e_msg)
-                index = int(ms.group(1))
-                value = error_args[1][index]
-                errmsg = "Query Placeholder {} has unexpected type {}".format(
-                    index,
-                    type(value)
-                )
+            if "Error binding parameter" in e_msg:
+                if error_args := kwargs.get("error_args", []):
+                    ms = re.search(r"parameter\s(\d+)", e_msg)
+                    index = int(ms.group(1))
+                    value = error_args[1][index]
+                    msg = "Query Placeholder {} has unexpected type {}".format(
+                        index,
+                        type(value)
+                    )
 
-                e = PlaceholderError(
-                    e,
-                    *error_args,
-                    message=errmsg,
-                )
+                    e = PlaceholderError(e, message=msg)
+
+                else:
+                    e = PlaceholderError(e)
 
             else:
                 e = super().create_error(e, **kwargs)

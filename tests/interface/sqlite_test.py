@@ -7,7 +7,7 @@ import prom
 from prom.interface.sqlite import SQLite
 from prom import query, InterfaceError
 from prom.interface.sqlite import SQLite, DatetimeType
-from prom.interface import configure
+from prom.interface import configure, set_interface, get_interface
 from prom.model import Orm
 from prom.config import Field, DsnConnection
 from prom.compat import *
@@ -19,7 +19,7 @@ from . import _BaseTestInterface, _BaseTestConfig, BaseTestCase, testdata
 class ConfigTest(_BaseTestConfig):
     def test_configure_sqlite(self):
         dsn = 'prom.interface.sqlite.SQLite:///path/to/db'
-        i = prom.configure(dsn)
+        i = configure(dsn)
         self.assertTrue(i.config.path)
 
     def test_dsn(self):
@@ -187,36 +187,42 @@ class DatetimeTypeTest(BaseTestCase):
 
 
 class InterfaceTest(_BaseTestInterface):
-    def create_interface(self):
-        return self.find_interface(SQLite)
+
+    interface_class = SQLite
 
     async def test_change_interface(self):
         """This is testing the actual interface, not the db connection or
         anything"""
-        orm_class = self.get_orm_class(
-            connection_name = "change-interface"
-        )
-
+        connection_name = "change-interface"
         path = self.get_file("inter1.db")
-        dsn = "sqlite://{}#{}".format(path, orm_class.connection_name)
+        dsn = "sqlite://{}#{}".format(path, connection_name)
         configure(dsn)
 
-        await orm_class.interface.set_table(orm_class.schema)
+        interface = get_interface(connection_name)
+        schema = self.get_schema()
 
+#         orm_class = self.get_orm_class(
+#             connection_name=connection_name,
+#             interface=get_interface(connection_name)
+#         )
+
+        await interface.set_table(schema)
         self.assertTrue(
-            await orm_class.interface.has_table(orm_class.table_name)
+            await interface.has_table(schema)
         )
+        self.assertTrue(interface.is_connected())
 
         path = self.get_file("inter2.db")
-        dsn = "sqlite://{}#{}".format(path, orm_class.connection_name)
+        dsn = "sqlite://{}#{}".format(path, connection_name)
 
         with self.assertRaises(ValueError):
             configure(dsn)
 
-        await orm_class.interface.close()
+        await interface.close()
         configure(dsn)
+        interface = get_interface(connection_name)
         self.assertFalse(
-            await orm_class.interface.has_table(orm_class.table_name)
+            await interface.has_table(schema)
         )
 
     async def test_create_path(self):
@@ -314,4 +320,18 @@ class InterfaceTest(_BaseTestInterface):
 
         _id = (await self.insert(i, s, 1))[0]
         self.assertTrue(_id)
+
+    async def test_get_fields_float(self):
+        """I'm not completely sure what this is testing anymore but I'm sure it
+        was a bug from some app that used ActiveRecord and I was trying to
+        read the sqlite db that app produced using prom. This doesn't work
+        as a postgres test because ZFLOAT isn't a valid field type"""
+        sql = "CREATE TABLE ZFOOBAR (ZFLOAT FLOAT)"
+
+        i = self.get_interface()
+        await i.raw(sql, ignore_result=True)
+        self.assertTrue(await i.has_table("ZFOOBAR"))
+
+        fields = await i.get_fields("ZFOOBAR")
+        self.assertEqual(float, fields["ZFLOAT"]["field_type"])
 
