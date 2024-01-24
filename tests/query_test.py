@@ -1,18 +1,12 @@
 # -*- coding: utf-8 -*-
 import datetime
-import time
-from threading import Thread
-import sys
 import re
 import inspect
 import random
 
-import testdata
-
 from . import (
     EnvironTestCase,
     TestCase,
-    IsolatedAsyncioTestCase,
 )
 from prom.query import (
     Query,
@@ -22,16 +16,13 @@ from prom.query import (
     Iterator,
 )
 from prom.config import Field
-from prom.model import Orm
 from prom.compat import *
-import prom
 
 
 class QueryFieldTest(TestCase):
     def test___new__(self):
         q = self.get_query()
         f = QueryField(q, "MAX(foo)")
-        #f = QueryField("MAX(foo)", schema=testdata.mock(field_name="foo"))
         self.assertEqual("foo", f.name)
         self.assertEqual("MAX", f.function_name)
 
@@ -347,22 +338,6 @@ class QueryTest(EnvironTestCase):
 
         self.assertEqual(count, rcount)
 
-#     async def test_query_syntactic_sugar(self):
-#         Foo = self.get_orm_class()
-#         await self.insert(Foo, 5)
-# 
-#         pk = await Foo.query.select_pk().value_pk(3)
-#         self.assertEqual(3, pk)
-# 
-#         pkl = list(await Foo.query.select_pk().values_pk([2]))
-#         self.assertEqual(2, pkl[0])
-# 
-#         o = await Foo.query.one_pk(1)
-#         self.assertEqual(1, o.pk)
-# 
-#         ol = list(await Foo.query.get_pk([1]))
-#         self.assertEqual(1, ol[0].pk)
-
     def test_set(self):
         q = self.get_query()
         field_names = list(q.schema.fields.keys())
@@ -422,8 +397,8 @@ class QueryTest(EnvironTestCase):
     def test_find_methods_1(self):
         q = self.get_query()
 
-        opm, qm, fn = q.find_methods("eq_foo_bar")
-        opm2, qm2, fn2 = q.find_methods("foo_bar_eq")
+        opm, fn = q.find_methods("eq_foo_bar")
+        opm2, fn2 = q.find_methods("foo_bar_eq")
         self.assertEqual("eq_field", opm.__name__)
         self.assertEqual(opm2.__name__, opm.__name__)
         self.assertEqual("foo_bar", fn)
@@ -449,7 +424,7 @@ class QueryTest(EnvironTestCase):
         )
         r = q.find_methods(method_name)
         self.assertEqual("eq_field", r[0].__name__)
-        self.assertTrue(r[2] in set(q.schema.fields.keys()))
+        self.assertTrue(r[1] in set(q.schema.fields.keys()))
 
         with self.assertRaises(AttributeError):
             q.find_methods("testing")
@@ -463,17 +438,7 @@ class QueryTest(EnvironTestCase):
         for t in tests:
             r = q.find_methods(t[0])
             self.assertEqual(t[1][0], r[0].__name__)
-            self.assertEqual(t[1][1], r[2])
-
-#     def test_find_methods_3(self):
-#         q = Query()
-#         om, qm, fn = q.find_methods("one_pk")
-#         self.assertEqual(q.eq_field, om)
-#         self.assertEqual(q.one, qm)
-#         self.assertEqual("pk", fn)
-# 
-#         with self.assertRaises(AttributeError):
-#             q.find_methods("foo_pk")
+            self.assertEqual(t[1][1], r[1])
 
     async def test_like(self):
         _q = self.get_query()
@@ -516,41 +481,6 @@ class QueryTest(EnvironTestCase):
         self.assertEqual(3, len(vals))
         for v in vals:
             self.assertTrue(v >= 2 and v <= 4)
-
-#     def test_ref_threading(self):
-#         basedir = testdata.create_modules({
-#             "rtfoo.rtbar.tqr1": [
-#                 "import prom",
-#                 "",
-#                 "class Foo(prom.Orm):",
-#                 "    table_name = 'thrd_qr2_foo'",
-#                 "    one=prom.Field(int, True)",
-#                 "",
-#             ],
-#             "rtfoo.rtbar.tqr2": [
-#                 "import prom",
-#                 "from rtfoo.rtbar.tqr1 import Foo",
-#                 "",
-#                 "class Bar(prom.Orm):",
-#                 "    table_name = 'thrd_qr2_bar'",
-#                 "    one=prom.Field(int, True)",
-#                 "    foo_id=prom.Field(Foo, True)",
-#                 ""
-#             ],
-#         })
-# 
-#         tqr1 = basedir.module("rtfoo.rtbar.tqr1")
-#         sys.modules.pop("rtfoo.rtbar.tqr2.Bar", None)
-#         #tqr2 = basedir.module("tqr2")
-#         def target():
-#             q = tqr1.Foo.query.ref("rtfoo.rtbar.tqr2.Bar")
-#             f = tqr1.Foo()
-#             q = f.query.ref("rtfoo.rtbar.tqr2.Bar")
-# 
-#         t1 = Thread(target=target)
-#         # if we don't get stuck in a deadlock this test passes
-#         t1.start()
-#         t1.join()
 
     async def test_query_ref_1(self):
         inter = self.get_interface()
@@ -1123,17 +1053,6 @@ class IteratorTest(EnvironTestCase):
         with self.assertRaises(IndexError):
             await it[-(len(pks) + 5)]
 
-#     def test_copy(self):
-#         count = 10
-#         orm_class = self.get_orm_class()
-#         self.insert(orm_class, count)
-# 
-#         q = orm_class.query.asc_pk()
-#         it1 = Iterator(q)
-#         it2 = it1.copy()
-#         it2.reverse()
-#         self.assertNotEqual(list(v for v in it1), list(v for v in it2))
-
     async def test_custom(self):
         """make sure setting a custom Iterator class works normally and wrapped
         by an AllIterator()"""
@@ -1161,68 +1080,6 @@ class IteratorTest(EnvironTestCase):
         l = await q.copy().tolist()
         l2 = await q.copy().ifilter(ifilter).tolist()
         self.assertEqual(len(list(filter(ifilter, l))), len(l2))
-
-#     def test_reverse(self):
-#         """Iterator.reverse() reverses the iterator in place"""
-#         count = 10
-#         orm_class = self.get_orm_class()
-#         pks = self.insert(orm_class, count)
-#         pks.reverse()
-# 
-#         q = orm_class.query.asc_pk()
-#         it = Iterator(q)
-#         it.reverse()
-#         for i, o in enumerate(it):
-#             self.assertEqual(pks[i], o.pk)
-# 
-#         q = orm_class.query.asc_pk()
-#         it = Iterator(q)
-#         for i, o in enumerate(reversed(it)):
-#             self.assertEqual(pks[i], o.pk)
-
-#     async def test_all_1(self):
-#         count = 15
-#         q = self.get_query()
-#         pks = await self.insert(q, count)
-#         self.assertLess(0, len(pks))
-#         g = q.tolist()
-# 
-#         self.assertEqual(1, g[0].pk)
-#         self.assertEqual(2, g[1].pk)
-#         self.assertEqual(3, g[2].pk)
-#         self.assertEqual(6, g[5].pk)
-#         self.assertEqual(13, g[12].pk)
-# 
-#         with self.assertRaises(IndexError):
-#             g[count + 5]
-# 
-#         for i, x in enumerate(g):
-#             if i > 7: break
-#         self.assertEqual(9, g[8].pk)
-# 
-#         gcount = 0
-#         for x in g: gcount += 1
-#         self.assertEqual(count, gcount)
-# 
-#         gcount = 0
-#         for x in g: gcount += 1
-#         self.assertEqual(count, gcount)
-# 
-#         self.assertEqual(count, len(g))
-# 
-#         g = q.all()
-#         self.assertEqual(count, len(g))
-# 
-#     def test_all_limit(self):
-#         count = 15
-#         q = self.get_query()
-#         self.insert(q, count)
-#         q.limit(5)
-#         g = q.all()
-# 
-#         self.assertEqual(3, g[2].pk)
-#         with self.assertRaises(IndexError):
-#             g[6]
 
     async def test_select_fields(self):
         count = 5
@@ -1266,21 +1123,6 @@ class IteratorTest(EnvironTestCase):
 
         i = await orm_class.query.limit(3).get()
         self.assertEqual(3, await i.count())
-
-#     def test___getattr__(self):
-#         count = 5
-#         i = self.get_iterator(count)
-#         rs = list(i.foo)
-#         self.assertEqual(count, len(rs))
-# 
-#         with self.assertRaises(AttributeError):
-#             i.kadfjkadfjkhjkgfkjfkjk_bogus_field
-
-#     def test_pk(self):
-#         count = 5
-#         i = self.get_iterator(count)
-#         rs = list(i.pk)
-#         self.assertEqual(count, len(rs))
 
     async def test_has_more_1(self):
         limit = 3
