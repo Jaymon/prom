@@ -125,20 +125,20 @@ class InterfaceData(TestData):
         t = orm_class(**fields)
         return t
 
-    def create_orms(self, table_name=None, count=0, **fields):
+    async def create_orms(self, table_name=None, count=0, **fields):
         """Create count orms at table_name with fields
 
         :returns: Orm class, the Orm class created with table_name
         """
         orm_class = self.get_orm_class(table_name, **fields)
         count = count or self.get_int(1, 10)
-        self.insert(orm_class, count)
+        await self.insert(orm_class, count)
         return orm_class
 
-    def create_orm(self, table_name=None, **fields):
+    async def create_orm(self, table_name=None, **fields):
         orm_class = self.get_orm(table_name, **fields)
         fs = self.get_fields(orm_class.schema)
-        return orm_class.create(fs)
+        return await orm_class.create(fs)
 
     def find_orm_class(self, v):
         if issubclass(v, Orm):
