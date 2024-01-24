@@ -13,7 +13,12 @@ from prom.query import Query
 from prom.compat import *
 import prom
 
-from .. import BaseTestCase, testdata
+from .. import (
+    BaseTestCase,
+    InterfaceData,
+    IsolatedAsyncioTestCase,
+)
+
 
 
 class _BaseTestConfig(BaseTestCase):
@@ -32,72 +37,83 @@ class _BaseTestConfig(BaseTestCase):
 #         prom.interface.interfaces = {}
 
 
-class _BaseTestInterface(testdata.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        # close any global connections
-        for name, inter in prom.interface.interfaces.items():
-            await inter.close()
+class _BaseTestInterface(IsolatedAsyncioTestCase):
 
-        # we need to delete all the tables
-        inter = self.get_interface()
-        try:
-            await inter.unsafe_delete_tables()
+#     class ClassData(InterfaceData):
+#         interface_class = None
+# 
+#         def create_interface(self):
+#             # interface_class needs to be set on each child class
+#             if self.interface_class is None:
+#                 raise ValueError("interface_class is not defined")
+# 
+#             return self.find_interface(self.interface_class)
 
-        except inter.InterfaceError as e:
-            logger.exception(e)
+#     async def asyncSetUp(self):
+#         # close any global connections
+#         for name, inter in prom.interface.interfaces.items():
+#             await inter.close()
+# 
+#         # we need to delete all the tables
+#         inter = self.get_interface()
+#         try:
+#             await inter.unsafe_delete_tables()
+# 
+#         except inter.InterfaceError as e:
+#             logger.exception(e)
+# 
+#         finally:
+#             await inter.close()
+# 
+#         # close any test class connections
+#         for inter in self.get_interfaces():
+#             await inter.close()
+# 
+#         # discard all the old connections
+#         self.interfaces = set()
+#         prom.interface.interfaces = {}
+# 
+#     async def asyncTearDown(self):
+#         await self.asyncSetUp()
 
-        finally:
-            await inter.close()
-
-        # close any test class connections
-        for inter in self.get_interfaces():
-            await inter.close()
-
-        # discard all the old connections
-        self.interfaces = set()
-        prom.interface.interfaces = {}
-
-    async def asyncTearDown(self):
-        await self.asyncSetUp()
-
-    def get_interface(self, interface=None):
-        """We have to override certain testdata methods to make sure interface
-        handling works as expected for each interface"""
-        return interface or self.create_interface()
-
-    def create_interface(self):
-        # interface_class needs to be set on each child class
-        return self.find_interface(self.interface_class)
-
-    def get_orm_class(self, **kwargs):
-        if "interface" not in kwargs:
-            kwargs["interface"] = self.get_interface(
-                kwargs.get("interface", None)
-            )
-        return self.td.get_orm_class(**kwargs)
-
-    def get_table(self, **kwargs):
-        if "interface" not in kwargs:
-            kwargs["interface"] = self.get_interface(
-                kwargs.get("interface", None)
-            )
-        return self.td.get_table(**kwargs)
-
-    async def create_table(self, *args, **kwargs):
-        interface, schema = self.get_table(*args, **kwargs)
-        await interface.set_table(schema)
-        return interface, schema
-
-    async def insert(self, *args, **kwargs):
-        pks = []
-        interface, schema, orm_class, fields = self.get_insert_fields(
-            *args,
-            **kwargs
-        )
-        for fs in fields:
-            pks.append(await interface.insert(schema, fs))
-
-        return pks
+#     def get_interface(self, interface=None):
+#         """We have to override certain testdata methods to make sure interface
+#         handling works as expected for each interface"""
+#         return interface or self.create_interface()
+# 
+#     def create_interface(self):
+#         # interface_class needs to be set on each child class
+#         return self.find_interface(self.interface_class)
+# 
+#     def get_orm_class(self, **kwargs):
+#         if "interface" not in kwargs:
+#             kwargs["interface"] = self.get_interface(
+#                 kwargs.get("interface", None)
+#             )
+#         return self.td.get_orm_class(**kwargs)
+# 
+#     def get_table(self, **kwargs):
+#         if "interface" not in kwargs:
+#             kwargs["interface"] = self.get_interface(
+#                 kwargs.get("interface", None)
+#             )
+#         return self.td.get_table(**kwargs)
+# 
+#     async def create_table(self, *args, **kwargs):
+#         interface, schema = self.get_table(*args, **kwargs)
+#         await interface.set_table(schema)
+#         return interface, schema
+# 
+#     async def insert(self, *args, **kwargs):
+#         pks = []
+#         interface, schema, orm_class, fields = self.get_insert_fields(
+#             *args,
+#             **kwargs
+#         )
+#         for fs in fields:
+#             pks.append(await interface.insert(schema, fs))
+# 
+#         return pks
 
     async def test_connection___str__(self):
         i = self.get_interface()

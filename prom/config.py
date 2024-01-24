@@ -35,6 +35,9 @@ class Connection(object):
     """string -- full Interface class name -- the interface the connection
     should use to talk with the db"""
 
+    interface_class = None
+    """Holds the interface class this connection should use"""
+
     host = ""
     """the hostname"""
 

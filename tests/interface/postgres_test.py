@@ -20,14 +20,17 @@ except ImportError:
 import prom
 import prom.interface
 
-from . import _BaseTestInterface, _BaseTestConfig, testdata
+from . import (
+    IsolatedAsyncioTestCase,
+    _BaseTestInterface,
+)
 
 
 @skipIf(
     PostgreSQL is None,
     "Skipping Postgres config because dependencies not installed"
 )
-class ConfigTest(_BaseTestConfig):
+class ConfigTest(IsolatedAsyncioTestCase):
     def test_configure_postgres(self):
         dsn = 'prom.interface.postgres.PostgreSQL://uname:passw@localhost/db'
         prom.configure(dsn)
@@ -157,38 +160,38 @@ class InterfaceTest(_BaseTestInterface):
         for k, v in d.items():
             self.assertEqual(v, odb[k])
 
-    def test_db_disconnect(self):
-        """make sure interface can recover if the db disconnects mid script
-        execution"""
-        self.skip_test("this test does not work with docker")
-
-        i, s = self.get_table()
-        _id = self.insert(i, s, 1)[0]
-        d = i.get_one(s, Query().eq__id(_id))
-        self.assertLess(0, len(d))
-
-        testdata.restart_service("postgresql")
-
-        d = i.get_one(s, Query().eq__id(_id))
-        self.assertLess(0, len(d))
-
-    def test_no_connection(self):
-        """this will make sure prom handles it gracefully if there is no
-        connection available ever"""
-        self.skip_test("this test does not work with docker")
-
-        postgresql = testdata.stop_service("postgresql", ignore_failure=False)
-        time.sleep(1)
-
-        try:
-            i = self.create_interface()
-            s = self.get_schema()
-            q = Query()
-            with self.assertRaises(prom.InterfaceError):
-                i.get(s, q)
-
-        finally:
-            postgresql.start()
+#     def test_db_disconnect(self):
+#         """make sure interface can recover if the db disconnects mid script
+#         execution"""
+#         self.skip_test("this test does not work with docker")
+# 
+#         i, s = self.get_table()
+#         _id = self.insert(i, s, 1)[0]
+#         d = i.get_one(s, Query().eq__id(_id))
+#         self.assertLess(0, len(d))
+# 
+#         testdata.restart_service("postgresql")
+# 
+#         d = i.get_one(s, Query().eq__id(_id))
+#         self.assertLess(0, len(d))
+# 
+#     def test_no_connection(self):
+#         """this will make sure prom handles it gracefully if there is no
+#         connection available ever"""
+#         self.skip_test("this test does not work with docker")
+# 
+#         postgresql = testdata.stop_service("postgresql", ignore_failure=False)
+#         time.sleep(1)
+# 
+#         try:
+#             i = self.create_interface()
+#             s = self.get_schema()
+#             q = Query()
+#             with self.assertRaises(prom.InterfaceError):
+#                 i.get(s, q)
+# 
+#         finally:
+#             postgresql.start()
 
     async def test_render_sql_eq(self):
         orm_class = self.get_orm_class(

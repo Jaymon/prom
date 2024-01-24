@@ -2,13 +2,12 @@
 """
 Classes and stuff that handle querying the interface for a passed in Orm class
 """
-from __future__ import unicode_literals, division, print_function, absolute_import
 import copy
 from collections import defaultdict, OrderedDict
 import datetime
 import logging
 import os
-from contextlib import contextmanager
+from contextlib import contextmanager, aclosing
 import math
 import inspect
 import time
@@ -28,14 +27,14 @@ logger = logging.getLogger(__name__)
 class Iterator(ListIterator):
     """The main iterator for all query methods that return iterators
 
-    This is returned from the Query.get() and Query.all() methods, this is also
+    This is returned from the Query.get() method, this is also
     the Iterator class that is set in Orm.iterator_class
 
     fields --
-        ifilter -- callback -- an iterator filter, all yielded rows will be passed
+        ifilter: callback, an iterator filter, all yielded rows will be passed
             through this callback and skipped if ifilter(row) returns False
 
-    examples --
+    :example:
         # iterate through all the primary keys of some orm
         for pk in SomeOrm.query.all().pk:
             print pk
@@ -44,32 +43,37 @@ class Iterator(ListIterator):
     def orm_class(self):
         return self.query.orm_class
 
-    def __init__(self, query):
+    def __init__(self, cursor, query):
         """create an iterator for a query
 
         :param query: Query, the query instance that produced this iterator
         """
+        if query._ifilter:
+            # https://docs.python.org/2/library/itertools.html#itertools.ifilter
+            self.ifilter = query._ifilter
+
         self.query = query
 
-        if query._ifilter:
-            self.ifilter = query._ifilter # https://docs.python.org/2/library/itertools.html#itertools.ifilter
+        self._cursor = cursor
+#         self._cursor_i = 0
+        self._cursor_exhausted = False
+        self.field_names = self.query.fields_select.names()
 
-        self.reset()
 
-    def has_more(self):
-        """Return true if there are more results for this query if the query didn't
-        have a LIMIT clause
+    async def has_more(self):
+        """Return true if there are more results for this query if the query
+        didn't have a LIMIT clause
 
         :returns: boolean, True if this query could've returned more results
         """
         ret = False
         if self.query.bounds.has_more():
-            cursor = self.cursor()
+            cursor = self._cursor
             # https://www.psycopg.org/docs/cursor.html#cursor.rowcount says that
             # future versions of the spec reserve the right to return None
             if cursor.rowcount == -1 or cursor.rowcount is None:
                 try:
-                    if self[self.query.bounds.find_more_index()]:
+                    if await self[self.query.bounds.find_more_index()]:
                         ret = True
 
                 except IndexError:
@@ -80,50 +84,158 @@ class Iterator(ListIterator):
 
         return ret
 
-    def cursor(self):
-        cursor = getattr(self, "_cursor", None)
-        if not cursor:
-            cursor = self.query.cursor()
-            self._cursor = cursor
-            self._cursor_i = 0
-            self.field_names = self.query.fields_select.names()
+#     def set_cursor(self, cursor, query):
+#         self.cursor = cursor
+#         self._cursor_i = 0
+#         self.field_names = self.query.fields_select.names()
+# 
+#         self.query = query
+# 
+#         if query._ifilter:
+#             # https://docs.python.org/2/library/itertools.html#itertools.ifilter
+#             self.ifilter = query._ifilter
 
-        return cursor
 
-    def reset(self):
-        """put all the pieces together to build a generator of the results"""
-        self._cursor = None
-        self._cursor_i = 0
+#     def cursor(self):
+#         cursor = getattr(self, "_cursor", None)
+#         if not cursor:
+#             cursor = self.query.cursor()
+#             self._cursor = cursor
+#             self._cursor_i = 0
+#             self.field_names = self.query.fields_select.names()
+# 
+#         return cursor
+
+#     def reset(self):
+#         """put all the pieces together to build a generator of the results"""
+#         self._cursor = None
+#         self._cursor_i = 0
+
+    async def close(self):
+        """Close the cursor that's tied to this iterator"""
+        await self._cursor.close()
+        self._cursor_exhausted = True
+
+    async def tolist(self):
+        """Returns this iterator as a list
+
+        This is just syntactic sugar around having to do:
+
+            [r async for r in self]
+
+        when a non asyncronous list is needed. It uses the same naming
+        convention as array.tolist which also seems to be used by numpy and
+        pandas
+
+        https://docs.python.org/3/library/array.html#array.array.tolist
+
+        :returns: list, all the items in the iterator as a list
+        """
+        return [r async for r in self]
 
     def __iter__(self):
-        self.reset()
-        return self
+        raise NotImplementedError()
+#         self.reset()
+#         return self
 
-    def next(self):
-        cursor = self.cursor()
-        cursor_next = cursor.__next__
+    async def __aiter__(self):
+        """
+        https://docs.python.org/3/reference/datamodel.html#object.__aiter__
+        """
+        if self._cursor_exhausted:
+            raise ValueError("Cursor has been exhausted, rerun the query")
 
-        # if we have paginated the results we have to account for requesting the
-        # one extra row to see if we have more results waiting
+        cursor_i = 0
+        cursor_limit = -1
         if self.query.bounds.has_more():
-            #if cursor.rownumber == self.query.bounds.limit:
-            if self._cursor_i == self.query.bounds.limit:
-                raise StopIteration()
+            cursor_limit = self.query.bounds.limit
 
-        o = self.hydrate(cursor_next())
-        self._cursor_i += 1
-        while not self.ifilter(o):
-            o = self.hydrate(cursor_next())
-            self._cursor_i += 1
-        return o
+        try:
+            async for row in self._cursor:
+                if cursor_limit > 0 and cursor_i >= cursor_limit:
+                    break
 
-    def count(self):
-        cursor = self.cursor()
+                o = self.hydrate(row)
+                if self.ifilter(o):
+                    yield o
+
+                cursor_i += 1
+
+        finally:
+            await self.close()
+
+#         self._cursor_exhausted = True
+
+#         async for row in self.cursor:
+# 
+#             if self._cursor_i == self.query.bounds.limit:
+# 
+#             o = self.hydrate(row)
+#             if self.ifilter(o):
+#                 yield o
+
+
+#         if self.query.bounds.has_more():
+#             #if cursor.rownumber == self.query.bounds.limit:
+#             if self._cursor_i == self.query.bounds.limit:
+#                 raise StopAsyncIteration()
+# 
+#         o = self.hydrate(await anext(cursor))
+#         self._cursor_i += 1
+#         while not self.ifilter(o):
+#             o = self.hydrate(await anext(cursor))
+#             self._cursor_i += 1
+#         return o
+# 
+# 
+# 
+#         return self
+
+#     async def __anext__(self):
+#         cursor = self.cursor
+# 
+#         # if we have paginated the results we have to account for requesting the
+#         # one extra row to see if we have more results waiting
+#         if self.query.bounds.has_more():
+#             #if cursor.rownumber == self.query.bounds.limit:
+#             if self._cursor_i == self.query.bounds.limit:
+#                 raise StopAsyncIteration()
+# 
+#         o = self.hydrate(await anext(cursor))
+#         self._cursor_i += 1
+#         while not self.ifilter(o):
+#             o = self.hydrate(await anext(cursor))
+#             self._cursor_i += 1
+#         return o
+
+#     async def anext(self):
+#         cursor = self.cursor
+# 
+#         # if we have paginated the results we have to account for requesting the
+#         # one extra row to see if we have more results waiting
+#         if self.query.bounds.has_more():
+#             #if cursor.rownumber == self.query.bounds.limit:
+#             if self._cursor_i == self.query.bounds.limit:
+#                 raise StopAsyncIteration()
+# 
+#         o = self.hydrate(await anext(cursor))
+#         self._cursor_i += 1
+#         while not self.ifilter(o):
+#             o = self.hydrate(await anext(cursor))
+#             self._cursor_i += 1
+#         return o
+
+    def __len__(self):
+        raise NotImplementedError()
+
+    async def count(self):
+        cursor = self._cursor
         count = cursor.rowcount
 
         if count >= 0:
-            # compensate for having pulled one extra row
-            if self.query.bounds.has_more() and self.query.bounds.limit_paginate == count:
+            bounds = self.query.bounds
+            if bounds.has_more() and bounds.limit_paginate == count:
+                # compensate for having pulled one extra row
                 count -= 1
 
         else:
@@ -133,16 +245,14 @@ class Iterator(ListIterator):
             # SQLite cursor's will always have rowcount=-1 until the cursor is
             # exhausted or a fetch*() method has been called, ugh.
             # https://stackoverflow.com/a/839419/5006
-            count = self.query.copy().count()
+            count = await self.query.copy().count()
 
         return count
 
-    def __getitem__(self, i):
-        it = self.copy()
-        q = it.query
-
+    async def __getitem__(self, i):
+        q = self.query.copy()
         b = q.bounds
-        limit = b.limit if b.has_limit() else self.count()
+        limit = b.limit if b.has_limit() else await self.count()
         b = q.bounds_class(limit=limit, offset=q.bounds.offset)
 
         if isinstance(i, slice):
@@ -160,42 +270,42 @@ class Iterator(ListIterator):
                 stop = b.limit
 
             q.limit(stop - start).offset(start)
-            it.query = q
-            return it
+            return type(self)(await q.cursor(), q)
 
         else:
             offset = b.find_offset(i)
 
-            o = q.offset(offset).one()
+            o = await q.offset(offset).one()
             if o is None:
                 raise IndexError("Iterator index {} out of range".format(i))
 
             return o
 
-    def copy(self):
-        q = self.query.copy()
-        return type(self)(q)
+#     def copy(self):
+#         q = self.query.copy()
+#         return type(self)(q)
 
-    def reverse(self):
-        for f in self.query.fields_sort:
-            f.direction = -f.direction
-        self.reset()
+#     def reverse(self):
+#         for f in self.query.fields_sort:
+#             f.direction = -f.direction
+#         self.reset()
 
-    def __getattr__(self, field_name):
-        """If you have a set of results and just want to grab a certain field then
-        you can do that
-
-        :example:
-            it = FooOrm.query.limit(10).get()
-            it.pk # get all the primary keys from the results
-
-        :param field_name: string, the field name you want the values of
-        :returns: generator, the field_name values
-        """
-        it = self.copy()
-        it.query.fields_select.clear()
-        it.query.select_field(field_name)
-        return it
+#     async def __getattr__(self, field_name):
+#         """If you have a set of results and just want to grab a certain field then
+#         you can do that
+# 
+#         :example:
+#             it = FooOrm.query.limit(10).get()
+#             it.pk # get all the primary keys from the results
+# 
+#         :param field_name: string, the field name you want the values of
+#         :returns: generator, the field_name values
+#         """
+#         q = self.query.copy()
+#         it = self.copy()
+#         it.query.fields_select.clear()
+#         it.query.select_field(field_name)
+#         return it
         #return (getattr(o, k) for o in self)
 
     def __repr__(self):
@@ -243,6 +353,7 @@ class Iterator(ListIterator):
         else:
             if orm_class:
                 r = orm_class.hydrate(d)
+
             else:
                 r = d
 
@@ -348,8 +459,9 @@ class QueryBounds(object):
         return self.limit > 0
 
     def has_more(self):
-        """Returns True if the current bounds are set up to query one extra row in order
-        to make pagination easier (to know if there should be a next link)
+        """Returns True if the current bounds are set up to query one extra row
+        in order to make pagination easier (to know if there should be a next
+        link)
 
         :returns: boolean
         """
@@ -536,8 +648,8 @@ class Query(object):
 
     @property
     def schemas(self):
-        """Find and return all the schemas that are needed for this query to complete
-        successfully
+        """Find and return all the schemas that are needed for this query to
+        complete successfully
 
         Another way to put this is all the schemas this query touches
 
@@ -558,14 +670,15 @@ class Query(object):
 
     @property
     def OR(self):
-        """Wraps left and right field statements with an OR clause, you can chain
-        as many OR calls as you want to create an any length OR clause
+        """Wraps left and right field statements with an OR clause, you can
+        chain as many OR calls as you want to create an any length OR clause
 
         I don't love that I had to use OR instead of or but "or" is a reserved
         keyword and I thought OR was better than like _or, or_ or _or_
 
         :Example:
-            self.eq_foo(1).OR.eq_foo(5).OR.eq_foo(10) # (foo=1 OR foo=5 OR foo=10)
+            self.eq_foo(1).OR.eq_foo(5).OR.eq_foo(10)
+            # (foo=1 OR foo=5 OR foo=10)
         """
         self.fields_where[-1].or_clause = True
         return self
@@ -574,6 +687,8 @@ class Query(object):
     def or_(self): return self.OR
     @property
     def _or(self): return self.OR
+    @property
+    def _or_(self): return self.OR
 
     @property
     def AND(self):
@@ -586,10 +701,12 @@ class Query(object):
     def and_(self): return self.AND
     @property
     def _and(self): return self.AND
+    @property
+    def _and_(self): return self.AND
 
     def __init__(self, orm_class=None, **kwargs):
-        # needed to use the db querying methods like get(), if you just want to build
-        # a query then you don't need to bother passing this in
+        # needed to use the db querying methods like get(), if you just want to
+        # build a query then you don't need to bother passing this in
         self.orm_class = orm_class
         self.reset()
 
@@ -606,15 +723,16 @@ class Query(object):
         """
         takes a classpath to allow query-ing from another Orm class
 
-        the reason why it takes string paths is to avoid infinite recursion import 
-        problems because an orm class from module A might have a ref from module B
-        and sometimes it is handy to have module B be able to get the objects from
-        module A that correspond to the object in module B, but you can't import
-        module A into module B because module B already imports module A.
+        the reason why it takes string paths is to avoid infinite recursion
+        import problems because an orm class from module A might have a ref
+        from module B and sometimes it is handy to have module B be able to get
+        the objects from module A that correspond to the object in module B,
+        but you can't import module A into module B because module B already
+        imports module A.
 
-        :param orm_classpath: string|type, a full python class path (eg, foo.bar.Che) or
-            an actual model.Orm python class
-        return -- Query()
+        :param orm_classpath: string|type, a full python class path (eg,
+            foo.bar.Che) or an actual model.Orm python class
+        return -- Query
         """
         # split orm from module path
         if isinstance(orm_classpath, basestring):
@@ -627,13 +745,10 @@ class Query(object):
     def ref_class(self, orm_classpath):
         return self.ref(orm_classpath)
 
-    def __iter__(self):
-        return self.get()
-
     def find_methods(self, method_name):
-        """Given a method name like <OPERATOR>_<FIELD_NAME> or <FIELD_NAME>_<OPERATOR>,
-        split those into <OPERATOR> and <FIELD_NAME> if there is an existing
-        <OPERATOR>_field method that exists
+        """Given a method name like <OPERATOR>_<FIELD_NAME> or 
+        <FIELD_NAME>_<OPERATOR>, split those into <OPERATOR> and <FIELD_NAME>
+        if there is an existing <OPERATOR>_field method that exists
 
         :example:
             self.gt_foo() # (<gt_field>, None, "foo")
@@ -651,25 +766,31 @@ class Query(object):
             name, field_name = method_name.split("_", 1)
 
         except ValueError:
-            raise AttributeError("invalid potential method: {}".format(method_name))
+            raise AttributeError("invalid potential method: {}".format(
+                method_name
+            ))
 
         else:
 
             if not name:
-                raise AttributeError('Could not resolve methods from {}"'.format(
-                    method_name
-                ))
+                raise AttributeError(
+                    'Could not resolve methods from {}"'.format(
+                        method_name
+                    )
+                )
 
-            elif name in {"one", "value"}:
-                field_method = self.eq_field
-                query_method = getattr(self, name)
-
-            elif name in {"get", "values", "all", "cursor"}:
-                field_method = self.in_field
-                query_method = getattr(self, name)
-
-            elif name in {"raw"}:
-                raise AttributeError(method_name)
+#             elif name in {"one", "value"}:
+#                 raise AttributeError(method_name)
+# #                 field_method = self.eq_field
+# #                 query_method = getattr(self, name)
+# 
+#             elif name in {"get", "values", "all", "cursor"}:
+#                 raise AttributeError(method_name)
+# #                 field_method = self.in_field
+# #                 query_method = getattr(self, name)
+# 
+#             elif name in {"raw"}:
+#                 raise AttributeError(method_name)
 
             else:
                 query_method = None
@@ -682,9 +803,11 @@ class Query(object):
                     field_method = getattr(self, field_method_name, None)
 
                 if not field_method:
-                    raise AttributeError('No field method derived from {}'.format(
-                        method_name
-                    ))
+                    raise AttributeError(
+                        'No field method derived from {}'.format(
+                            method_name
+                            )
+                        )
 
         return field_method, query_method, field_name
 
@@ -707,11 +830,13 @@ class Query(object):
         f = self.field_class(self, field_name, field_val, **kwargs)
         return f
 
-    def create_iterator(self, query):
+    def create_iterator(self, cursor):
         if self.orm_class:
-            iterator = self.orm_class.iterator_class(query)
+            iterator = self.orm_class.iterator_class(cursor, query=self)
+
         else:
-            iterator = self.iterator_class(query)
+            iterator = self.iterator_class(cursor, query=self)
+
         return iterator
 
     def append_compound(self, operator, queries, **kwargs):
@@ -763,7 +888,8 @@ class Query(object):
         return self.select(*field_names)
 
     def select_field(self, field_name):
-        """set a field to be selected, this is automatically called when you do select_FIELDNAME(...)"""
+        """set a field to be selected, this is automatically called when you do
+        select_FIELDNAME(...)"""
         if field_name == "*":
             self.fields_select.options["all"] = True
         else:
@@ -781,7 +907,8 @@ class Query(object):
         """
         set a field into .fields_set attribute
 
-        In insert/update queries, these are the fields that will be inserted/updated into the db
+        In insert/update queries, these are the fields that will be
+        inserted/updated into the db
         """
         field = self.create_field(field_name, field_val)
         self.fields_set.append(field)
@@ -789,7 +916,8 @@ class Query(object):
 
     def set(self, fields=None, **fields_kwargs):
         """
-        completely replaces the current .fields with fields and fields_kwargs combined
+        completely replaces the current .fields with fields and fields_kwargs
+        combined
         """
         fields = make_dict(fields, fields_kwargs)
         for field_name, field_val in fields.items():
@@ -829,22 +957,28 @@ class Query(object):
         Return the rows with rows in the first query that are not in the other
         queries
 
-        This is named .difference() instead of .except() because except is a python
-        keyword.
+        This is named .difference() instead of .except() because except is a
+        python keyword.
 
         See .intersect() since this works very similar
         """
         return self.append_compound("except", queries, **kwargs)
 
-    def is_field(self, field_name, field_val=None, **field_kwargs):
-        return self.eq_field(field_name, field_val, **field_kwargs)
     def eq_field(self, field_name, field_val=None, **field_kwargs):
-        return self.append_operation("eq", field_name, field_val, **field_kwargs)
+        return self.append_operation(
+            "eq",
+            field_name,
+            field_val,
+            **field_kwargs
+        )
 
-    def not_field(self, field_name, field_val=None, **field_kwargs):
-        return self.ne_field(field_name, field_val, **field_kwargs)
     def ne_field(self, field_name, field_val=None, **field_kwargs):
-        return self.append_operation("ne", field_name, field_val, **field_kwargs)
+        return self.append_operation(
+            "ne",
+            field_name,
+            field_val,
+            **field_kwargs
+        )
 
     def between_field(self, field_name, low, high):
         self.gte_field(field_name, low)
@@ -852,39 +986,81 @@ class Query(object):
         return self
 
     def lte_field(self, field_name, field_val=None, **field_kwargs):
-        return self.append_operation("lte", field_name, field_val, **field_kwargs)
+        return self.append_operation(
+            "lte",
+            field_name,
+            field_val,
+            **field_kwargs
+        )
 
     def lt_field(self, field_name, field_val=None, **field_kwargs):
-        return self.append_operation("lt", field_name, field_val, **field_kwargs)
+        return self.append_operation(
+            "lt",
+            field_name,
+            field_val,
+            **field_kwargs
+        )
 
     def gte_field(self, field_name, field_val=None, **field_kwargs):
-        return self.append_operation("gte", field_name, field_val, **field_kwargs)
+        return self.append_operation(
+            "gte",
+            field_name,
+            field_val,
+            **field_kwargs
+        )
 
     def gt_field(self, field_name, field_val=None, **field_kwargs):
-        return self.append_operation("gt", field_name, field_val, **field_kwargs)
+        return self.append_operation(
+            "gt",
+            field_name,
+            field_val,
+            **field_kwargs
+        )
 
     def in_field(self, field_name, field_val=None, **field_kwargs):
         """
         :param field_val: list, a list of field_val values
         """
         field_kwargs["is_list"] = True
-        return self.append_operation("in", field_name, field_val, **field_kwargs)
+        return self.append_operation(
+            "in",
+            field_name,
+            field_val,
+            **field_kwargs
+        )
 
     def nin_field(self, field_name, field_val=None, **field_kwargs):
         """
         :param field_val: list, a list of field_val values
         """
         field_kwargs["is_list"] = True
-        return self.append_operation("nin", field_name, field_val, **field_kwargs)
+        return self.append_operation(
+            "nin",
+            field_name,
+            field_val,
+            **field_kwargs
+        )
 
     def startswith_field(self, field_name, field_val, **field_kwargs):
-        return self.like_field(field_name, "{}%".format(field_val), **field_kwargs)
+        return self.like_field(
+            field_name,
+            "{}%".format(field_val),
+            **field_kwargs
+        )
 
     def endswith_field(self, field_name, field_val, **field_kwargs):
-        return self.like_field(field_name, "%{}".format(field_val), **field_kwargs)
+        return self.like_field(
+            field_name,
+            "%{}".format(field_val),
+            **field_kwargs
+        )
 
     def contains_field(self, field_name, field_val, **field_kwargs):
-        return self.like_field(field_name, "%{}%".format(field_val), **field_kwargs)
+        return self.like_field(
+            field_name,
+            "%{}%".format(field_val),
+            **field_kwargs
+        )
 
     def like_field(self, field_name, field_val, **field_kwargs):
         """Perform a field_name LIKE field_val query
@@ -895,7 +1071,12 @@ class Query(object):
         """
         if not field_val:
             raise ValueError("Cannot LIKE nothing")
-        return self.append_operation("like", field_name, field_val, **field_kwargs)
+        return self.append_operation(
+            "like",
+            field_name,
+            field_val,
+            **field_kwargs
+        )
 
     def nlike_field(self, field_name, field_val, **field_kwargs):
         """Perform a field_name NOT LIKE field_val query
@@ -906,11 +1087,21 @@ class Query(object):
         """
         if not field_val:
             raise ValueError("Cannot NOT LIKE nothing")
-        return self.append_operation("nlike", field_name, field_val, **field_kwargs)
+        return self.append_operation(
+            "nlike",
+            field_name,
+            field_val,
+            **field_kwargs
+        )
 
     def raw_field(self, field_name, *field_vals, **field_kwargs):
         field_kwargs["raw"] = True
-        return self.append_operation("raw", field_name, field_vals, **field_kwargs)
+        return self.append_operation(
+            "raw",
+            field_name,
+            field_vals,
+            **field_kwargs
+        )
 
     def asc(self, *field_names):
         for field_name in field_names:
@@ -929,7 +1120,8 @@ class Query(object):
         return self.append_sort(-1, field_name, field_val)
 
     def ifilter(self, predicate):
-        """Set the predicate (callback) for an iterator returned from this instance
+        """Set the predicate (callback) for an iterator returned from this
+        instance
 
         https://docs.python.org/2/library/itertools.html#itertools.ifilter
 
@@ -940,8 +1132,9 @@ class Query(object):
         self._ifilter = predicate
         return self
 
-    def filter(self, predicate):
-        return self.ifilter(predicate)
+#     def filter(self, predicate):
+#         """alias for .ifilter"""
+#         return self.ifilter(predicate)
 
     def limit(self, limit):
         self.bounds.limit = limit
@@ -954,151 +1147,6 @@ class Query(object):
     def page(self, page):
         self.bounds.page = page
         return self
-
-    def cursor(self):
-        """Used by the Iterator to actually query the db"""
-        return self.execute('get', cursor_result=True)
-
-    def get(self):
-        """
-        get results from the db
-
-        :returns: Iterator
-        """
-        self.bounds.paginate = True
-        return self.create_iterator(self)
-
-    def all(self):
-        return self.get()
-
-    def values(self):
-        if not self.fields_select:
-            raise ValueError("No selected fields")
-        return self.get()
-
-    def one(self):
-        """get one row from the db"""
-        self.limit(1)
-        self.bounds.paginate = False
-        it = self.create_iterator(self)
-        try:
-            ret = it.next()
-        except StopIteration:
-            ret = None
-        return ret
-
-    def value(self):
-        """convenience method to just get one value or tuple of values for the query"""
-        if not self.fields_select:
-            raise ValueError("no selected fields")
-        return self.one()
-
-    def count(self):
-        """return the count of the criteria"""
-
-        # sorting shouldn't matter for a count query
-        fields_sort = self.fields_sort
-        self.fields_sort = self.fields_sort_class()
-
-        # more than one selected field will cause the count query to error out
-        fields_select = self.fields_select
-        self.fields_select = self.fields_select_class()
-
-        # setting bounds causes count(*) to return 0 in both Postgres and SQLite
-        bounds = self.bounds
-        self.bounds = self.bounds_class()
-
-        ret = self.execute('count')
-
-        # restore previous values now that count is done
-        self.fields_sort = fields_sort
-        self.fields_select = fields_select
-        self.bounds = bounds
-
-        # now we are going to compensate for the bounds being set
-        if self.bounds:
-            offset = self.bounds.offset
-            ret -= offset
-            if self.bounds.has_limit():
-                limit = self.bounds.limit
-                if ret > limit:
-                    ret = limit
-
-        return ret
-
-    def has(self):
-        """returns true if there is atleast one row in the db matching the query, False otherwise"""
-        v = self.one()
-        return True if v else False
-
-    def exists(self):
-        return self.has()
-
-    def insert(self, **kwargs):
-        """persist the .fields"""
-        return self.interface.insert(self.schema, self.fields_set.fields, **kwargs)
-
-    def update(self, **kwargs):
-        """persist the .fields using .fields_where"""
-        return self.interface.update(
-            self.schema,
-            self.fields_set.fields,
-            self,
-            **kwargs
-        )
-
-    def upsert(self, conflict_field_names=None, **kwargs):
-        """persist the .fields"""
-        insert_fields = self.fields_set.fields
-        update_fields = dict(insert_fields)
-
-        if not conflict_field_names:
-            conflict_field_names = self.schema.pk_names
-
-        for field_name in conflict_field_names:
-            update_fields.pop(field_name, None)
-
-        return self.interface.upsert(
-            self.schema,
-            insert_fields,
-            update_fields,
-            conflict_field_names,
-            **kwargs
-        )
-
-    def delete(self, **kwargs):
-        """remove fields matching the where criteria"""
-        return self.execute('delete', **kwargs)
-
-    def render(self, **kwargs):
-        """Render the query
-
-        :returns: string, the rendered query, this is not assured to be a valid query
-            but is handy for quickly debugging what the query roughly looks like
-        """
-        return self.interface.render(self.schema, self, **kwargs)
-
-    def raw(self, query_str, *query_args, **query_options):
-        """
-        use the interface.query() method to pass in your own raw query without
-        any processing
-
-        NOTE -- This will allow you to make any raw query and will usually return
-        raw results, it won't wrap those results in a prom.Orm iterator instance
-        like other methods like .all() and .get()
-
-        query_str -- string -- the raw query for whatever the backend interface is
-        query_args -- list -- if you have named parameters, you can pass in the values
-        **query_options -- dict -- key:val options for the backend, these are very backend specific
-        return -- mixed -- depends on the backend and the type of query
-        """
-        i = self.interface
-        return i.raw(query_str, *query_args, **query_options)
-
-    def execute(self, method_name, **kwargs):
-        i = self.interface
-        s = self.schema
-        return getattr(i, method_name)(s, self, **kwargs)
 
     def copy(self):
         """nice handy wrapper around the deepcopy"""
@@ -1118,4 +1166,213 @@ class Query(object):
 
         except AttributeError:
             return super().__str__()
+
+#     def __iter__(self):
+#         return self.get()
+
+    def render(self, **kwargs):
+        """Render the query
+
+        :returns: string, the rendered query, this is not assured to be a valid
+            query but is handy for quickly debugging what the query roughly
+            looks like
+        """
+        return self.interface.render(self.schema, self, **kwargs)
+
+#     async def execute(self, method_name, **kwargs):
+#         """Internal method meant to call Interface.execute. This should not be
+#         called outside of this class
+# 
+#         :param method_name: str, the Interface method to call
+#         :param **kwargs: passed through to the Interface method
+#         """
+#         i = self.interface
+#         s = self.schema
+#         return await getattr(i, method_name)(s, self, **kwargs)
+
+    async def __aiter__(self):
+        async for row in await self.get():
+            yield row
+
+    async def tolist(self, **kwargs):
+        iterator = await self.get(**kwargs)
+        return await iterator.tolist()
+
+    async def raw(self, query_str, *query_args, **kwargs):
+        """Send a raw query to the interface without any processing
+
+        NOTE -- This will allow you to make any raw query and will usually
+        return raw results
+
+        :param query_str: str, the raw query for whatever the backend interface
+            is
+        :param query_args: list, if you have named parameters, you can pass in
+            the values
+        :param **kwargs: passed directly to the interface
+        :returns: Any, depends on the interface and the type of query
+        """
+        return await self.interface.raw(query_str, *query_args, **kwargs)
+
+    async def cursor(self, **kwargs):
+        """Return a raw Interface cursor
+
+        :param **kwargs: passed directly to the interface
+        :returns: object, a cursor instance that can retrieve results from the
+            interface's backend
+        """
+        return await self.interface.get(
+            self.schema,
+            self,
+            cursor_result=True,
+            **kwargs
+        )
+#         return self.execute('get', cursor_result=True)
+
+    async def get(self, **kwargs):
+        """
+        get results from the db
+
+        :returns: Iterator
+        """
+        self.bounds.paginate = kwargs.pop("paginate", True)
+        cursor = await self.cursor(**kwargs)
+        return self.create_iterator(cursor)
+#         self.bounds.paginate = True
+#         return self.create_iterator(self)
+
+
+#     async def all(self):
+#         return await self.get()
+# 
+#     async def values(self):
+#         if not self.fields_select:
+#             raise ValueError("No selected fields")
+#         return await self.get()
+
+    async def one(self, **kwargs):
+        """get one row from the db"""
+        ret = None
+
+#         self.limit(1)
+        kwargs["paginate"] = False
+        async for ret in await self.limit(1).get(**kwargs):
+            break
+
+        return ret
+
+#     async def value(self):
+#         """convenience method to just get one value or tuple of values for the
+#         query"""
+#         if not self.fields_select:
+#             raise ValueError("no selected fields")
+#         return await self.one()
+
+    async def count(self, **kwargs):
+        """return the row count of the criteria
+
+        :param **kwargs: passed through to the interface
+        :returns: int, the row count
+        """
+        # sorting shouldn't matter for a count query
+        fields_sort = self.fields_sort
+        self.fields_sort = self.fields_sort_class()
+
+        # more than one selected field will cause the count query to error out
+        fields_select = self.fields_select
+        self.fields_select = self.fields_select_class()
+
+        # setting bounds causes count(*) to return 0 in both Postgres and SQLite
+        bounds = self.bounds
+        self.bounds = self.bounds_class()
+
+        ret = await self.interface.count(self.schema, self, **kwargs)
+#         ret = self.execute('count')
+
+        # restore previous values now that count is done
+        self.fields_sort = fields_sort
+        self.fields_select = fields_select
+        self.bounds = bounds
+
+        # now we are going to compensate for the bounds being set
+        if self.bounds:
+            offset = self.bounds.offset
+            ret -= offset
+            if self.bounds.has_limit():
+                limit = self.bounds.limit
+                if ret > limit:
+                    ret = limit
+
+        return ret
+
+    async def has(self, **kwargs):
+        """returns true if there is atleast one row in the db matching the
+        query, False otherwise
+
+        :returns: bool
+        """
+        v = await self.one(**kwargs)
+        return True if v else False
+
+#     async def exists(self):
+#         return await self.has()
+
+    async def insert(self, **kwargs):
+        """persist the .fields
+
+        :returns: int|str|None, the primary key of the inserted row if it exists
+        """
+        return await self.interface.insert(
+            self.schema,
+            self.fields_set.fields,
+            **kwargs
+        )
+
+    async def update(self, **kwargs):
+        """persist the .fields using .fields_where"""
+        return await self.interface.update(
+            self.schema,
+            self.fields_set.fields,
+            self,
+            **kwargs
+        )
+
+    async def upsert(self, conflict_field_names=None, **kwargs):
+        """persist the .fields
+
+        The insert fields are all the fields set in .fields.
+
+        The update fields are all the fields set in .fields minus the conflict
+        fields
+
+        :param conflict_field_names: list, the list of field names that will be
+            checked for conflicts and will insert if these field values don't
+            already exist in the db or update if they do
+        :param **kwargs: passed through to the interface upsert method
+        :returns: str|int|None, the primary key of the inserted/updated row
+        """
+        insert_fields = self.fields_set.fields
+        update_fields = dict(insert_fields)
+
+        if not conflict_field_names:
+            conflict_field_names = self.schema.pk_names
+
+        for field_name in conflict_field_names:
+            update_fields.pop(field_name, None)
+
+        return await self.interface.upsert(
+            self.schema,
+            insert_fields,
+            update_fields,
+            conflict_field_names,
+            **kwargs
+        )
+
+    async def delete(self, **kwargs):
+        """remove fields matching the where criteria"""
+        return await self.interface.delete(
+            self.schema,
+            self,
+            **kwargs
+        )
+#         return self.execute('delete', **kwargs)
 

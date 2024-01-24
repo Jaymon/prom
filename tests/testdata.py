@@ -5,13 +5,9 @@ import string
 import datetime
 import decimal
 
-import testdata
-from testdata import (
-    TestCase,
-    SkipTest,
-    basic_logging,
-    IsolatedAsyncioTestCase,
-)
+# make this module act like global testdata
+from testdata import *
+from testdata import __getattr__
 
 from prom.compat import *
 from prom.query import Query
@@ -21,7 +17,7 @@ from prom.interface import find_environ
 from prom.utils import make_dict
 
 
-class InterfaceData(testdata.TestData):
+class InterfaceData(TestData):
 
     interfaces = set()
 
@@ -33,8 +29,12 @@ class InterfaceData(testdata.TestData):
         return interface or self.create_interface()
 
     def create_interface(self):
-        for inter in self.create_environ_interfaces():
-            return inter
+        if interface_class := getattr(self, "interface_class", None):
+            return self.find_interface(interface_class)
+
+        else:
+            for inter in self.create_environ_interfaces():
+                return inter
 
     def create_dsn_interface(self, dsn):
         conn = DsnConnection(dsn)
@@ -65,6 +65,10 @@ class InterfaceData(testdata.TestData):
             inter = conn.interface
             self.interfaces.add(inter)
             yield inter
+
+    def get_environ_interface_classes(self):
+        for conn in self.create_environ_connections():
+            yield conn.interface_class
 
     def find_interface(self, interface_class):
         for inter in self.create_environ_interfaces():
@@ -127,7 +131,7 @@ class InterfaceData(testdata.TestData):
         :returns: Orm class, the Orm class created with table_name
         """
         orm_class = self.get_orm_class(table_name, **fields)
-        count = count or testdata.get_int(1, 10)
+        count = count or self.get_int(1, 10)
         self.insert(orm_class, count)
         return orm_class
 
@@ -254,22 +258,22 @@ class InterfaceData(testdata.TestData):
             if v.is_ref(): continue
 
             if issubclass(v.interface_type, basestring):
-                fields[k] = testdata.get_words()
+                fields[k] = self.get_words()
 
             elif issubclass(v.interface_type, bool):
                 fields[k] = True if random.randint(0, 1) == 1 else False
 
             elif issubclass(v.interface_type, int):
-                fields[k] = testdata.get_int32()
+                fields[k] = self.get_int32()
 
             elif issubclass(v.interface_type, long):
-                fields[k] = testdata.get_int64()
+                fields[k] = self.get_int64()
 
             elif issubclass(v.interface_type, datetime.datetime):
-                fields[k] = testdata.get_past_datetime()
+                fields[k] = self.get_past_datetime()
 
             elif issubclass(v.interface_type, float):
-                fields[k] = testdata.get_float()
+                fields[k] = self.get_float()
 
             else:
                 raise ValueError("{}".format(v.interface_type))
@@ -286,8 +290,10 @@ class InterfaceData(testdata.TestData):
             - (interface, schema), count
             - orm_class, count
             - orm instance, count
+            - orm_class
+            - orm instance
         :returns: tuple[Interface, Schema, Orm, list[dict]], the list will be
-            count dicts field with fields for Schema
+            count dicts with fields to insert using Schema
         """
         if len(args) == 1:
             o = args[0]
@@ -331,4 +337,48 @@ class InterfaceData(testdata.TestData):
             fields_list.append(self.get_fields(schema, **kwargs))
 
         return interface, schema, orm_class, fields_list
+
+    async def insert(self, *args, **kwargs):
+        """This has the same signature as .get_insert_fields but inserts the
+        generated fields into the db
+
+        :param *args: passed through to .get_insert_fields
+        :param **kwargs: passed through to .get_insert_fields
+        :returns: int|list, if only one row was inserted then this will return
+            the pk of that row, if multiple rows were inserted it will return
+            a list of primary keys for all the rows inserted
+        """
+        pks = []
+
+        interface, schema, orm_class, fields = self.get_insert_fields(
+            *args,
+            **kwargs
+        )
+        for fs in fields:
+            pks.append(await interface.insert(schema, fs))
+
+        return pks if len(pks) > 1 else pks[0]
+
+    async def insert_fields(self, o, fields=None, **fields_kwargs):
+        """Insert fields
+
+        :param o: Query|tuple[Interface, Schema]|Orm
+        :param fields: dict|None
+        :param **fields_kwargs: merged with fields
+        :returns: Any, the primary key for the row containing the inserted
+            fields
+        """
+        fields = make_dict(fields, fields_kwargs)
+        return await self.insert(o, 1, **fields)
+
+    async def insert_orm(self, orm_class, fields=None, **fields_kwargs):
+        """Insert fields into orm_class and return an orm instance
+
+        :param orm_class: Orm, the orm class
+        :param fields: dict|None
+        :param **fields_kwargs: merged with fields
+        :returns: Orm, an instance of orm_class that represents a row in the db
+        """
+        pk = await self.insert_fields(orm_class, fields, **fields_kwargs)
+        return await orm_class.query.eq_pk(pk).one()
 

@@ -12,10 +12,13 @@ from prom.config import Field, DsnConnection
 from prom.compat import *
 from prom.query import Query
 
-from . import _BaseTestInterface, _BaseTestConfig, BaseTestCase, testdata
+from . import (
+    IsolatedAsyncioTestCase,
+    _BaseTestInterface,
+)
 
 
-class ConfigTest(_BaseTestConfig):
+class ConfigTest(IsolatedAsyncioTestCase):
     def test_configure_sqlite(self):
         dsn = 'prom.interface.sqlite.SQLite:///path/to/db'
         i = configure(dsn)
@@ -57,7 +60,11 @@ class ConfigTest(_BaseTestConfig):
                 }
             ),
             (
-                "prom.interface.sqlite.SQLite://:memory:?option=1&var=2#fragment_name",
+                "".join([
+                    "prom.interface.sqlite.SQLite",
+                    "://:memory:",
+                    "?option=1&var=2#fragment_name",
+                ]),
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
                     'host': ":memory:",
@@ -102,7 +109,11 @@ class ConfigTest(_BaseTestConfig):
                 }
             ),
             (
-                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2",
+                "".join([
+                    "prom.interface.sqlite.SQLite",
+                    ":///abs/path/to/db/4.sqlite",
+                    "?var1=1&var2=2",
+                ]),
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
                     'host': None,
@@ -114,7 +125,11 @@ class ConfigTest(_BaseTestConfig):
                 }
             ),
             (
-                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2#name",
+                "".join([
+                    "prom.interface.sqlite.SQLite",
+                    ":///abs/path/to/db/4.sqlite",
+                    "?var1=1&var2=2#name",
+                ]),
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
                     'host': None,
@@ -123,7 +138,11 @@ class ConfigTest(_BaseTestConfig):
                 }
             ),
             (
-                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2#name",
+                "".join([
+                    "prom.interface.sqlite.SQLite",
+                    ":///abs/path/to/db/4.sqlite",
+                    "?var1=1&var2=2#name",
+                ]),
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
                     'host': None,
@@ -147,42 +166,63 @@ class ConfigTest(_BaseTestConfig):
                 )
 
 
-class DatetimeTypeTest(BaseTestCase):
+class DatetimeTypeTest(IsolatedAsyncioTestCase):
     def test_convert(self):
         s = "2020-03-25T19:34:05.00005Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(50, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.000050Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.000050Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.05Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(50000, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.050000Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.050000Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.0506Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(50600, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.050600Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.050600Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.050060Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(50060, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.050060Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.050060Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.000057Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(57, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.000057Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.000057Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.057Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(57000, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.057000Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.057000Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.057035Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(57035, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.057035Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.057035Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
 
 class InterfaceTest(_BaseTestInterface):

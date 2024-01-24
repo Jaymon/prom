@@ -938,7 +938,7 @@ class Interface(InterfaceABC):
         :param conflict_field_names: list, the field names that will decide if
             an insert or update is performed
         :param **kwargs: anything else
-        :returns: mixed, the primary key
+        :returns: str|int|None, the primary key
         """
         return await self.execute_write(
             self._upsert,
@@ -958,8 +958,21 @@ class Interface(InterfaceABC):
         :returns: int, how many rows were deleted ... I think
         """
         if not query or not query.fields_where:
-            raise ValueError('aborting delete because there is no where clause')
+            raise ValueError("aborting delete because there is no where clause")
 
+        return await self.unsafe_delete(schema, query, **kwargs)
+
+    async def unsafe_delete(self, schema, query, **kwargs):
+        """delete matching rows
+
+        WARNING -- this can clear the whole table, you should mainly use
+            .delete and always include filtering criteria in the query
+
+        :param schema: Schema instance, the table the query will run against
+        :param query: Query instance, the filter criteria, this will fail if
+            empty
+        :returns: int, how many rows were deleted ... I think
+        """
         return await self.execute_write(
             self._delete,
             schema=schema,
