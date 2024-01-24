@@ -8,44 +8,10 @@ from datatypes import Datetime
 
 from . import BaseTestCase, EnvironTestCase, testdata
 from prom.compat import *
-from prom.model import Orm, OrmPool
+from prom.model import Orm
 from prom.config import Field, Index
 from prom.query import Query
 import prom
-
-
-class OrmPoolTest(EnvironTestCase):
-    def test_lifecycle(self):
-        orm_class = self.get_orm_class()
-        pks = self.insert(orm_class, 10)
-
-        pool = OrmPool(orm_class, 1)
-
-        o = pool[pks[0]]
-        self.assertEqual(pks[0], o.pk)
-        o = pool[pks[0]]
-        self.assertEqual(pks[0], o.pk)
-        o = pool[pks[0]]
-        self.assertEqual(pks[0], o.pk)
-
-        pool[pks[1]]
-        self.assertEqual([2], list(pool.pq.keys()))
-
-        pool[pks[0]]
-        self.assertEqual([1], list(pool.pq.keys()))
-
-        pool[pks[1]]
-        self.assertEqual([2], list(pool.pq.keys()))
-
-        pool[pks[0]]
-        self.assertEqual([1], list(pool.pq.keys()))
-
-        pool = OrmPool(orm_class, len(pks) - 1)
-        for pk in pks:
-            o = pool[pk]
-            self.assertEqual(pk, o.pk)
-
-        self.assertEqual(list(pool.pq.keys())[0], pks[1])
 
 
 class OrmTest(EnvironTestCase):

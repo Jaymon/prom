@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 import inspect
 import sys
 import datetime
 
 from datatypes import (
-    Pool,
     EnglishWord,
     NamingConvention,
     classproperty
@@ -23,32 +21,6 @@ from .config import (
     Index
 )
 from .compat import *
-
-
-class OrmPool(Pool):
-    """
-    Create a pool of Orm instances, which is just a dict of primary_key -> Orm instance
-    mappings
-
-    Let's say you are iterating through millions of rows of Foo, and for each Foo
-    instance you need to get the Bar instance from the Foo.bar_id field, and lots of
-    Foos have the same bar_id, but you only want to pull the Bar instance from
-    the db once, this allows you to easily do that
-
-    :Example:
-        bar_pool = Bar.pool(500) # keep the pool contained to the last 500 Bar instances
-        for f in Foo.query.all():
-            b = bar_pool[f.bar_id]
-            print "Foo {} loves Bar {}".format(f.pk, b.pk)
-    """
-    def __init__(self, orm_class, maxsize=0):
-        super(OrmPool, self).__init__(maxsize=maxsize)
-        self.orm_class = orm_class
-
-    def __missing__(self, pk):
-        o = self.orm_class.query.eq_pk(pk).one()
-        self[pk] = o
-        return o
 
 
 class Orm(object):
@@ -170,15 +142,6 @@ class Orm(object):
     def modified_fields(self):
         """Return a dict of field_names/field_values for all the currently modified fields"""
         return {k:getattr(self, k) for k in self.modified_field_names}
-
-    @classmethod
-    def pool(cls, maxsize=0):
-        """
-        return a new OrmPool instance
-
-        return -- OrmPool -- the orm pool instance will be tied to this Orm
-        """
-        return OrmPool(orm_class=cls, maxsize=maxsize)
 
     @classmethod
     def transaction(cls, **kwargs):
