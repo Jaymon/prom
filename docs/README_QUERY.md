@@ -52,6 +52,8 @@ class DemoOrm(prom.Orm):
 
 ## Querying
 
+Prom's querying is based off of [MongoDB's querying syntax](https://www.mongodb.com/docs/manual/reference/operator/query/) (see [issue 150](https://github.com/Jaymon/prom/issues/150) for more information).
+
 You should check the actual code for the query class in `prom.query.Query` for all the methods you can use to create your queries, Prom allows you to set up the query using pseudo method names in the form:
 
     command_fieldname(field_value)
