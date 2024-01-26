@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import datetime
 
@@ -7,20 +6,23 @@ import prom
 from prom.interface.sqlite import SQLite
 from prom import query, InterfaceError
 from prom.interface.sqlite import SQLite, DatetimeType
-from prom.interface import configure
+from prom.interface import configure, set_interface, get_interface
 from prom.model import Orm
 from prom.config import Field, DsnConnection
 from prom.compat import *
 from prom.query import Query
 
-from . import _BaseTestInterface, _BaseTestConfig, BaseTestCase, testdata
+from . import (
+    IsolatedAsyncioTestCase,
+    _BaseTestInterface,
+)
 
 
-class ConfigTest(_BaseTestConfig):
+class ConfigTest(IsolatedAsyncioTestCase):
     def test_configure_sqlite(self):
-        dsn = 'prom.interface.sqlite.SQLite:///path/to/db'
-        i = prom.configure(dsn)
-        self.assertTrue(i.config.path)
+        dsn = "prom.interface.sqlite.SQLite:///path/to/db"
+        i = configure(dsn)
+        self.assertEqual("/path/to/db", i.config.database)
 
     def test_dsn(self):
         tests = [
@@ -58,7 +60,11 @@ class ConfigTest(_BaseTestConfig):
                 }
             ),
             (
-                "prom.interface.sqlite.SQLite://:memory:?option=1&var=2#fragment_name",
+                "".join([
+                    "prom.interface.sqlite.SQLite",
+                    "://:memory:",
+                    "?option=1&var=2#fragment_name",
+                ]),
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
                     'host': ":memory:",
@@ -103,7 +109,11 @@ class ConfigTest(_BaseTestConfig):
                 }
             ),
             (
-                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2",
+                "".join([
+                    "prom.interface.sqlite.SQLite",
+                    ":///abs/path/to/db/4.sqlite",
+                    "?var1=1&var2=2",
+                ]),
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
                     'host': None,
@@ -115,7 +125,11 @@ class ConfigTest(_BaseTestConfig):
                 }
             ),
             (
-                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2#name",
+                "".join([
+                    "prom.interface.sqlite.SQLite",
+                    ":///abs/path/to/db/4.sqlite",
+                    "?var1=1&var2=2#name",
+                ]),
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
                     'host': None,
@@ -124,7 +138,11 @@ class ConfigTest(_BaseTestConfig):
                 }
             ),
             (
-                "prom.interface.sqlite.SQLite:///abs/path/to/db/4.sqlite?var1=1&var2=2#name",
+                "".join([
+                    "prom.interface.sqlite.SQLite",
+                    ":///abs/path/to/db/4.sqlite",
+                    "?var1=1&var2=2#name",
+                ]),
                 {
                     'interface_name': "prom.interface.sqlite.SQLite",
                     'host': None,
@@ -148,204 +166,206 @@ class ConfigTest(_BaseTestConfig):
                 )
 
 
-class DatetimeTypeTest(BaseTestCase):
+class DatetimeTypeTest(IsolatedAsyncioTestCase):
     def test_convert(self):
         s = "2020-03-25T19:34:05.00005Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(50, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.000050Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.000050Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.05Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(50000, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.050000Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.050000Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.0506Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(50600, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.050600Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.050600Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.050060Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(50060, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.050060Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.050060Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.000057Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(57, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.000057Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.000057Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.057Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(57000, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.057000Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.057000Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
         s = "2020-03-25T19:34:05.057035Z"
         dt = DatetimeType.convert(s)
         self.assertEqual(57035, dt.microsecond)
-        self.assertEqual("2020-03-25T19:34:05.057035Z", dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
+        self.assertEqual(
+            "2020-03-25T19:34:05.057035Z",
+            dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        )
 
 
 class InterfaceTest(_BaseTestInterface):
-    @classmethod
-    def create_interface(cls):
-        return cls.find_interface(SQLite)
 
-    def test_change_interface(self):
-        """This is testing the actual interface, not the db connection or anything"""
-        class InterTorm(Orm):
-            connection_name = "change-interface"
-            #connection_name = ""
-            pass
+    interface_class = SQLite
 
-        path = testdata.get_file("inter1.db")
-        dsn = "sqlite://{}#{}".format(path, InterTorm.connection_name)
+    async def test_change_interface(self):
+        """This is testing the actual interface, not the db connection or
+        anything"""
+        connection_name = "change-interface"
+        path = self.get_file("inter1.db")
+        dsn = "sqlite://{}#{}".format(path, connection_name)
         configure(dsn)
-        InterTorm.install()
-        self.assertTrue(InterTorm.interface.has_table(InterTorm.table_name))
 
-        path = testdata.get_file("inter2.db")
-        dsn = "sqlite://{}#{}".format(path, InterTorm.connection_name)
-        configure(dsn)
-        self.assertFalse(InterTorm.interface.has_table(InterTorm.table_name))
+        interface = get_interface(connection_name)
+        schema = self.get_schema()
 
-    def test_field_datetime_type(self):
-        s = self.get_schema(
-            self.get_table_name(),
-            foo=Field(datetime.datetime)
+        await interface.set_table(schema)
+        self.assertTrue(
+            await interface.has_table(schema)
         )
-        i = self.create_interface()
-        i.set_table(s)
+        self.assertTrue(interface.is_connected())
 
-        foo = testdata.get_past_datetime().astimezone(datetime.timezone.utc)
-        pk = i.insert(s, {"foo": foo})
-        r = i.get_one(s, query.Query().eq__id(pk))
-        self.assertEqual(foo, r["foo"])
+        path = self.get_file("inter2.db")
+        dsn = "sqlite://{}#{}".format(path, connection_name)
 
-    def test_get_fields_float(self):
-        sql = "\n".join([
-            "CREATE TABLE ZFOOBAR (",
-            "ZPK INTEGER PRIMARY KEY,",
-            "ZINTEGER INTEGER,",
-            "ZFLOAT FLOAT,",
-            "ZTIMESTAMP TIMESTAMP,",
-            "ZVARCHAR VARCHAR)",
-        ])
+        with self.assertRaises(ValueError):
+            configure(dsn)
 
-        i = self.create_interface()
-        r = i.raw(sql, cursor_result=True)
-        self.assertTrue(i.has_table("ZFOOBAR"))
+        await interface.close()
+        configure(dsn)
+        interface = get_interface(connection_name)
+        self.assertFalse(
+            await interface.has_table(schema)
+        )
 
-        fields = i.get_fields("ZFOOBAR")
-        self.assertEqual(float, fields["ZFLOAT"]["field_type"])
-
-    def test_create_path(self):
-        i = self.create_interface()
+    async def test_create_path(self):
+        i = self.get_interface()
         config = i.config
 
-        d = testdata.create_dir()
+        d = self.create_dir()
         config.host = os.path.join(d, "create_path", "db.sqlite")
 
-        i.connect(config)
-        self.assertTrue(i.connected)
+        await i.connect(config)
+        self.assertTrue(i.is_connected())
 
-    def test_db_disconnect_1(self):
-        """make sure interface can recover if the db disconnects mid script execution,
-        SQLite is a bit different than postgres which is why this method is completely
-        original"""
-        i, s = self.get_table()
-        _id = self.insert(i, s, 1)[0]
-        d = i.get_one(s, Query().eq__id(_id))
+    async def test_db_disconnect_1(self):
+        """make sure interface can recover if the db disconnects mid script
+        execution, SQLite is a bit different than postgres which is why this
+        method is completely original"""
+        i, s = await self.create_table()
+
+        _id = (await self.insert(i, s, 1))
+        d = await i.one(s, Query().eq__id(_id))
         self.assertGreater(len(d), 0)
 
-        i._connection.close()
+        await i._connection.close()
+        self.assertTrue(i.is_connected())
 
-        _id = self.insert(i, s, 1)[0]
-        d = i.get_one(s, Query().eq__id(_id))
+        _id = (await self.insert(i, s, 1))
+        d = await i.one(s, Query().eq__id(_id))
         self.assertGreater(len(d), 0)
 
-    def test_db_disconnect_2(self):
+    async def test_db_disconnect_2(self):
         i = self.get_interface()
-        def callback(connection, **kwargs):
+        async def callback(connection, **kwargs):
             if getattr(connection, "attempt", False):
-                connection.close()
+                await connection.close()
                 connection.attempt = False
-            connection.cursor().execute("SELECT true")
+            (await connection.cursor()).execute("SELECT true")
 
-        with i.connection() as connection:
+        async with i.connection() as connection:
             connection.attempt = True
-            i.execute(callback, connection=connection)
+            await i.execute(callback, connection=connection)
 
-        with i.connection() as connection:
-            i.execute(callback, connection=connection)
+        async with i.connection() as connection:
+            await i.execute(callback, connection=connection)
 
-    def test_unsafe_delete_table_strange_name(self):
-        """this makes sure https://github.com/firstopinion/prom/issues/47 is fixed,
-        the problem was table names weren't escaped and so if they
+    async def test_unsafe_delete_table_strange_name(self):
+        """this makes sure https://github.com/firstopinion/prom/issues/47 is
+        fixed, the problem was table names weren't escaped and so if they
         started with a number or something like that SQLite would choke"""
-        table_name = "1{}".format(testdata.get_ascii(32))
-        i = self.create_interface()
-        s = self.get_schema(table_name)
-        self.insert(i, s, 5)
-        r = i.count(s)
+        table_name = "1{}".format(self.get_ascii(32))
+        i, s = await self.create_table(table_name=table_name)
+        await self.insert(i, s, 5)
+
+        r = await i.count(s)
         self.assertEqual(5, r)
 
-        i.unsafe_delete_table(table_name)
+        await i.unsafe_delete_table(table_name)
 
-        r = i.count(s)
+        r = await i.count(s)
         self.assertEqual(0, r)
 
-        i._delete_table(table_name)
-        self.assertFalse(i.has_table(table_name))
+        await i.unsafe_delete_table(table_name)
+        self.assertFalse(await i.has_table(table_name))
 
-        i.unsafe_delete_tables()
-        self.assertFalse(i.has_table(table_name))
+        await i.unsafe_delete_tables()
+        self.assertFalse(await i.has_table(table_name))
 
-        i.unsafe_delete_tables()
-        self.assertFalse(i.has_table(table_name))
+        await i.unsafe_delete_tables()
+        self.assertFalse(await i.has_table(table_name))
 
-    def test_unsafe_delete_table_ref(self):
-        inter = self.get_interface()
-        m = testdata.create_module([
-            "import prom",
-            "",
-            "class Foo(prom.Orm):",
-            "    table_name = 'dtref_foo'",
-            "",
-            "class Bar(prom.Orm):",
-            "    table_name = 'dtref_bar'",
-            "    foo_id=prom.Field(Foo, True)",
-            "    foo2_id=prom.Field(Foo, True)",
-            ""
-        ])
+    async def test_unsafe_delete_table_ref(self):
+        i, s1 = await self.create_table()
+        i, s2 = await self.create_table(
+            interface=i,
+            s1_id=Field(s1, True),
+            s1_2_id=Field(s1, True),
+        )
 
-        Foo = m.module().Foo
-        Foo.interface = inter
-        Bar = m.module().Bar
-        Bar.interface = inter
+        self.assertTrue(await i.has_table(s1))
+        await i.unsafe_delete_table(s1)
+        self.assertFalse(await i.has_table(s1))
 
-        Foo.install()
-        Bar.install()
+        await i.close()
+        self.assertFalse(i.is_connected())
+        self.assertTrue(await i.has_table(s2))
+        await i.unsafe_delete_tables()
+        self.assertFalse(await i.has_table(s2))
 
-        self.assertTrue(Foo.interface.has_table("dtref_foo"))
-        Foo.interface.unsafe_delete_table("dtref_foo")
-        self.assertFalse(Foo.interface.has_table("dtref_foo"))
-
-        Bar.interface.close()
-        self.assertFalse(Bar.interface.is_connected())
-        self.assertTrue(Bar.interface.has_table("dtref_bar"))
-        Bar.interface.unsafe_delete_tables()
-        self.assertFalse(Bar.interface.has_table("dtref_bar"))
-
-    def test_in_memory_db(self):
+    async def test_in_memory_db(self):
         i, s = self.get_table()
-        i.close()
         config = i.config
         config.database = ":memory:"
 
-        i.connect(config)
-        self.assertTrue(i.connected)
+        await i.connect(config)
+        self.assertTrue(i.is_connected())
 
-        _id = self.insert(i, s, 1)[0]
+        _id = (await self.insert(i, s, 1))
         self.assertTrue(_id)
+
+    async def test_get_fields_float(self):
+        """I'm not completely sure what this is testing anymore but I'm sure it
+        was a bug from some app that used ActiveRecord and I was trying to
+        read the sqlite db that app produced using prom. This doesn't work
+        as a postgres test because ZFLOAT isn't a valid field type"""
+        sql = "CREATE TABLE ZFOOBAR (ZFLOAT FLOAT)"
+
+        i = self.get_interface()
+        await i.raw(sql, ignore_result=True)
+        self.assertTrue(await i.has_table("ZFOOBAR"))
+
+        fields = await i.get_fields("ZFOOBAR")
+        self.assertEqual(float, fields["ZFLOAT"]["field_type"])
 

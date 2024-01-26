@@ -21,6 +21,8 @@ The `field_type` is the python type you want the field to be. The supported fiel
 * `bytearray` - a blob.
 * `datetime` - a `datetime.datetime` value.
 * `date` - a `datetime.date` value.
+* `Enum` - a `enum.Enum` value.
+* `Orm` - a `prom.Orm` class, see the Foreign Keys section for details.
 
 The `field_required` is a boolean, it is true if the field needs to have a value, false if the field can be **NULL** in the db.
 

@@ -2,14 +2,15 @@
 """
 Bindings for SQLite
 
-https://docs.python.org/2/library/sqlite3.html
+https://docs.python.org/3/library/sqlite3.html
+https://github.com/omnilib/aiosqlite
 
 Notes, certain SQLite versions might have a problem with long integers
 http://jakegoulding.com/blog/2011/02/06/sqlite-64-bit-integers/
 
 Looking at the docs, it says it will set an integer value to 1-4, 6, or 8 bytes
-depending on the size, but I couldn't get it to accept anything over the 32-bit signed
-integer value of around 2billion
+depending on the size, but I couldn't get it to accept anything over the 32-bit
+signed integer value of around 2billion
 
 savepoints and transactions are similar to Postgres
 https://www.sqlite.org/lang_savepoint.html
@@ -21,7 +22,6 @@ https://www.sqlite.org/lang_altertable.html
 other links that were helpful
 http://www.numericalexpert.com/blog/sqlite_blob_time/
 """
-from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import decimal
 import datetime
@@ -32,6 +32,7 @@ import json
 import uuid
 
 from datatypes import Datetime
+import aiosqlite
 
 # first party
 from ..exception import (
@@ -48,11 +49,10 @@ from ..compat import *
 from .sql import SQLInterface, SQLConnection
 
 
-class SQLiteConnection(SQLConnection, sqlite3.Connection):
-    """
-    Thin wrapper around the default connection to make sure it has a similar interface
-    to Postgres' connection instance so the common code can all be the same in the
-    parent class
+class AsyncSQLiteConnection(SQLConnection, aiosqlite.Connection):
+    """Thin wrapper around the default connection to make sure it has a similar
+    interface to Postgres' connection instance so the common code can all be the
+    same in the Interface class
 
     https://docs.python.org/3.11/library/sqlite3.html#sqlite3.Connection
     """
@@ -60,10 +60,16 @@ class SQLiteConnection(SQLConnection, sqlite3.Connection):
         super().__init__(*args, **kwargs)
         self.closed = 0
 
-    def close(self, *args, **kwargs):
-        r = super().close(*args, **kwargs)
-        self.closed = 1
-        return r
+    async def close(self, *args, **kwargs):
+        try:
+            return await super().close(*args, **kwargs)
+
+        except ValueError:
+            # aiosqlite: ValueError: no active connection
+            pass
+
+        finally:
+            self.closed = 1
 
 
 class BooleanType(object):
@@ -76,7 +82,8 @@ class BooleanType(object):
 
     @classmethod
     def convert(cls, val):
-        """from the db you get values like b'0' and b'1', convert those to True/False"""
+        """from the db you get values like b'0' and b'1', convert those to
+        True/False"""
         return bool(int(val))
 
 
@@ -90,14 +97,15 @@ class StringType(object):
 
 
 class DatetimeType(StringType):
-    """External sqlite3 databases can store the TIMESTAMP type as unix timestamps,
-    this caused parsing problems when pulling the values out of the db because the
-    default adapter expected TIMESTAMP to be in the form of YYYY-MM-DD HH:MM:SS.SSSSSS
-    and so it would fail to convert the DDDDDD.DDD values, this handles that conversion
+    """External sqlite3 databases can store the TIMESTAMP type as unix
+    timestamps, this caused parsing problems when pulling the values out of the
+    db because the default adapter expected TIMESTAMP to be in the form of
+    YYYY-MM-DD HH:MM:SS.SSSSSS and so it would fail to convert the DDDDDD.DDD
+    values, this handles that conversion
 
     https://www.sqlite.org/lang_datefunc.html
-    the "unixepoch" modifier only works for dates between 0000-01-01 00:00:00 and
-    5352-11-01 10:52:47 (unix times of -62167219200 through 106751991167)
+    the "unixepoch" modifier only works for dates between 0000-01-01 00:00:00
+    and 5352-11-01 10:52:47 (unix times of -62167219200 through 106751991167)
 
     uses the name TIMESTAMP over DATETIME to be consistent with Postgres
     """
@@ -110,13 +118,13 @@ class DatetimeType(StringType):
     @classmethod
     def convert(cls, val):
         return Datetime(super().adapt(val)).datetime()
-        #return Datetime(super().adapt(val)).datetime().replace(tzinfo=datetime.timezone.utc)
 
 
 class NumericType(object):
     """numbers bigger than 64bit integers can be stored as this
 
-    This is named to be as consistent with Postgres's NUMERIC(<precision>, 0) type
+    This is named to be as consistent with Postgres's NUMERIC(<precision>, 0)
+    type
 
     This has TEXT in the name so it is treated as text according to SQLite's
     order of affinity rule 2:
@@ -138,7 +146,8 @@ class NumericType(object):
 
     @classmethod
     def convert(cls, val):
-        """This should only be called when the column type is actually FIELD_TYPE"""
+        """This should only be called when the column type is actually
+        FIELD_TYPE"""
         return int(val)
 
 
@@ -158,7 +167,8 @@ class DecimalType(object):
 class DictType(object):
     """Converts a dict to json text and back again
 
-    Uses JSONBTEXT to be as close to Postgres while still triggering SQLite's affinity rule 2
+    Uses JSONBTEXT to be as close to Postgres while still triggering SQLite's
+    affinity rule 2
     """
     FIELD_TYPE = 'JSONBTEXT'
 
@@ -168,7 +178,8 @@ class DictType(object):
 
     @classmethod
     def convert(cls, val):
-        """This should only be called when the column type is actually FIELD_TYPE"""
+        """This should only be called when the column type is actually
+        FIELD_TYPE"""
         return json.loads(val)
 
 
@@ -181,27 +192,29 @@ class SQLite(SQLInterface):
     _connection = None
 
     @classmethod
-    def configure(cls, config):
-        dsn = getattr(config, 'dsn', '')
-        if dsn:
-            host = config.host
-            db = config.database
-            if not host:
-                path = db
+    async def configure(cls, config):
+        if not config.get("path"):
+            dsn = config.get("dsn", "")
+            if dsn:
+                host = config.host
+                db = config.database
+                if not host:
+                    path = db
 
-            elif not db:
-                path = host
+                elif not db:
+                    path = host
+
+                else:
+                    path = os.sep.join([host, db])
 
             else:
-                path = os.sep.join([host, db])
+                path = config.database
 
-        else:
-            path = config.database
+            if not path:
+                raise ValueError("no sqlite db path found in config")
 
-        if not path:
-            raise ValueError("no sqlite db path found in config")
+            config.path = path
 
-        config.path = path
         return config
 
     def get_paramstyle(self):
@@ -210,10 +223,11 @@ class SQLite(SQLInterface):
         """
         return sqlite3.paramstyle
 
-    def _connect(self, config):
+    def _connector(self):
         """
         https://docs.python.org/3.11/library/sqlite3.html#sqlite3.connect
         """
+        config = self.config
         path = config.path
 
         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
@@ -222,8 +236,8 @@ class SQLite(SQLInterface):
             #'isolation_level': "IMMEDIATE",
             #'isolation_level': "EXCLUSIVE",
             'detect_types': sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
-            'factory': SQLiteConnection,
-            'check_same_thread': True, # https://stackoverflow.com/a/2578401/5006
+            #'factory': SQLiteConnection,
+            'check_same_thread': True, # https://stackoverflow.com/a/2578401
             #'timeout': 100,
         }
         option_keys = list(options.keys()) + ['timeout', 'cached_statements']
@@ -232,8 +246,7 @@ class SQLite(SQLInterface):
                 options[k] = config.options[k]
 
         try:
-            self._connection = sqlite3.connect(path, **options)
-            self.log_debug(f"Connected to connection 0x{id(self._connection):02x}")
+            connection = sqlite3.connect(path, **options)
 
         except sqlite3.DatabaseError as e:
             path_d = os.path.dirname(path)
@@ -243,12 +256,18 @@ class SQLite(SQLInterface):
             else:
                 # let's try and make the directory path and connect again
                 dir_util.mkpath(path_d)
-                self._connection = sqlite3.connect(path, **options)
+                connection = sqlite3.connect(path, **options)
 
         # https://docs.python.org/2/library/sqlite3.html#row-objects
-        self._connection.row_factory = sqlite3.Row
+        connection.row_factory = sqlite3.Row
         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
-        self._connection.text_factory = StringType.adapt
+        connection.text_factory = StringType.adapt
+
+        # NOTE -- it's bad encapsulation that these are saved on the module,
+        # Psycopg3 allows these adapters to be placed on the connection instead
+        # of the moduel and I like that a lot better since once prom is
+        # connected the first time then raw sqlite3 is basically borked for the
+        # life of the script
 
         # for some reason this is needed in python 3.6 in order for saved bytes
         # to be ran through the converter, not sure why
@@ -261,7 +280,10 @@ class SQLite(SQLInterface):
         # has to be adapted even if its parent is already registered
         sqlite3.register_adapter(datetime.datetime, DatetimeType.adapt)
         sqlite3.register_adapter(Datetime, DatetimeType.adapt)
-        sqlite3.register_converter(DatetimeType.FIELD_TYPE, DatetimeType.convert)
+        sqlite3.register_converter(
+            DatetimeType.FIELD_TYPE,
+            DatetimeType.convert
+        )
 
         sqlite3.register_adapter(int, NumericType.adapt)
         sqlite3.register_converter(NumericType.FIELD_TYPE, NumericType.convert)
@@ -272,32 +294,45 @@ class SQLite(SQLInterface):
         sqlite3.register_adapter(dict, DictType.adapt)
         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
 
-    def _configure_connection(self, **kwargs):
+        return connection
+
+    async def _connect(self, config):
+        self._connection = AsyncSQLiteConnection(
+            self._connector,
+            iter_chunk_size=config.options.get("iter_chunk_size", 64)
+        )
+        self._connection.start()
+        await self._connection._connect()
+
+        self.log_debug("Connected to connection {}", self._connection)
+
+        await self.configure_connection(connection=self._connection)
+
+    async def _configure_connection(self, **kwargs):
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
-        self._raw('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs)
+        await self._raw(
+            "PRAGMA foreign_keys = ON",
+            ignore_result=True,
+            **kwargs
+        )
 
-        # by default we can read/write, so only bother to run this query if we need to
-        # make the connection actually readonly
-        if self.config.readonly:
-            self._readonly(self.config.readonly, **kwargs)
-
-    def _get_connection(self):
+    async def _get_connection(self):
         return self._connection
 
-    def _close(self):
-        self._connection.close()
+    async def _close(self):
+        await self._connection.close()
         self._connection = None
 
-    def _readonly(self, readonly, **kwargs):
-        self._raw(
+    async def _readonly(self, readonly, **kwargs):
+        await self._raw(
             # https://stackoverflow.com/a/49630725/5006
             'PRAGMA query_only = {}'.format("ON" if readonly else "OFF"),
             ignore_result=True,
             **kwargs
         )
 
-    def _get_tables(self, table_name, **kwargs):
+    async def _get_tables(self, table_name, **kwargs):
         query_str = 'SELECT tbl_name FROM sqlite_master WHERE type = ?'
         query_args = ['table']
 
@@ -305,51 +340,40 @@ class SQLite(SQLInterface):
             query_str += ' AND name = ?'
             query_args.append(str(table_name))
 
-        ret = self._raw(query_str, *query_args, **kwargs)
+        ret = await self._raw(query_str, *query_args, **kwargs)
         return [r['tbl_name'] for r in ret]
 
-    def _get_indexes(self, schema, **kwargs):
+    async def _get_indexes(self, schema, **kwargs):
         """return all the indexes for the given schema"""
         # http://www.sqlite.org/pragma.html#schema
         # http://www.mail-archive.com/sqlite-users@sqlite.org/msg22055.html
         # http://stackoverflow.com/questions/604939/
         ret = {}
-        rs = self._raw('PRAGMA index_list({})'.format(self.render_table_name_sql(schema)), **kwargs)
+        rs = await self._raw(
+            'PRAGMA index_list({})'.format(self.render_table_name_sql(schema)),
+            **kwargs
+        )
         if rs:
             for r in rs:
                 iname = r['name']
                 ret.setdefault(iname, [])
-                indexes = self._raw('PRAGMA index_info({})'.format(r['name']), **kwargs)
+                indexes = await self._raw(
+                    'PRAGMA index_info({})'.format(r['name']),
+                    **kwargs
+                )
                 for idict in indexes:
                     ret[iname].append(idict['name'])
 
         return ret
 
-    def _delete_tables(self, **kwargs):
-        self._raw('PRAGMA foreign_keys = OFF', ignore_result=True, **kwargs);
-        ret = super()._delete_tables(**kwargs)
-        self._raw('PRAGMA foreign_keys = ON', ignore_result=True, **kwargs);
-        return ret
-
-    def _delete_table(self, schema, **kwargs):
+    async def _delete_table(self, schema, **kwargs):
         """
         https://www.sqlite.org/lang_droptable.html
         """
-        #query_str = 'DROP TABLE IF EXISTS {}'.format(str(schema))
-        query_str = "DROP TABLE IF EXISTS {}".format(self.render_table_name_sql(schema))
-        self._raw(query_str, ignore_result=True, **kwargs)
-
-    def _inserts(self, schema, field_names, field_values, **kwargs):
-        """
-        https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.executemany
-        """
-        query_str = self.render_inserts_sql(schema, field_names, **kwargs)
-        with self.connection(**kwargs) as connection:
-            cur = connection.cursor()
-            cur.executemany(
-                query_str,
-                field_values,
-            )
+        query_str = "DROP TABLE IF EXISTS {}".format(
+            self.render_table_name_sql(schema)
+        )
+        await self._raw(query_str, ignore_result=True, **kwargs)
 
     def create_error(self, e, **kwargs):
         kwargs.setdefault("error_module", sqlite3)
@@ -381,23 +405,35 @@ class SQLite(SQLInterface):
                 e = CloseError(e)
 
             elif "Incorrect number of bindings supplied" in e_msg:
-                e = PlaceholderError(e, *kwargs.get("error_args", []))
+                e = PlaceholderError(e)
 
             else:
                 e = super().create_error(e, **kwargs)
 
         elif isinstance(e, sqlite3.InterfaceError):
             e_msg = str(e)
-            if "Error binding parameter" in e_msg and "error_args" in kwargs:
-                error_args = kwargs["error_args"]
-                ms = re.search(r"parameter\s(\d+)", e_msg)
-                index = int(ms.group(1))
-                value = error_args[1][index]
-                e = PlaceholderError(
-                    e,
-                    *error_args,
-                    message=f"Placeholder {index} of query has unexpected type {type(value)}",
-                )
+            if "Error binding parameter" in e_msg:
+                if error_args := kwargs.get("error_args", []):
+                    ms = re.search(r"parameter\s(\d+)", e_msg)
+                    index = int(ms.group(1))
+                    value = error_args[1][index]
+                    msg = "Query Placeholder {} has unexpected type {}".format(
+                        index,
+                        type(value)
+                    )
+
+                    e = PlaceholderError(e, message=msg)
+
+                else:
+                    e = PlaceholderError(e)
+
+            else:
+                e = super().create_error(e, **kwargs)
+
+        elif isinstance(e, ValueError):
+            e_msg = str(e)
+            if "no active connection" in e_msg: # aiosqlite specific
+                e = CloseError(e)
 
             else:
                 e = super().create_error(e, **kwargs)
@@ -407,16 +443,18 @@ class SQLite(SQLInterface):
 
         return e
 
-    def _get_fields(self, table_name, **kwargs):
+    async def _get_fields(self, table_name, **kwargs):
         """return all the fields for the given table"""
         ret = {}
-        query_str = 'PRAGMA table_info({})'.format(self.render_table_name_sql(table_name))
-        fields = self._raw(query_str, **kwargs)
-        #pout.v([dict(d) for d in fields])
+        query_str = 'PRAGMA table_info({})'.format(
+            self.render_table_name_sql(table_name)
+        )
+        fields = await self._raw(query_str, **kwargs)
 
-        query_str = 'PRAGMA foreign_key_list({})'.format(self.render_table_name_sql(table_name))
-        fks = {f["from"]: f for f in self._raw(query_str, **kwargs)}
-        #pout.v([dict(d) for d in fks.values()])
+        query_str = 'PRAGMA foreign_key_list({})'.format(
+            self.render_table_name_sql(table_name)
+        )
+        fks = {f["from"]: f for f in await self._raw(query_str, **kwargs)}
 
         pg_types = {
             "INTEGER": int,
@@ -439,8 +477,9 @@ class SQLite(SQLInterface):
                 if adapter_class.FIELD_TYPE not in pg_types:
                     pg_types[adapter_class.FIELD_TYPE] = field_type[0]
 
-        # the rows we can set: field_type, name, field_required, min_size, max_size,
-        #   size, unique, pk, <foreign key info>
+        # the rows we can set:
+        #   field_type, name, field_required, min_size, max_size, size, unique,
+        #   pk, <foreign key info>
         for row in fields:
             field = {
                 "name": row["name"],
@@ -475,13 +514,17 @@ class SQLite(SQLInterface):
             'julian_day': "strftime('%J', {})", # YYYY-MM-DD
             'month': "CAST(strftime('%m', {}) AS integer)",
             'minute': "CAST(strftime('%M', {}) AS integer)",
-            'dow': "CAST(strftime('%w', {}) AS integer)", # day of week 0 = sunday
+            'dow': "CAST(strftime('%w', {}) AS integer)", # day of week 0=sunday
             'week': "CAST(strftime('%W', {}) AS integer)",
             'year': "CAST(strftime('%Y', {}) AS integer)"
         }
 
         for k, v in field_kwargs.items():
-            fstrs.append([k_opts[k].format(self.render_field_name_sql(field_name)), self.PLACEHOLDER, v])
+            fstrs.append([k_opts[k].format(
+                self.render_field_name_sql(field_name)),
+                self.PLACEHOLDER,
+                v
+            ])
 
         return fstrs
 
@@ -498,10 +541,15 @@ class SQLite(SQLInterface):
         else:
             fvi = (t for t in enumerate(reversed(field_vals))) 
 
-        query_sort_str = ['  CASE {}'.format(self.render_field_name_sql(field_name))]
+        query_sort_str = ['  CASE {}'.format(
+            self.render_field_name_sql(field_name)
+        )]
         query_args = []
         for i, v in fvi:
-            query_sort_str.append('    WHEN {} THEN {}'.format(self.PLACEHOLDER, i))
+            query_sort_str.append('    WHEN {} THEN {}'.format(
+                self.PLACEHOLDER,
+                i
+            ))
             query_args.append(v)
 
         query_sort_str.append('  END')
@@ -527,7 +575,11 @@ class SQLite(SQLInterface):
         return field_type
 
     def render_datatype_str_sql(self, field_name, field, **kwargs):
-            field_type = super().render_datatype_str_sql(field_name, field, **kwargs)
+            field_type = super().render_datatype_str_sql(
+                field_name,
+                field,
+                **kwargs
+            )
 
             fo = field.interface_options
             if fo.get('ignore_case', False):

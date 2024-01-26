@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import datetime
 import decimal
 import logging
 import uuid
 from functools import cached_property
+import inspect
 
 from ..query import Query
 from ..exception import (
@@ -29,46 +29,40 @@ class SQLConnection(Connection):
     https://www.sqlite.org/lockingv3.html
     https://www.sqlite.org/lang_transaction.html
     """
-    def _transaction_start(self):
-        self._execute("BEGIN")
+    async def _transaction_start(self):
+        await self.execute("BEGIN")
 
-    def _transaction_starting(self, tx):
+    async def _transaction_starting(self, tx):
         # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-        self._execute("SAVEPOINT {}".format(
+        await self.execute("SAVEPOINT {}".format(
             self.interface.render_field_name_sql(tx["name"])
         ))
 
-    def _transaction_stop(self):
+    async def _transaction_stop(self):
         """
         http://initd.org/psycopg/docs/usage.html#transactions-control
         https://news.ycombinator.com/item?id=4269241
         """
-        self._execute("COMMIT")
+        await self.execute("COMMIT")
 
-    def _transaction_stopping(self, tx):
-        self._execute("RELEASE {}".format(
+    async def _transaction_stopping(self, tx):
+        await self.execute("RELEASE {}".format(
             self.interface.render_field_name_sql(tx["name"])
         ))
 
-    def _transaction_fail(self):
-        self._execute("ROLLBACK")
+    async def _transaction_fail(self):
+        await self.execute("ROLLBACK")
 
-    def _transaction_failing(self, tx):
+    async def _transaction_failing(self, tx):
         # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-        self._execute("ROLLBACK TO SAVEPOINT {}".format(
+        await self.execute("ROLLBACK TO SAVEPOINT {}".format(
             self.interface.render_field_name_sql(tx["name"])
         ))
-
-    def _execute(self, query_str):
-        self.log_info(f"{self} - {query_str}")
-        cur = self.cursor()
-        cur.execute(query_str)
-        cur.close()
 
 
 class SQLInterfaceABC(Interface):
-    """SQL database interfaces should extend SQLInterface and implement all these
-    methods in this class and all the methods in InterfaceABC"""
+    """SQL database interfaces should extend SQLInterface and implement all
+    these methods in this class and all the methods in InterfaceABC"""
     @property
     def LIMIT_NONE(self):
         """When an offset is set but not a limit, this is the value that will be
@@ -76,12 +70,14 @@ class SQLInterfaceABC(Interface):
 
         :returns: str|int|None
         """
-        raise NotImplementedError("this property should be set in any children class")
+        raise NotImplementedError(
+            "this property should be set in a child class"
+        )
 
     def get_paramstyle(self):
-        """Returns the paramstyle that is used by self.PLACEHOLDER to decide what
-        val placeholder to use when building queries. This would also be the value
-        to use when calling .raw().
+        """Returns the paramstyle that is used by self.PLACEHOLDER to decide
+        what val placeholder to use when building queries. This would also be
+        the value to use when calling .raw().
 
         The dbapi 2.0 spec requires this to be set
 
@@ -92,25 +88,25 @@ class SQLInterfaceABC(Interface):
         """
         raise NotImplemented()
 
-    def render_date_field_sql(self, field_name, field_kwargs, symbol):
+    async def render_date_field_sql(self, field_name, field_kwargs, symbol):
         raise NotImplemented()
 
-    def render_sort_field_sql(self, field_name, field_vals, sort_dir_str):
+    async def render_sort_field_sql(self, field_name, field_vals, sort_dir_str):
         """normalize the sort string
 
         return -- tuple -- field_sort_str, field_sort_args"""
         raise NotImplemented()
 
-    def render_nolimit_sql(limit, **kwargs):
+    async def render_nolimit_sql(limit, **kwargs):
         raise NotImplemented()
 
-    def render_datatype_datetime_sql(self, field_name, field, **kwargs):
+    async def render_datatype_datetime_sql(self, field_name, field, **kwargs):
         raise NotImplementedError()
 
-    def render_datatype_dict_sql(self, field_name, field, **kwargs):
+    async def render_datatype_dict_sql(self, field_name, field, **kwargs):
         raise NotImplementedError()
 
-    def render_datatype_uuid_sql(self, field_name, field, **kwargs):
+    async def render_datatype_uuid_sql(self, field_name, field, **kwargs):
         raise NotImplementedError()
 
 
@@ -124,9 +120,9 @@ class SQLInterface(SQLInterfaceABC):
 
         https://www.psycopg.org/docs/usage.html#passing-parameters-to-sql-queries
 
-        NOTE -- It looks like both SQLite and Postgres support "named" so if you
-            want to use .raw() queries that will work in both interface I would use
-            named parameters
+        NOTE -- It looks like both SQLite and Postgres support "named" so if
+        you want to use .raw() queries that will work in both interface I would
+        use named parameters
 
         :returns: str, usually something like "?" or "%s"
         """
@@ -150,33 +146,38 @@ class SQLInterface(SQLInterfaceABC):
         else:
             raise NotImplementedError(f"Unknown paramstyle {paramstyle}")
 
-    def _set_table(self, schema, **kwargs):
+    async def _set_table(self, schema, **kwargs):
         """
         http://sqlite.org/lang_createtable.html
         http://www.postgresql.org/docs/9.1/static/sql-createtable.html
         http://www.postgresql.org/docs/8.1/static/datatype.html
         http://pythonhosted.org/psycopg2/usage.html#adaptation-of-python-values-to-sql-types
         """
-        query_str = []
-        query_str.append("CREATE TABLE IF NOT EXISTS {} (".format(self.render_table_name_sql(schema)))
+        query_str = [
+            "CREATE TABLE IF NOT EXISTS {} (".format(
+                self.render_table_name_sql(schema)
+            )
+        ]
 
         query_fields = []
         for field_name, field in schema.fields.items():
-            query_fields.append('  {}'.format(self.render_datatype_sql(field_name, field)))
-
+            query_fields.append("  {}".format(
+                self.render_datatype_sql(field_name, field)
+            ))
         query_str.append(",\n".join(query_fields))
-        query_str.append(')')
+
+        query_str.append(")")
         query_str = "\n".join(query_str)
-        self._raw(query_str, ignore_result=True, **kwargs)
+        await self._raw(query_str, ignore_result=True, **kwargs)
 
     def _set_index(self, schema, name, field_names, **kwargs):
         """
-        NOTE -- we set the index name using <table_name>_<name> format since indexes have to have
-        a globally unique name in postgres
+        NOTE -- we set the index name using <table_name>_<name> format since
+        indexes have to have a globally unique name in postgres
 
         * https://www.sqlite.org/lang_createindex.html
-        * https://www.postgresql.org/docs/14/sql-createindex.html - "IF NOT EXISTS support
-        was added around 9.5
+        * https://www.postgresql.org/docs/14/sql-createindex.html - "IF NOT
+            EXISTS support was added around 9.5
         """
         query_str = 'CREATE {}INDEX IF NOT EXISTS {} ON {} ({})'.format(
             'UNIQUE ' if kwargs.get('unique', False) else '',
@@ -187,7 +188,7 @@ class SQLInterface(SQLInterfaceABC):
 
         return self._raw(query_str, ignore_result=True, **kwargs)
 
-    def _insert(self, schema, fields, **kwargs):
+    async def _insert(self, schema, fields, **kwargs):
         pk_names = schema.pk_names
         kwargs.setdefault("ignore_return_clause", len(pk_names) == 0)
         kwargs.setdefault("ignore_result", len(pk_names) == 0)
@@ -198,7 +199,7 @@ class SQLInterface(SQLInterfaceABC):
             **kwargs,
         )
 
-        r = self._raw(query_str, *query_args, **kwargs)
+        r = await self._raw(query_str, *query_args, **kwargs)
         if r and pk_names:
             if len(pk_names) > 1:
                 r = r[0]
@@ -206,7 +207,32 @@ class SQLInterface(SQLInterfaceABC):
                 r = r[0][pk_names[0]]
         return r
 
-    def _update(self, schema, fields, query, **kwargs):
+    async def _inserts(self, schema, field_names, field_values, **kwargs):
+        """Do a mutli insert
+
+        The query this will run is roughly:
+
+            INSERT INTO
+                (<field_names>)
+            VALUES
+                (tuple for tuple in <field_values>)
+
+        :param schema: Schema, the table
+        :param field_names: list[str], the field names
+        :param field_values: Iterable[Iterable[Any]], each row in the iterable
+            is a tuple of values that correspond to field_names
+        :param **kwargs: passed through
+        """
+        query_str = self.render_inserts_sql(schema, field_names, **kwargs)
+        await self._raw(
+            query_str,
+            *field_values,
+            ignore_result=True,
+            execute_many=True,
+            **kwargs
+        )
+
+    async def _update(self, schema, fields, query, **kwargs):
         query_str, query_args = self.render_update_sql(
             schema,
             fields,
@@ -214,9 +240,21 @@ class SQLInterface(SQLInterfaceABC):
             **kwargs,
         )
 
-        return self._raw(query_str, *query_args, count_result=True, **kwargs)
+        return await self._raw(
+            query_str,
+            *query_args,
+            count_result=True,
+            **kwargs
+        )
 
-    def _upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
+    async def _upsert(
+        self,
+        schema,
+        insert_fields,
+        update_fields,
+        conflict_field_names,
+        **kwargs
+    ):
         """
         https://www.sqlite.org/lang_UPSERT.html
         """
@@ -226,8 +264,9 @@ class SQLInterface(SQLInterfaceABC):
         for field_name in conflict_field_names:
             # conflict fields need to be in the insert fields
             if field_name not in insert_fields:
+                errmsg = "Upsert insert fields on {} missing conflict field {}"
                 raise ValueError(
-                    "Upsert insert fields on {} missing conflict field {}".format(
+                    errmsg.format(
                         schema,
                         field_name,
                     )
@@ -236,8 +275,9 @@ class SQLInterface(SQLInterfaceABC):
             # conflict fields should not be in the update fields (this is more
             # for safety, they should use .update if they want to change them)
             if field_name in update_fields:
+                errmsg = "Upsert update fields on {} contains conflict field {}"
                 raise ValueError(
-                    "Upsert update fields on {} contains conflict field {}".format(
+                    errmsg.format(
                         schema,
                         field_name,
                     )
@@ -272,7 +312,7 @@ class SQLInterface(SQLInterfaceABC):
             )
             query_args = insert_args + update_args
 
-        r = self._raw(query_str, *query_args, **kwargs)
+        r = await self._raw(query_str, *query_args, **kwargs)
         if r and returning_field_names:
             if len(returning_field_names) > 1:
                 r = r[0]
@@ -280,33 +320,54 @@ class SQLInterface(SQLInterfaceABC):
                 r = r[0][returning_field_names[0]]
         return r
 
-    def _delete(self, schema, query, **kwargs):
-        where_query_str, query_args = self.render_sql(schema, query, only_where_clause=True)
+    async def _delete(self, schema, query, **kwargs):
+        where_query_str, query_args = self.render_sql(
+            schema,
+            query,
+            only_where_clause=True
+        )
         query_str = []
         query_str.append('DELETE FROM')
         query_str.append('  {}'.format(self.render_table_name_sql(schema)))
         query_str.append(where_query_str)
         query_str = "\n".join(query_str)
-        ret = self._raw(query_str, *query_args, count_result=True, **kwargs)
-        return ret
+        return await self._raw(
+            query_str,
+            *query_args,
+            count_result=True,
+            **kwargs
+        )
 
-    def _raw(self, query_str, *query_args, **kwargs):
+    async def _raw(self, query_str, *query_args, **kwargs):
         """
-        **kwargs -- dict
-            ignore_result -- boolean -- true to not attempt to fetch results
-            fetchone -- boolean -- true to only fetch one result
-            count_result -- boolean -- true to return the int count of rows affected
+        :param **kwargs:
+            - ignore_result: bool, true to not attempt to fetch results
+            - fetchone: bool, true to only fetch one result
+            - count_result: bool, true to return the int count of rows affected
+            - execute_many: bool, True to call cursor.executemany instead of
+                cursor.execute
         """
         ret = True
         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
         #connection = kwargs.get('connection', None)
-        with self.connection(**kwargs) as connection:
+        async with self.connection(**kwargs) as connection:
             cur = connection.cursor()
+            # depending on the api, cursor() could either return a coroutine
+            # or something different like a cursor class instance
+            if inspect.isawaitable(cur):
+                cur = await cur
 
-            ignore_result = kwargs.get('ignore_result', False)
-            count_result = kwargs.get('count_result', False)
-            one_result = kwargs.get('fetchone', kwargs.get('one_result', False))
-            cursor_result = kwargs.get('cursor_result', False)
+            ignore_result = kwargs.get("ignore_result", False)
+            count_result = kwargs.get("count_result", False)
+            one_result = kwargs.get(
+                "fetchone",
+                kwargs.get("one_result", False)
+            )
+            cursor_result = kwargs.get("cursor_result", False)
+            execute_many = kwargs.get(
+                "execute_many",
+                kwargs.get("executemany", False)
+            )
 
             if cursor_result:
                 # https://stackoverflow.com/a/125140
@@ -314,37 +375,49 @@ class SQLInterface(SQLInterfaceABC):
 
             if query_args:
                 self.log_for(
-                    debug=(["0x{} - {}\n{}", connection, query_str, query_args],),
-                    info=([f"{connection} - {query_str}"],)
+                    debug=(
+                        ["{} - {}\n{}", connection, query_str, query_args],
+                    ),
+                    info=(["{} - {}", connection, query_str],)
                 )
 
-                try:
-                    cur.execute(query_str, query_args)
-
-                except Exception as e:
-                    self.raise_error(
-                        e,
-                        error_args=[
-                            query_str,
-                            query_args,
-                            self.PLACEHOLDER,
-                        ]
-                    )
+                execute_args = [query_str, query_args]
 
             else:
-                self.log_info(f"{connection} - {query_str}")
-                cur.execute(query_str)
+                self.log_info("{} - {}", connection, query_str)
+
+                execute_args = [query_str]
+
+            try:
+                if execute_many:
+                    # https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.executemany
+                    # https://www.psycopg.org/psycopg3/docs/api/cursors.html#psycopg.AsyncCursor.executemany
+                    # https://www.psycopg.org/docs/cursor.html#cursor.executemany
+                    await cur.executemany(*execute_args)
+
+                else:
+                    await cur.execute(*execute_args)
+
+            except Exception as e:
+                await self.raise_error(
+                    e,
+                    error_args=[
+                        query_str,
+                        query_args,
+                        self.PLACEHOLDER,
+                    ]
+                )
 
             if cursor_result:
                 ret = cur
 
             elif ignore_result:
-                cur.close()
+                await cur.close()
 
             else:
                 if one_result:
                     # https://www.psycopg.org/docs/cursor.html#cursor.fetchone
-                    ret = cur.fetchone()
+                    ret = await cur.fetchone()
 
                 elif count_result:
                     # https://www.psycopg.org/docs/cursor.html#cursor.rowcount
@@ -352,22 +425,22 @@ class SQLInterface(SQLInterfaceABC):
 
                 else:
                     # https://www.psycopg.org/docs/cursor.html#cursor.fetchall
-                    ret = cur.fetchall()
+                    ret = await cur.fetchall()
 
-                cur.close()
+                await cur.close()
 
             return ret
 
-    def _get(self, schema, query, **kwargs):
+    async def _get(self, schema, query, **kwargs):
         """
         https://www.sqlite.org/lang_select.html
         """
         query_str, query_args = self.render_sql(schema, query)
-        return self._raw(query_str, *query_args, **kwargs)
+        return await self._raw(query_str, *query_args, **kwargs)
 
-    def _count(self, schema, query, **kwargs):
+    async def _count(self, schema, query, **kwargs):
         query_str, query_args = self.render_sql(schema, query, count_query=True)
-        ret = self._raw(query_str, *query_args, **kwargs)
+        ret = await self._raw(query_str, *query_args, **kwargs)
         if ret:
             ret = int(ret[0]['ct'])
         else:
@@ -375,54 +448,63 @@ class SQLInterface(SQLInterfaceABC):
 
         return ret
 
-    def _handle_field_error(self, schema, e, **kwargs):
+    async def _handle_field_error(self, schema, e, **kwargs):
+        """This will add fields that don't exist in the table if they can be
+        set to NULL, the reason they have to be NULL is adding fields to
+        Postgres that can be NULL is really light, but if they have a default
+        value, then it can be costly
         """
-        this will add fields that don't exist in the table if they can be set to NULL,
-        the reason they have to be NULL is adding fields to Postgres that can be NULL
-        is really light, but if they have a default value, then it can be costly
-        """
-        current_fields = self._get_fields(schema, **kwargs)
+        current_fields = await self._get_fields(schema, **kwargs)
         for field_name, field in schema.fields.items():
             if field_name not in current_fields:
                 if field.required:
-                    self.log_error(f"Cannot safely add {field_name} on the fly because it is required")
+                    self.log_error(
+                        "Required field {} cannot be safely add on the fly",
+                        field_name
+                    )
                     return False
 
                 else:
                     query_str = []
                     query_str.append('ALTER TABLE')
-                    query_str.append('  {}'.format(self.render_table_name_sql(schema)))
+                    query_str.append('  {}'.format(
+                        self.render_table_name_sql(schema)
+                    ))
                     query_str.append('ADD COLUMN')
-                    query_str.append('  {}'.format(self.render_datatype_sql(field_name, field)))
+                    query_str.append('  {}'.format(
+                        self.render_datatype_sql(field_name, field)
+                    ))
                     query_str = "\n".join(query_str)
-                    self._raw(query_str, ignore_result=True, **kwargs)
+                    await self._raw(query_str, ignore_result=True, **kwargs)
 
         return True
 
-    def _handle_table_error(self, schema, e, **kwargs):
+    async def _handle_table_error(self, schema, e, **kwargs):
         """
-        You can run into a problem when you are trying to set a table and it has a 
-        foreign key to a table that doesn't exist, so this method will go through 
-        all fk refs and make sure all the tables exist
+        You can run into a problem when you are trying to set a table and it
+        has a foreign key to a table that doesn't exist, so this method will go
+        through all fk refs and make sure all the tables exist
         """
         if query := kwargs.pop("query", None):
             if schemas := query.schemas:
                 for s in schemas:
-                    self.log_warning(f"Verifying {schema} query foreign key table: {s}")
-                    if not self._handle_table_error(s, e=e, **kwargs):
+                    self.log_warning(
+                        f"Verifying {schema} query foreign key table: {s}"
+                    )
+                    if not await self._handle_table_error(s, e=e, **kwargs):
                         return False
 
         for field_name, field_val in schema.fields.items():
             s = field_val.schema
             if s:
                 self.log_warning(f"Verifying {schema} foreign key table: {s}")
-                if not self._handle_table_error(schema=s, e=e, **kwargs):
+                if not await self._handle_table_error(schema=s, e=e, **kwargs):
                     return False
 
         # now that we know all fk tables exist, create this table
         # !!! This uses the external .set_table so it will run through all the 
         # indexes also
-        self.set_table(schema, **kwargs)
+        await self.set_table(schema, **kwargs)
         return True
 
     def render_table_name_sql(self, schema):
@@ -480,7 +562,9 @@ class SQLInterface(SQLInterfaceABC):
             query_str.append('FROM')
 
             if not query.compounds:
-                query_str.append("  {}".format(self.render_table_name_sql(schema)))
+                query_str.append("  {}".format(
+                    self.render_table_name_sql(schema)
+                ))
 
         return query_str, query_args
 
@@ -526,8 +610,11 @@ class SQLInterface(SQLInterfaceABC):
         symbol_map = {
             'in': {'symbol': 'IN', 'list': True},
             'nin': {'symbol': 'NOT IN', 'list': True},
-            'eq': {'symbol': '=', 'none_symbol': 'IS'},
-            'ne': {'symbol': '!=', 'none_symbol': 'IS NOT'},
+            # Previously we used "IS" and "IS NOT" but psycopg3 changed behavior
+            # https://stackoverflow.com/a/76396765
+            # https://www.psycopg.org/psycopg3/docs/basic/from_pg2.html#you-cannot-use-is-s
+            'eq': {'symbol': '=', 'none_symbol': 'IS NOT DISTINCT FROM'},
+            'ne': {'symbol': '!=', 'none_symbol': 'IS DISTINCT FROM'},
             'gt': {'symbol': '>'},
             'gte': {'symbol': '>='},
             'lt': {'symbol': '<'},
@@ -601,9 +688,10 @@ class SQLInterface(SQLInterfaceABC):
                     # the idea here is this is a condition that will
                     # automatically cause the query to fail but not necessarily 
                     # be an error, the best example is the IN (...) queries, if
-                    # you do self.in_foo([]).get() that will fail because the list
-                    # was empty, but a value error shouldn't be raised because a
-                    # common case is: self.if_foo(Bar.query.is_che(True).pks).get()
+                    # you do self.in_foo([]).get() that will fail because the
+                    # list was empty, but a value error shouldn't be raised
+                    # because a common case is:
+                    #   self.if_foo(Bar.query.is_che(True).pks).get()
                     # which should result in an empty set if there are no rows
                     # where che = TRUE
                     #
@@ -714,7 +802,10 @@ class SQLInterface(SQLInterfaceABC):
                     query_args.extend(field_sort_args)
 
                 else:
-                    query_sort_str.append('  {} {}'.format(field.name, sort_dir_str))
+                    query_sort_str.append('  {} {}'.format(
+                        field.name,
+                        sort_dir_str
+                    ))
 
             query_str.append(',\n'.join(query_sort_str))
 
@@ -823,7 +914,9 @@ class SQLInterface(SQLInterfaceABC):
             # https://www.sqlite.org/lang_returning.html
             pk_name = schema.pk_name
             if pk_name:
-                query_str += ' RETURNING {}'.format(self.render_field_name_sql(pk_name))
+                query_str += ' RETURNING {}'.format(
+                    self.render_field_name_sql(pk_name)
+                )
 
         return query_str, query_vals
 
@@ -852,13 +945,20 @@ class SQLInterface(SQLInterfaceABC):
 
         field_str = []
         for field_name, field_val in fields.items():
-            field_str.append('{} = {}'.format(self.render_field_name_sql(field_name), self.PLACEHOLDER))
+            field_str.append('{} = {}'.format(
+                self.render_field_name_sql(field_name),
+                self.PLACEHOLDER
+            ))
             query_args.append(field_val)
 
         query_str += 'SET {}'.format(',\n'.join(field_str))
 
         if query:
-            where_query_str, where_query_args = self.render_sql(schema, query, only_where_clause=True)
+            where_query_str, where_query_args = self.render_sql(
+                schema,
+                query,
+                only_where_clause=True
+            )
             query_str += ' {}'.format(where_query_str)
             query_args.extend(where_query_args)
 
@@ -917,9 +1017,15 @@ class SQLInterface(SQLInterfaceABC):
 
         else:
             if field.is_ref():
-                field_type += ' ' + self.render_datatype_ref_sql(field_name, field)
+                field_type += ' ' + self.render_datatype_ref_sql(
+                    field_name,
+                    field
+                )
 
-        return '{} {}'.format(self.render_field_name_sql(field_name), field_type)
+        return '{} {}'.format(
+            self.render_field_name_sql(field_name),
+            field_type
+        )
 
     def render_datatype_bool_sql(self, field_name, field, **kwargs):
         return 'BOOL'
@@ -981,10 +1087,14 @@ class SQLInterface(SQLInterfaceABC):
         :param query: Query, the query to render
         :param **kwargs: named arguments
             placeholders: boolean, True if place holders should remain
-        :returns: string if placeholders is False, (string, list) if placeholders is True
+        :returns: str if placeholders is False, tuple[str, list] if
+            placeholders is True
         """
         sql, sql_args = self.render_sql(schema, query)
-        placeholders = kwargs.get("placeholders", kwargs.get("placeholder", False))
+        placeholders = kwargs.get(
+            "placeholders",
+            kwargs.get("placeholder", False)
+        )
 
         if not placeholders:
             for sql_arg in sql_args:

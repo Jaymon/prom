@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 import datetime
-import time
-from threading import Thread
-import sys
 import re
+import inspect
+import random
 
-import testdata
-
-from . import BaseTestCase, EnvironTestCase, TestCase, SkipTest
+from . import (
+    EnvironTestCase,
+    TestCase,
+)
 from prom.query import (
     Query,
     QueryBounds,
@@ -16,21 +15,19 @@ from prom.query import (
     QueryFields,
     Iterator,
 )
-from prom.config import Field as OrmField
+from prom.config import Field
 from prom.compat import *
-import prom
 
 
-class QueryFieldTest(BaseTestCase):
+class QueryFieldTest(TestCase):
     def test___new__(self):
         q = self.get_query()
         f = QueryField(q, "MAX(foo)")
-        #f = QueryField("MAX(foo)", schema=testdata.mock(field_name="foo"))
         self.assertEqual("foo", f.name)
         self.assertEqual("MAX", f.function_name)
 
 
-class QueryFieldsTest(BaseTestCase):
+class QueryFieldsTest(TestCase):
     def test_fields(self):
         q = self.get_query()
         fs = QueryFields()
@@ -149,25 +146,231 @@ class QueryBoundsTest(TestCase):
 
 
 class QueryTest(EnvironTestCase):
-    def test_query_syntactic_sugar(self):
-        Foo = self.get_orm_class()
-        self.insert(Foo, 5)
+    async def test_cursor(self):
+        q = self.get_query()
+        cursor = await q.cursor()
+        self.assertFalse(inspect.iscoroutine(cursor))
+        self.assertIsNotNone(cursor)
 
-        pk = Foo.query.select_pk().value_pk(3)
-        self.assertEqual(3, pk)
+    async def test_get_1(self):
+        orm_class = self.get_orm_class()
+        _ids = await self.insert(orm_class, 2)
 
-        pkl = list(Foo.query.select_pk().values_pk([2]))
-        self.assertEqual(2, pkl[0])
+        count = 0
+        async for o in await orm_class.query.get():
+            count += 1
+            self.assertEqual(orm_class, type(o))
+            self.assertTrue(o._id in _ids)
+            self.assertFalse(o.is_modified())
+        self.assertEqual(count, len(_ids))
 
-        o = Foo.query.one_pk(1)
-        self.assertEqual(1, o.pk)
+    async def test_get_all(self):
+        count = 10
+        q = self.get_query()
+        await self.insert(q, count)
 
-        ol = list(Foo.query.get_pk([1]))
-        self.assertEqual(1, ol[0].pk)
+        # if no limit is set then it should go through all results
+        rcount = 0
+        async for r in await q.copy().get():
+            rcount += 1
+        self.assertEqual(count, rcount)
+
+        # if there is a limit then all should only go until that limit
+        rcount = 0
+        async for r in await q.copy().limit(1).get():
+            rcount += 1
+        self.assertEqual(1, rcount)
+
+        # only go until the end of the results
+        rcount = 0
+        async for r in await q.copy().limit(6).offset(6).get():
+            rcount += 1
+        self.assertEqual(4, rcount)
+
+    async def test_get_pk(self):
+        orm_class = self.get_orm_class()
+        pks = await self.insert(orm_class, 2)
+
+        res = await orm_class.query.select_pk().in_pk(pks).get()
+        rpks = [r async for r in res]
+        self.assertEqual(2, len(rpks))
+        self.assertEqual(pks, rpks)
+
+    async def test_get_values(self):
+        q = self.get_query()
+
+        count = 2
+        pks = await self.insert(q, count)
+
+        vals = [r async for r in q.copy().select_foo()]
+        self.assertEqual(count, len(vals))
+        for v in vals:
+            self.assertTrue(isinstance(v, int))
+
+        vals = [r async for r in q.copy().select_foo().select_bar()]
+        self.assertEqual(count, len(vals))
+        for v in vals:
+            self.assertTrue(isinstance(v, list))
+
+        vals = [r async for r in q.copy().select_foo().limit(1)]
+        self.assertEqual(1, len(vals))
+
+    async def test_one_1(self):
+        orm_class = self.get_orm_class()
+        _ids = await self.insert(orm_class, 2)
+
+        o = await orm_class.query.one()
+        self.assertEqual(orm_class, type(o))
+        self.assertTrue(o._id in _ids)
+        self.assertFalse(o.is_modified())
+
+    async def test_one_value(self):
+        _q = self.get_query()
+
+        v = await _q.copy().select_foo().one()
+        self.assertEqual(None, v)
+
+        count = 2
+        pks = await self.insert(_q, count)
+
+        o = await _q.copy().eq_pk(pks[0]).one()
+        v = await _q.copy().select_foo().eq_pk(o.pk).one()
+        self.assertEqual(o.foo, v)
+
+        v = await _q.copy().select_foo().select_bar().eq_pk(o.pk).one()
+        self.assertEqual(o.foo, v[0])
+        self.assertEqual(o.bar, v[1])
+
+    async def test_count(self):
+        orm_class = self.get_orm_class()
+        await self.insert(orm_class, 10)
+
+        self.assertEqual(5, await orm_class.query.offset(5).count())
+        self.assertEqual(5, await orm_class.query.limit(5).count())
+        self.assertEqual(10, await orm_class.query.count())
+
+    async def test_has(self):
+        q = self.get_query()
+        self.assertFalse(await q.has())
+
+        await self.insert(q, 1)
+        self.assertTrue(await q.has())
+
+    async def test_insert_and_update(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int),
+            bar=Field(str),
+            _created=None,
+            _updated=None
+        )
+        fields = dict(foo=1, bar="value 1")
+
+        pk = await orm_class.query.set(fields).insert()
+        self.assertLess(0, pk)
+
+        o = await orm_class.query.eq_pk(pk).one()
+        self.assertEqual(pk, o.pk)
+        self.assertEqual(1, o.foo)
+        self.assertTrue("value 1", o.bar)
+
+        fields["foo"] = 2
+        fields["bar"] = "value 2"
+        row_count = await orm_class.query.set(fields).eq_pk(pk).update()
+        self.assertEqual(1, row_count)
+
+        o2 = await orm_class.query.eq_pk(pk).one()
+        self.assertEqual(2, o2.foo)
+        self.assertEqual("value 2", o2.bar)
+
+    async def test_update_bubble_up(self):
+        """
+        https://github.com/jaymon/prom/issues/11
+        """
+        orm_class = self.get_orm_class(
+            foo=Field(int),
+            bar=Field(str),
+            _created=None,
+            _updated=None
+        )
+
+        fields = {
+            "foo": 1,
+            "bar": None,
+        }
+        pk = await orm_class.query.set(fields).insert()
+        ret = await (orm_class.query
+            .set_foo(2)
+            .set_bar("bar 2")
+            .ne_bar(None)
+            .update()
+        )
+        self.assertEqual(0, ret)
+
+        ret = await (orm_class.query
+            .set_foo(2)
+            .set_bar("bar 2")
+            .eq_bar(None)
+            .update()
+        )
+        self.assertEqual(1, ret)
+
+    async def test_delete(self):
+        orm_class = self.get_orm_class()
+        pk = await self.insert(orm_class, 1)
+
+        with self.assertRaises(ValueError):
+            r = await orm_class.query.delete()
+
+        r = await orm_class.query.eq_pk(pk).delete()
+        self.assertEqual(1, r)
+
+        r = await orm_class.query.eq_pk(pk).delete()
+        self.assertEqual(0, r)
+
+    async def test___aiter__(self):
+        count = 5
+        q = self.get_query()
+        await self.insert(q, count)
+
+        rcount = 0
+        async for _ in q:
+            rcount += 1
+
+        self.assertEqual(count, rcount)
+
+    def test_set(self):
+        q = self.get_query()
+        field_names = list(q.schema.fields.keys())
+        fields = dict(zip(field_names, [None] * len(field_names)))
+        q.set(**fields)
+        self.assertEqual(fields, {f.name: f.value for f in q.fields_set})
+
+        q = self.get_query()
+        q.set(fields)
+        self.assertEqual(fields, {f.name: f.value for f in q.fields_set})
+
+    def test_select_1(self):
+        q = self.get_query()
+        fields_select = list(q.schema.fields.keys())
+        q.select(*fields_select[0:-1])
+        self.assertEqual(fields_select[0:-1], list(q.fields_select.names()))
+
+        q = self.get_query()
+        q.select(fields_select)
+        self.assertEqual(fields_select, list(q.fields_select.names()))
+
+        q = self.get_query()
+        q.select(fields_select[0:-1], fields_select[-1])
+        self.assertEqual(fields_select, list(q.fields_select.names()))
+
+        # make sure chaining works
+        q = self.get_query()
+        q.select(fields_select[0]).select(*fields_select[1:])
+        self.assertEqual(fields_select, list(q.fields_select.names()))
 
     def test_select_all(self):
-        Foo = self.get_orm_class()
-        q = Foo.query.select("*")
+        orm_class = self.get_orm_class()
+        q = orm_class.query.select("*")
         self.assertRegex(q.render(), r"(?m)SELECT\s+\*\s+FROM")
 
     def test_schemas(self):
@@ -185,8 +388,8 @@ class QueryTest(EnvironTestCase):
     def test_render(self):
         q = self.get_query()
 
-        q.is_foo(1)
-        q.is_bar("two")
+        q.eq_foo(1)
+        q.eq_bar("two")
         r = q.render()
         self.assertRegex(r, r"foo[^=]+=\s*1")
         self.assertRegex(r, r"bar[^=]+=\s*'two'")
@@ -194,8 +397,8 @@ class QueryTest(EnvironTestCase):
     def test_find_methods_1(self):
         q = self.get_query()
 
-        opm, qm, fn = q.find_methods("eq_foo_bar")
-        opm2, qm2, fn2 = q.find_methods("foo_bar_eq")
+        opm, fn = q.find_methods("eq_foo_bar")
+        opm2, fn2 = q.find_methods("foo_bar_eq")
         self.assertEqual("eq_field", opm.__name__)
         self.assertEqual(opm2.__name__, opm.__name__)
         self.assertEqual("foo_bar", fn)
@@ -216,10 +419,12 @@ class QueryTest(EnvironTestCase):
     def test_find_methods_2(self):
         q = self.get_query()
 
-        method_name = "is_{}".format(testdata.random.choice(list(q.schema.fields.keys())))
+        method_name = "eq_{}".format(
+            random.choice(list(q.schema.fields.keys()))
+        )
         r = q.find_methods(method_name)
-        self.assertEqual("is_field", r[0].__name__)
-        self.assertTrue(r[2] in set(q.schema.fields.keys()))
+        self.assertEqual("eq_field", r[0].__name__)
+        self.assertTrue(r[1] in set(q.schema.fields.keys()))
 
         with self.assertRaises(AttributeError):
             q.find_methods("testing")
@@ -233,229 +438,175 @@ class QueryTest(EnvironTestCase):
         for t in tests:
             r = q.find_methods(t[0])
             self.assertEqual(t[1][0], r[0].__name__)
-            self.assertEqual(t[1][1], r[2])
+            self.assertEqual(t[1][1], r[1])
 
-    def test_find_methods_3(self):
-        q = Query()
-        om, qm, fn = q.find_methods("one_pk")
-        self.assertEqual(q.eq_field, om)
-        self.assertEqual(q.one, qm)
-        self.assertEqual("pk", fn)
-
-        with self.assertRaises(AttributeError):
-            q.find_methods("foo_pk")
-
-    def test_like(self):
+    async def test_like(self):
         _q = self.get_query()
-        self.insert(_q, 5)
+        await self.insert(_q, 5)
         for bar in ["bar che", "foo bar", "foo bar che"]:
-            self.insert_fields(_q, bar=bar)
+            await self.insert_fields(_q, bar=bar)
 
-        count = _q.copy().like_bar("bar%").count()
+        count = await _q.copy().like_bar("bar%").count()
         self.assertEqual(1, count)
 
-        count = _q.copy().like_bar("%bar").count()
+        count = await _q.copy().like_bar("%bar").count()
         self.assertEqual(1, count)
 
-        count = _q.copy().like_bar("%bar%").count()
+        count = await _q.copy().like_bar("%bar%").count()
         self.assertEqual(3, count)
 
-        count = _q.copy().nlike_bar("bar%").count()
+        count = await _q.copy().nlike_bar("bar%").count()
         self.assertEqual(7, count)
 
-        count = _q.copy().nlike_bar("%bar").count()
+        count = await _q.copy().nlike_bar("%bar").count()
         self.assertEqual(7, count)
 
-        count = _q.copy().nlike_bar("%bar%").count()
+        count = await _q.copy().nlike_bar("%bar%").count()
         self.assertEqual(5, count)
 
-        count = _q.copy().like_bar("bar____").count()
+        count = await _q.copy().like_bar("bar____").count()
         self.assertEqual(1, count)
 
-        count = _q.copy().like_bar("____bar").count()
+        count = await _q.copy().like_bar("____bar").count()
         self.assertEqual(1, count)
 
-        count = _q.copy().like_bar("____bar____").count()
+        count = await _q.copy().like_bar("____bar____").count()
         self.assertEqual(1, count)
 
-    def test_between(self):
-        _q = self.get_query()
-        self.insert(_q, 5)
+    async def test_between(self):
+        q = self.get_query()
+        await self.insert(q, 5)
 
-        q = _q.copy()
-        vals = list(q.select_pk().between_pk(2, 4))
+        vals = [r async for r in q.select_pk().between_pk(2, 4)]
         self.assertEqual(3, len(vals))
         for v in vals:
             self.assertTrue(v >= 2 and v <= 4)
 
-    def test_ref_threading(self):
-        basedir = testdata.create_modules({
-            "rtfoo.rtbar.tqr1": [
-                "import prom",
-                "",
-                "class Foo(prom.Orm):",
-                "    table_name = 'thrd_qr2_foo'",
-                "    one=prom.Field(int, True)",
-                "",
-            ],
-            "rtfoo.rtbar.tqr2": [
-                "import prom",
-                "from rtfoo.rtbar.tqr1 import Foo",
-                "",
-                "class Bar(prom.Orm):",
-                "    table_name = 'thrd_qr2_bar'",
-                "    one=prom.Field(int, True)",
-                "    foo_id=prom.Field(Foo, True)",
-                ""
-            ],
-        })
-
-        tqr1 = basedir.module("rtfoo.rtbar.tqr1")
-        sys.modules.pop("rtfoo.rtbar.tqr2.Bar", None)
-        #tqr2 = basedir.module("tqr2")
-        def target():
-            q = tqr1.Foo.query.ref("rtfoo.rtbar.tqr2.Bar")
-            f = tqr1.Foo()
-            q = f.query.ref("rtfoo.rtbar.tqr2.Bar")
-
-        t1 = Thread(target=target)
-        # if we don't get stuck in a deadlock this test passes
-        t1.start()
-        t1.join()
-
-    def test_query_ref_1(self):
+    async def test_query_ref_1(self):
         inter = self.get_interface()
-        testdata.create_modules({
-            "qr2": [
-                "import prom",
-                "",
-                "class Foo(prom.Orm):",
-                "    table_name = 'qr2_foo'",
-                "    foo=prom.Field(int, True)",
-                "    bar=prom.Field(str, True)",
-                ""
-                "class Bar(prom.Orm):",
-                "    table_name = 'qr2_bar'",
-                "    foo=prom.Field(int, True)",
-                "    bar=prom.Field(str, True)",
-                "    che=prom.Field(Foo, True)",
-                ""
-            ]
-        })
-        from qr2 import Foo as t1, Bar as t2
+        modpath = self.create_module([
+            "import prom",
+            "",
+            "class t1(prom.Orm):",
+            "    table_name = 'qr2_t1'",
+            "    foo=prom.Field(int, True)",
+            "    bar=prom.Field(str, True)",
+            ""
+            "class t2(prom.Orm):",
+            "    table_name = 'qr2_t2'",
+            "    foo=prom.Field(int, True)",
+            "    bar=prom.Field(str, True)",
+            "    che=prom.Field(t1, True)",
+            ""
+        ])
+
+
+        t1 = modpath.module().t1
         t1.interface = inter
+
+        t2 = modpath.module().t2
         t2.interface = inter
 
-        ti1 = t1.create(foo=11, bar='11')
-        ti12 = t1.create(foo=12, bar='12')
+        ti1 = await self.insert_fields(t1, foo=11, bar='11')
+        ti12 = await self.insert_fields(t1, foo=12, bar='12')
 
-        ti2 = t2.create(foo=21, bar='21', che=ti1.pk)
-        ti22 = t2.create(foo=22, bar='22', che=ti12.pk)
+        ti2 = await self.insert_fields(t2, foo=21, bar='21', che=ti1)
+        ti22 = await self.insert_fields(t2, foo=22, bar='22', che=ti12)
 
         orm_classpath = "{}.{}".format(t2.__module__, t2.__name__)
 
-        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti12.pk).get())
+        q = t1.query.ref(orm_classpath).select_foo().eq_pk(ti12)
+        l = [r async for r in q]
         self.assertEqual(22, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).get())
+        q = t1.query.ref(orm_classpath).select_foo().eq_pk(ti1)
+        l = [r async for r in q]
         self.assertEqual(21, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).get())
+        q = t1.query.ref(orm_classpath).select_foo().eq_pk(ti1)
+        l = [r async for r in q]
         self.assertEqual(21, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath).select_foo().is_pk(ti1.pk).get())
+        q = t1.query.ref(orm_classpath).select_foo().eq_pk(ti1)
+        l = [r async for r in q]
         self.assertEqual(21, l[0])
         self.assertEqual(1, len(l))
 
-        l = list(ti1.query.ref(orm_classpath).select_foo().get())
+        q = t1.query.ref(orm_classpath).select_foo()
+        l = [r async for r in q]
         self.assertEqual(2, len(l))
 
-    def test_query_ref_2(self):
+    async def test_query_ref_2(self):
         inter = self.get_interface()
-        testdata.create_modules({
-            "qre": "\n".join([
-                "import prom",
-                "",
-                "class T1(prom.Orm):",
-                "    table_name = 'qre_t1'",
-                ""
-                "class T2(prom.Orm):",
-                "    table_name = 'qre_t2'",
-                "    t1_id=prom.Field(T1, True)",
-                ""
-                "class T3(prom.Orm):",
-                "    table_name = 'qre_t3'",
-                ""
-            ])
-        })
-        from qre import T1, T2, T3
+        modpath = self.create_module([
+            "import prom",
+            "",
+            "class T1(prom.Orm):",
+            "    table_name = 'qre_t1'",
+            ""
+            "class T2(prom.Orm):",
+            "    table_name = 'qre_t2'",
+            "    t1_id=prom.Field(T1, True)",
+            ""
+            "class T3(prom.Orm):",
+            "    table_name = 'qre_t3'",
+            ""
+        ])
+
+        T1 = modpath.module().T1
         T1.interface = inter
+
+        T2 = modpath.module().T2
         T2.interface = inter
+
+        T3 = modpath.module().T3
         T3.interface = inter
 
-        t1a = T1.create()
-        t1b = T1.create()
-        t2 = T2.create(t1_id=t1a.pk)
+        t1a = await self.insert_fields(T1)
+        t1b = await self.insert_fields(T1)
+        t2 = await self.insert_fields(T2, t1_id=t1a)
 
         classpath = "{}.{}".format(T2.__module__, T2.__name__)
 
-        r = T1.query.ref(classpath).is_pk(t1a.pk).count()
+        r = await T1.query.ref(classpath).eq_pk(t1a).count()
         self.assertEqual(1, r)
 
-        r = T1.query.ref(classpath).is_pk(t1b.pk).count()
+        r = await T1.query.ref(classpath).eq_pk(t1b).count()
         self.assertEqual(0, r)
 
-    def test_null_iterator(self):
-        """you can now pass empty lists to in and nin and not have them throw an
-        error, instead they return an empty iterator"""
-        _q = self.get_query()
-        self.insert(_q, 1)
-
-        q = _q.copy()
-        r = q.in_foo([]).get()
-        self.assertFalse(r)
-        count = 0
-        for x in r:
-            count += 0
-        self.assertEqual(0, count)
-        self.assertEqual(0, len(r))
-
-    def test_field_datetime(self):
+    async def test_field_datetime(self):
         _q = self.get_query()
 
         q = _q.copy()
-        q.is__created(day=int(datetime.datetime.utcnow().strftime('%d')))
-        r = q.get()
+        q.eq__created(day=int(datetime.datetime.utcnow().strftime('%d')))
+        r = [r async for r in q]
         self.assertFalse(r)
 
-        pk = self.insert(q, 1)[0]
+        pk = await self.insert(q, 1)
 
         # get the object out so we can use it to query
-        o = _q.copy().one_pk(pk)
+        o = await _q.copy().eq_pk(pk).one()
         dt = o._created
         day = int(dt.strftime('%d'))
 
-        q = _q.copy()
-        q.in__created(day=day)
-        r = q.get()
+        q = _q.copy().in__created(day=day)
+        r = [r async for r in q]
         self.assertEqual(1, len(r))
 
-        q = _q.copy()
-        q.is__created(day=day)
-        r = q.get()
+        q = _q.copy().eq__created(day=day)
+        r = [r async for r in q]
         self.assertEqual(1, len(r))
 
-        q = _q.copy()
-        q.in__created(day=[day, day + 1])
-        r = q.get()
+        q = _q.copy().in__created(day=[day, day + 1])
+        r = [r async for r in q]
         self.assertEqual(1, len(r))
 
-    def test_pk_fields(self):
-        tclass = self.get_orm_class()
-        q = tclass.query
+    def test_pk_fields_1(self):
+        orm_class = self.get_orm_class()
+        q = orm_class.query
         q.gte_pk(5).lte_pk(1).lt_pk(1).gte_pk(5)
         q.desc_pk()
         q.asc_pk()
@@ -470,168 +621,70 @@ class QueryTest(EnvironTestCase):
         for set_field in q.fields_set:
             self.assertEqual(set_field.name, "_id")
 
-    def test_get_pk(self):
-        tclass = self.get_orm_class()
-        t = tclass()
-        t.foo = 1
-        t.bar = "bar1"
-        t.save()
-
-        t2 = tclass()
-        t2.foo = 2
-        t2.bar = "bar2"
-        t2.save()
-
-        pks = [t.pk, t2.pk]
-
-        res = tclass.query.get_pk(pks)
-        self.assertEqual(2, len(res))
-        self.assertEqual(list(res.pk), pks)
-
-    def test_value_query(self):
-        _q = self.get_query()
-
-        v = _q.copy().select_foo().value()
-        self.assertEqual(None, v)
-
-        count = 2
-        pks = self.insert(_q, count)
-        o = _q.copy().one_pk(pks[0])
-
-        v = _q.copy().select_foo().is_pk(o.pk).value()
-        self.assertEqual(o.foo, v)
-
-        v = _q.copy().select_foo().select_bar().is_pk(o.pk).value()
-        self.assertEqual(o.foo, v[0])
-        self.assertEqual(o.bar, v[1])
-
-    def test_pk(self):
+    async def test_pk_fields_2(self):
         orm_class = self.get_orm_class()
-        v = orm_class.query.select_pk().one()
+        v = await orm_class.query.select_pk().one()
         self.assertEqual(None, v)
-        count = 2
-        self.insert(orm_class, count)
 
-        v = orm_class.query.select_pk().asc_pk().one()
+        count = 2
+        await self.insert(orm_class, count)
+
+        v = await orm_class.query.select_pk().asc_pk().one()
         self.assertEqual(1, v)
 
-    def test_pks(self):
+    async def test_pk_fields_3(self):
         orm_class = self.get_orm_class()
-        q = self.get_query()
-        v = list(orm_class.query.select_pk().get())
-        self.assertEqual(0, len(v))
-        count = 2
-        self.insert(orm_class, count)
 
-        v = list(orm_class.query.select_pk().get())
+        v = [r async for r in orm_class.query.select_pk()]
+        self.assertEqual(0, len(v))
+
+        count = 2
+        await self.insert(orm_class, count)
+
+        v = [r async for r in orm_class.query.select_pk()]
         self.assertEqual(2, len(v))
 
-    def test___iter__(self):
-        count = 5
-        q = self.get_query()
-        self.insert(q, count)
+    async def test_in_field_1(self):
+        q = self.get_query().in_foo([])
+        self.assertEqual([], [r async for r in q])
 
-        rcount = 0
-        for t in q:
-            rcount += 1
-
-        self.assertEqual(count, rcount)
-
-    def test_has(self):
-        q = self.get_query()
-        self.assertFalse(q.has())
-
-        count = 1
-        self.insert(q, count)
-        self.assertTrue(q.has())
-
-    def test_all(self):
-        count = 10
-        q = self.get_query()
-        self.insert(q, count)
-
-        # if no limit is set then it should go through all results
-        rcount = 0
-        for r in q.copy().all():
-            rcount += 1
-        self.assertEqual(count, rcount)
-
-        # if there is a limit then all should only go until that limit
-        rcount = 0
-        for r in q.copy().limit(1).all():
-            rcount += 1
-        self.assertEqual(1, rcount)
-
-        # only go until the end of the results
-        rcount = 0
-        for r in q.copy().limit(6).offset(6).all():
-            rcount += 1
-        self.assertEqual(4, rcount)
-
-    def test_in_field(self):
-        q = self.get_query()
-        q.in_foo([])
-        self.assertEqual([], list(q.get()))
-
-        q = self.get_query()
-        q.in_foo([1, 2])
-        self.assertEqual(q.fields_where[0].value, [1, 2,])
-
-        q = self.get_query()
-        q.in_foo([1])
-        self.assertEqual(q.fields_where[0].value, [1])
-
-        q = self.get_query()
-        q.in_foo([1, 2])
+        q = self.get_query().in_foo([1, 2])
         self.assertEqual(q.fields_where[0].value, [1, 2])
 
-        q = self.get_query()
-        q.in_foo(range(1, 3))
-        self.assertEqual(q.fields_where[0].value, [1, 2,])
+        q = self.get_query().in_foo([1])
+        self.assertEqual(q.fields_where[0].value, [1])
 
-        q = self.get_query()
-        q.in_foo((x for x in [1, 2]))
-        self.assertEqual(q.fields_where[0].value, [1, 2,])
+        q = self.get_query().in_foo([1, 2])
+        self.assertEqual(q.fields_where[0].value, [1, 2])
 
-    def test_set(self):
-        q = self.get_query()
-        field_names = list(q.schema.fields.keys())
-        fields = dict(zip(field_names, [None] * len(field_names)))
-        q.set(**fields)
-        self.assertEqual(fields, {f.name: f.value for f in q.fields_set})
+        q = self.get_query().in_foo(range(1, 3))
+        self.assertEqual(q.fields_where[0].value, [1, 2])
 
-        q = self.get_query()
-        q.set(fields)
-        self.assertEqual(fields, {f.name: f.value for f in q.fields_set})
+        q = self.get_query().in_foo((x for x in [1, 2]))
+        self.assertEqual(q.fields_where[0].value, [1, 2])
 
-    def test_select(self):
+    async def test_in_field_empty(self):
+        """you can now pass empty lists to in and nin and not have them throw an
+        error, instead they return an empty iterator"""
         q = self.get_query()
-        fields_select = list(q.schema.fields.keys())
-        q.select(*fields_select[0:-1])
-        self.assertEqual(fields_select[0:-1], list(q.fields_select.names()))
+        await self.insert(q, 1)
 
-        q = self.get_query()
-        q.select(fields_select)
-        self.assertEqual(fields_select, list(q.fields_select.names()))
-
-        q = self.get_query()
-        q.select(fields_select[0:-1], fields_select[-1])
-        self.assertEqual(fields_select, list(q.fields_select.names()))
-
-        # make sure chaining works
-        q = self.get_query()
-        q.select(fields_select[0]).select(*fields_select[1:])
-        self.assertEqual(fields_select, list(q.fields_select.names()))
+        r = [r async for r in q.in_foo([])]
+        self.assertFalse(r)
+        count = 0
+        for x in r:
+            count += 0
+        self.assertEqual(0, count)
+        self.assertEqual(0, len(r))
 
     def test_child_magic(self):
-
         orm_class = self.get_orm_class()
         class ChildQuery(Query):
             pass
         orm_class.query_class = ChildQuery
 
         q = orm_class.query
-        q.is_foo(1) # if there is no error, it passed
+        q.eq_foo(1) # if there is no error, it passed
 
         with self.assertRaises(AttributeError):
             q.aksdlfjldks_foo(2)
@@ -650,8 +703,7 @@ class QueryTest(EnvironTestCase):
         self.assertFalse(q.interface)
 
     def test___getattr__(self):
-        q = self.get_query()
-        q.is_foo(1)
+        q = self.get_query().eq_foo(1)
         self.assertEqual(1, len(q.fields_where))
         self.assertEqual("eq", q.fields_where[0].operator)
 
@@ -660,8 +712,8 @@ class QueryTest(EnvironTestCase):
 
     def test_append_operation(self):
         tests = [
-            ("is_field", ["foo", 1], ["eq", "foo", 1]),
-            ("not_field", ["foo", 1], ["ne", "foo", 1]),
+            ("eq_field", ["foo", 1], ["eq", "foo", 1]),
+            ("ne_field", ["foo", 1], ["ne", "foo", 1]),
             ("lte_field", ["foo", 1], ["lte", "foo", 1]),
             ("lt_field", ["foo", 1], ["lt", "foo", 1]),
             ("gte_field", ["foo", 1], ["gte", "foo", 1]),
@@ -731,84 +783,11 @@ class QueryTest(EnvironTestCase):
         q.limit(0)
         self.assertEqual((0, 0), q.bounds.get())
 
-    def test_insert_and_update(self):
-        orm_class = self.get_orm_class()
-        q = orm_class.query
-        o = orm_class(foo=1, bar="value 1")
-        fields = o.to_interface()
-        pk = q.copy().set(fields).insert()
-        o = q.copy().one_pk(pk)
-        self.assertLess(0, pk)
-        self.assertTrue(o._created)
-        self.assertTrue(o._updated)
-
-        fields["foo"] = 2
-        fields["bar"] = "value 2"
-        row_count = q.copy().set(fields).is_pk(pk).update()
-        self.assertEqual(1, row_count)
-
-        o2 = q.copy().one_pk(pk)
-
-        self.assertEqual(2, o2.foo)
-        self.assertEqual("value 2", o2.bar)
-        self.assertEqual(o._created, o2._created)
-        self.assertEqual(o._updated, o2._updated)
-
-    def test_update_bubble_up(self):
-        """
-        https://github.com/jaymon/prom/issues/11
-        """
-        orm = self.get_orm()
-        orm.schema.set_field("che", prom.Field(str, False))
-        orm.foo = 1
-        orm.bar = "bar 1"
-        orm.che = None
-        orm.save()
-
-        ret = orm.query.set_foo(2).set_bar("bar 2").not_che(None).update()
-        self.assertEqual(0, ret)
-
-        ret = orm.query.set_foo(2).set_bar("bar 2").is_che(None).update()
-        self.assertEqual(1, ret)
-
-    def test_delete(self):
-        tclass = self.get_orm_class()
-        first_pk = self.insert(tclass, 1)[0]
-
-        with self.assertRaises(ValueError):
-            r = tclass.query.delete()
-
-        r = tclass.query.is_pk(first_pk).delete()
-        self.assertEqual(1, r)
-
-        r = tclass.query.is_pk(first_pk).delete()
-        self.assertEqual(0, r)
-
-    def test_get_1(self):
-        TestGetTorm = self.get_orm_class()
-        _ids = self.insert(TestGetTorm, 2)
-
-        q = TestGetTorm.query
-        for o in q.get():
-            self.assertEqual(type(o), TestGetTorm)
-            self.assertTrue(o._id in _ids)
-            self.assertFalse(o.is_modified())
-
-    def test_one(self):
-        TestGetOneTorm = self.get_orm_class()
-        _ids = self.insert(TestGetOneTorm, 2)
-
-        q = TestGetOneTorm.query
-        o = q.one()
-        self.assertEqual(type(o), TestGetOneTorm)
-        self.assertTrue(o._id in _ids)
-        self.assertFalse(o.is_modified())
-
     def test_copy(self):
         q1 = self.get_query()
         q2 = q1.copy()
 
-        q1.is_foo(1)
+        q1.eq_foo(1)
         self.assertEqual(1, len(q1.fields_where))
         self.assertEqual(0, len(q2.fields_where))
 
@@ -816,104 +795,83 @@ class QueryTest(EnvironTestCase):
         self.assertNotEqual(id(q1.fields_where), id(q2.fields_where))
         self.assertNotEqual(id(q1.bounds), id(q2.bounds))
 
-    def test_values_query(self):
-        _q = self.get_query()
-
-        count = 2
-        pks = self.insert(_q, count)
-
-        vals = _q.copy().select_foo().values()
-        self.assertEqual(count, len(vals))
-        for v in vals:
-            self.assertTrue(isinstance(v, int))
-
-        vals = _q.copy().select_foo().select_bar().values()
-        self.assertEqual(count, len(vals))
-        for v in vals:
-            self.assertTrue(isinstance(v, list))
-
-        vals = _q.copy().select_foo().limit(1).values()
-        self.assertEqual(1, len(vals))
-
-    def test_count(self):
-        orm_class = self.get_orm_class()
-        self.insert(orm_class, 10)
-
-        self.assertEqual(5, orm_class.query.offset(5).count())
-        self.assertEqual(5, orm_class.query.limit(5).count())
-        self.assertEqual(10, orm_class.query.count())
-
     def test_or_clause(self):
         q = self.get_query()
         q.eq_foo(1).OR.gte_foo(10).OR.ne_foo(None).eq_bar(1)
         query_str = re.sub(r"\s+", " ", q.render())
-        self.assertTrue(
-            '( "foo" = 1 OR "foo" >= 10 OR "foo" IS NOT NULL ) AND "bar" = 1' in query_str
-        )
+        clause = " ".join([
+            '(',
+            '"foo" = 1',
+            'OR "foo" >= 10',
+            'OR "foo" IS DISTINCT FROM NULL',
+            ')',
+            'AND "bar" = 1'
+        ])
+        self.assertTrue(clause in query_str, query_str)
 
-    def test_compound_queries(self):
-        o1 = self.get_orm_class(v1=OrmField(int))
-        o2 = self.get_orm_class(v2=OrmField(int))
+    async def test_compound_queries(self):
+        o1 = self.get_orm_class(v1=Field(int))
+        o2 = self.get_orm_class(v2=Field(int))
 
         for v in [1, 2, 3]:
-            o1.create(v1=v)
+            await self.insert_fields(o1, v1=v)
 
         for v in [2, 3, 4]:
-            o2.create(v2=v)
+            await self.insert_fields(o2, v2=v)
 
         inter = o1.interface
         schema = o1.schema
 
-        ret = o1.query.difference(
+        ret = await o1.query.difference(
             o1.query.select_v1(),
             o2.query.select_v2().eq_v2(2)
-        ).all()
-        self.assertEqual(set([1, 3]), set(ret))
+        ).get()
+        self.assertEqual(set([1, 3]), set([r async for r in ret]))
 
-        ret = o1.query.intersect(
+        ret = await o1.query.intersect(
             o1.query.select_v1(),
             o2.query.select_v2()
         ).count()
         self.assertEqual(2, ret)
 
-        ret = o1.query.intersect(
+        ret = await o1.query.intersect(
             o1.query.select_v1(),
             o2.query.select_v2()
-        ).all()
-        self.assertEqual(set([3, 2]), set(ret))
+        ).get()
+        self.assertEqual(set([3, 2]), set([r async for r in ret]))
 
-        ret = o1.query.union(
+        ret = await o1.query.union(
             o1.query.select_v1().eq_v1(1),
             o2.query.select_v2().eq_v2(2)
-        ).all()
-        self.assertEqual(set([1, 2]), set(ret))
+        ).get()
+        self.assertEqual(set([1, 2]), set([r async for r in ret]))
 
-        ret = o1.query.union(
+        ret = await o1.query.union(
             o1.query.select_v1().eq_v1(1),
             o2.query.select_v2().eq_v2(2)
-        ).limit(1).all()
-        self.assertEqual(1, len(ret))
+        ).limit(1).get()
+        self.assertEqual(1, len([r async for r in ret]))
 
-    def test_model_name(self):
+    async def test_model_name(self):
         o1_class = self.get_orm_class(
-            bar=OrmField(str),
+            bar=Field(str),
             model_name="o1qmodel",
         )
         o2_class = self.get_orm_class(
-            o1_id=OrmField(o1_class),
+            o1_id=Field(o1_class),
             model_name="o2qmodel",
         )
 
-        o1 = self.insert_orm(o1_class, bar="1")
-        o2 = self.insert_orm(o2_class, o1_id=o1.pk)
+        o1 = await self.insert_orm(o1_class, bar="1")
+        o2 = await self.insert_orm(o2_class, o1_id=o1.pk)
 
-        o2r = o2_class.query.eq_o1qmodel(o1).one()
+        o2r = await o2_class.query.eq_o1qmodel(o1).one()
         self.assertEqual(o2.pk, o2r.pk)
 
-        o2r = o2_class.query.eq_field(o1.model_name, o1).one()
+        o2r = await o2_class.query.eq_field(o1.model_name, o1).one()
         self.assertEqual(o2.pk, o2r.pk)
 
-        o2r = o2_class.query.eq_field(o1.models_name, o1).one()
+        o2r = await o2_class.query.eq_field(o1.models_name, o1).one()
         self.assertEqual(o2.pk, o2r.pk)
 
     def test_raw_field_1(self):
@@ -926,275 +884,274 @@ class QueryTest(EnvironTestCase):
 
         self.assertTrue("MAX(foo) = 1" in q)
 
+    async def test_sort_order(self):
+        q = self.get_query()
+        await self.insert(q, 10)
+
+        foos = [r async for r in q.copy().select_foo().asc_pk()]
+        foos.sort()
+
+        for x in range(2, 9):
+            q3 = q.copy().select_foo().asc_foo().limit(1).page(x)
+            rows = [r async for r in q3]
+            self.assertEqual(foos[x - 1], rows[0])
+
+            row = await q.copy().select_foo().asc_foo().limit(1).page(x).one()
+            self.assertEqual(foos[x - 1], row)
+
+            q3 = await q.copy().select_foo().asc_foo().limit(1).page(x).one()
+            self.assertEqual(foos[x - 1], row)
+
+            q3 = q.copy().select_foo().in_foo(foos)
+            q3.asc_foo(foos).limit(1).page(x)
+            rows = [r async for r in q3]
+            self.assertEqual(foos[x - 1], rows[0])
+
+            q3 = q.copy().select_foo().in_foo(foos)
+            q3.asc_foo(foos).limit(1).page(x)
+            row = await q3.one()
+            self.assertEqual(foos[x - 1], row)
+
+        for x in range(1, 9):
+            q3 = q.copy().select_foo().asc_foo().limit(x).offset(x)
+            rows = [r async for r in q3]
+            self.assertEqual(foos[x], rows[0])
+
+            q3 = q.copy()
+            row = await q.copy().select_foo().asc_foo().limit(x).offset(x).one()
+            self.assertEqual(foos[x], row)
+
+            row = await q.copy().select_foo().asc_foo().limit(x).offset(x).one()
+            self.assertEqual(foos[x], row)
+
+            q3 = q.copy().select_foo().in_foo(foos)
+            q3.asc_foo(foos).limit(1).offset(x)
+            rows = [r async for r in q3]
+            self.assertEqual(foos[x], rows[0])
+
+            q3 = q.copy().select_foo().in_foo(foos)
+            q3.asc_foo(foos).limit(1).offset(x)
+            row = await q3.one()
+            self.assertEqual(foos[x], row)
+
+    async def test_sort_list(self):
+        q = self.get_query()
+        await self.insert(q, 10)
+
+        q2 = q.copy()
+        foos = [r async for r in q.copy().select_foo()]
+        random.shuffle(foos)
+
+        rows = await q.copy().select_foo().in_foo(foos).asc_foo(foos).tolist()
+        for i, r in enumerate(rows):
+            self.assertEqual(foos[i], r)
+
+        rfoos = list(reversed(foos))
+        rows = await q.copy().select_foo().in_foo(foos).desc_foo(foos).tolist()
+        for i, r in enumerate(rows):
+            self.assertEqual(rfoos[i], r)
+
+        q3 = q.copy()
+        rows = await q3.in_foo(foos).asc_foo(foos).limit(2).offset(2).tolist()
+        for i, r in enumerate(rows, 2):
+            self.assertEqual(foos[i], r.foo)
+
+        # now test a string value
+        qb = q.copy()
+        bars = await q.copy().select_bar().tolist()
+        random.shuffle(bars)
+
+        qb = q.copy()
+        rows = await q.copy().in_bar(bars).asc_bar(bars).tolist()
+        for i, r in enumerate(rows):
+            self.assertEqual(bars[i], r.bar)
+
+        # make sure limits and offsets work
+        qb = q.copy()
+        rows = await q.copy().in_bar(bars).asc_bar(bars).limit(5).tolist()
+        for i, r in enumerate(rows):
+            self.assertEqual(bars[i], r.bar)
+
+        qb = q.copy()
+        rows = await qb.in_bar(bars).asc_bar(bars).limit(2).offset(2).tolist()
+        for i, r in enumerate(rows, 2):
+            self.assertEqual(bars[i], r.bar)
+
+        # make sure you can select on one row and sort on another
+        vs = await q.copy().select_foo().select_bar().tolist()
+        random.shuffle(vs)
+
+        rows = await q.copy().select_foo().asc_bar((v[1] for v in vs)).tolist()
+        for i, r in enumerate(rows):
+            self.assertEqual(vs[i][0], r)
+
 
 class IteratorTest(EnvironTestCase):
-    def get_iterator(self, count=5, limit=5, page=0):
+    async def get_iterator(self, count=5, limit=5, page=0):
         q = self.get_query()
-        self.insert(q, count)
-        i = q.limit(limit).page(page).get()
+        await self.insert(q, count)
+        i = await q.limit(limit).page(page).get()
         return i
 
-    def test___repr__(self):
+    async def test___repr__(self):
         """https://github.com/Jaymon/prom/issues/137"""
-        orm_class = self.create_orms()
-
-        it = orm_class.query.get()
+        orm_class = await self.create_orms()
+        it = await orm_class.query.get()
         s = it.__repr__()
         self.assertNotEqual("[]", s)
 
-    def test___init__(self):
-        count = 10
+    async def test___init__(self):
+        index = 4
         orm_class = self.get_orm_class()
-        self.insert(orm_class, count)
+        pks = await self.insert(orm_class, 10)
 
-        q = orm_class.query.gt_pk(5)
+        it = await orm_class.query.gt_pk(pks[index]).get()
+        self.assertLess(0, await it.count())
 
-        it = Iterator(q)
-        self.assertLess(0, len(it))
+        async for o in it:
+            self.assertLess(pks[index], o.pk)
 
-        for o in it:
-            self.assertLess(5, o.pk)
-
-    def test___getitem___slicing(self):
-        count = 10
+    async def test___getitem___slicing(self):
         orm_class = self.get_orm_class()
-        pks = self.insert(orm_class, count)
+        pks = await self.insert(orm_class, 10)
 
-        it = orm_class.query.select_pk().asc_pk().get()
+        it = await orm_class.query.select_pk().asc_pk().get()
 
-        self.assertEqual(pks[-5:6], list(it[-5:6]))
-        self.assertEqual(pks[2:5], list(it[2:5]))
+        self.assertEqual(pks[-5:6], await (await it[-5:6]).tolist())
+        self.assertEqual(pks[2:5], await (await it[2:5]).tolist())
 
-        self.assertEqual(pks[2:], list(it[2:]))
-        self.assertEqual(pks[:2], list(it[:2]))
+        self.assertEqual(pks[2:], await (await it[2:]).tolist())
+        self.assertEqual(pks[:2], await (await it[:2]).tolist())
 
         with self.assertRaises(ValueError):
-            it[1:2:2]
+            await it[1:2:2]
 
-    def test___getitem___positive_index(self):
-        count = 10
+    async def test___getitem___positive_index(self):
         orm_class = self.get_orm_class()
-        orm_class.install()
-        pks = self.insert(orm_class, count)
+        pks = await self.insert(orm_class, 10)
 
-        q = orm_class.query.asc_pk()
-        it = Iterator(q)
+        it = await orm_class.query.asc_pk().get()
 
-        self.assertEqual(pks[0], it[0].pk)
-        self.assertEqual(pks[-1], it[len(pks) - 1].pk)
+        self.assertEqual(pks[0], (await it[0]).pk)
+        self.assertEqual(pks[-1], (await it[len(pks) - 1]).pk)
         with self.assertRaises(IndexError):
-            it[len(pks)]
+            await it[len(pks)]
 
-        q = orm_class.query.offset(4).limit(2).asc_pk()
-        it = Iterator(q)
-        self.assertEqual(pks[4], it[0].pk)
-        self.assertEqual(pks[5], it[1].pk)
+        it = await orm_class.query.offset(4).limit(2).asc_pk().get()
+        self.assertEqual(pks[4], (await it[0]).pk)
+        self.assertEqual(pks[5], (await it[1]).pk)
         with self.assertRaises(IndexError):
-            it[3]
+            await it[3]
 
-    def test___getitem___negative_index(self):
-        count = 10
+    async def test___getitem___negative_index(self):
         orm_class = self.get_orm_class()
-        pks = self.insert(orm_class, count)
+        pks = await self.insert(orm_class, 10)
 
-        q = orm_class.query.asc_pk()
-        it = Iterator(q)
-
-        self.assertEqual(it[-1].pk, pks[-1])
-        self.assertEqual(it[-2].pk, pks[-2])
+        it = await orm_class.query.asc_pk().get()
+        self.assertEqual(pks[-1], (await it[-1]).pk)
+        self.assertEqual(pks[-2], (await it[-2]).pk)
         with self.assertRaises(IndexError):
-            it[-(len(pks) + 5)]
+            await it[-(len(pks) + 5)]
 
-    def test_copy(self):
-        count = 10
-        orm_class = self.get_orm_class()
-        self.insert(orm_class, count)
-
-        q = orm_class.query.asc_pk()
-        it1 = Iterator(q)
-        it2 = it1.copy()
-        it2.reverse()
-        self.assertNotEqual(list(v for v in it1), list(v for v in it2))
-
-    def test_custom(self):
+    async def test_custom(self):
         """make sure setting a custom Iterator class works normally and wrapped
         by an AllIterator()"""
         count = 3
         orm_class = self.get_orm_class()
-        self.insert(orm_class, count)
-
-        self.assertEqual(count, len(list(orm_class.query.get())))
+        await self.insert(orm_class, count)
 
         class CustomIterator(Iterator):
             def ifilter(self, o):
                 return not o.pk == 1
         orm_class.iterator_class = CustomIterator
 
-        self.assertEqual(count - 1, len(list(orm_class.query.get())))
-        self.assertEqual(count - 1, len(list(orm_class.query.all())))
+        it = await orm_class.query.tolist()
+        self.assertEqual(count - 1, len(await orm_class.query.tolist()))
 
-    def test_ifilter(self):
-        count = 3
-        _q = self.get_query()
-        self.insert(_q, count)
+    async def test_ifilter(self):
+        q = self.get_query()
+        await self.insert(q, 3)
 
-        l = _q.copy().get()
-        self.assertEqual(3, len(list(l)))
+        l = await q.copy().tolist()
+        self.assertEqual(3, len(l))
 
-        l = _q.copy().get()
         def ifilter(o): return o.pk == 1
-        l.ifilter = ifilter
-        l2 = _q.copy().get()
-        self.assertEqual(len(list(filter(ifilter, l2))), len(list(l)))
 
-    def test_reverse(self):
-        """Iterator.reverse() reverses the iterator in place"""
-        count = 10
-        orm_class = self.get_orm_class()
-        pks = self.insert(orm_class, count)
-        pks.reverse()
+        l = await q.copy().tolist()
+        l2 = await q.copy().ifilter(ifilter).tolist()
+        self.assertEqual(len(list(filter(ifilter, l))), len(l2))
 
-        q = orm_class.query.asc_pk()
-        it = Iterator(q)
-        it.reverse()
-        for i, o in enumerate(it):
-            self.assertEqual(pks[i], o.pk)
-
-        q = orm_class.query.asc_pk()
-        it = Iterator(q)
-        for i, o in enumerate(reversed(it)):
-            self.assertEqual(pks[i], o.pk)
-
-    def test_all_1(self):
-        count = 15
-        q = self.get_query()
-        pks = self.insert(q, count)
-        self.assertLess(0, len(pks))
-        g = q.all()
-
-        self.assertEqual(1, g[0].pk)
-        self.assertEqual(2, g[1].pk)
-        self.assertEqual(3, g[2].pk)
-        self.assertEqual(6, g[5].pk)
-        self.assertEqual(13, g[12].pk)
-
-        with self.assertRaises(IndexError):
-            g[count + 5]
-
-        for i, x in enumerate(g):
-            if i > 7: break
-        self.assertEqual(9, g[8].pk)
-
-        gcount = 0
-        for x in g: gcount += 1
-        self.assertEqual(count, gcount)
-
-        gcount = 0
-        for x in g: gcount += 1
-        self.assertEqual(count, gcount)
-
-        self.assertEqual(count, len(g))
-
-        g = q.all()
-        self.assertEqual(count, len(g))
-
-    def test_all_limit(self):
-        count = 15
-        q = self.get_query()
-        self.insert(q, count)
-        q.limit(5)
-        g = q.all()
-
-        self.assertEqual(3, g[2].pk)
-        with self.assertRaises(IndexError):
-            g[6]
-
-    def test_values(self):
+    async def test_select_fields(self):
         count = 5
-        _q = self.get_query()
-        self.insert(_q, count)
+        q = self.get_query()
+        await self.insert(q, count)
 
-        g = _q.copy().select_bar().get()
+        g = await q.copy().select_bar().get()
         icount = 0
-        for v in g:
+        async for v in g:
             self.assertTrue(isinstance(v, basestring))
             icount += 1
         self.assertEqual(count, icount)
 
-        g = _q.copy().select_bar().select_foo().get()
+        g = await q.copy().select_bar().select_foo().get()
         icount = 0
-        for v in g:
+        async for v in g:
             icount += 1
             self.assertTrue(isinstance(v[0], basestring))
             self.assertTrue(isinstance(v[1], int))
         self.assertEqual(count, icount)
 
-    def test___iter__(self):
+    async def test___aiter__(self):
         count = 5
-        i = self.get_iterator(count)
+        i = await self.get_iterator(count)
 
         rcount = 0
-        for t in i:
+        async for t in i:
             rcount += 1
         self.assertEqual(count, rcount)
 
-        rcount = 0
-        for t in i:
-            self.assertTrue(isinstance(t, prom.Orm))
-            rcount += 1
-        self.assertEqual(count, rcount)
+        with self.assertRaises(ValueError):
+            async for t in i:
+                pass
 
-    def test___len__(self):
+    async def test_count(self):
         count = 5
-        i = self.get_iterator(count)
-        self.assertEqual(len(i), count)
+        i = await self.get_iterator(count)
+        self.assertEqual(count, await i.count())
 
         orm_class = i.orm_class
 
-        i = orm_class.query.limit(3).get()
-        self.assertEqual(3, len(i))
+        i = await orm_class.query.limit(3).get()
+        self.assertEqual(3, await i.count())
 
-    def test___getattr__(self):
-        count = 5
-        i = self.get_iterator(count)
-        rs = list(i.foo)
-        self.assertEqual(count, len(rs))
-
-        with self.assertRaises(AttributeError):
-            i.kadfjkadfjkhjkgfkjfkjk_bogus_field
-
-    def test_pk(self):
-        count = 5
-        i = self.get_iterator(count)
-        rs = list(i.pk)
-        self.assertEqual(count, len(rs))
-
-    def test_has_more_1(self):
+    async def test_has_more_1(self):
         limit = 3
         count = 5
         q = self.get_query()
-        pks = self.insert(q.orm_class, count)
-        self.assertEqual(count, len(pks))
+        pks = await self.insert(q, count)
 
-        i = q.limit(limit).page(0).get()
+        i = await q.limit(limit).page(0).get()
+        self.assertTrue(await i.has_more())
+        await i.close()
 
-        self.assertTrue(i.has_more())
+        i = await q.limit(limit).page(3).get()
+        self.assertFalse(await i.has_more())
+        await i.close()
 
-        i = q.limit(limit).page(3).get()
-        self.assertFalse(i.has_more())
+        i = await q.limit(limit).page(1).get()
+        self.assertTrue(await i.has_more())
+        await i.close()
 
-        i = q.limit(limit).page(1).get()
-        self.assertTrue(i.has_more())
+        i = await q.limit(0).page(0).get()
+        self.assertFalse(await i.has_more())
+        await i.close()
 
-        i = q.limit(0).page(0).get()
-        self.assertFalse(i.has_more())
-
-    def test_has_more_limit(self):
+    async def test_has_more_limit(self):
         limit = 4
         count = 10
         q = self.get_query()
-        pks = self.insert(q, count)
+        pks = await self.insert(q, count)
 
-        it = q.select_pk().limit(limit).asc_pk().get()
-        self.assertEqual(pks[:limit], list(it))
+        rpks = await q.select_pk().limit(limit).asc_pk().tolist()
+        self.assertEqual(pks[:limit], rpks)
 

@@ -1,64 +1,52 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
-import sys
-import os
-import datetime
-import decimal
-import logging
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 import uuid
-import weakref
 
 from datatypes import (
     LogMixin,
     Stack,
 )
 
-# first party
+from ..compat import *
 from ..query import Query
 from ..exception import (
     InterfaceError,
     UniqueError,
     TableError,
     FieldError,
-    UniqueError,
     CloseError,
 )
 
-from ..compat import *
-from ..utils import make_list
-
-
-logger = logging.getLogger(__name__)
-
 
 class ConnectionABC(LogMixin):
-    """Subclasses should extend Connection and implement the methods in this class"""
-    def _transaction_start(self):
+    """Subclasses should extend Connection and implement the methods in this
+    class
+    """
+    async def _transaction_start(self):
         """Called when the first transaction is started"""
         pass
 
-    def _transaction_starting(self, tx):
+    async def _transaction_starting(self, tx):
         """Called when a nested transaction is started"""
         pass
 
-    def _transaction_ignoring(self, tx):
+    async def _transaction_ignoring(self, tx):
         """Called when nested transaction is ignored instead of started"""
         pass
 
-    def _transaction_stop(self):
+    async def _transaction_stop(self):
         """Called when the last transaction is stopped"""
         pass
 
-    def _transaction_stopping(self, tx):
+    async def _transaction_stopping(self, tx):
         """Called when a nested transaction is stopped"""
         pass
 
-    def _transaction_fail(self):
+    async def _transaction_fail(self):
         """Called when the last transaction is failed"""
         pass
 
-    def _transaction_failing(self, tx):
+    async def _transaction_failing(self, tx):
         """Called when a nested transaction is failed"""
         pass
 
@@ -68,13 +56,13 @@ class Connection(ConnectionABC):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # counting semaphore, greater than 0 if in a transaction, 0 if no current
-        # transaction.
+        # counting-ish semaphore, length will be greater than 0 if in a
+        # transaction, and 0 if there are no current transactions.
         #
-        # This will be incremented everytime transaction_start() is called, and
-        # decremented everytime transaction_stop() is called.
+        # This will push every time transaction_start() is called, and
+        # pop every time transaction_stop() is called.
         #
-        # transaction_fail will set this back to 0 and rollback the transaction
+        # transaction_fail will clear this and rollback the transaction
         #
         # Holds the active transactions
         self.transactions = Stack()
@@ -83,8 +71,23 @@ class Connection(ConnectionABC):
         """How many active transactions there currently are"""
         return len(self.transactions)
 
-    def transaction_names(self):
-        return " > ".join((r["name"] for r in reversed(self.transactions)))
+    def transaction_names(self, tx=None):
+        """Get all the transaction names for logging
+
+        :param tx: dict, sometimes you pop the transaction before you get the
+            names, passing that popped tx will allow it to be placed at the
+            end
+        :returns: str, all the names nested
+        """
+        names = " > ".join((r["name"] for r in reversed(self.transactions)))
+
+        if tx:
+            if names:
+                names += " > "
+
+            names += tx["name"]
+
+        return names
 
     def transaction_name(self, **kwargs):
         """generate a random transaction name for use in start_transaction() and
@@ -99,9 +102,9 @@ class Connection(ConnectionABC):
             name = f"{prefix}_{suffix}"
         return name
 
-    def transaction_create(self, **kwargs):
-        """Create a new transaction dict that will be placed on the .transactions
-        stack
+    def transaction_info(self, **kwargs):
+        """Create a new transaction dict that will be placed on the
+        .transactions stack
 
         :param **kwargs:
             - nest: bool, True if this (and children unless passed in) will run
@@ -150,12 +153,13 @@ class Connection(ConnectionABC):
         """
         return self.transaction_count() > 0
 
-    def transaction_start(self, **kwargs):
+    async def transaction_start(self, **kwargs):
         """start a transaction
 
-        this will increment transaction semaphore and pass it to _transaction_start()
+        this will increment transaction semaphore and pass it to
+        _transaction_start()
         """
-        tx = self.transaction_create(**kwargs)
+        tx = self.transaction_info(**kwargs)
         self.transactions.push(tx)
 
         transaction_count = tx["index"]
@@ -164,7 +168,7 @@ class Connection(ConnectionABC):
                 f"{transaction_count}.",
                 f"Ignoring {self} transaction {self.transaction_names()}",
             ])
-            self._transaction_ignoring(tx)
+            await self._transaction_ignoring(tx)
 
         else:
             self.log_debug([
@@ -172,14 +176,14 @@ class Connection(ConnectionABC):
                 f"Start {self} transaction {self.transaction_names()}",
             ])
             if transaction_count == 1:
-                self._transaction_start()
+                await self._transaction_start()
 
             else:
-                self._transaction_starting(tx)
+                await self._transaction_starting(tx)
 
         return transaction_count
 
-    def transaction_stop(self):
+    async def transaction_stop(self):
         """stop/commit a transaction if ready"""
         transaction_count = self.transaction_count()
         if transaction_count > 0:
@@ -187,18 +191,19 @@ class Connection(ConnectionABC):
             if not tx["ignored"]:
                 self.log_debug([
                     f"{transaction_count}.", 
-                    f"Stopping {self} transaction {self.transaction_names()}",
+                    f"Stopping {self} transaction",
+                    self.transaction_names(tx),
                 ])
 
                 if transaction_count == 1:
-                    self._transaction_stop()
+                    await self._transaction_stop()
 
                 else:
-                    self._transaction_stopping(tx)
+                    await self._transaction_stopping(tx)
 
         return self.transaction_count
 
-    def transaction_fail(self):
+    async def transaction_fail(self):
         """rollback a transaction if currently in one"""
         transaction_count = self.transaction_count()
         if transaction_count > 0:
@@ -206,83 +211,124 @@ class Connection(ConnectionABC):
             if not tx["ignored"]:
                 self.log_debug([
                     f"{transaction_count}.",
-                    f"Failing {self} transaction {self.transaction_names()}",
+                    f"Failing {self} transaction",
+                    self.transaction_names(tx),
                 ])
 
                 if transaction_count == 1:
-                    self._transaction_fail()
+                    await self._transaction_fail()
 
                 else:
-                    self._transaction_failing(tx)
+                    await self._transaction_failing(tx)
 
     def __str__(self):
         return f"0x{id(self):02x}"
 
 
 class InterfaceABC(LogMixin):
-    """This is just a convenience abstract base class so child interfaces can easily
-    see what methods they need to implement. They should extend Interface and then
-    implement the methods in this class"""
-    def _connect(self, config):
+    """This is just a convenience abstract base class so child interfaces can
+    easily see what methods they might need to implement. They should extend
+    Interface and then implement the methods in this class
+    """
+    @classmethod
+    async def configure(cls, config):
+        """This is called by Config whenever it parses a DSN, it is meant to
+        customize any configuration for the specific child interface
+        """
+        return config
+
+    async def _connect(self, config):
+        """See the docblock for Interface.connect to understand how the
+        connection interface is used by Interface to make and manage connections
+        """
         raise NotImplementedError()
 
-    def _configure_connection(self, **kwargs):
-        """This is ran immediately after a successful .connect()"""
+    async def _configure_connection(self, **kwargs):
+        """The wrapper method for this (Interface.configure_connection) is
+        never called directly by Interface. It is up to the child interfaces
+        to decide when a connection is ready and to call this method"""
         pass
 
-    def _free_connection(self, connection):
+    async def _free_connection(self, connection):
+        """The wrapper method for this method is called at the end of the
+        Interface.connection context manager"""
         pass
 
-    def _get_connection(self):
+    async def _get_connection(self):
+        """The wrapper method for this method is called at the beginning of the
+        Interface.connection context manager"""
         raise NotImplementedError()
 
-    def _close(self):
+    async def _close(self):
         raise NotImplementedError()
 
-    def _readonly(self, readonly, **kwargs):
+    async def _readonly(self, readonly, **kwargs):
         raise NotImplementedError()
 
-    def _raw(self, query_str, *query_args, **kwargs):
+    async def _raw(self, query_str, *query_args, **kwargs):
         raise NotImplementedError()
 
-    def _set_table(self, schema, **kwargs):
+    async def _set_table(self, schema, **kwargs):
         raise NotImplementedError()
 
-    def _get_tables(self, table_name, **kwargs):
+    async def _get_tables(self, table_name, **kwargs):
         raise NotImplementedError()
 
-    def _delete_table(self, schema):
+    async def _delete_table(self, schema):
         raise NotImplementedError()
 
-    def _get_fields(self, table_name, **kwargs):
+    async def _get_fields(self, table_name, **kwargs):
         raise NotImplementedError()
 
-    def _get_indexes(self, schema, **kwargs):
+    async def _get_indexes(self, schema, **kwargs):
         raise NotImplementedError()
 
-    def _set_index(self, schema, name, field_names, **kwargs):
+    async def _set_index(self, schema, name, field_names, **kwargs):
         raise NotImplementedError()
 
-    def _insert(self, schema, fields, **kwargs):
+    async def _insert(self, schema, fields, **kwargs):
         raise NotImplementedError()
 
-    def _inserts(self, schema, field_names, field_values, **kwargs):
+    async def _inserts(self, schema, field_names, field_values, **kwargs):
         raise NotImplementedError()
 
-    def _update(self, schema, fields, query, **kwargs):
+    async def _update(self, schema, fields, query, **kwargs):
         raise NotImplementedError()
 
-    def _upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
+    async def _upsert(
+        self,
+        schema,
+        insert_fields,
+        update_fields,
+        conflict_field_names,
+        **kwargs
+    ):
         raise NotImplementedError()
 
-    def _delete(self, schema, query, **kwargs):
+    async def _delete(self, schema, query, **kwargs):
         raise NotImplementedError()
 
-    def _get(self, schema, query, **kwargs):
+    async def _get(self, schema, query, **kwargs):
         raise NotImplementedError()
 
-    def _count(self, schema, query, **kwargs):
+    async def _count(self, schema, query, **kwargs):
         raise NotImplementedError()
+
+    async def _handle_unique_error(self, e, **kwargs):
+        return False
+
+    async def _handle_field_error(self, e, **kwargs):
+        return False
+
+    async def _handle_table_error(self, e, **kwargs):
+        return False
+
+    async def _handle_general_error(self, e, **kwargs):
+        return False
+
+    async def _handle_close_error(self, e, **kwargs):
+        self.close()
+        return True
 
     def render(self, schema, query, **kwargs):
         """Render the query in a way that the interface can interpret it
@@ -292,25 +338,9 @@ class InterfaceABC(LogMixin):
 
         :param query: Query, the Query instance to render
         :param **kwargs: any named arguments
-        :returns: mixed
+        :returns: Any
         """
         raise NotImplementedError()
-
-    def _handle_unique_error(self, e, **kwargs):
-        return False
-
-    def _handle_field_error(self, e, **kwargs):
-        return False
-
-    def _handle_table_error(self, e, **kwargs):
-        return False
-
-    def _handle_general_error(self, e, **kwargs):
-        return False
-
-    def _handle_close_error(self, e, **kwargs):
-        self.close()
-        return True
 
 
 class Interface(InterfaceABC):
@@ -321,40 +351,56 @@ class Interface(InterfaceABC):
     config = None
     """a config.Connection() instance"""
 
-    InterfaceError = InterfaceError
-    UniqueError = UniqueError
-    TableError = TableError
-    FieldError = FieldError
-    UniqueError = UniqueError
-    CloseError = CloseError
-
-    @classmethod
-    def configure(cls, config):
-        host = config.host
-        if host:
-            db = config.database
-            config.database = db.strip("/")
-        return config
-
     def __init__(self, config=None):
         self.config = config
 
-        # enables cleanup of open sockets even if the object isn't correctly garbage collected
-        weakref.finalize(self, self.__del__)
+    async def connect(self, config=None, *args, **kwargs):
+        """connect to the interface
 
-    def __del__(self):
-        """Whenever this gets garbage collected close everything. This is also the
-        method for weakref.finalize"""
-        self.close()
+        The parent Interface (this class) never interacts with a connection
+        directly, it uses the connection interface for all use/manipulation
+        of the connection:
 
-    def connect(self, config=None, *args, **kwargs):
-        """
-        connect to the interface
+            * connect: This handles making the actual connection
+            * configure_connection: This is called immediately after a 
+                connection is ready and can be used to further configure the
+                connection, if needed. This is *NEVER* called by this class, so
+                it is up to the child interface to decide when a connection is
+                ready and to call this method
+            * close: This handles closing the actual connection
+            * get_connection: Whenever a connection is needed this class will
+                use the .connection context manager which calls this method to
+                get an actual connection, this should return a connection
+                instance
+            * free_connection: Whenever this class is done with a connection
+                this method will be called, usually at the end of the
+                .connection context manager call
+            * readonly: Responsible for setting a connection to readonly, this
+                is called in .configure_connection but can be called separately
+                also
+            * is_connected: Returns True if an active connection has been made
+            * reconnect: Close any open connections and then call .connect()
+                again
+            * connection: The connection context manager that calls
+                .get_connection and .free_connection, most interactions with
+                a connection will use this
+            * transaction: wraps the .connection context manager and starts a
+                transaction
 
-        this will set the raw db connection to self.connection
+        The reason why this class uses the connection interface and that no
+        connection anything is fleshed out is because that allows the child
+        interfaces a lot of flexibility in how they handle the connection, they
+        can have a single connection or a pool of connections, etc.
 
-        *args -- anything you want that will help the db connect
-        **kwargs -- anything you want that the backend db connection will need to actually connect
+        The amount of methods that will need to be actually implemented by the
+        child interfaces is up to the child interfaces themselves
+
+        :param config: Config, this doesn't need to be passed in because it can
+            also be passed into the __init__ method, a valid Config object needs
+            to be present before a connection can be made though
+        :param *args: anything you want that will help the db connect
+        :param **kwargs: anything you want that the backend db connection will
+            need to actually connect
         """
         if self.connected:
             return self.connected
@@ -362,78 +408,203 @@ class Interface(InterfaceABC):
         if config:
             self.config = config
 
+        await self.configure(self.config)
+
         try:
-            self._connect(self.config)
+            await self._connect(self.config)
             self.connected = True
 
         except Exception as e:
             self.connected = False
-            self.raise_error(e)
+            await self.raise_error(e)
 
-        self.log_debug(f"Connected {self.config.interface_name}")
-        self.configure_connection()
+        self.log_debug("Connected {}", self.config.interface_name)
         return self.connected
 
-    def reconnect(self):
-        self.close()
-        self.connect()
+    async def reconnect(self):
+        await self.close()
+        await self.connect()
 
-    def configure_connection(self, **kwargs):
-        kwargs.setdefault("prefix", "configure_connection")
-        self.execute(
+    async def configure_connection(self, **kwargs):
+        """Configure a ready connection
+
+        It is up to the child interfaces to decide when to call this method
+
+        :param **kwargs:
+            - connection: Any, the connection to configure
+        """
+        await self.execute(
             self._configure_connection,
             **kwargs
         )
 
-    def get_connection(self):
-        """Any time you need a connection it should be retrieved through .connection,
-        and that method uses this method
+        self.config.readonly = kwargs.get("readonly", self.config.readonly)
+
+        # by default we can read/write, so only bother to run this if we
+        # need to actually make the connection readonly
+        if self.config.readonly:
+            await self.readonly(
+                self.config.readonly,
+                **kwargs
+            )
+
+    async def get_connection(self):
+        """Any time you need a connection it should be retrieved through
+        .connection, and that method uses this method
 
         :returns: Connection instance
         """
         if not self.is_connected():
-            self.connect()
+            await self.connect()
 
-        connection = self._get_connection()
+        connection = await self._get_connection()
 
         if connection.closed:
             # we've gotten into a bad state so let's try reconnecting
-            self.reconnect()
-            connection = self._get_connection()
+            await self.reconnect()
+            connection = await self._get_connection()
 
         connection.interface = self
 
         self.log_debug(
-            f"Getting {self.config.interface_name} connection {connection}"
+            "Getting {} connection {}",
+            self.config.interface_name,
+            connection
         )
         return connection
 
-    def free_connection(self, connection):
+    async def free_connection(self, connection):
         """When .connection is done with a connection it calls this method"""
-        #connection.interface = None
         if self.is_connected():
             self.log_debug(
-                f"Freeing {self.config.interface_name} connection {connection}"
+                "Freeing {} connection {}",
+                self.config.interface_name,
+                connection
             )
-            self._free_connection(connection)
+            await self._free_connection(connection)
 
     def is_connected(self):
+        """Returns True if this Interface has been connected"""
         return self.connected
 
-    def close(self):
+    async def close(self):
         """close an open connection"""
-        if not self.connected: return True
+        if not self.connected:
+            return True
 
-        self._close()
+        await self._close()
         self.connected = False
-        self.log_debug(f"Closed Connection {self.config.interface_name}")
+        self.log_debug("Closed Connection {}", self.config.interface_name)
         return True
 
-    def readonly(self, readonly=True, **kwargs):
-        """Make the connection read only (pass in True) or read/write (pass in False)
+    @asynccontextmanager
+    async def connection(self, connection=None, **kwargs):
+        """Any time you need a connection you should use this context manager,
+        this is the only place that wraps exceptions in InterfaceError, so all
+        connections should go through this method or .transaction if you need
+        to start a transaction
 
-        :param readonly: boolean, True if this connection should be readonly, False
-            if the connection should be read/write
+        :Example:
+            with self.connection(**kwargs) as connection:
+                # do something with connection
+        """
+        free_connection = False
+
+        prefix = kwargs.get("prefix", "")
+        if prefix:
+            prefix += " "
+
+        try:
+            if connection:
+                if connection.closed:
+                    self.log_warning(
+                        "{}Existing connection {} is closed",
+                        prefix,
+                        connection
+                    )
+
+                    connection = None
+
+                else:
+                    self.log_debug(
+                        "{}Using existing connection {}",
+                        prefix,
+                        connection
+                    )
+
+            if connection is None:
+                free_connection = True
+
+                self.log_debug(
+                    "{}Getting connection",
+                    prefix,
+                )
+
+                connection = await self.get_connection()
+
+                self.log_debug(
+                    "{}Got connection {}",
+                    prefix,
+                    connection
+                )
+
+            yield connection
+
+        except Exception as e:
+            await self.raise_error(e)
+
+        finally:
+            if free_connection and connection:
+                await self.free_connection(connection)
+
+                self.log_debug(
+                    "{}Connection {} was freed",
+                    prefix,
+                    connection
+                )
+
+            else:
+                self.log_debug(
+                    "{}Existing connection {} was NOT freed",
+                    prefix,
+                    connection
+                )
+
+    @asynccontextmanager
+    async def transaction(self, connection=None, **kwargs):
+        """A simple context manager useful for when you want to wrap a bunch of
+        db calls in a transaction, this is used internally for any write
+        statements
+
+        NOTE -- psycopg3 now has a transaction context manager:
+            https://www.psycopg.org/psycopg3/docs/api/connections.html#psycopg.Connection.transaction
+
+            It might be worth switching over to it sometime in the future? I'm
+            not sure how that would work with sqlite though
+
+        :Example:
+            with self.transaction() as connection
+                # do a bunch of calls
+            # those db calls will be committed by this line
+        """
+        async with self.connection(connection, **kwargs) as connection:
+            await connection.transaction_start(**kwargs)
+            try:
+                yield connection
+
+            except Exception:
+                await connection.transaction_fail()
+                raise
+
+            else:
+                await connection.transaction_stop()
+
+    async def readonly(self, readonly=True, **kwargs):
+        """Make the connection read only (pass in True) or read/write (pass in
+        False)
+
+        :param readonly: boolean, True if this connection should be readonly,
+            False if the connection should be read/write
         """
         self.log_warning([
             f"Setting interface {self.config.interface_name}",
@@ -441,97 +612,31 @@ class Interface(InterfaceABC):
         ])
         self.config.readonly = readonly
 
-        if self.connected:
-            kwargs.setdefault("prefix", "readonly")
-            self.execute(
-                self._readonly,
-                readonly,
-                **kwargs
-            )
-            #self._readonly(readonly, **kwargs)
+        await self.execute(
+            self._readonly,
+            readonly,
+            **kwargs
+        )
 
-    @contextmanager
-    def connection(self, connection=None, **kwargs):
-        """Any time you need a connection you should use this context manager, this
-        is the only place that wraps exceptions in InterfaceError, so all connections
-        should go through this method or .transaction if you need to start a transaction
-
-        :Example:
-            with self.connection(**kwargs) as connection:
-                # do something with connection
-        """
-        free_connection = False
-        try:
-            if connection:
-                if connection.closed:
-                    self.log_warning(
-                        "Passed in connection is closed and must be refreshed"
-                    )
-                    if connection.transaction_exists():
-                        self.log_warning("Closed connection had open transactions!")
-
-                    connection = None
-
-                else:
-                    self.log_debug(
-                        f"Connection call using existing connection {connection}"
-                    )
-                    yield connection
-
-            if connection is None:
-                free_connection = True
-                connection = self.get_connection()
-                yield connection
-
-        except Exception as e:
-            self.raise_error(e)
-
-        finally:
-            if free_connection and connection:
-                self.free_connection(connection)
-
-            else:
-                self.log_debug(
-                    f"Connection call NOT freeing existing connection {connection}"
-                )
-
-    @contextmanager
-    def transaction(self, connection=None, **kwargs):
-        """A simple context manager useful for when you want to wrap a bunch of
-        db calls in a transaction, this is used internally for any write statements
-
-        :Example:
-            with self.transaction() as connection
-                # do a bunch of calls
-            # those db calls will be committed by this line
-        """
-        with self.connection(connection) as connection:
-            connection.transaction_start(**kwargs)
-            try:
-                yield connection
-
-            except Exception:
-                connection.transaction_fail()
-                raise
-
-            else:
-                connection.transaction_stop()
-
-    def execute_write(self, callback, *args, **kwargs):
+    async def execute_write(self, callback, *args, **kwargs):
         """Any write statements will use this method
 
-        CREATE, DELETE, DROP, INSERT, or UPDATE (collectively "write statements")
+        collectively "write statements":
+            CREATE, DELETE, DROP, INSERT, or UPDATE
         """
         kwargs.setdefault("execute_in_transaction", True)
+        return await self.execute(callback, *args, **kwargs)
 
-        return self.execute(callback, *args, **kwargs)
+    async def execute_read(self, callback, *args, **kwargs):
+        """Any read statements will use this method
 
-    def execute_read(self, callback, *args, **kwargs):
-        """Any write statements will use this method
-
-        SELECT (collectively "read statements")
+        collectively "read statements":
+            SELECT
         """
-        with self.connection(**kwargs) as connection:
+        kwargs["prefix"] = "execute_read"
+        # we need the connection so we can decide if we need to run the query
+        # in a tx or not
+        async with self.connection(**kwargs) as connection:
             kwargs["connection"] = connection
 
             kwargs.setdefault(
@@ -539,27 +644,34 @@ class Interface(InterfaceABC):
                 connection.transaction_exists()
             )
 
-            return self.execute(callback, *args, **kwargs)
+            return await self.execute(callback, *args, **kwargs)
 
-    def execute(self, callback, *args, **kwargs):
+    async def execute(self, callback, *args, **kwargs):
         """Internal method. Execute the callback with args and kwargs, retrying
         the query if an error is raised that it thinks it successfully handled
 
-        This is called by .execute_write, .execute_read, and .query
+        This is called by .execute_write, .execute_read, and .raw
 
         :param callback: callable, this will be run at-most twice
         :param *args: passed directly to callback as *args
         :param **kwargs: passed to callback as **kwargs, can have values added
-        :returns: mixed, whatever the callback returns
+        :returns: Any, whatever the callback returns
         """
-        prefix = kwargs.pop("prefix", callback.__name__)
+        # we want to override the prefix at this point
+        kwargs.pop("prefix", None)
+        prefix = callback.__name__
 
         try:
-            return self._execute(callback, *args, prefix=prefix, **kwargs)
+            return await self._execute(
+                callback,
+                *args,
+                prefix=prefix,
+                **kwargs
+            )
 
         except Exception as e:
-            if self.handle_error(e=e, prefix=prefix, **kwargs):
-                return self._execute(
+            if await self.handle_error(e=e, prefix=prefix, **kwargs):
+                return await self._execute(
                     callback,
                     *args,
                     prefix=f"{prefix}_retry",
@@ -567,102 +679,129 @@ class Interface(InterfaceABC):
                 )
 
             else:
-                self.raise_error(e)
+                await self.raise_error(e)
 
-    def _execute(self, callback, *args, **kwargs):
-        """Internal method. Called by .execute"""
-        in_transaction = kwargs.get("execute_in_transaction", False)
+    async def _execute(self, callback, *args, **kwargs):
+        """Internal method for .execute, this should never be called directly,
+        it's broken out from .execute so .execute can re-run it if an error is
+        encountered. Because the transaction is started in this method then
+        it will be rolledback before .execute starts error handling, which is
+        what we want.
 
-        if in_transaction:
-            with self.transaction(**kwargs) as connection:
-                kwargs["connection"] = connection
-                return callback(*args, **kwargs)
+        :param callback: callable, this will be run at-most twice
+        :param *args: passed directly to callback as *args
+        :param **kwargs: passed to callback as **kwargs, can have values added
+            - execute_only: bool, don't wrap the callback call in a transaction
+                or connection context manager
+            - execute_in_transaction: bool, True if callback should be wrapped
+                in a tx, only applies if execute_only=False
+        :returns: Any, whatever the callback returns
+        """
+        execute_only = kwargs.get("execute_only", False)
+
+        if execute_only:
+            return await callback(*args, **kwargs)
 
         else:
-            with self.connection(**kwargs) as connection:
-                kwargs["connection"] = connection
-                return callback(*args, **kwargs)
+            in_transaction = kwargs.get("execute_in_transaction", False)
 
-    def has_table(self, table_name, **kwargs):
-        """
-        check to see if a table is in the db
+            if in_transaction:
+                async with self.transaction(**kwargs) as connection:
+                    kwargs["connection"] = connection
+                    return await callback(*args, **kwargs)
 
-        table_name -- string -- the table to check
-        return -- boolean -- True if the table exists, false otherwise
+            else:
+                async with self.connection(**kwargs) as connection:
+                    kwargs["connection"] = connection
+                    return await callback(*args, **kwargs)
+
+    async def has_table(self, table_name, **kwargs):
+        """Check to see if a table is in the db
+
+        :param table_name: str, the table to check
+        :returns: bool, True if the table exists, false otherwise
         """
-        kwargs.setdefault("prefix", "has_table")
-        tables = self.execute_read(
-            self.get_tables,
+        tables = await self.execute_read(
+            self._get_tables,
             table_name,
             **kwargs
         )
         return len(tables) > 0
 
-    def get_tables(self, table_name="", **kwargs):
-        """
-        get all the tables of the currently connected db
+    async def get_tables(self, table_name="", **kwargs):
+        """Get all the tables of the currently connected db
 
-        table_name -- string -- if you would like to filter the tables list to only include matches with this name
-        return -- list -- a list of table names
+        :param table_name: str, if you would like to filter the tables list to
+            only include matches with this name
+        :returns: list, a list of table names
         """
-        kwargs.setdefault("prefix", "get_tables")
-        return self.execute_read(
+        return await self.execute_read(
             self._get_tables,
             str(table_name),
             **kwargs
         )
 
-    def set_table(self, schema, **kwargs):
+    async def set_table(self, schema, **kwargs):
         """
         add the table to the db
 
-        :param schema: Schema instance, contains all the information about the table
+        :param schema: Schema instance, contains all the information about the
+            table
         """
-        kwargs.setdefault("prefix", "set_table")
-        with self.transaction(**kwargs) as connection:
-            kwargs['connection'] = connection
+        kwargs["prefix"] = "set_table"
+        async with self.transaction(**kwargs) as connection:
+            kwargs["connection"] = connection
 
-            self._set_table(schema=schema, **kwargs)
+            await self.execute_write(
+                self._set_table,
+                schema=schema,
+                #connection=connection,
+                #execute_only=True,
+                **kwargs
+            )
 
             for index_name, index in schema.indexes.items():
-                self._set_index(
+                await self.execute_write(
+                    self._set_index,
                     schema=schema,
                     name=index.name,
                     field_names=index.field_names,
-                    connection=connection,
+                    #connection=connection,
+                    #execute_only=True
                     **index.options,
                 )
 
-    def unsafe_delete_table(self, schema, **kwargs):
-        """wrapper around delete_table that matches the *_tables variant and denotes
-        that this is a serious operation
+    async def unsafe_delete_table(self, schema, **kwargs):
+        """wrapper around delete_table that matches the *_tables variant and
+        denotes that this is a serious operation
 
         remove a table matching schema from the db
 
         :param schema: Schema instance, the table to delete
         """
-        kwargs.setdefault("prefix", "unsafe_delete_table")
-        self.execute_write(
+        await self.execute_write(
             self._delete_table,
             schema=schema,
             **kwargs
         )
         return True
 
-    def unsafe_delete_tables(self, **kwargs):
+    async def unsafe_delete_tables(self, **kwargs):
         """Removes all the tables from the db
 
         https://github.com/Jaymon/prom/issues/75
         """
-        kwargs.setdefault("prefix", "unsafe_delete_tables")
-        with self.transaction(**kwargs) as connection:
+        kwargs["prefix"] = "unsafe_delete_tables"
+        async with self.transaction(**kwargs) as connection:
             kwargs['connection'] = connection
             kwargs.setdefault('nest', False)
-            for table_name in self.get_tables(**kwargs):
-                self._delete_table(table_name, **kwargs)
+            for table_name in await self.get_tables(**kwargs):
+                # we don't wrap this in an .execute_write because there isn't
+                # anything to recover from if it fails
+                await self._delete_table(table_name, **kwargs)
         return True
 
-    def get_indexes(self, schema, **kwargs):
+    async def get_indexes(self, schema, **kwargs):
         """
         get all the indexes
 
@@ -670,24 +809,23 @@ class Interface(InterfaceABC):
 
         return -- dict -- the indexes in {indexname: fields} format
         """
-        kwargs.setdefault("prefix", "get_indexes")
-        return self.execute_read(
+        return await self.execute_read(
             self._get_indexes,
             schema=schema,
             **kwargs
         )
 
-    def set_index(self, schema, name, field_names, **kwargs):
+    async def set_index(self, schema, name, field_names, **kwargs):
         """
         add an index to the table
 
-        schema -- Schema()
-        name -- string -- the name of the index
-        field_names -- array -- the fields the index should be on
-        **index_options -- dict -- any index options that might be useful to create the index
+        :param schema: Schema
+        :param name: str, the name of the index
+        :param field_names: list, the fields the index should be on
+        :param **index_options: any index options that might be useful to
+            create the index
         """
-        kwargs.setdefault("prefix", "set_index")
-        self.execute_write(
+        await self.execute_write(
             self._set_index,
             schema=schema,
             name=name,
@@ -696,7 +834,7 @@ class Interface(InterfaceABC):
         )
         return True
 
-    def insert(self, schema, fields, **kwargs):
+    async def insert(self, schema, fields, **kwargs):
         """Persist fields into the db
 
         :param schema: Schema instance, the table the query will run against
@@ -704,29 +842,27 @@ class Interface(InterfaceABC):
         :param **kwargs: passed through
         :returns: mixed, will return the primary key values
         """
-        kwargs.setdefault("prefix", "insert")
-        return self.execute_write(
+        return await self.execute_write(
             self._insert,
             schema=schema,
             fields=fields,
             **kwargs
         )
 
-    def inserts(self, schema, field_names, field_rows, **kwargs):
+    async def inserts(self, schema, field_names, field_rows, **kwargs):
         """Persist the field names found in all the field rows
 
         :param schema: Schema
         :param field_names: list, the field names that will be checked for each
-            row in field_rows and used to turn each dict in field_rows to a tuple
-        :param field_rows: Sequence, if an iterator of dict instances with keys found
-            in field_names, if a key is missing it will have None set as the value,
-            if it's an iterator of values then the tuple value ordering should match
-            with field_names
+            row in field_rows and used to turn each dict in field_rows to a
+            tuple
+        :param field_rows: Sequence, if an iterator of dict instances with keys
+            found in field_names, if a key is missing it will have None set as
+            the value, if it's an iterator of values then the tuple value
+            ordering should match with field_names
         :param **kwargs: passed through
         :returns: bool, True if the query executed successfully
         """
-        kwargs.setdefault("prefix", "inserts")
-
         def field_values(field_names, field_rows):
             for fields in field_rows:
                 if isinstance(fields, Mapping):
@@ -738,7 +874,7 @@ class Interface(InterfaceABC):
                 else:
                     yield fields
 
-        self.execute_write(
+        await self.execute_write(
             self._inserts,
             schema=schema,
             field_names=field_names,
@@ -747,7 +883,7 @@ class Interface(InterfaceABC):
         )
         return True
 
-    def update(self, schema, fields, query, **kwargs):
+    async def update(self, schema, fields, query, **kwargs):
         """Persist the query.fields into the db that match query.fields_where
 
         :param schema: Schema instance, the table the query will run against
@@ -756,8 +892,7 @@ class Interface(InterfaceABC):
         :param **kwargs: passed through
         :returns: int, how many rows where updated
         """
-        kwargs.setdefault("prefix", "update")
-        return self.execute_write(
+        return await self.execute_write(
             self._update,
             schema=schema,
             fields=fields,
@@ -765,7 +900,14 @@ class Interface(InterfaceABC):
             **kwargs,
         )
 
-    def upsert(self, schema, insert_fields, update_fields, conflict_field_names, **kwargs):
+    async def upsert(
+        self,
+        schema,
+        insert_fields,
+        update_fields,
+        conflict_field_names,
+        **kwargs
+    ):
         """Perform an upsert (insert or update) on the table
 
         :param schema: Schema instance, the table the query will run against
@@ -775,10 +917,9 @@ class Interface(InterfaceABC):
         :param conflict_field_names: list, the field names that will decide if
             an insert or update is performed
         :param **kwargs: anything else
-        :returns: mixed, the primary key
+        :returns: str|int|None, the primary key
         """
-        kwargs.setdefault("prefix", "upsert")
-        return self.execute_write(
+        return await self.execute_write(
             self._upsert,
             schema=schema,
             insert_fields=insert_fields,
@@ -787,67 +928,78 @@ class Interface(InterfaceABC):
             **kwargs,
         )
 
-    def delete(self, schema, query, **kwargs):
+    async def delete(self, schema, query, **kwargs):
         """delete matching rows according to query filter criteria
 
         :param schema: Schema instance, the table the query will run against
-        :param query: Query instance, the filter criteria, this will fail if empty
+        :param query: Query instance, the filter criteria, this will fail if
+            empty
         :returns: int, how many rows were deleted ... I think
         """
         if not query or not query.fields_where:
-            raise ValueError('aborting delete because there is no where clause')
+            raise ValueError("aborting delete because there is no where clause")
 
-        kwargs.setdefault("prefix", "delete")
-        return self.execute_write(
+        return await self.unsafe_delete(schema, query, **kwargs)
+
+    async def unsafe_delete(self, schema, query, **kwargs):
+        """delete matching rows
+
+        WARNING -- this can clear the whole table, you should mainly use
+            .delete and always include filtering criteria in the query
+
+        :param schema: Schema instance, the table the query will run against
+        :param query: Query instance, the filter criteria, this will fail if
+            empty
+        :returns: int, how many rows were deleted ... I think
+        """
+        return await self.execute_write(
             self._delete,
             schema=schema,
             query=query,
             **kwargs
         )
 
-    def raw(self, query_str, *query_args, **kwargs):
+    async def raw(self, query_str, *query_args, **kwargs):
         """
         run a raw query on the db
 
-        query_str -- string -- the query to run
-        *query_args -- if the query_str is a formatting string, pass the values in this
-        **kwargs -- any query options can be passed in by using key=val syntax
+        :param query_str: str, the query to run
+        :param *query_args: if the query_str is a formatting string, pass the
+            values in this
+        :param **kwargs: any query options can be passed in by using key=val
+            syntax
         """
-        kwargs.setdefault("prefix", "raw")
-        return self.execute(
+        return await self.execute(
             self._raw,
             query_str,
             *query_args,
             **kwargs
         )
 
-    def get_fields(self, table_name, **kwargs):
-        kwargs.setdefault("prefix", "get_fields")
-        return self.execute_read(
+    async def get_fields(self, table_name, **kwargs):
+        return await self.execute_read(
             self._get_fields,
             str(table_name),
             **kwargs
         )
 
-    def get_one(self, schema, query=None, **kwargs):
+    async def one(self, schema, query=None, **kwargs):
         """get one row from the db matching filters set in query
 
         :param schema: Schema instance, the table the query will run against
         :param query: Query instance, the filter criteria
         :return: dict, the matching row
         """
-        kwargs.setdefault("prefix", "get_one")
-        return self.get(schema, query, fetchone=True, **kwargs) or {}
+        return await self.get(schema, query, fetchone=True, **kwargs) or {}
 
-    def get(self, schema, query=None, **kwargs):
+    async def get(self, schema, query=None, **kwargs):
         """get matching rows from the db matching filters set in query
 
         :param schema: Schema instance, the table the query will run against
         :param query: Query instance, the filter criteria
         :returns: list, a list of matching dicts
         """
-        kwargs.setdefault("prefix", "get")
-        ret = self.execute_read(
+        ret = await self.execute_read(
             self._get,
             schema=schema,
             query=query or Query(),
@@ -855,15 +1007,14 @@ class Interface(InterfaceABC):
         )
         return ret or []
 
-    def count(self, schema, query=None, **kwargs):
+    async def count(self, schema, query=None, **kwargs):
         """count matching rows according to query filter criteria
 
         :param schema: Schema instance, the table the query will run against
         :param query: Query instance, the filter criteria
         :returns: list, a list of matching dicts
         """
-        kwargs.setdefault("prefix", "count")
-        ret = self.execute_read(
+        ret = await self.execute_read(
             self._count,
             schema=schema,
             query=query or Query(),
@@ -871,7 +1022,7 @@ class Interface(InterfaceABC):
         )
         return int(ret) if ret else 0
 
-    def handle_error(self, e, **kwargs):
+    async def handle_error(self, e, **kwargs):
         """Try and handle the error, return False if the error can't be handled
 
         :param e: Exception, the caught exception
@@ -888,27 +1039,28 @@ class Interface(InterfaceABC):
 
         if isinstance(e, CloseError):
             self.log_debug("Handling a close error")
-            ret = self._handle_close_error(e=e, **kwargs)
+            ret = await self._handle_close_error(e=e, **kwargs)
 
         else:
-            with self.transaction(**kwargs) as connection:
+            kwargs["prefix"] = f"{prefix}_handle_error"
+            async with self.transaction(**kwargs) as connection:
                 kwargs["connection"] = connection
 
                 if isinstance(e, UniqueError):
                     self.log_debug("Handling a unique error")
-                    ret = self._handle_unique_error(e=e, **kwargs)
+                    ret = await self._handle_unique_error(e=e, **kwargs)
 
                 elif isinstance(e, FieldError):
                     self.log_debug("Handling a field error")
-                    ret = self._handle_field_error(e=e, **kwargs)
+                    ret = await self._handle_field_error(e=e, **kwargs)
 
                 elif isinstance(e, TableError):
                     self.log_debug("Handling a table error")
-                    ret = self._handle_table_error(e=e, **kwargs)
+                    ret = await self._handle_table_error(e=e, **kwargs)
 
                 else:
                     self.log_debug("Handling a general error")
-                    ret = self._handle_general_error(e=e, **kwargs)
+                    ret = await self._handle_general_error(e=e, **kwargs)
 
         if ret:
             self.log_info(["Successfully handled", prefix, "error"])
@@ -921,8 +1073,8 @@ class Interface(InterfaceABC):
     def raise_error(self, e, **kwargs):
         """raises e
 
-        :param e: Exception, if a built-in exception then it's raised, if any other
-            error then it will be wrapped in an InterfaceError
+        :param e: Exception, if a built-in exception then it's raised, if any
+            other error then it will be wrapped in an InterfaceError
         """
         e2 = self.create_error(e, **kwargs)
         if e2 is not e:
@@ -931,8 +1083,8 @@ class Interface(InterfaceABC):
             raise e
 
     def create_error(self, e, **kwargs):
-        """create the error that you want to raise, this gives you an opportunity
-        to customize the error
+        """create the error that you want to raise, this gives you an
+        opportunity to customize the error
 
         allow python's built in errors to filter up through
         https://docs.python.org/2/library/exceptions.html
@@ -948,7 +1100,8 @@ class Interface(InterfaceABC):
         if not isinstance(e, error_class):
             if not hasattr(builtins, e.__class__.__name__):
                 if "error_module" in kwargs:
-                    if kwargs["error_module"].__name__ in e.__class__.__module__:
+                    errmod_name = kwargs["error_module"].__name__
+                    if errmod_name in e.__class__.__module__:
                         e = error_class(e)
 
                 else:

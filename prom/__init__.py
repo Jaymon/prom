@@ -1,7 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
-import os
-import logging
 
 from .config import (
     DsnConnection,
@@ -24,28 +21,27 @@ from .exception import (
     UniqueError,
     TableError,
     FieldError,
-    UniqueError,
     CloseError,
 )
 
 from . import utils
 
 
-__version__ = '4.7.0'
+__version__ = '5.0.0'
 
 
-def transaction(connection_name="", **kwargs):
+async def transaction(connection_name="", **kwargs):
     """Create a transaction 
 
-    Sometimes you just need to batch a whole bunch of operation across a whole bunch
-    of different models, this allows you to create a transaction outside of any
-    of the models so you can do that, it will yield a connection you can then pass
-    into the Orm/Query methods
+    Sometimes you just need to batch a whole bunch of operation across a whole
+    bunch of different models, this allows you to create a transaction outside
+    of any of the models so you can do that, it will yield a connection you can
+    then pass into the Orm/Query methods
 
     :Example:
-        with prom.transaction(prefix="batch") as conn:
+        async with prom.transaction(prefix="batch") as conn:
             o = FooOrm(foo=1)
-            o.save(connection=conn)
+            await o.save(connection=conn)
 
     :param connection_name: str, the connection name corresponding to the anchor
         of the DSN, defaults to the default "" connection
@@ -57,5 +53,5 @@ def transaction(connection_name="", **kwargs):
     """
     kwargs.setdefault("nest", False)
     kwargs.setdefault("prefix", f"prom_{connection_name}_tx")
-    return get_interface(connection_name).transaction(**kwargs)
+    return await get_interface(connection_name).transaction(**kwargs)
 

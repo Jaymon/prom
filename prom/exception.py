@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 
 
 class Error(Exception):
@@ -56,22 +55,10 @@ class CloseError(InterfaceError):
 
 
 class PlaceholderError(InterfaceError):
-    """This is raised when there is a raw query mismatch between the placeholders
-    and the passed in arguments, see Interface._raw
+    """This is raised when there is a raw query mismatch between the
+    placeholders and the passed in arguments, see Interface._raw
 
     https://github.com/Jaymon/prom/issues/74
     """
-    def __init__(self, e, query_str, query_args, placeholder, **kwargs):
-        if "message" not in kwargs:
-            count = query_str.count(placeholder)
-            kwargs["message"] = "Query has {} placeholder(s) but {} value(s)".format(
-                count,
-                len(query_args),
-            )
-
-        super().__init__(e, **kwargs)
-
-        self.query_str = query_str
-        self.query_args = query_args
-        self.placeholder = placeholder
+    pass
 
