@@ -18,17 +18,40 @@ from prom.utils import make_dict
 
 
 class InterfaceData(TestData):
+    """Hold all helper methods to create db tables and get tests ready
+
+    These testdata methods are specifically to test prom itself and should
+    never be used outside of prom's tests
+    """
 
     interfaces = set()
+    """Every interface that is created gets added to this set so that it can be
+    closed"""
 
     def get_interfaces(self):
         """Return all currently configured interfaces in a list"""
         return list(self.interfaces)
 
     def get_interface(self, interface=None):
+        """Get an interface, this does not connect the interface
+
+        :param Interface: Interface, if you pass one in that will be returned
+            instead of a new interface created
+        :returns: Interface
+        """
         return interface or self.create_interface()
 
     def create_interface(self):
+        """Create an interface and return it, this does not connect the
+        interface
+
+        NOTE -- this uses a class property `interface_class` that needs to be
+        set in a test setup method like TestCase.setUp or the like, if that
+        class property is set then it will use that class to create the
+        interface, otherwise it just creates the first found interface
+
+        :return: Interface
+        """
         if interface_class := getattr(self, "interface_class", None):
             return self.find_interface(interface_class)
 
@@ -37,6 +60,11 @@ class InterfaceData(TestData):
                 return inter
 
     def create_dsn_interface(self, dsn):
+        """Create an interface with the given DSN
+
+        :param dsn: str, the DSN string
+        :returns: Interface
+        """
         conn = DsnConnection(dsn)
         inter = conn.interface
         self.interfaces.add(inter)
@@ -44,7 +72,19 @@ class InterfaceData(TestData):
 
     def create_environ_connections(self, dsn_env_name="PROM_TEST_DSN"):
         """creates all the connections that are defined in the environment under
-        <dsn_env_name>_N where N can be any integer"""
+        <dsn_env_name>_N where N can be any integer
+
+        NOTE -- since this can create multiple connections if the environment
+        variables are postfixed with _N (eg, *_1, *_2) you can set the
+        environment variable `PROM_TEST_DSN_INDEX` to an index to limit
+        connection creation to only that index, so to limit to just *_1:
+
+            export PROM_TEST_DSN_INDEX=1
+
+        :param dsn_env_name: str, the name of the environment variable that 
+            should be read to create the connections
+        :returns: generator[Connection]
+        """
         found = False
         if dsn_index := os.environ.get("PROM_TEST_DSN_INDEX", 0):
             for conn in find_environ(f"{dsn_env_name}_{dsn_index}"):
@@ -60,24 +100,48 @@ class InterfaceData(TestData):
             raise ValueError("No connection found, set PROM_TEST_DSN")
 
     def create_environ_interfaces(self):
-        """find any interfaces that match dsn_env_name and yield them"""
+        """find any interfaces that match dsn_env_name and yield them
+
+        This is basically .create_environ_connections but wraps the connection
+        instance in an Interface instance
+
+        :returns: generator[Interface]
+        """
         for conn in self.create_environ_connections():
             inter = conn.interface
             self.interfaces.add(inter)
             yield inter
 
     def get_environ_interface_classes(self):
+        """Returns all the Interface classes of the given environment
+
+        :returns: generator[type], when you don't want the Connection instance,
+            you don't want an Interface instance, you just want the Connection
+            class
+        """
         for conn in self.create_environ_connections():
             yield conn.interface_class
 
     def find_interface(self, interface_class):
+        """Find an Interface that matches `interface_class`
+
+        :returns: Interface
+        """
         for inter in self.create_environ_interfaces():
             if isinstance(inter, interface_class):
                 return inter
 
     def get_table_name(self, table_name=None, prefix=""):
-        """return a random table name"""
-        if table_name: return table_name
+        """return a random table name
+
+        :param table_name: str, if passed in then this will be returned
+        :param prefix: str, if passed in then a table name will be randomly
+            generated that starts with this
+        :returns: str, a usable table name
+        """
+        if table_name:
+            return table_name
+
         return "{}{}_table".format(
             prefix,
             "".join(
@@ -86,6 +150,18 @@ class InterfaceData(TestData):
         )
 
     def get_orm_class(self, table_name=None, prefix="orm_class", **properties):
+        """Return an orm class
+
+        :param table_name: str, the table the orm class will wrap
+        :param prefix: str, the class name will start with this
+        :param **properties: these will be set on the orm class, if they are
+            Field instances then those will be set as schema fields, if they
+            are Index instances they will be schema indexes
+            - interface: Interface, the interface the returned class will use
+            - connection_name: str, an interface will be created with this
+                connection name
+        :returns: type, an Orm child class
+        """
         tn = self.get_table_name(table_name, prefix=prefix)
         parent_class = properties.get("parent_class", Orm)
 
@@ -121,6 +197,14 @@ class InterfaceData(TestData):
         return orm_class
 
     def get_orm(self, table_name=None, prefix="orm", **fields):
+        """Returns an Orm instance
+
+        :param table_name: passed through to `.get_orm_class`
+        :param prefix: passed through to `.get_orm_class`
+        :param **fields: these are used to instantiate an instance of the
+            created orm class
+        :returns: Orm
+        """
         orm_class = self.get_orm_class(table_name, prefix=prefix)
         t = orm_class(**fields)
         return t
@@ -128,7 +212,13 @@ class InterfaceData(TestData):
     async def create_orms(self, table_name=None, count=0, **fields):
         """Create count orms at table_name with fields
 
-        :returns: Orm class, the Orm class created with table_name
+        see `.get_orm_class` for the arguments
+
+        :param table_name: passed through to `.get_orm_class`
+        :param prefix: passed through to `.get_orm_class`
+        :param **fields: passed through to `.get_orm_class`
+        :param count: int, how many orms you want created
+        :returns: type, the Orm class, the Orm class created with table_name
         """
         orm_class = self.get_orm_class(table_name, **fields)
         count = count or self.get_int(1, 10)
@@ -136,23 +226,16 @@ class InterfaceData(TestData):
         return orm_class
 
     async def create_orm(self, table_name=None, **fields):
+        """Creat an orm with the given field values
+
+        :param table_name: passed through to `.get_orm`
+        :param prefix: passed through to `.get_orm`
+        :param **fields: passed through to `.get_orm`
+        :returns: Orm, this will be persisted in the db
+        """
         orm_class = self.get_orm(table_name, **fields)
         fs = self.get_fields(orm_class.schema)
         return await orm_class.create(fs)
-
-    def find_orm_class(self, v):
-        if issubclass(v, Orm):
-            orm_class = v
-
-        elif isinstance(v, Query):
-            orm_class = v.orm_class
-
-        else:
-            orm_class = getattr(v, "orm_class", None)
-            if not orm_class:
-                raise ValueError("Could not find Orm class")
-
-        return orm_class
 
     def get_table(self, interface=None, table_name=None, **fields_or_indexes):
         """Return an interface and schema for a table in the db
@@ -170,11 +253,27 @@ class InterfaceData(TestData):
         return interface, schema
 
     async def create_table(self, *args, **kwargs):
+        """Create a table on the db
+
+        :param *args: passed through to `.get_table`
+        :param **kwargs: passed through to `.get_table`
+        :returns: tuple[Interface, Schema]
+        """
         interface, schema = self.get_table(*args, **kwargs)
         await interface.set_table(schema)
         return interface, schema
 
     def get_schema(self, table_name=None, prefix="schema", **fields_or_indexes):
+        """Get a Schema instance
+
+        :param table_name: str, the table name you want the schema to have, if
+            not given it will be automatically created using `prefix`
+        :param prefix`: str, used to create the table name
+        :param **fields_or_indexes: fields will be Field instances with the key
+            being the name. Indexes will be Index instances with key as the
+            index name
+        :returns: Schema
+        """
         if not fields_or_indexes:
             fields_or_indexes.setdefault("foo", Field(int, True))
             fields_or_indexes.setdefault("bar", Field(str, True))
@@ -192,23 +291,6 @@ class InterfaceData(TestData):
             **fields_or_indexes
         )
         return s
-
-    def find_schema(self, v):
-        if isinstance(v, Schema):
-            schema = v
-
-        elif isinstance(v, Query):
-            schema = v.orm_class.schema
-
-        elif issubclass(v, Orm):
-            schema = v.schema
-
-        else:
-            schema = getattr(v, "schema", None)
-            if not schema:
-                raise ValueError("Could not find Schema")
-
-        return schema
 
     def get_schema_all(self, inter=None):
         """return a schema that has a field for all supported standard field
@@ -252,11 +334,26 @@ class InterfaceData(TestData):
         return s
 
     def get_query(self, table_name=None, prefix="query"):
+        """Get a query instance
+
+        :param table_name: str, if passed in the table will be named this
+        :param prefix: str, a random table name will be created using this
+            prefix
+        :returns: Query, this query will belong to an Orm, so Query.orm_class
+            should return the orm class
+        """
         orm_class = self.get_orm_class(table_name, prefix=prefix)
         return orm_class.query
 
     def get_fields(self, schema, **field_kwargs):
-        """return the fields of orm with randomized data"""
+        """return the fields of orm with randomized data
+
+        :param schema: Schema, values for all the fields in this schema will be
+            randomly generated
+        :param **field_kwargs: specific field values you want the returned dict
+            to have
+        :returns: dict[str, Any]
+        """
         fields = {}
         for k, v in schema.fields.items():
             if v.is_pk(): continue
@@ -288,6 +385,8 @@ class InterfaceData(TestData):
 
     def get_insert_fields(self, *args, **kwargs):
         """Gets everything needed to insert fields into a table
+
+        Internal method used by the other .insert* methods
 
         :param *args:
             - interface, schema, count

@@ -1,15 +1,13 @@
 # Prom
 
-An opinionated lightweight orm for PostgreSQL or SQLite.
-
-Prom has been used in both single threaded and multi-threaded environments, including environments using Greenthreads.
+An opinionated asynchronous lightweight orm for PostgreSQL or SQLite.
 
 
 ## 1 Minute Getting Started with SQLite
 
 First, install prom:
 
-    $ pip install prom
+    $ pip install prom[sqlite]
 
 Set an environment variable:
 
@@ -35,7 +33,7 @@ Now go wild and create some `Foo` objects:
 
 ```python
 >>> for x in range(10):
-...     f = Foo.create(bar=x)
+...     f = await Foo.create(bar=x)
 ...
 >>>
 ```
@@ -43,13 +41,13 @@ Now go wild and create some `Foo` objects:
 Now query them:
 
 ```python
->>> f = Foo.query.one()
+>>> f = await Foo.query.one()
 >>> f.bar
 0
 >>> f.pk
 1
 >>>
->>> for f in Foo.query.in_bar([3, 4, 5]):
+>>> async for f in await Foo.query.in_bar([3, 4, 5]):
 ...     f.pk
 ...
 3
@@ -61,9 +59,9 @@ Now query them:
 Update them:
 
 ```python
->>> for f in Foo.query:
+>>> async for f in await Foo.query:
 ...     f.bar += 100
-...     f.save()
+...     await f.save()
 ...
 >>>
 ```
@@ -71,8 +69,8 @@ Update them:
 and get rid of them:
 
 ```python
->>> for f in Foo.query:
-...     f.delete()
+>>> async for f in await Foo.query:
+...     await f.delete()
 ...
 >>>
 ```
@@ -122,17 +120,14 @@ It's easy to have one set of `prom.Orm` children use one connection and another 
 ```python
 import prom
 
-prom.configure("Interface://testuser:testpw@localhost/testdb#connection_1")
-prom.configure("Interface://testuser:testpw@localhost/testdb#connection_2")
-
 class Orm1(prom.Orm):
-    connection_name = "connection_1"
+    connection_name = "conn_1"
   
 class Orm2(prom.Orm):
-    connection_name = "connection_2"
+    connection_name = "conn_2"
 ```
 
-Now, any child class that extends `Orm1` will use `connection_1` and any child class that extends `Orm2` will use `connection_2`.
+Now, any child class that extends `Orm1` will use `conn_1` and any child class that extends `Orm2` will use `conn_2`.
 
 
 ## Creating Models
@@ -147,7 +142,7 @@ Checkout the [README](https://github.com/Jaymon/prom/blob/master/docs/README_QUE
 
 ## Versions
 
-While Prom will most likely work on other versions, Prom is tested to work on 2.7+ and 3.8.
+While Prom will most likely work on other versions, Prom is tested to work on 3.10.
 
 
 ## Installation
@@ -155,39 +150,18 @@ While Prom will most likely work on other versions, Prom is tested to work on 2.
 
 ### Postgres
 
-If you want to use Prom with Postgres, you need psycopg2:
+If you want to use Prom with Postgres:
 
     $ apt-get install libpq-dev python-dev
-    $ pip install psycopg
-
-
-### Green Threads
-
-If you want to use Prom with gevent, you'll need gevent and psycogreen:
-
-    $ pip install gevent
-    $ pip install psycogreen
-
-These are the versions we're using:
-
-    $ pip install "gevent==20.6.2"
-    $ pip install "psycogreen==1.0"
-
-Then you can setup Prom like this:
-
-```python
-from prom.interface.postgres import gevent
-gevent.patch_all()
-```
-
-Now you can use Prom in the same way you always have. If you would like to configure the threads and stuff, you can pass in some configuration options using the dsn, the three parameters are *async*, *pool_maxconn*, *pool_minconn*, and *pool_class*. The only one you'll really care about is *pool_maxconn* which sets how many connections should be created.
+    $ pip install prom[postgres]
 
 
 ### Prom
 
 Prom installs using pip:
 
-    $ pip install prom
+    $ pip install prom[sqlite]
+    $ pip install prom[postgres]
 
 and to install the latest and greatest:
 
@@ -202,5 +176,7 @@ Likewise, if you add a field (and the field is not required) then prom will go a
 
 If you want to install the tables manually, you can create a script or something and use the Orm's `install()` method:
 
-    SomeOrm.install()
+```python
+await SomeOrm.install()
+```
 

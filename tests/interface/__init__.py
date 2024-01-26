@@ -14,107 +14,15 @@ from prom.compat import *
 import prom
 
 from .. import (
-    BaseTestCase,
     InterfaceData,
     IsolatedAsyncioTestCase,
 )
 
 
-
-class _BaseTestConfig(BaseTestCase):
-    """These tests should be for testing config.Connection classes that are
-    specific to a certain interface. Any common config.Connection tests should
-    go into the appropriate config_test class
-    """
-    pass
-#     def setUp(self):
-#         for name, inter in prom.interface.interfaces.items():
-#             inter.close()
-# 
-#         prom.interface.interfaces = {}
-# 
-#     def tearDown(self):
-#         prom.interface.interfaces = {}
-
-
 class _BaseTestInterface(IsolatedAsyncioTestCase):
-
-#     class ClassData(InterfaceData):
-#         interface_class = None
-# 
-#         def create_interface(self):
-#             # interface_class needs to be set on each child class
-#             if self.interface_class is None:
-#                 raise ValueError("interface_class is not defined")
-# 
-#             return self.find_interface(self.interface_class)
-
-#     async def asyncSetUp(self):
-#         # close any global connections
-#         for name, inter in prom.interface.interfaces.items():
-#             await inter.close()
-# 
-#         # we need to delete all the tables
-#         inter = self.get_interface()
-#         try:
-#             await inter.unsafe_delete_tables()
-# 
-#         except inter.InterfaceError as e:
-#             logger.exception(e)
-# 
-#         finally:
-#             await inter.close()
-# 
-#         # close any test class connections
-#         for inter in self.get_interfaces():
-#             await inter.close()
-# 
-#         # discard all the old connections
-#         self.interfaces = set()
-#         prom.interface.interfaces = {}
-# 
-#     async def asyncTearDown(self):
-#         await self.asyncSetUp()
-
-#     def get_interface(self, interface=None):
-#         """We have to override certain testdata methods to make sure interface
-#         handling works as expected for each interface"""
-#         return interface or self.create_interface()
-# 
-#     def create_interface(self):
-#         # interface_class needs to be set on each child class
-#         return self.find_interface(self.interface_class)
-# 
-#     def get_orm_class(self, **kwargs):
-#         if "interface" not in kwargs:
-#             kwargs["interface"] = self.get_interface(
-#                 kwargs.get("interface", None)
-#             )
-#         return self.td.get_orm_class(**kwargs)
-# 
-#     def get_table(self, **kwargs):
-#         if "interface" not in kwargs:
-#             kwargs["interface"] = self.get_interface(
-#                 kwargs.get("interface", None)
-#             )
-#         return self.td.get_table(**kwargs)
-# 
-#     async def create_table(self, *args, **kwargs):
-#         interface, schema = self.get_table(*args, **kwargs)
-#         await interface.set_table(schema)
-#         return interface, schema
-# 
-#     async def insert(self, *args, **kwargs):
-#         pks = []
-#         interface, schema, orm_class, fields = self.get_insert_fields(
-#             *args,
-#             **kwargs
-#         )
-#         for fs in fields:
-#             pks.append(await interface.insert(schema, fs))
-# 
-#         return pks
-
+    """This contains tests that are common to all interfaces, it is extended by
+    Postgres's Interface and SQLite's Interface classes
+    """
     async def test_connection___str__(self):
         i = self.get_interface()
         async with i.connection() as conn:

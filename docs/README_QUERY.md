@@ -6,7 +6,7 @@ You can access the query, or table, instance for each `prom.model.Orm` child you
 print(Orm.query) # prom.query.Query
 ```
 
-Everytime you call this property, a new `prom.query.Query` instance will be created.
+Every time you call this property, a new `prom.query.Query` instance will be created.
 
 
 ## Customizing the queries
@@ -19,9 +19,9 @@ You can also extend the default `prom.query.Query` class and let your `prom.mode
 import prom
 
 class DemoQuery(prom.Query):
-    def get_by_foo(self, *foos):
+    async def get_by_foo(self, *foos):
         """get all demos with matching foos, ordered by last updated first"""
-        return self.in_foo(*foos).desc_updated().get()
+        return await self.in_foo(*foos).desc_updated().get()
 
 class DemoOrm(prom.Orm):
     query_class = DemoQuery
@@ -29,7 +29,7 @@ class DemoOrm(prom.Orm):
     foo = prom.Field(int)
 
 
-DemoOrm.query.get_by_foo(1, 2, 3) # this now works
+await DemoOrm.query.get_by_foo(1, 2, 3) # this now works
 ```
 
 Notice the `query_class` class property on the `DemoOrm` class. Now every instance of `DemoOrm` (or child that derives from it) will use `DemoQuery`.
@@ -37,7 +37,7 @@ Notice the `query_class` class property on the `DemoOrm` class. Now every instan
 
 ### The Iterator Class
 
-the `get` and `all` query methods return a `prom.query.Iterator` instance. This instance has a useful attribute `has_more` that will be true if there are more rows in the db that match the query.
+the `get` query method returns a `prom.query.Iterator` instance. This instance has a useful method `has_more` that will be true if there are more rows in the db that match the query, this can make creating paginated results easier.
 
 Similar to the Query class, you can customize the Iterator class by setting the `iterator_class` class variable:
 
@@ -111,7 +111,7 @@ You can also sort by a list of values:
 ```python
 foos = [3, 5, 2, 1]
 
-rows = query.select_foo().in_foo(foos).asc_foo(foos).values()
+rows = await query.select_foo().in_foo(foos).asc_foo(foos).tolist()
 print rows # [3, 5, 2, 1]
 ```
 
@@ -135,7 +135,7 @@ query.select("foo", "che").is_foo(10).is_bar("value 2").desc_che().limit(5).get(
 You can also write your own queries by hand:
 
 ```python
-query.raw("SELECT * FROM table_name WHERE foo = %s AND bar = %s", [10, "value 2"])
+await query.raw("SELECT * FROM table_name WHERE foo = %s AND bar = %s", [10, "value 2"])
 ```
 
 
@@ -144,30 +144,13 @@ query.raw("SELECT * FROM table_name WHERE foo = %s AND bar = %s", [10, "value 2"
 The `prom.query.Query` has a couple helpful query methods to make grabbing rows easy:
 
   * get -- `get()` -- run the select query. Return an `Iterator` instance.
-  * all -- `all()` -- alias for `get`. Return an `Iterator` instance.
   * one -- `one()` -- run the select query with a LIMIT 1. Return an `Orm` instance.
   * count -- `count()` -- return an integer of how many rows match the query, Return an integer.
-  * value -- `value()` -- similar to `one()` but only returns the selected field(s). Return a `dict`.
-  * values -- `values()` -- return an `Iterator` of the selected fields, not an `prom.model.Orm` instance
-
-    This is really handy for when you want to get all the ids as a list:
-
-    ```python
-    # get all the bar ids we want
-    bar_ids = Bar.query.select_pk().values()
-
-    # now pull out the Foo instances that correspond to the Bar ids
-    foos = Foo.query.is_bar_id(bar_ids).get()
-    ```
-
   * has -- `has()` -- return True if there is at least one row in the db matching query
-  * exists -- `exists()` -- alias for `has`
-  * one_* -- `one_<FIELDNAME>(<VALUES>)` -- run the select query with a `WHERE <FIELDNAME> = <VALUE>`, this will always return an `Orm` instance.
-  * get_* -- `get_<FIELDNAME>([<VALUE1>, <VALUE2>, ...])` -- run the select query with `WHERE <FIELDNAME> IN (...)`, this will always return an `Iterator` instance
   * raw -- `raw(query_str, *query_args, **query_options)` -- run a raw query
 
       ```python
-      Foo.query.raw("SELECT * FROM {} WHERE bar = %s".format(Foo.schema), ["bar value"])
+      await Foo.query.raw("SELECT * FROM {} WHERE bar = %s".format(Foo.schema), ["bar value"])
       ```
 
     **NOTE**, Doing custom queries using `raw` would be the only way to do join queries.
@@ -191,10 +174,10 @@ class Foo(prom.Orm):
     index_dt = prom.Index('dt')
 
 # get all the foos that have the 7th of every month
-r = q.is_dt(day=7).all() # SELECT * FROM foo_table WHERE EXTRACT(DAY FROM dt) = 7
+r = await q.is_dt(day=7).get() # SELECT * FROM foo_table WHERE EXTRACT(DAY FROM dt) = 7
 
 # get all the foos in 2013
-r = q.is_dt(year=2013).all()
+r = await q.is_dt(year=2013).get()
 ```
 
 Hopefully you get the idea from the above code.

@@ -37,31 +37,6 @@ testdata.basic_logging(
 logger = logging.getLogger(__name__)
 
 
-class BaseTestCase(TestCase):
-#     @classmethod
-#     def setUpClass(cls):
-#         """make sure there is a default interface for any class"""
-#         for inter in cls.create_environ_interfaces():
-#             try:
-#                 cls.mock_async(inter.unsafe_delete_tables())
-# 
-#             except inter.InterfaceError as e:
-#                 logger.exception(e)
-# 
-#             finally:
-#                 cls.mock_async(inter.close())
-# 
-#     def tearDown(self):
-#         self.tearDownClass()
-# 
-#     @classmethod
-#     def tearDownClass(cls):
-#         for inter in cls.get_interfaces():
-#             cls.mock_async(inter.close())
-#         cls.interfaces = set()
-    pass
-
-
 class IsolatedAsyncioTestCase(_IsolatedAsyncioTestCase):
     interface_class = None
     """Set this to an Interface class and only that class will be used to create
@@ -76,14 +51,6 @@ class IsolatedAsyncioTestCase(_IsolatedAsyncioTestCase):
 
     def tearDown(self):
         self.data.interface_class = None
-
-#     @classmethod
-#     def setUpClass(cls):
-#         cls.data.interface_class = cls.interface_class
-# 
-#     @classmethod
-#     def tearDownClass(cls):
-#         cls.data.interface_class = None
 
     async def asyncSetUp(self):
         # close any global connections
@@ -111,45 +78,6 @@ class IsolatedAsyncioTestCase(_IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.asyncSetUp()
-
-#     def get_interface(self, interface=None):
-#         """We have to override certain testdata methods to make sure interface
-#         handling works as expected for each interface"""
-#         return interface or self.create_interface()
-# 
-#     def create_interface(self):
-#         # interface_class needs to be set on each child class
-#         return self.find_interface(self.interface_class)
-# 
-#     def get_orm_class(self, **kwargs):
-#         if "interface" not in kwargs:
-#             kwargs["interface"] = self.get_interface(
-#                 kwargs.get("interface", None)
-#             )
-#         return self.td.get_orm_class(**kwargs)
-# 
-#     def get_table(self, **kwargs):
-#         if "interface" not in kwargs:
-#             kwargs["interface"] = self.get_interface(
-#                 kwargs.get("interface", None)
-#             )
-#         return self.td.get_table(**kwargs)
-# 
-#     async def create_table(self, *args, **kwargs):
-#         interface, schema = self.get_table(*args, **kwargs)
-#         await interface.set_table(schema)
-#         return interface, schema
-# 
-#     async def insert(self, *args, **kwargs):
-#         pks = []
-#         interface, schema, orm_class, fields = self.get_insert_fields(
-#             *args,
-#             **kwargs
-#         )
-#         for fs in fields:
-#             pks.append(await interface.insert(schema, fs))
-# 
-#         return pks
 
 
 class EnvironTestCase(IsolatedAsyncioTestCase):
