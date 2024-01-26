@@ -1,35 +1,31 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
-
-from datatypes import Enum
 
 from prom.model import Orm
-from prom.extras.config import Field
+from prom.config import Field
 from prom.extras.model import MagicOrm
-from prom.extras.testdata import ModelData
-from . import BaseTestCase, EnvironTestCase, testdata
+from . import IsolatedAsyncioTestCase, EnvironTestCase
 
 
 class MagicOrmTest(EnvironTestCase):
-    def create_1(self, **kwargs):
+    async def create_1(self, **kwargs):
         o1_class = self.get_orm_class(
             bar = Field(bool),
             che = Field(str),
             model_name="o1",
             parent_class=MagicOrm,
         )
-        return self.insert_orm(o1_class, **kwargs)
+        return await self.insert_orm(o1_class, **kwargs)
 
-    def create_2(self, **kwargs):
+    async def create_2(self, **kwargs):
         o1 = self.create_1()
         o2_class = self.get_orm_class(
             o1_id=Field(type(o1)),
             parent_class=MagicOrm,
         )
-        return self.insert_orm(o2_class, **kwargs)
+        return await self.insert_orm(o2_class, **kwargs)
 
-    def test_is(self):
-        o = self.create_1(bar=True, che="che")
+    async def test_is(self):
+        o = await self.create_1(bar=True, che="che")
 
         self.assertTrue(o.is_bar())
         self.assertTrue(o.is_che("che"))
@@ -38,8 +34,8 @@ class MagicOrmTest(EnvironTestCase):
         o.bar = False
         self.assertFalse(o.is_bar())
 
-    def test_jsonable(self):
-        o = self.create_1(_id=500, bar=False, che="1")
+    async def test_jsonable(self):
+        o = await self.create_1(_id=500, bar=False, che="1")
         d = o.jsonable()
         self.assertTrue(o.pk_name in d)
         self.assertFalse("_id" in d)
@@ -64,93 +60,52 @@ class MagicOrmTest(EnvironTestCase):
             o.foo
 
 
-class FieldTest(EnvironTestCase):
-    def test_enum(self):
-        class FooEnum(Enum):
-            FOO = 1
-            BAR = 2
+class ModelDataTest(IsolatedAsyncioTestCase):
+    @classmethod
+    def setUpClass(cls):
+        # we import this here because it has .get_orm_class and .get_orm
+        # methods that will stomp the normal ones
+        from prom.extras.testdata import ModelData
 
-        class OE(MagicOrm):
-            type = Field(FooEnum)
+    @classmethod
+    def tearDownClass(cls):
+        # we remove ModelData here so it doesn't poison other tests
+        from prom.extras.testdata import ModelData
+        cls.data.delete_class(ModelData)
 
-        o = OE()
-        o.type = "bar"
-        self.assertEqual(FooEnum.BAR, o.type)
+    async def test_references_1(self):
+        testdata = self.InterfaceData
+        ref_class = testdata.get_orm_class()
+        orm_class = testdata.get_orm_class(ref_id=Field(ref_class, True))
 
-        q = o.query.is_type("foo")
-        self.assertEqual(FooEnum.FOO, q.fields_where[0].value)
-        self.assertEqual(1, q.fields_where[0].value)
+        self.assertEqual(0, await ref_class.query.count())
 
-        o.type = 2
-        self.assertEqual(FooEnum.BAR, o.type)
-        self.assertEqual(2, o.type)
+        orm = await self.get_orm(orm_class, ignore_refs=False)
 
-        o.type = FooEnum.BAR
-        self.assertEqual(FooEnum.BAR, o.type)
-        self.assertEqual(2, o.type)
+        self.assertEqual(1, await ref_class.query.count())
 
-    def test_save(self):
-        class FooEnum(Enum):
-            FOO = 1
-
-        OE = self.get_orm_class(type=Field(FooEnum))
-
-        o = OE.create(type="FOO")
-        f = o.schema.fields["type"]
-        self.assertEqual(FooEnum.FOO.value, o.type)
-        self.assertFalse(f.is_serialized())
-        self.assertTrue(issubclass(f.interface_type, int))
-
-
-class ModelDataTest(BaseTestCase):
-    def test_model_name(self):
-        modpath = self.create_module([
-            "from prom import Orm, Field",
-            "",
-            "class Foo(Orm):",
-            "    bar = Field(str)",
-        ])
-
-        m = modpath.module()
-
-        foo = self.get_foo()
-        self.assertIsNotNone(foo)
-        self.assertIsInstance(foo, Orm)
-
-        class OtherData(ModelData):
-            def get_bar(self, *args, **kwargs):
-                return self.get_foo()
-
-        d = OtherData()
-        foo2 = d.get_bar()
-        self.assertTrue(type(foo) is type(foo2))
-
-    def test_references_1(self):
-        ref_class = self.get_orm_class()
-        orm_class = self.get_orm_class(ref_id=Field(ref_class, True))
-
-        self.assertEqual(0, ref_class.query.count())
-
-        orm = testdata.get_orm(orm_class, ignore_refs=False)
-
-        self.assertEqual(1, ref_class.query.count())
-
-    def test_references_2(self):
+    async def test_references_2(self):
         count = 2
-        foo_class = self.get_orm_class(model_name="foo")
-        bar_class = self.get_orm_class(foo_id=Field(foo_class))
+        testdata = self.InterfaceData
+        foo_class = testdata.get_orm_class(model_name="foo")
+        bar_class = testdata.get_orm_class(foo_id=Field(foo_class))
 
-        foo = self.insert_orm(foo_class)
+        foo = await self.insert_orm(foo_class)
 
-        bars = self.get_orms(bar_class, count=count, foo=foo, related_refs=False)
+        bars = await self.get_orms(
+            bar_class,
+            count=count,
+            foo=foo,
+            related_refs=False
+        )
 
         bcount = 0
         for b in bars:
             self.assertEqual(foo.pk, b.foo_id)
             bcount += 1
-        self.assertEqual(2, count)
+        self.assertEqual(2, bcount)
 
-    def test_internal_call(self):
+    async def test_internal_call(self):
         """
         https://github.com/Jaymon/prom/issues/166
         """
@@ -165,17 +120,23 @@ class ModelDataTest(BaseTestCase):
         ])
 
         m = modpath.module()
+        did_run = {}
 
-        class OtherData(ModelData):
-            def get_foo_fields(s, **kwargs):
-                bar = s.get_bar(**kwargs)
+        class OtherData(self.ModelData.__class__):
+            async def get_foo_fields(s, **kwargs):
+                bar = await s.get_bar(**kwargs)
                 self.assertEqual("Bar", bar.__class__.__name__)
                 self.assertNotIsInstance(bar, kwargs["orm_class"])
+                did_run["get_foo_fields"] = True
 
         d = OtherData()
-        foo = d.get_foo()
+        foo = await d.get_foo() # this method runs the asserts
+        self.assertTrue(did_run["get_foo_fields"])
 
-    def test_children_create(self):
+        # cleanup/remove this class
+        self.data.delete_class(OtherData)
+
+    async def test_children_create(self):
         """
         https://github.com/Jaymon/prom/issues/166
         """
@@ -195,35 +156,43 @@ class ModelDataTest(BaseTestCase):
 
         count = 2
 
-        foo = self.create_foo(bar_count=count)
+        foo = await self.create_foo(bar_count=count)
         bar_count = 0
-        for b in foo.bars:
+        async for b in await foo.bars:
             bar_count += 1
             self.assertIsInstance(b, m.Bar)
             self.assertEqual(foo.pk, b.foo_id)
         self.assertEqual(count, bar_count)
 
-        foo = self.create_foo(bars_count=count)
+        foo = await self.create_foo(bars_count=count)
         bar_count = 0
-        for b in foo.bars:
+        async for b in await foo.bars:
             bar_count += 1
             self.assertIsInstance(b, m.Bar)
             self.assertEqual(foo.pk, b.foo_id)
         self.assertEqual(count, bar_count)
 
     def test__gets_count(self):
-        orm_class = self.get_orm_class()
+        testdata = self.InterfaceData
+        orm_class = testdata.get_orm_class()
 
+        modeldata = testdata.ModelData
         self.assertEqual(
             2,
-            self._gets_count(orm_class, **{f"{orm_class.model_name}_count": 2})
+            modeldata._gets_count(
+                orm_class,
+                **{f"{orm_class.model_name}_count": 2}
+            )
         )
         self.assertEqual(
             4,
-            self._gets_count(orm_class, **{f"{orm_class.models_name}_count": 4})
+            modeldata._gets_count(
+                orm_class,
+                **{f"{orm_class.models_name}_count": 4}
+            )
         )
         self.assertEqual(
             5,
-            self._gets_count(orm_class, **{"count": 5})
+            modeldata._gets_count(orm_class, **{"count": 5})
         )
 

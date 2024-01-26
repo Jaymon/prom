@@ -1,35 +1,21 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
-import sys
-import os
-import datetime
-import decimal
-import logging
-from contextlib import contextmanager, asynccontextmanager
+from contextlib import asynccontextmanager
 import uuid
-import weakref
 
 from datatypes import (
     LogMixin,
     Stack,
 )
 
-# first party
+from ..compat import *
 from ..query import Query
 from ..exception import (
     InterfaceError,
     UniqueError,
     TableError,
     FieldError,
-    UniqueError,
     CloseError,
 )
-
-from ..compat import *
-from ..utils import make_list
-
-
-logger = logging.getLogger(__name__)
 
 
 class ConnectionABC(LogMixin):
@@ -364,13 +350,6 @@ class Interface(InterfaceABC):
 
     config = None
     """a config.Connection() instance"""
-
-    InterfaceError = InterfaceError
-    UniqueError = UniqueError
-    TableError = TableError
-    FieldError = FieldError
-    UniqueError = UniqueError
-    CloseError = CloseError
 
     def __init__(self, config=None):
         self.config = config

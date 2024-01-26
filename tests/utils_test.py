@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 
-import testdata
-
-from . import BaseTestCase, TestCase
+from . import TestCase
 from prom.utils import (
     get_objects,
     make_list,
@@ -12,7 +9,7 @@ from prom.utils import (
 
 class GetObjectsTest(TestCase):
     def test_relative_import(self):
-        basedir = testdata.create_modules({
+        basedir = self.create_modules({
             "relimp.foo.bar": [
                 "class Bar(object): pass",
                 "",
@@ -37,28 +34,31 @@ class GetObjectsTest(TestCase):
         })
 
         with self.assertRaises(ImportError):
-            module, klass = get_objects('...too.far', "relimp.foo.bar")
+            module, klass = get_objects("...too.far", "relimp.foo.bar")
 
-        module, klass = get_objects('...baz.Baz', "relimp.foo.bar")
+        module, klass = get_objects("...baz.Baz", "relimp.foo.bar")
         self.assertEqual("relimp.baz", module.__name__)
         self.assertEqual("Baz", klass.__name__)
 
-        module, klass = get_objects('..che.Che', "relimp.foo.bar")
+        module, klass = get_objects("...baz:Baz", "relimp.foo.bar")
+        self.assertEqual("relimp.baz", module.__name__)
+        self.assertEqual("Baz", klass.__name__)
+
+        module, klass = get_objects("..che.Che", "relimp.foo.bar")
         self.assertEqual("relimp.foo.che", module.__name__)
         self.assertEqual("Che", klass.__name__)
 
-        module, klass = get_objects('...foo.Foo', "relimp.foo.bar")
+        module, klass = get_objects("...foo.Foo", "relimp.foo.bar")
         self.assertEqual("relimp.foo", module.__name__)
         self.assertEqual("Foo", klass.__name__)
 
-        module, klass = get_objects('relimp.Relimp', "relimp.foo.bar")
+        module, klass = get_objects("relimp.Relimp", "relimp.foo.bar")
         self.assertEqual("relimp", module.__name__)
         self.assertEqual("Relimp", klass.__name__)
 
 
 class MakeListTest(TestCase):
     def test_list(self):
-
         a = [
             [1, 2, 3],
             4,
@@ -85,6 +85,6 @@ class MakeListTest(TestCase):
         r = make_list("foo")
         self.assertEqual(["foo"], r)
 
-        r = make_list(testdata.get_past_datetime())
+        r = make_list(self.get_past_datetime())
         self.assertEqual(1, len(r))
 

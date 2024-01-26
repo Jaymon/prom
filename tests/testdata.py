@@ -169,6 +169,11 @@ class InterfaceData(TestData):
         schema = self.get_schema(table_name, **fields_or_indexes)
         return interface, schema
 
+    async def create_table(self, *args, **kwargs):
+        interface, schema = self.get_table(*args, **kwargs)
+        await interface.set_table(schema)
+        return interface, schema
+
     def get_schema(self, table_name=None, prefix="schema", **fields_or_indexes):
         if not fields_or_indexes:
             fields_or_indexes.setdefault("foo", Field(int, True))

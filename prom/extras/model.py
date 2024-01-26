@@ -1,13 +1,8 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 
 from datatypes import classproperty
 
 from ..model import Orm
-from ..config import (
-    Field,
-    Index,
-)
 
 
 class MagicOrm(Orm):
@@ -26,15 +21,16 @@ class MagicOrm(Orm):
     def pk_name(cls):
         """return the preferred primary key name for the Orm
 
-        you can access the primary key on an instance using ._id or .pk but usually
-        when we have foreign keys we use modelname_id and then in the jsonable
-        dicts that are passed down we include that modelname_id in the actual instance
-        instead of an _id field (eg, the jsonable on object Foo would have 'foo_id' key)
-        and this makes it easy to get that key name and override it if needed
+        you can access the primary key on an instance using ._id or .pk but
+        usually when we have foreign keys we use modelname_id and then in the
+        jsonable dicts that are passed down we include that modelname_id in the
+        actual instance instead of an _id field (eg, the jsonable on object Foo
+        would have 'foo_id' key) and this makes it easy to get that key name and
+        override it if needed
 
-        :returns: string, the preferred primary key name that is usually the name
-            that should be used in jsonable and in foreign key fields on other
-            models
+        :returns: string, the preferred primary key name that is usually the
+            name that should be used in jsonable and in foreign key fields on
+            other models
         """
         return f"{cls.model_name}_id"
 

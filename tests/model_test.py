@@ -10,6 +10,9 @@ from prom.compat import *
 from prom.model import Orm
 from prom.config import Field, Index
 from prom.query import Query
+from prom.exception import (
+    UniqueError,
+)
 import prom
 
 
@@ -268,7 +271,7 @@ class OrmTest(EnvironTestCase):
         await o.save()
         self.assertLess(0, o.pk)
 
-        with self.assertRaises(orm_class.interface.UniqueError):
+        with self.assertRaises(UniqueError):
             o2 = orm_class(_id=o.pk, foo=2, bar="2")
             await o2.save()
 
@@ -792,6 +795,7 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(t.foo, t2.foo)
         self.assertEqual(t.bar, t2.bar)
 
+        pout.v(t.che.decode("utf-8"), t2.che)
         self.assertEqual(t.che.decode("utf-8"), t2.che)
         self.assertTrue(isinstance(t.baz, int))
 

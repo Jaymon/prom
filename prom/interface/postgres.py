@@ -11,6 +11,7 @@ from collections import Counter
 # third party
 import psycopg
 from psycopg.adapt import Dumper
+from psycopg.types.string import TextLoader
 
 # first party
 from .sql import SQLInterface, SQLConnection
@@ -27,7 +28,7 @@ from ..exception import (
 )
 
 
-class DictType(Dumper):
+class DictDumper(Dumper):
     """Converts from python dict to JSONB to be saved into the db
 
     https://www.psycopg.org/psycopg3/docs/advanced/adapt.html#adaptation
@@ -48,6 +49,76 @@ class DictType(Dumper):
         :returns: bytes
         """
         return ByteString(json.dumps(val))
+
+
+class StringLoader(TextLoader):
+    """
+
+    https://www.psycopg.org/psycopg3/docs/api/adapt.html#psycopg.adapt.Loader
+    """
+    OIDS = psycopg.STRING.values
+
+#     def __call__(self, *args, **kwargs):
+#         pout.v(args, kwargs)
+# #         super().__init__(*args, **kwargs)
+#         return self
+
+    def load(self, val):
+        """Convert a db string to a python str type
+
+        this is the binary storage format
+        https://www.postgresql.org/docs/current/datatype-binary.html
+
+        https://www.psycopg.org/docs/extensions.html#psycopg2.extensions.new_type
+
+            These functions are used to manipulate type casters to convert from
+            PostgreSQL types to Python objects.
+
+            adapter should have signature fun(value, cur) where value is the string
+            representation returned by PostgreSQL and cur is the cursor from which
+            data are read. In case of NULL, value will be None. The adapter should
+            return the converted object.
+
+        :param val: str, the value coming from Postgres and destined for Python
+        :param cur: cursor
+        :returns: str
+        """
+        pout.b()
+        pout.v(val)
+        val = super().load(val)
+        pout.v(val)
+        if isinstance(val, str) and val.startswith("\\x"):
+#             self.connection.info.encoding
+            import itertools
+            from datatypes import String
+            bs = bytearray()
+            for b in String(val[2:]).chunk(2):
+                bs.append(int("".join(b), 16))
+
+            val = bs.decode(self._encoding)
+
+
+        pout.v(val)
+        return val
+
+
+
+#         return bytes(val).decode(self.connection.info.encoding)
+#         pout.v(val)
+#         val = val.decode(self.connection.encoding)
+#         return val
+#         pout.v(val[0], val, bytes(val), bytearray(val))
+#         for b in bytes(val):
+#             pout.v(b)
+#         return val
+        if isinstance(val, memoryview) and val[0] == 92: # \x
+            pout.i(val)
+#         if val[0] == "\\x":
+            val = bytes(val)[1:].decode(self.connection.info.encoding)
+            pout.v(val)
+
+        return val
+
 
 
 class AsyncPostgreSQLConnection(SQLConnection, psycopg.AsyncConnection):
@@ -108,7 +179,11 @@ class PostgreSQL(SQLInterface):
     async def _configure_connection(self, **kwargs):
         kwargs["prefix"] = "_configure_connection"
         async with self.connection(**kwargs) as connection:
-            connection.adapters.register_dumper(DictType.TYPE, DictType)
+            connection.adapters.register_dumper(DictDumper.TYPE, DictDumper)
+
+            for oid in StringLoader.OIDS:
+                #connection.adapters.register_loader(oid, sl)
+                connection.adapters.register_loader(oid, StringLoader)
 
     async def _get_connection(self):
         return self._connection

@@ -1,18 +1,20 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 import decimal
 import datetime
 import inspect
 import re
-import base64
 import json
 import logging
 import uuid
+import enum
 
 import dsnparse
 from datatypes import (
     Datetime,
     property as cachedproperty,
+)
+from datatypes.enum import (
+    find_value,
 )
 
 from .compat import *
@@ -23,8 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class Connection(object):
-    """
-    set the paramaters you want to use to connect to an interface
+    """set the paramaters you want to use to connect to an interface
 
     https://github.com/Jaymon/Mingo/blob/master/Mingo/MingoConfig.php
     """
@@ -109,7 +110,27 @@ class DsnConnection(Connection):
 
     the prom dsn is in the form:
 
-        <full.python.path.InterfaceClass>://<username>:<password>@<host>:<port>/<database>?<options=val&query=string>#<name>
+        <SCHEME>://<HOST>/<PATH>?<QUERY>#<FRAGMENT>
+
+    Where <SCHEME> is:
+
+        <full.python.path.InterfaceClass>
+
+    And <HOST> is:
+
+        ://<username>:<password>@<host>:<port>
+
+    And <PATH> is:
+
+        /<database>
+
+    And <QUERY> is:
+
+        ?<options=val&query=string>
+
+    And <FRAGMENT> is:
+
+        #<connection-name>
 
     This is useful to allow connections coming in through environment variables
     as described in :
@@ -225,8 +246,10 @@ class Schema(object):
         try:
             pk_field = self.__getattr__("pk")
             pk_name = pk_field.name
+
         except AttributeError:
             pk_name = None
+
         return pk_name
 
     @property
@@ -310,7 +333,8 @@ class Schema(object):
     def __init__(self, table_name, **fields_or_indexes):
         """Create an instance
 
-        every Orm should have a .schema attribute that is an instance of this class
+        every Orm should have a .schema attribute that is an instance of this
+        class
 
         :example:
             schema = Schema(
@@ -321,8 +345,8 @@ class Schema(object):
             )
 
         :param table_name: string, the table name
-        :param **fields_or_indexes: a dict of field name or index keys with tuple values,
-            see __getattr__ for more details
+        :param **fields_or_indexes: a dict of field name or index keys with
+            tuple values, see __getattr__ for more details
         """
         self.fields = {}
         self.indexes = {}
@@ -331,8 +355,8 @@ class Schema(object):
         self.lookup = {
             "field_names": {},
             # holds parent's Field.names that have been set to None in children
-            # classes. Basically, if a parent class sets foo and then a child class
-            # later on sets foo = None then foo.names will be here
+            # classes. Basically, if a parent class sets foo and then a child
+            # class later on sets foo = None then foo.names will be here
             "field_names_deleted": {},
         }
 
@@ -360,16 +384,18 @@ class Schema(object):
             raise TypeError("Not a Field or Index instance")
 
     def __getattr__(self, name):
-        """
-        return the Field instance for the given name
+        """return the Field instance for the given name
 
-        return -- string -- the string value of the attribute name, eg, self.foo returns "foo"
+        :returns: str, the string value of the attribute name, eg, self.foo
+            returns "foo"
         """
         try:
             return self.lookup["field_names"][name]
 
         except KeyError:
-            raise AttributeError("No {} field in schema {}".format(name, self.table_name))
+            raise AttributeError(
+                "No {} field in schema {}".format(name, self.table_name)
+            )
 
     def has_field(self, field_name):
         """Return True if schema contains field_name"""
@@ -381,8 +407,12 @@ class Schema(object):
     def set_field(self, field_name, field):
         if not field_name:
             raise ValueError("field_name is empty")
+
         if field_name in self.fields:
-            raise ValueError(f"{field_name} already exists and cannot be changed")
+            raise ValueError(
+                f"{field_name} already exists and cannot be changed"
+            )
+
         if not isinstance(field, Field):
             raise ValueError(f"{type(field)} is not a Field instance")
 
@@ -418,18 +448,23 @@ class Schema(object):
     def set_index(self, index_name, index):
         """Add an index to the schema
 
-        for the most part, you will use the __getattr__ method of adding indexes for a more fluid interface,
-        but you can use this if you want to get closer to the bare metal
+        for the most part, you will use the __getattr__ method of adding indexes
+        for a more fluid interface, but you can use this if you want to get
+        closer to the bare metal
 
-        index_name -- string -- the name of the index
-        index -- Index() -- an Index instance
+        :param index_name: str, the name of the index
+        :param index: Index, an Index instance
         """
         if not index_name:
             raise ValueError("index_name must have a value")
+
         if index_name in self.indexes:
-            raise ValueError("index_name {} has already been defined on {}".format(
-                index_name, str(self.indexes[index_name].field_names)
-            ))
+            raise ValueError(
+                "index_name {} has already been defined on {}".format(
+                    index_name, str(self.indexes[index_name].field_names)
+                )
+            )
+
         if not isinstance(index, Index):
             raise ValueError(f"{type(index)} is not an Index instance")
 
@@ -445,9 +480,10 @@ class Schema(object):
         most of the time, the field name of field_name will just be field_name,
         but this checks the configured aliases to return the canonical name
 
-        :param field_name: str, the field_name you want the canonical field name for
-        :param *default: mixed, if present this will be returned instead of AttributeError
-            raised if field_name doesn't exist
+        :param field_name: str, the field_name you want the canonical field name
+            for
+        :param *default: mixed, if present this will be returned instead of
+            AttributeError raised if field_name doesn't exist
         """
         try:
             return self.__getattr__(field_name).name
@@ -464,12 +500,12 @@ class Schema(object):
                     raise
 
     def field_model_name(self, field_name):
-        """Check field_name against all the field's ref model names to see if there
-        is a match, this is separate from .field_name because there are times when
-        this behavior might not be desirable
+        """Check field_name against all the field's ref model names to see if
+        there is a match, this is separate from .field_name because there are
+        times when this behavior might not be desirable
 
-        :param field_name: str, the field/model name you want the canonical field
-            name for
+        :param field_name: str, the field/model name you want the canonical
+            field name for
         :returns: str, the canonical field name
         """
         for fn, field in self.fields.items():
@@ -479,13 +515,14 @@ class Schema(object):
         raise AttributeError(field_name)
 
     def create_orm(self, orm_class=None):
-        """If you have a schema but don't have an Orm for it, you can call this method
-        and have an orm_class created that will have the fields and table_name of this
-        schema
+        """If you have a schema but don't have an Orm for it, you can call this
+        method and have an orm_class created that will have the fields and
+        table_name of this schema
 
-        :param orm_class: Orm, if you want your generated class to have a certain
-            parent class you can pass in the parent class you want
-        :returns: Orm, your child orm populated with information from this schema
+        :param orm_class: Orm, if you want your generated class to have a
+            certain parent class you can pass in the parent class you want
+        :returns: Orm, your child orm populated with information from this
+            schema
         """
         if not orm_class:
             from .model import Orm # avoid circular dependency
@@ -504,9 +541,7 @@ class Schema(object):
             for k, v in vars(klass).items():
                 if k not in seen_properties:
                     if isinstance(v, (Field, Index)):
-                        #setattr(child_class, k, property(lambda: AttributeError))
                         setattr(child_class, k, None)
-                        #delattr(child_class, k)
 
                     elif isinstance(v, type) and issubclass(v, Field):
                         setattr(child_class, k, None)
@@ -520,16 +555,15 @@ class Schema(object):
 
 
 class Index(object):
-    """Each index on the table is configured using this class"""
-
+    """Each index on the table is configured using this class
+    """
     def __init__(self, *field_names, **options):
-        """
-        initialize an index
+        """initialize an index
 
-        index_fields -- list -- the string field_names this index will index on, fields have to be already added
-            to this schema index
-        **options -- dict --
-            unique -- boolean -- True if the index should be unique, false otherwise
+        :param *field_names: the string field names this index will index on,
+            fields have to be already added to this schema index
+        :param **options:
+            - unique: bool, True if the index should be unique, false otherwise
         """
         if not field_names:
             raise ValueError("field_names list is empty")
@@ -543,24 +577,31 @@ class Index(object):
 class FieldMeta(type):
     """Allows a class definition to be a descriptor also
 
-    I don't love this solution, but I like the syntax of just being able to define
-    a subclass inside an Orm and have it work. The problem is an embedded class isn't,
-    by default, a descriptor instance, so it wasn't calling fset, fget, and fdel.
+    I don't love this solution, but I like the syntax of just being able to
+    define a subclass inside an Orm and have it work. The problem is an embedded
+    class isn't, by default, a descriptor instance, so it wasn't calling fset,
+    fget, and fdel.
 
     This makes it so an embedded field class will be treated as a descriptor. It
     uses an embedded .instance property to actually perform the operations
     """
     def __set_name__(cls, orm_class, name):
-        """I'm not quite sure why this works, but it does. Basically, when you define
-        the field as an embedded class in the orm, this method will get called
-        when the class is being parsed/loaded the first time.
+        """I'm not quite sure why this works, but it does. Basically, when you
+        define the field as an embedded class in the orm, this method will get
+        called when the class is being parsed/loaded the first time.
 
         So this method gets called and we use cls to create a Field instance and
-        we then set our newly created instance onto orm_class.name. So after this
-        method is called, orm_class.name will be a Field instance instead of a
-        Field subclass
+        we then set our newly created instance onto orm_class.name. So after
+        this method is called, orm_class.name will be a Field instance instead
+        of a Field subclass
         """
-        logger.debug(f"Creating field descriptor {orm_class.__name__}.{name} with class {cls.__name__}")
+        logger.debug(
+            "Creating field descriptor {}.{} with class {}".format(
+                orm_class.__name__,
+                name,
+                cls.__name__
+            )
+        )
 
         instance = cls(cls.type, cls.required, cls.options)
         instance.__set_name__(orm_class, name)
@@ -574,8 +615,8 @@ class Field(object, metaclass=FieldMeta):
     control over how a field in the db is set and fetched from the instance and
     also how it is set and fetched from the interface
 
-    to customize the field on set and get from the db, you can use the decorators,
-    which are classmethods:
+    to customize the field on set and get from the db, you can use the
+    decorators, which are classmethods:
 
     :Example:
         foo = Field(str, True)
@@ -591,8 +632,8 @@ class Field(object, metaclass=FieldMeta):
             return val
 
     There are also fget/fset/fdel methods that can be set to customize behavior
-    on when a value is set on a particular orm instance, so if you wanted to make sure
-    that bar was always an int when it is set, you could:
+    on when a value is set on a particular orm instance, so if you wanted to
+    make sure that bar was always an int when it is set, you could:
 
     :Example:
         bar = Field(int, True)
@@ -611,12 +652,13 @@ class Field(object, metaclass=FieldMeta):
             # convert val to something json safe, you can also change the name
             return name, val
 
-    NOTE -- all these get/set/delete methods are different than traditional python getters
-    and setters because they always need to return a value and they always take in the
-    object instance manipulating them and the value.
+    NOTE -- all these get/set/delete methods are different than traditional
+    python getters and setters because they always need to return a value and
+    they always take in the object instance manipulating them and the value.
 
     NOTE -- Foreign key's can be passed orm instances from other classes because
-    those classes will call the FK's field methods when getting/setting the field
+    those classes will call the FK's field methods when getting/setting the
+    field
 
     You can also configure the Field using a class:
 
@@ -660,8 +702,8 @@ class Field(object, metaclass=FieldMeta):
     """True if this field is required"""
 
     options = None
-    """In the instance, this will be a dict of key/val pairs containing extra information
-    about the field"""
+    """In the instance, this will be a dict of key/val pairs containing extra
+    information about the field"""
 
     default = None
     """Default value for this field"""
@@ -673,7 +715,8 @@ class Field(object, metaclass=FieldMeta):
     """The field name"""
 
     choices = None
-    """A set of values that this field can be, if set then no other values can be set"""
+    """A set of values that this field can be, if set then no other values can
+    be set"""
 
     unique = False
     """True if this field is unique indexed"""
@@ -686,15 +729,19 @@ class Field(object, metaclass=FieldMeta):
 
     @cachedproperty(cached="_schema")
     def schema(self):
-        """return the schema instance if this field is a reference to another table
+        """return the schema instance if this field is a reference to another
+        table
 
-        see .set_type() for an explanation on why we defer figuring this out until now
+        see .set_type() for an explanation on why we defer figuring this out
+        until now
         """
         field_type = self.original_type
         module, klass = utils.get_objects(field_type)
         schema = klass.schema
         if not schema:
-            raise ValueError("Field type {} is not an Orm class".format(field_type))
+            raise ValueError(
+                "Field type {} is not an Orm class".format(field_type)
+            )
 
         return schema
 
@@ -707,7 +754,8 @@ class Field(object, metaclass=FieldMeta):
 
     @property
     def interface_type(self):
-        """Returns the type that will be used in the interface to create the table
+        """Returns the type that will be used in the interface to create the
+        table
 
         see .set_type() for an explanation on why we defer this until here
         """
@@ -783,35 +831,47 @@ class Field(object, metaclass=FieldMeta):
             options = self.options
         return options
 
-    def __init__(self, field_type, field_required=False, field_options=None, **field_options_kwargs):
+    def __init__(
+        self,
+        field_type,
+        field_required=False,
+        field_options=None,
+        **field_options_kwargs
+    ):
         """
         create a field
 
         :param field_type: type, the python type of the field, so for a string
             you would pass str, integer: int, boolean: bool, float: float
-        :param field_required: boolean, true if this field has to be there to insert
-        :param field_options: dict, everything else in key: val notation. Current options:
+        :param field_required: boolean, true if this field has to be there to
+            insert
+        :param field_options: Current options:
             * size: int -- the size you want the string to be, or the int to be
             * min_size: int -- the minimum size
             * max_size: int -- if you want a varchar, set this
-            * unique: bool -- True to set a unique index on this field, this is just for convenience and is
-                equal to self.set_index(field_name, [field_name], unique=True). this is a convenience option
-                to set a unique index on the field without having to add a separate index statement
-            * ignore_case: bool -- True to ignore case if this field is used in indexes
-            * default: mixed -- defaults to None, can be anything the db can support
-            * jsonable_name: str, the name of the field when Orm.jsonable() is called
+            * unique: bool -- True to set a unique index on this field, this is
+                just for convenience and is equal to self.set_index(field_name,
+                [field_name], unique=True). this is a convenience option to set
+                a unique index on the field without having to add a separate
+                index statement
+            * ignore_case: bool -- True to ignore case if this field is used in
+                indexes
+            * default: mixed -- defaults to None, can be anything the db can
+                support
+            * jsonable_name: str, the name of the field when Orm.jsonable() is
+                called
             * jsonable_field: bool, if False then this field won't be part of
                 Orm.jsonable() output
             * jsonable: str|callable|bool,
                 - str, will be set to jsonable_name
                 - callable, will be used as self.jsonable
                 - bool, will set jsonable_field to False
-            * empty: bool, (default is True), set to False if the value cannot be
-                empty when being sent to the db (empty is None, "", 0, False)
+            * empty: bool, (default is True), set to False if the value cannot
+                be empty when being sent to the db (empty is None, "", 0, False)
             * pk: bool, True to make this field the primary key
-            * auto: bool, True to tag this field as an auto-generated field. Used
-                with an int to set it to an auto-increment, use it with UUID to
-                have uuids auto generated
+            * auto: bool, True to tag this field as an auto-generated field.
+                Used with an int to set it to an auto-increment, use it with
+                UUID to have uuids auto generated
             * autopk: bool, shortcut for setting pk=True, auto=True
         :param **field_options_kwargs: dict, will be combined with field_options
         """
@@ -886,7 +946,11 @@ class Field(object, metaclass=FieldMeta):
 
         if orm_class:
             logger.debug(
-                f"Field descriptor {orm_class.__name__}.{name} created with internal name {self.orm_field_name}"
+                "Field descriptor {}.{} created with internal name {}".format(
+                    orm_class.__name__,
+                    name,
+                    self.orm_field_name
+                )
             )
 
     def get_size(self, field_options):
@@ -914,12 +978,13 @@ class Field(object, metaclass=FieldMeta):
         return d
 
     def size_info(self):
-        """Figure out actual sizing information with all the ways we can calculate
-        size now
+        """Figure out actual sizing information with all the ways we can
+        calculate size now
 
         :returns: dict, will always have "has_size" and "has_precision" keys
             * if "has_size" key is True then "size" key will exist
-            * if "has_precision" is True then "precision" and "scale" keys will exist
+            * if "has_precision" is True then "precision" and "scale" keys will
+                exist
             * if "bounds" key exists it will be a tuple (min_size, max_size)
         """
         ret = {
@@ -1008,43 +1073,53 @@ class Field(object, metaclass=FieldMeta):
     def set_type(self, field_type):
         """Try to infer as much about the type as can be inferred at this moment
 
-        Because the Field supports string classpaths (eg, "modname.Classname") we can't
-        figure everything out in this method, so we figure out as much as we can
-        and then defer everything else to the .interface_type and .schema properties, this
-        allows the parser to hopefully finish loading the modules before we have to
-        parse the classpath to find the foreign key schema
+        Because the Field supports string classpaths (eg, "modname.Classname")
+        we can't figure everything out in this method, so we figure out as much
+        as we can and then defer everything else to the .interface_type and
+        .schema properties, this allows the parser to hopefully finish loading
+        the modules before we have to parse the classpath to find the foreign
+        key schema
 
         :param field_type: mixed, the field type passed into __init__
         """
-        std_types = (
-            str,
-            bool,
-            int,
-            float,
-            bytes,
-            bytearray,
-            decimal.Decimal,
-            datetime.datetime,
-            datetime.date,
-            uuid.UUID,
-            dict,
-        )
-
-        json_types = ()
-
-        pickle_types = (
-            set,
-            list,
-        )
-
         self.original_type = field_type
         self.serializer = ""
         self._interface_type = None
         self._schema = None
 
         if isinstance(field_type, type):
+            std_types = (
+                str,
+                bool,
+                int,
+                float,
+                bytes,
+                bytearray,
+                decimal.Decimal,
+                datetime.datetime,
+                datetime.date,
+                uuid.UUID,
+                dict,
+            )
+
+            json_types = ()
+
+            pickle_types = (
+                set,
+                list,
+            )
+
             if issubclass(field_type, std_types):
                 self._interface_type = field_type
+
+            elif issubclass(field_type, enum.Enum):
+                # https://docs.python.org/3/library/enum.html
+                self.iquerier(self._iquery_enum)
+                self.fsetter(self._fset_enum)
+
+                for enum_property in field_type:
+                    self._interface_type = type(enum_property.value)
+                    break
 
             elif issubclass(field_type, json_types):
                 self.serializer = self.options.pop("serializer", "json")
@@ -1087,7 +1162,8 @@ class Field(object, metaclass=FieldMeta):
         return self.options.get("auto", False)
 
     def is_ref(self):
-        """return true if this field foreign key references the primary key of another orm"""
+        """return true if this field foreign key references the primary key of
+        another orm"""
         return bool(self.schema)
 
     def is_required(self):
@@ -1117,13 +1193,15 @@ class Field(object, metaclass=FieldMeta):
         return self
 
     def iget(self, orm, val):
-        """Called anytime the field is being returned from the interface to the orm
+        """Called anytime the field is being returned from the interface to the
+        orm
 
-        think of this as when the orm receives the field value from the interface
+        think of this as when the orm receives the field value from the
+        interface
 
         :param orm: Orm, the Orm instance the field is being set on. This can be
-            None if the select query had selected fields so a full orm instance isn't
-            being returned but rather just the selected values
+            None if the select query had selected fields so a full orm instance
+            isn't being returned but rather just the selected values
         :param val: mixed, the current value of the field
         :returns: mixed
         """
@@ -1142,15 +1220,17 @@ class Field(object, metaclass=FieldMeta):
         return val
 
     def igetter(self, v):
-        """decorator for the method called when a field is pulled from the database"""
+        """decorator for the method called when a field is pulled from the
+        database"""
         self.iget = v
         return self
 
     def fset(self, orm, val):
-        """This is called on Orm instantiation and any time field is set (eg Orm.foo = ...)
+        """This is called on Orm instantiation and any time field is set (eg
+        Orm.foo = ...)
 
-        on Orm creation val will be None if the field wasn't passed to Orm.__init__ otherwise
-        it will be the value passed into Orm.__init__
+        on Orm creation val will be None if the field wasn't passed to
+        Orm.__init__ otherwise it will be the value passed into Orm.__init__
 
         :param orm: Orm, the Orm instance the field is being set on
         :param val: mixed, the current value of the field
@@ -1159,15 +1239,27 @@ class Field(object, metaclass=FieldMeta):
         logger.debug(f"fset {orm.__class__.__name__}.{self.name}")
         if val is not None:
             if self.choices and val not in self.choices:
-                raise ValueError("Value {} not in {} value choices".format(val, self.name))
+                raise ValueError("Value {} not in {} value choices".format(
+                    val,
+                    self.name
+                ))
 
             if regex := self.options.get("regex", ""):
                 if not re.search(regex, val):
-                    raise ValueError(f"regex failed for {orm.__class__.__name__}.{self.name}")
+                    raise ValueError(
+                        f"regex failed for {orm.__class__.__name__}.{self.name}"
+                    )
 
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
             val = self.schema.pk.fset(orm, val)
+
+        return val
+
+    def _fset_enum(self, orm, val):
+        """This is set using .fsetter in .set_type when an Enum is identified"""
+        if val is not None:
+            val = find_value(self.original_type, val)
 
         return val
 
@@ -1181,8 +1273,8 @@ class Field(object, metaclass=FieldMeta):
 
         think of this as when the interface is going to get the field value or
         when the field is being sent to the db. Alot of the value checks like
-        required and empty are in Orm.to_interface(), this just returns the value
-        and nothing else
+        required and empty are in Orm.to_interface(), this just returns the
+        value and nothing else
 
         :param orm: Orm
         :param val: Any, the current value of the field
@@ -1283,8 +1375,17 @@ class Field(object, metaclass=FieldMeta):
             val = self.schema.pk.iquery(query, val)
         return val
 
+    def _iquery_enum(self, query, val):
+        """This is set using .iquerier in .set_type when an Enum is identified
+        """
+        if val is not None:
+            val = find_value(self.original_type, val)
+
+        return val
+
     def iquerier(self, v):
-        """decorator for the method called when this field is used in a SELECT query"""
+        """decorator for the method called when this field is used in a SELECT
+        query"""
         self.iquery = v
         return self
 
@@ -1292,14 +1393,16 @@ class Field(object, metaclass=FieldMeta):
         """This is called in Orm.jsonable() to set the field name nad value
 
         :param orm: Orm, the instance currently calling jsonable
-        :param name: str, the Orm field name that will be used if the jsonable_name
-            option isn't set
+        :param name: str, the Orm field name that will be used if the
+            jsonable_name option isn't set
         :param val: Any, the field's value
-        :returns: tuple[str, Any], (name, val) where the name will be the jsonable
-            field name and the value will be the jsonable value
+        :returns: tuple[str, Any], (name, val) where the name will be the
+            jsonable field name and the value will be the jsonable value
         """
         if self.options.get("jsonable_field", True):
-            logger.debug(f"jsonable {orm.__class__.__name__}.{self.name} -> {name}")
+            logger.debug(
+                f"jsonable {orm.__class__.__name__}.{self.name} -> {name}"
+            )
 
             if self.is_ref():
                 # Foreign Keys get passed through their Field methods
@@ -1317,12 +1420,14 @@ class Field(object, metaclass=FieldMeta):
             return self.options.get("jsonable_name", name), val
 
         else:
-            logger.debug(f"jsonable ignored for {orm.__class__.__name__}.{self.name}")
+            logger.debug(
+                f"jsonable ignored for {orm.__class__.__name__}.{self.name}"
+            )
             return "", None
 
     def jsonabler(self, v):
-        """Decorator for the method called for a field when an Orm's .jsonable method
-        is called"""
+        """Decorator for the method called for a field when an Orm's .jsonable
+        method is called"""
         self.jsonable = v
         return self
 
@@ -1349,8 +1454,10 @@ class Field(object, metaclass=FieldMeta):
     def hash(self, orm, val):
         if self.is_serialized():
             return None
+
         elif isinstance(val, dict):
             return None
+
         return hash(val)
 
     def encode(self, val):
@@ -1380,7 +1487,8 @@ class Field(object, metaclass=FieldMeta):
             raise ValueError("Unknown serializer {}".format(self.serializer))
 
     def fval(self, orm):
-        """return the raw value that this property is holding internally for the orm instance"""
+        """return the raw value that this property is holding internally for the
+        orm instance"""
         try:
             val = orm.__dict__[self.orm_field_name]
 
@@ -1392,9 +1500,9 @@ class Field(object, metaclass=FieldMeta):
 
     def __get__(self, orm, orm_class=None):
         """This is the wrapper that will actually be called when the field is
-        fetched from the instance, this is a little different than Python's built-in
-        @property fget method because it will pull the value from a shadow variable in
-        the instance and then call fget"""
+        fetched from the instance, this is a little different than Python's
+        built-in @property fget method because it will pull the value from a
+        shadow variable in the instance and then call fget"""
         if orm is None:
             # class is requesting this property, so return it
             return self
@@ -1413,23 +1521,25 @@ class Field(object, metaclass=FieldMeta):
 
     def __set__(self, orm, val):
         """this is the wrapper that will actually be called when the field is
-        set on the instance, your fset method must return the value you want set,
-        this is different than Python's built-in @property setter because the
-        fset method *NEEDS* to return something"""
+        set on the instance, your fset method must return the value you want
+        set, this is different than Python's built-in @property setter because
+        the fset method *NEEDS* to return something
+        """
         val = self.fset(orm, val)
         orm.__dict__[self.orm_field_name] = val
 
     def __delete__(self, orm):
-        """the wrapper for when the field is deleted, for the most part the default
-        fdel will almost never be messed with, this is different than Python's built-in
-        @property deleter because the fdel method *NEEDS* to return something and it
-        accepts the current value as an argument"""
+        """the wrapper for when the field is deleted, for the most part the
+        default fdel will almost never be messed with, this is different than
+        Python's built-in @property deleter because the fdel method *NEEDS* to
+        return something and it accepts the current value as an argument"""
         val = self.fdel(orm, self.fval(orm))
         orm.__dict__[self.orm_field_name] = val
 
 
 class AutoUUID(Field):
-    """an auto-generating UUID field, by default this will be set as primary key"""
+    """an auto-generating UUID field, by default this will be set as primary key
+    """
     def __init__(self, **kwargs):
         kwargs.setdefault("pk", True)
         kwargs.setdefault("auto", True)
@@ -1442,7 +1552,8 @@ class AutoUUID(Field):
 
 
 class AutoIncrement(Field):
-    """an auto-incrementing Serial field, by default this will be set as primary key"""
+    """an auto-incrementing Serial field, by default this will be set as primary
+    key"""
     def __init__(self, **kwargs):
         kwargs.setdefault("pk", True)
         kwargs.setdefault("auto", True)
@@ -1465,10 +1576,10 @@ class AutoDatetime(Field):
         updated = AutoDatetime(updated=True)
 
     The triggers are:
-        created: create a datetime in the field when the Orm is being created (added
-            to the db for the first time)
-        updated: update the datetime when the Orm is created and when it is updated
-            in the db
+        created: create a datetime in the field when the Orm is being created
+            (added to the db for the first time)
+        updated: update the datetime when the Orm is created and when it is
+            updated in the db
     """
     def __init__(self, **kwargs):
         kwargs.setdefault("created", kwargs.get("create", True))
@@ -1495,21 +1606,15 @@ class AutoDatetime(Field):
 
     def created_iset(self, orm, val):
         if not val and orm.is_insert():
-            #val = datetime.datetime.utcnow()
-            #val = datetime.datetime.now(datetime.timezone.utc)
             val = Datetime()
         return val
 
     def updated_iset(self, orm, val):
         if val:
             if not self.modified(orm, val):
-                #val = datetime.datetime.utcnow()
-                #val = datetime.datetime.now(datetime.timezone.utc)
                 val = Datetime()
 
         else:
-            #val = datetime.datetime.utcnow()
-            #val = datetime.datetime.now(datetime.timezone.utc)
             val = Datetime()
 
         return val

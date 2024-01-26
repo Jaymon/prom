@@ -1,21 +1,26 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, division, print_function, absolute_import
 import os
 import datetime
 import decimal
 import math
 
-import testdata
+from datatypes import Enum
 
-from . import BaseTestCase, EnvironTestCase
+from prom.compat import *
 import prom
 from prom.model import Orm
-from prom.config import Schema, Connection, DsnConnection, Index
-from prom.config import Field
-from prom.compat import *
+from prom.config import (
+    Schema,
+    Connection,
+    DsnConnection,
+    Index,
+    Field,
+)
+
+from . import IsolatedAsyncioTestCase, EnvironTestCase
 
 
-class SchemaTest(BaseTestCase):
+class SchemaTest(IsolatedAsyncioTestCase):
     def test_field_index_property(self):
         s = self.get_schema(
             foo=Field(str, index=True)
@@ -24,9 +29,9 @@ class SchemaTest(BaseTestCase):
         self.assertFalse(s.indexes["foo"].unique)
 
     def test___init__(self):
-        """
-        I had set the class .fields and .indexes attributes to {} instead of None, so you
-        could only ever create one instance of Schema, this test makes sure that's been fixed
+        """I had set the class .fields and .indexes attributes to {} instead of
+        None, so you could only ever create one instance of Schema, this test
+        makes sure that's been fixed
         """
         s = Schema("foo")
         self.assertTrue(isinstance(s.fields, dict))
@@ -160,7 +165,7 @@ class SchemaTest(BaseTestCase):
         self.assertEqual("o1_id", field_name)
 
 
-class DsnConnectionTest(BaseTestCase):
+class DsnConnectionTest(IsolatedAsyncioTestCase):
     """Any general tests should go here and always use sqlite because that's
     installed with python. If you have SQLite or PostgreSQL specific connection
     config tests those should go into the appropriate insterface ConfigTest
@@ -207,7 +212,7 @@ class DsnConnectionTest(BaseTestCase):
             DsnConnection(dsn)
 
 
-class ConnectionTest(BaseTestCase):
+class ConnectionTest(IsolatedAsyncioTestCase):
     def test_interface_is_unique_each_time(self):
         c = Connection(
             interface_name="prom.interface.sqlite.SQLite",
@@ -224,7 +229,6 @@ class ConnectionTest(BaseTestCase):
             inters.add(inter)
 
     def test___init__(self):
-
         c = Connection(
             interface_name="prom.interface.sqlite.SQLite",
             database="dbname",
@@ -238,7 +242,7 @@ class ConnectionTest(BaseTestCase):
 
 
 class FieldTest(EnvironTestCase):
-    def test_modified_pk(self):
+    async def test_modified_pk(self):
         orm_class = self.get_orm_class()
         o = orm_class(foo=1, bar="2")
         f = o.schema.pk
@@ -249,7 +253,7 @@ class FieldTest(EnvironTestCase):
         im = f.modified(o, None)
         self.assertFalse(im)
 
-        o.save()
+        await o.save()
 
         im = f.modified(o, None)
         self.assertTrue(im)
@@ -271,6 +275,8 @@ class FieldTest(EnvironTestCase):
 
     def test_type_std(self):
         std_types = (
+            str,
+            bytes,
             bool,
             long,
             int,
@@ -280,10 +286,6 @@ class FieldTest(EnvironTestCase):
             datetime.datetime,
             datetime.date,
         )
-        if is_py2:
-            std_types = (basestring,) + std_types
-        else:
-            std_types = basestring + std_types
 
         for field_type in std_types:
             f = Field(field_type)
@@ -326,7 +328,7 @@ class FieldTest(EnvironTestCase):
         self.assertIsNotNone(f.schema)
         self.assertFalse(f.is_serialized())
 
-    def test_type_fk_get(self):
+    async def test_type_fk_get(self):
         """ https://github.com/Jaymon/prom/issues/145 """
         class PrimaryKey(Field):
             def __init__(self):
@@ -336,16 +338,24 @@ class FieldTest(EnvironTestCase):
             def iget(self, orm, v):
                 return int(v)
 
-        foo_class = self.get_orm_class(_id=PrimaryKey(), _created=None, _updated=None)
-        bar_class = self.get_orm_class(foo_id=Field(foo_class), _created=None, _updated=None)
+        foo_class = self.get_orm_class(
+            _id=PrimaryKey(),
+            _created=None,
+            _updated=None
+        )
+        bar_class = self.get_orm_class(
+            foo_id=Field(foo_class),
+            _created=None,
+            _updated=None
+        )
 
-        f = foo_class.create(pk=1)
-        b = bar_class.create(foo_id=f.pk)
+        f = await foo_class.create(pk=1)
+        b = await bar_class.create(foo_id=f.pk)
 
-        foo_pk = bar_class.query.select_foo_id().one_pk(b.pk)
+        foo_pk = await bar_class.query.select_foo_id().eq_pk(b.pk).one()
         self.assertTrue(isinstance(foo_pk, int))
 
-    def test_serialize_lifecycle(self):
+    async def test_serialize_lifecycle(self):
         orm_class = self.get_orm_class(
             foo=Field(dict, False)
         )
@@ -355,10 +365,10 @@ class FieldTest(EnvironTestCase):
 
         o.foo = {"bar": 1, "che": "two"}
         self.assertTrue(isinstance(o.foo, dict))
-        o.save()
+        await o.save()
         self.assertTrue(isinstance(o.foo, dict))
 
-        o2 = o.query.eq_pk(o.pk).one()
+        o2 = await o.query.eq_pk(o.pk).one()
         self.assertTrue(isinstance(o2.foo, dict))
         self.assertEqual(1, o2.foo["bar"])
         self.assertEqual("two", o2.foo["che"])
@@ -392,7 +402,7 @@ class FieldTest(EnvironTestCase):
         self.assertTrue(o.foo)
         self.assertTrue(isinstance(o.foo, bool))
 
-    def test_iget_really_big_int(self):
+    async def test_iget_really_big_int(self):
         """Postgres will return Decimal for a really big int, SQLite will return
         an int. I'm not sure it's worth slowing down every select statement to
         check if an int is a decimal since this is such a rare use case but this
@@ -403,8 +413,8 @@ class FieldTest(EnvironTestCase):
         orm_class = self.get_orm_class(
             foo=Field(int, True, precision=78)
         )
-        o = orm_class.create(foo=int("9" * 77))
-        o2 = orm_class.query.one_pk(o.pk)
+        o = await orm_class.create(foo=int("9" * 77))
+        o2 = await orm_class.query.eq_pk(o.pk).one()
         self.assertTrue(isinstance(o2.foo, (int, decimal.Decimal)))
 
     def test_iset(self):
@@ -430,7 +440,7 @@ class FieldTest(EnvironTestCase):
             def foo(query, v):
                 return 10
 
-        q = IqueryOrm.query.is_foo("foo")
+        q = IqueryOrm.query.eq_foo("foo")
         self.assertEqual(10, q.fields_where[0].value)
 
     def test_datetime_jsonable_1(self):
@@ -457,8 +467,7 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(None, bar.fdefault(o, None))
         self.assertEqual(None, o.bar)
 
-    def test_fcrud(self):
-
+    async def test_fcrud(self):
         class FCrudOrm(Orm):
             interface = self.get_interface()
             foo = Field(int)
@@ -481,13 +490,13 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(1, o.foo)
         self.assertEqual(1, o.foo)
 
-        pk = o.save()
+        pk = await o.save()
         self.assertEqual(2, o.foo)
         self.assertEqual(2, o.foo)
 
         del o.foo
         self.assertEqual(None, o.foo)
-        pk = o.save()
+        pk = await o.save()
         self.assertEqual(1, o.foo)
 
         o.foo = 10
@@ -497,7 +506,7 @@ class FieldTest(EnvironTestCase):
         o.foo = None
         self.assertEqual(1, o.foo)
 
-    def test_icrud(self):
+    async def test_icrud(self):
         class ICrudOrm(Orm):
             interface = self.get_interface()
             foo = Field(int)
@@ -519,16 +528,16 @@ class FieldTest(EnvironTestCase):
         o = ICrudOrm()
         self.assertEqual(None, o.foo)
 
-        o.save()
+        await o.save()
         self.assertEqual(0, o.foo)
 
         o.foo = 5
         self.assertEqual(5, o.foo)
 
-        o.save()
+        await o.save()
         self.assertEqual(400, o.foo)
 
-        o2 = o.query.one_pk(o.pk)
+        o2 = await o.query.eq_pk(o.pk).one()
         self.assertEqual(400, o2.foo)
 
     def test_fdel(self):
@@ -584,7 +593,7 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(None, o.foo)
 
     def test_ref(self):
-        m = testdata.create_module([
+        m = self.create_module([
             "import prom",
             "class Foo(prom.Orm):",
             "    che = prom.Field(str)",
@@ -597,12 +606,16 @@ class FieldTest(EnvironTestCase):
         Foo = m.module().Foo
         Bar = m.module().Bar
 
-        self.assertTrue(isinstance(Bar.schema.fields['foo_id'].schema, Schema))
-        self.assertTrue(issubclass(Bar.schema.fields['foo_id'].interface_type, long))
+        self.assertTrue(
+            isinstance(Bar.schema.fields['foo_id'].schema, Schema)
+        )
+        self.assertTrue(
+            issubclass(Bar.schema.fields['foo_id'].interface_type, long)
+        )
 
     def test_string_ref(self):
-        modname = testdata.get_module_name()
-        d = testdata.create_modules({
+        modname = self.get_module_name()
+        d = self.create_modules({
             "foo": [
                 "import prom",
                 "class Foo(prom.Orm):",
@@ -623,9 +636,13 @@ class FieldTest(EnvironTestCase):
         Bar = d.module("{}.bar".format(modname)).Bar
 
         self.assertTrue(isinstance(Foo.schema.fields['bar_id'].schema, Schema))
-        self.assertTrue(issubclass(Foo.schema.fields['bar_id'].interface_type, long))
+        self.assertTrue(
+            issubclass(Foo.schema.fields['bar_id'].interface_type, long)
+        )
         self.assertTrue(isinstance(Bar.schema.fields['foo_id'].schema, Schema))
-        self.assertTrue(issubclass(Bar.schema.fields['foo_id'].interface_type, long))
+        self.assertTrue(
+            issubclass(Bar.schema.fields['foo_id'].interface_type, long)
+        )
 
     def test___init__(self):
         f = Field(str, True)
@@ -661,7 +678,8 @@ class FieldTest(EnvironTestCase):
         self.assertEqual("bar", o.bar)
 
     def test_get_size(self):
-        """Makes sure sizes get set correctly, I've evidently had a bug in this for years (1-26-2023)"""
+        """Makes sure sizes get set correctly, I've evidently had a bug in this
+        for years (1-26-2023)"""
         f = Field(int, True, max_size=100)
         self.assertEqual(100, f.options["max_size"])
 
@@ -683,7 +701,8 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(500, f.options["max_size"])
 
     def test_size_info_1(self):
-        # A field with precision 65, scale 30 must round to an absolute value less than 10^35
+        # A field with precision 65, scale 30 must round to an absolute value
+        # less than 10^35
         f = Field(float, precision=65, scale=30)
         r = f.size_info()
         self.assertLessEqual(r["size"], math.pow(10, 35))
@@ -746,26 +765,26 @@ class SerializedFieldTest(EnvironTestCase):
         o.body["foo"] = 1
         self.assertEqual(1, o.body["foo"])
 
-    def test_imethods_pickle(self):
+    async def test_imethods_pickle(self):
         o = self.get_orm()
         o.body = {"foo": 1}
-        o.save()
+        await o.save()
 
-        o2 = o.requery()
+        o2 = await o.requery()
         self.assertEqual(o.body, o2.body)
 
-    def test_modify(self):
+    async def test_modify(self):
         o = self.get_orm()
         o.body = {"bar": 1}
-        o.save()
+        await o.save()
 
         o.body["che"] = 2
-        o.save()
+        await o.save()
 
-        o2 = o.requery()
+        o2 = await o.requery()
         self.assertEqual(o.body, o2.body)
 
-    def test_other_types(self):
+    async def test_other_types(self):
         types = (
             list,
             set
@@ -774,8 +793,48 @@ class SerializedFieldTest(EnvironTestCase):
         for field_type in types:
             o = self.get_orm(field_type)
             o.body = field_type(range(100))
-            o.save()
+            await o.save()
 
-            o2 = o.requery()
+            o2 = await o.requery()
             self.assertEqual(o.body, o2.body)
+
+
+class EnumFieldTest(EnvironTestCase):
+    """Moved over and integrated from extras.config on 1-24-2024"""
+    def test_enum(self):
+        class FooEnum(Enum):
+            FOO = 1
+            BAR = 2
+
+        OE = self.get_orm_class(
+            type = Field(FooEnum)
+        )
+
+        o = OE()
+        o.type = "bar"
+        self.assertEqual(FooEnum.BAR, o.type)
+
+        q = o.query.eq_type("foo")
+        self.assertEqual(FooEnum.FOO, q.fields_where[0].value)
+        self.assertEqual(1, q.fields_where[0].value)
+
+        o.type = 2
+        self.assertEqual(FooEnum.BAR, o.type)
+        self.assertEqual(2, o.type)
+
+        o.type = FooEnum.BAR
+        self.assertEqual(FooEnum.BAR, o.type)
+        self.assertEqual(2, o.type)
+
+    async def test_save(self):
+        class FooEnum(Enum):
+            FOO = 1
+
+        OE = self.get_orm_class(type=Field(FooEnum))
+
+        o = await OE.create(type="FOO")
+        f = o.schema.fields["type"]
+        self.assertEqual(FooEnum.FOO.value, o.type)
+        self.assertFalse(f.is_serialized())
+        self.assertTrue(issubclass(f.interface_type, int))
 

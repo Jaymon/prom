@@ -491,6 +491,33 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         self.assertEqual(1, len(r))
         self.assertEqual(pk_ne_null, r[0]["_id"])
 
+    async def test_field_str(self):
+        """Jarid was having encoding issues, so I'm finally making sure prom
+        only ever returns unicode strings
+        """
+        i, s = await self.create_table(
+            bar=Field(str, True),
+            che=Field(str, False),
+        )
+
+        td = {
+            "bar": self.get_unicode_words(),
+            "che": self.get_unicode_words().encode('utf-8'),
+            #"che": b"\xf0\xa1\x81\xb5 \xd1\x80\xd0\xb0\xd0\xb1\xd0\xbe\xd1\x82\xd0\xb0\xd1\x82\xd1\x8c \xf0\xa0\xbe\xbc \xd1\x82\xd1\x83\xd1\x82"
+        }
+
+        pout.v(td)
+
+        pk = await i.insert(s, td)
+        td2 = await i.one(s, Query().eq__id(pk))
+
+        pout.v(td, td2)
+
+        self.assertEqual(td["bar"], td2["bar"])
+
+        pout.v(td["che"].decode("utf-8"), td2["che"])
+        self.assertEqual(td["che"].decode("utf-8"), td2["che"])
+
     async def test_insert_1(self):
         i, s = await self.create_table()
 
