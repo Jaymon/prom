@@ -20,9 +20,9 @@ from . import (
 
 class ConfigTest(IsolatedAsyncioTestCase):
     def test_configure_sqlite(self):
-        dsn = 'prom.interface.sqlite.SQLite:///path/to/db'
+        dsn = "prom.interface.sqlite.SQLite:///path/to/db"
         i = configure(dsn)
-        self.assertTrue(i.config.path)
+        self.assertEqual("/path/to/db", i.config.database)
 
     def test_dsn(self):
         tests = [
@@ -275,14 +275,14 @@ class InterfaceTest(_BaseTestInterface):
         method is completely original"""
         i, s = await self.create_table()
 
-        _id = (await self.insert(i, s, 1))[0]
+        _id = (await self.insert(i, s, 1))
         d = await i.one(s, Query().eq__id(_id))
         self.assertGreater(len(d), 0)
 
         await i._connection.close()
         self.assertTrue(i.is_connected())
 
-        _id = (await self.insert(i, s, 1))[0]
+        _id = (await self.insert(i, s, 1))
         d = await i.one(s, Query().eq__id(_id))
         self.assertGreater(len(d), 0)
 
@@ -352,7 +352,7 @@ class InterfaceTest(_BaseTestInterface):
         await i.connect(config)
         self.assertTrue(i.is_connected())
 
-        _id = (await self.insert(i, s, 1))[0]
+        _id = (await self.insert(i, s, 1))
         self.assertTrue(_id)
 
     async def test_get_fields_float(self):

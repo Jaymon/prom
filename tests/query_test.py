@@ -995,7 +995,7 @@ class IteratorTest(EnvironTestCase):
 
     async def test___repr__(self):
         """https://github.com/Jaymon/prom/issues/137"""
-        orm_class = self.create_orms()
+        orm_class = await self.create_orms()
         it = await orm_class.query.get()
         s = it.__repr__()
         self.assertNotEqual("[]", s)

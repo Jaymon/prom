@@ -2,6 +2,7 @@
 import logging
 
 from prom.compat import *
+from prom.exception import InterfaceError
 import prom
 from .testdata import (
     TestData,
@@ -94,7 +95,7 @@ class IsolatedAsyncioTestCase(_IsolatedAsyncioTestCase):
         try:
             await inter.unsafe_delete_tables()
 
-        except inter.InterfaceError as e:
+        except InterfaceError as e:
             logger.exception(e)
 
         finally:

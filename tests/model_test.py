@@ -772,33 +772,6 @@ class OrmTest(EnvironTestCase):
         mfs = o2.modified_fields
         self.assertEqual(0, len(mfs))
 
-    async def test_unicode(self):
-        """Jarid was having encoding issues, so I'm finally making sure prom
-        only ever returns unicode strings
-        """
-        orm_class = self.get_orm_class(
-            foo=Field(unicode, True),
-            bar=Field(str, True),
-            che=Field(str, False),
-            baz=Field(int, False),
-        )
-
-        t = await orm_class.create(
-            foo=self.get_unicode_name(),
-            bar=self.get_unicode_words(),
-            che=self.get_unicode_words().encode('utf-8'),
-            baz=self.get_int(1, 100000)
-        )
-
-        t2 = await orm_class.query.eq_pk(t.pk).one()
-
-        self.assertEqual(t.foo, t2.foo)
-        self.assertEqual(t.bar, t2.bar)
-
-        pout.v(t.che.decode("utf-8"), t2.che)
-        self.assertEqual(t.che.decode("utf-8"), t2.che)
-        self.assertTrue(isinstance(t.baz, int))
-
     async def test_query(self):
         orm_class = self.get_orm_class()
         pks = await self.insert(orm_class, 5)

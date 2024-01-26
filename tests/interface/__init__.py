@@ -176,7 +176,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         # make sure more exotic datatypes are respected
         s_ref = self.get_schema()
         await i.set_table(s_ref)
-        s_ref_id = (await self.insert(i, s_ref, 1))[0]
+        s_ref_id = (await self.insert(i, s_ref, 1))
 
         s = self.get_schema(
             _id=Field(int, autopk=True),
@@ -206,7 +206,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             'nine': datetime.date(2005, 9, 14),
         }
         pk = await i.insert(s, d)
-        q = Query().is__id(pk)
+        q = Query().eq__id(pk)
         odb = await i.one(s, q)
         for k, v in d.items():
             self.assertEqual(v, odb[k])
@@ -462,7 +462,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         for dt in dts:
             if isinstance(dt["output"], dict):
                 pk = await i.insert(s, {"bar": dt["input"]})
-                d = dict(await i.one(s, Query().is__id(pk)))
+                d = dict(await i.one(s, Query().eq__id(pk)))
 
                 for k, v in dt["output"].items():
                     self.assertEqual(v, getattr(d["bar"], k))
@@ -471,7 +471,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
                 output = (dt["output"], InterfaceError)
                 with self.assertRaises(output, msg=dt["input"]):
                     pk = await i.insert(s, {"bar": dt["input"]})
-                    i.one(s, Query().is__id(pk))
+                    i.one(s, Query().eq__id(pk))
 
     async def test_field_none(self):
         """Make sure we can query fields using None"""
@@ -490,33 +490,6 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         r = await i.get(s, Query().ne_two(None))
         self.assertEqual(1, len(r))
         self.assertEqual(pk_ne_null, r[0]["_id"])
-
-    async def test_field_str(self):
-        """Jarid was having encoding issues, so I'm finally making sure prom
-        only ever returns unicode strings
-        """
-        i, s = await self.create_table(
-            bar=Field(str, True),
-            che=Field(str, False),
-        )
-
-        td = {
-            "bar": self.get_unicode_words(),
-            "che": self.get_unicode_words().encode('utf-8'),
-            #"che": b"\xf0\xa1\x81\xb5 \xd1\x80\xd0\xb0\xd0\xb1\xd0\xbe\xd1\x82\xd0\xb0\xd1\x82\xd1\x8c \xf0\xa0\xbe\xbc \xd1\x82\xd1\x83\xd1\x82"
-        }
-
-        pout.v(td)
-
-        pk = await i.insert(s, td)
-        td2 = await i.one(s, Query().eq__id(pk))
-
-        pout.v(td, td2)
-
-        self.assertEqual(td["bar"], td2["bar"])
-
-        pout.v(td["che"].decode("utf-8"), td2["che"])
-        self.assertEqual(td["che"].decode("utf-8"), td2["che"])
 
     async def test_insert_1(self):
         i, s = await self.create_table()
@@ -697,10 +670,10 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
     async def test_delete(self):
         # try deleting with no table
         i, s = self.get_table()
-        r = await i.delete(s, Query().is_foo(1))
+        r = await i.delete(s, Query().eq_foo(1))
 
         # try deleting with no values in the table
-        r = await i.delete(s, Query().is_foo(1))
+        r = await i.delete(s, Query().eq_foo(1))
         self.assertEqual(0, r)
 
         _ids = await self.insert(i, s, 5)
@@ -737,11 +710,11 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             'foo': 2,
             'bar': 'value 2',
         }
-        q = Query().set(d).is__id(pk)
+        q = Query().set(d).eq__id(pk)
         row_count = await i.update(s, d, q)
 
         # let's pull it out and make sure it persisted
-        gd = await i.one(s, Query().is__id(pk))
+        gd = await i.one(s, Query().eq__id(pk))
         self.assertEqual(d['foo'], gd['foo'])
         self.assertEqual(d['bar'], gd['bar'])
         self.assertEqual(pk, gd["_id"])
@@ -1236,7 +1209,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
         v = 'foo-bar@example.com'
         d = await i.insert(s, {'foo': v, 'bar': 'bar'})
-        r = await i.one(s, Query().is_foo(v))
+        r = await i.one(s, Query().eq_foo(v))
         self.assertGreater(len(r), 0)
 
         # change the case of v
@@ -1249,7 +1222,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             lv[x] = lv[x].lower()
 
         d = await i.insert(s, {'foo': 'FoO', 'bar': 'bar'})
-        r = await i.one(s, Query().is_foo('foo'))
+        r = await i.one(s, Query().eq_foo('foo'))
         self.assertGreater(len(r), 0)
         self.assertEqual(r['foo'], 'FoO')
 

@@ -156,7 +156,7 @@ class InterfaceTest(_BaseTestInterface):
             'six': 4000000000,
         }
         pk = await i.insert(s, d)
-        odb = await i.one(s, Query().is__id(pk))
+        odb = await i.one(s, Query().eq__id(pk))
         for k, v in d.items():
             self.assertEqual(v, odb[k])
 
@@ -217,7 +217,7 @@ class InterfaceTest(_BaseTestInterface):
         self.assertTrue('"ts" IS DISTINCT FROM %s' in fstr, fstr)
 
         with self.assertRaises(KeyError):
-            q = orm_class.query.is_ts(bogus=5)
+            q = orm_class.query.eq_ts(bogus=5)
             fstr, fargs = q.render(placeholder=True)
 
     async def test_render_sql_in(self):
@@ -260,7 +260,7 @@ class InterfaceTest(_BaseTestInterface):
         pk = await i.insert(s, {"foo": 1})
         self.assertEqual(36, len(str(pk)))
 
-        d = dict(await i.one(s, query.Query().is__id(pk)))
+        d = dict(await i.one(s, query.Query().eq__id(pk)))
         self.assertEqual(1, d["foo"])
         self.assertEqual(pk, d["_id"])
 
