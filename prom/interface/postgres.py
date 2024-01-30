@@ -30,7 +30,8 @@ from ..exception import (
 class DictDumper(Dumper):
     """Converts from python dict to JSONB to be saved into the db
 
-    https://www.psycopg.org/psycopg3/docs/advanced/adapt.html#adaptation
+    https://www.psycopg.org/psycopg3/docs/basic/adapt.html
+    https://www.psycopg.org/psycopg3/docs/advanced/adapt.html
     https://www.psycopg.org/psycopg3/docs/api/adapt.html#psycopg.adapt.Dumper
 
     Surprisingly, Postgres converts the json value in the db back to dict just
@@ -61,6 +62,7 @@ class PostgreSQL(SQLInterface):
     """
     https://www.psycopg.org/psycopg3/docs/advanced/async.html
     https://www.psycopg.org/psycopg3/docs/basic/from_pg2.html
+    https://github.com/psycopg/psycopg
 
     https://www.psycopg.org/docs/
     https://www.psycopg.org/docs/usage.html
