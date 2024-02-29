@@ -827,8 +827,10 @@ class Field(object, metaclass=FieldMeta):
         if self.is_ref():
             options = self.schema.pk.options
             options.update(self.options)
+
         else:
             options = self.options
+
         return options
 
     def __init__(
@@ -873,6 +875,11 @@ class Field(object, metaclass=FieldMeta):
                 Used with an int to set it to an auto-increment, use it with
                 UUID to have uuids auto generated
             * autopk: bool, shortcut for setting pk=True, auto=True
+            * fvalue: callable[Any], called in the default .fset method to
+                normalize the value before setting the value as an attribute on
+                the orm
+            * ivalue: callable[Any], called in the default .iset method to
+                normalize the value before sending the value to the db
         :param **field_options_kwargs: dict, will be combined with field_options
         """
         field_options = utils.make_dict(field_options, field_options_kwargs)
@@ -1004,7 +1011,7 @@ class Field(object, metaclass=FieldMeta):
             ret["size"] = max(options["max_size"], ret.get("size", 0))
             ret["original"]["max_size"] = options["max_size"]
             ret["has_size"] = True
-            ret["bounds"] = (ret.get("size", 0), ret["size"])
+            ret["bounds"] = (ret.get("min_size", 0), ret["size"])
 
         if "min_size" in options:
             ret["size"] = max(options["min_size"], ret.get("size", 0))
@@ -1238,6 +1245,13 @@ class Field(object, metaclass=FieldMeta):
         """
         logger.debug(f"fset {orm.__class__.__name__}.{self.name}")
         if val is not None:
+            if fvalues := self.options.get("fvalue", None):
+                if callable(fvalues):
+                    fvalues = [fvalues]
+
+                for fvalue in fvalues:
+                    val = fvalue(val)
+
             if self.choices and val not in self.choices:
                 raise ValueError("Value {} not in {} value choices".format(
                     val,
@@ -1281,6 +1295,15 @@ class Field(object, metaclass=FieldMeta):
         :returns: Any
         """
         logger.debug(f"iset {orm.__class__.__name__}.{self.name}")
+
+        if val is not None:
+            if ivalues := self.options.get("ivalue", None):
+                if callable(ivalues):
+                    ivalues = [ivalues]
+
+                for ivalue in ivalues:
+                    val = ivalue(val)
+
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
             val = self.schema.pk.iset(orm, val)

@@ -25,12 +25,6 @@ testdata.basic_logging(
         "asyncio": "WARNING",
         "testdata": "WARNING",
     },
-#     format="|".join(['[%(levelname).1s',
-#         '%(asctime)s',
-#         '%(process)d.%(thread)d',
-#         '%(name)s',
-#         '%(filename)s:%(lineno)s] %(message)s',
-#     ])
 )
 
 

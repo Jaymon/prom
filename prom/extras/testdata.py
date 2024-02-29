@@ -24,13 +24,23 @@ class ModelData(TestData):
 
     https://github.com/Jaymon/testdata
 
+    In order for this to be used, it needs to be loaded into memory so testdata
+    can discover it:
+
+        from prom.extras.testdata import ModelData
+
+    I usually import this in a common test module that gets imported by all the
+    actual tests so this is always loaded.
+
     This uses a lot of magic and I'm not sure the best way to describe it,
     basically, this will create get_*, create_*, and get_*_fields methods for
     any Orm subclass you have loaded into memory. The * will correspond to
-    Orm.model_name and Orm.models_name.
+    Orm.model_name and Orm.models_name (get_*_fields only ever corresponds to
+    Orm.model_name).
 
-    Because it only creates those methods for Orm classes loaded
-    into memory you need to import the modules for the classes you want to test
+    NOTE -- Because this class only creates those methods for Orm classes
+    loaded into memory you need to import the modules for the classes you want
+    to test
 
     Maybe the best way to understand what this does is by example.
 
@@ -87,6 +97,23 @@ class ModelData(TestData):
         class Foobar(Orm):
             model_name = "foo_bar"
             models_name = "foo_bars"
+
+    So this is the order of calls:
+
+        * .create_orms
+            * .get_orms
+                * .get_orm
+                    * .get_fields
+                    * .create_orm_instance
+
+        * .create_orm
+            * .get_orm
+                * .get_fields
+                * .create_orm_instance
+
+    Any kwargs you pass in any of the methods will be passed to the methods
+    below, so if you pass in a value to .create_orm it will be available in
+    .get_fields
     """
     model_cache = {}
     """Caches the found models for a given model name"""
@@ -122,16 +149,37 @@ class ModelData(TestData):
         else:
             return method_name, default_method
 
-    def _get_method(self, orm_class, **kwargs):
-        """Return the .get_orm() type method for orm_class"""
-        method_name = f"get_{orm_class.model_name}"
-        kwargs.setdefault("default_method", self.get_orm)
-        return self._find_method(method_name, **kwargs)
+#     async def _kwargs(self, orm_class, **kwargs):
+#         if "entry_method" not in kwargs:
+#             method_name = f"get_{orm_class.model_name}_kwargs"
+#             kwargs.setdefault("default_method", self.get_orm_kwargs)
+#             method_name, method = self._find_method(method_name, **kwargs)
+# 
+#             kwargs = await self._run_method(
+#                 method_name,
+#                 method,
+#                 orm_class,
+#                 **kwargs
+#             )
+# 
+#         return kwargs
+
+#     def _get_method(self, orm_class, **kwargs):
+#         """Return the .get_orm() type method for orm_class"""
+#         method_name = f"get_{orm_class.model_name}"
+#         kwargs.setdefault("default_method", self.get_orm)
+#         return self._find_method(method_name, **kwargs)
 
     async def _get(self, orm_class, **kwargs):
         """Internal dispatcher method for get_orm, this will first try and find
         a get_<ORM-NAME> method and fallback to get_orm"""
-        method_name, method = self._get_method(orm_class)
+        method_name = f"get_{orm_class.model_name}"
+        kwargs["default_method"] = self.get_orm
+        method_name, method = self._find_method(method_name, **kwargs)
+
+#         kwargs = await self._kwargs(orm_class, **kwargs)
+#         kwargs.setdefault("entry_method", method)
+
         return await self._run_method(method_name, method, orm_class, **kwargs)
 
     def _gets_count(self, orm_class, **kwargs):
@@ -153,58 +201,99 @@ class ModelData(TestData):
             )
         )
 
-    def _gets_method(self, orm_class, **kwargs):
-        """Return the .get_orms() type method for orm_class"""
-        method_name = f"get_{orm_class.models_name}"
-        kwargs.setdefault("default_method", self.get_orms)
-        return self._find_method(method_name, **kwargs)
+#     def _gets_method(self, orm_class, **kwargs):
+#         """Return the .get_orms() type method for orm_class"""
+#         method_name = f"get_{orm_class.models_name}"
+#         kwargs.setdefault("default_method", self.get_orms)
+#         return self._find_method(method_name, **kwargs)
 
     async def _gets(self, orm_class, **kwargs):
         """Internal dispatcher method for get_orms, this will first try and find
         a get_<ORM-MODELS-NAME> method and fallback to get_orms"""
-        method_name, method = self._gets_method(orm_class)
+        method_name = f"get_{orm_class.models_name}"
+        #kwargs.setdefault("default_method", self.get_orms)
+        kwargs["default_method"] = self.get_orms
+        method_name, method = self._find_method(method_name, **kwargs)
+
         return await self._run_method(method_name, method, orm_class, **kwargs)
 
-    def _create_method(self, orm_class, **kwargs):
-        """Return the .create_orm() type method for orm_class"""
-        method_name = f"create_{orm_class.model_name}"
-        kwargs.setdefault("default_method", self.create_orm)
-        return self._find_method(method_name, **kwargs)
+#     def _create_method(self, orm_class, **kwargs):
+#         """Return the .create_orm() type method for orm_class"""
+#         method_name = f"create_{orm_class.model_name}"
+#         kwargs.setdefault("default_method", self.create_orm)
+#         return self._find_method(method_name, **kwargs)
 
     async def _create(self, orm_class, **kwargs):
         """Internal dispatcher method for create_orm, this will first try and
         find a create_<ORM-NAME> method and fallback to create_orm"""
-        method_name, method = self._create_method(orm_class)
+        method_name = f"create_{orm_class.model_name}"
+        #kwargs.setdefault("default_method", self.create_orm)
+        kwargs["default_method"] = self.create_orm
+        method_name, method = self._find_method(method_name, **kwargs)
+
+#         kwargs = await self._kwargs(orm_class, **kwargs)
+#         kwargs.setdefault("entry_method", method)
+
         return await self._run_method(method_name, method, orm_class, **kwargs)
 
-    def _creates_method(self, orm_class, **kwargs):
-        """Return the .create_orms() type method for orm_class"""
-        method_name = f"create_{orm_class.models_name}"
-        kwargs.setdefault("default_method", self.create_orms)
-        return self._find_method(method_name, **kwargs)
+#     def _creates_method(self, orm_class, **kwargs):
+#         """Return the .create_orms() type method for orm_class"""
+#         method_name = f"create_{orm_class.models_name}"
+#         kwargs.setdefault("default_method", self.create_orms)
+#         return self._find_method(method_name, **kwargs)
 
     async def _creates(self, orm_class, **kwargs):
         """Internal dispatcher method for create_orms, this will first try and
         find a create_<ORM-MODELS-NAME> method and fallback to create_orm"""
-        method_name, method = self._creates_method(orm_class)
+        method_name = f"create_{orm_class.models_name}"
+        #kwargs.setdefault("default_method", self.create_orms)
+        kwargs["default_method"] = self.create_orms
+        method_name, method = self._find_method(method_name, **kwargs)
+
         return await self._run_method(method_name, method, orm_class, **kwargs)
 
-    def _fields_method(self, orm_class, **kwargs):
-        """Return the .get_orm_fields() type method for orm_class"""
-        method_name = f"get_{orm_class.model_name}_fields"
-        kwargs.setdefault("default_method", self.get_orm_fields)
-        return self._find_method(method_name, **kwargs)
+#     def _fields_method(self, orm_class, **kwargs):
+#         """Return the .get_orm_fields() type method for orm_class"""
+#         method_name = f"get_{orm_class.model_name}_fields"
+#         kwargs.setdefault("default_method", self.get_orm_fields)
+#         return self._find_method(method_name, **kwargs)
 
     async def _fields(self, orm_class, **kwargs):
         """Internal dispatcher method for get_orm_fields, this will first try
         and find a get_<ORM-NAME>_fields method and fallback to get_orm_fields
         """
-        method_name, method = self._fields_method(orm_class)
+        method_name = f"get_{orm_class.model_name}_fields"
+        #kwargs.setdefault("default_method", self.get_orm_fields)
+        kwargs["default_method"] = self.get_orm_fields
+        method_name, method = self._find_method(method_name, **kwargs)
+
+#         kwargs = await self._kwargs(orm_class, **kwargs)
+#         kwargs.setdefault("entry_method", method)
+
+        return await self._run_method(method_name, method, orm_class, **kwargs)
+
+#     def _instance_method(self, orm_class, **kwargs):
+#         """Return the .create_orm_instance() type method for orm_class"""
+#         method_name = f"create_{orm_class.model_name}_instance"
+#         kwargs.setdefault("default_method", self.create_orm_instance)
+#         return self._find_method(method_name, **kwargs)
+
+    async def _instance(self, orm_class, **kwargs):
+        """Internal dispatcher method for create_orm_instance, this will first
+        try and find a create_<ORM-NAME>_instance method and fallback to
+        create_orm_instance
+        """
+        method_name = f"create_{orm_class.model_name}_instance"
+        #kwargs.setdefault("default_method", self.create_orm_instance)
+        kwargs["default_method"] = self.create_orm_instance
+        method_name, method = self._find_method(method_name, **kwargs)
+
         return await self._run_method(method_name, method, orm_class, **kwargs)
 
     def _run_method(self, method_name, method, orm_class, **kwargs):
         """This can run both asyncronous and syncronous methods, it's not async
         but should be awaited when running async methods"""
+#         kwargs.setdefault("entry_method", method)
         kwargs.setdefault("orm_class", orm_class)
         logger.debug(
             "Running {} as {} for orm_class {}".format(
@@ -220,6 +309,9 @@ class ModelData(TestData):
         wrapper method to call
 
         NOTE -- this method must raise AttributeError on expected errors
+
+        TODO -- can this be dramatically simplified using _find_method and
+        _run_method?
 
         :param method_name: str, the method name that contains the model class
             we're ultimately looking for
@@ -304,15 +396,24 @@ class ModelData(TestData):
         except AttributeError:
             return super().__getattr__(method_name)
 
-    async def unsafe_delete_db(self):
+    async def close_orm_interfaces(self):
+        """Close down all the globally created interfaces
+
+        This, along with the unsafe_* methods are designed to be used in actual
+        project testing, this is most useful in the test's asyncTearDown method
+        """
+        for inter in get_interfaces().values():
+            await inter.close()
+
+    async def unsafe_delete_orm_tables(self):
         """This will delete all the tables from the db
 
-        It relies on a method .ensure_safe_env being defined in the project code
+        NOTE -- You'll want to make sure you only call the method in the
+        right environments as this really will delete all the tables in
+        whatever dbs it has connections for
         """
-        # .ensure_safe_env() method needs to be defined in project code
-        if self.ensure_safe_env():
-            for inter in get_interfaces().values():
-                await inter.unsafe_delete_tables()
+        for inter in get_interfaces().values():
+            await inter.unsafe_delete_tables()
 
     async def unsafe_install_orms(self, modulepaths):
         """Go through and install all the Orm subclasses found in the passed in
@@ -408,6 +509,8 @@ class ModelData(TestData):
             * require_fields: bool, default True, if True then create missing
                 refs, if False, then refs won't be created and so if they are
                 missing their fields will not be populated
+            * ignore_field_names: set[str]|list[str], a set of field names that
+                should be ignored when creating refs
         :returns: dict, the kwargs with ref field_name and ref
             orm_class.model_name will be included
         """
@@ -422,6 +525,8 @@ class ModelData(TestData):
 
         ignore_refs = kwargs.get("ignore_refs", False)
         require_fields = kwargs.get("require_fields", True)
+        ignore_field_names = set(kwargs.get("ignore_field_names", []))
+
         for field_name, field in orm_class.schema.fields.items():
             if ref_class := field.ref:
                 ref_field_name = ref_class.model_name
@@ -431,6 +536,10 @@ class ModelData(TestData):
                         kwargs[ref_field_name] = await ref_class.query.eq_pk(
                             kwargs[field_name]
                         ).one()
+
+                elif field_name in ignore_field_names:
+                    # we were explicitely told to ignore this field
+                    continue
 
                 else:
                     if ref_field_name in kwargs:
@@ -555,8 +664,15 @@ class ModelData(TestData):
         kwargs.setdefault("ignore_refs", True)
         instance = kwargs.get(orm_class.model_name, None)
         if not instance:
-            fields = await self._fields(orm_class, **kwargs)
-            instance = orm_class(fields)
+            kwargs["fields"] = await self._fields(orm_class, **kwargs)
+
+            if kwargs["fields"] and "**" in kwargs["fields"]:
+                kwargs.update(kwargs["fields"].pop("**"))
+
+            instance = await self._instance(
+                orm_class,
+                **kwargs
+            )
 
         return instance
 
@@ -594,19 +710,36 @@ class ModelData(TestData):
                 apply to foreign key references
             * field_callbacks: dict, the key is the field name and the value is
                 a callable that can take self
-        :returns: dict
+            * ignore_field_names: set[str]|list[str], a set of field names that
+                should be ignored when creating refs
+            * fields: dict[str, Any], these will be used to seed the return
+                dict, you use this to get non schema fields to be passed to
+                orm's __init__ method
+        :returns: dict, these are the fields that will be passed to Orm.__init__
+            with one exception, if the dict contains a key "**" then that key
+            will be popped and it's value (which should be a dict) will update
+            the kwargs that are passed to .get_orm_instance to create the
+            actual orm instance. The "**" key is just a handy way to do all
+            customizing in one overridden method
         """
-        ret = {}
+        ret = kwargs.get("fields", {})
         schema = orm_class.schema
+
         kwargs.setdefault("ignore_refs", True)
         kwargs = await self.assure_orm_refs(orm_class, **kwargs)
+
         require_fields = kwargs.get("require_fields", True)
         field_callbacks = kwargs.get("field_callbacks", {})
+        ignore_field_names = set(kwargs.get("ignore_field_names", []))
 
         for field_name, field in schema.fields.items():
             if field_name in kwargs:
                 # this value was passed in so we don't need to do anything
                 ret[field_name] = kwargs[field_name]
+
+            elif field_name in ignore_field_names:
+                # we were explicitely told to ignore this field
+                pass
 
             elif field.is_auto():
                 # db will handle any auto-generating fields
@@ -634,7 +767,10 @@ class ModelData(TestData):
                         cb = getattr(
                             field,
                             "testdata",
-                            field_callbacks.get(field_name, None)
+                            field.options.get(
+                                "testdata",
+                                field_callbacks.get(field_name, None)
+                            )
                         )
                         if cb:
                             ret[field_name] = cb(self)
@@ -684,4 +820,39 @@ class ModelData(TestData):
                                 )
 
         return ret
+
+    async def create_orm_instance(self, orm_class, **kwargs):
+        """Semi-internal method to actually create an instance of orm_class
+
+        This is semi-internal because it can be overridden and customized but
+        it can't be called externally, it is designed to only be called 
+        internally by the other methods but never to be called externally
+
+        https://github.com/Jaymon/prom/issues/170
+
+        :param orm_class: Orm
+        :param fields: dict[str, Any], these should ruoughly correspond to the
+            Orm's Schema fields 
+        :param **kwargs:
+            * attributes: dict[str, Any], These will be set onto the instance
+                after it is created
+            * fields: dict[str, Any], these are the actual fields that will be
+                passed to Orm.__init__, that makes this kwargs different than
+                other methods because the fields have been separated out.
+                Basically, if you did .get_orm_class(FooOrm, bar="...") then
+                by the time we got to here you would access bar with
+                kwargs["fields"]["bar"] instead of just kwargs["bar"] in all
+                the other methods
+        :returns: Orm, the actual instance populated with fields 
+        """
+        instance = orm_class(kwargs["fields"])
+
+        if attributes := kwargs.get("attributes", {}):
+            for name, value in attributes.items():
+                setattr(instance, name, value)
+
+        return instance
+
+#     async def get_orm_kwargs(self, orm_class, **kwargs):
+#         return kwargs
 

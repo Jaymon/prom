@@ -677,14 +677,18 @@ class FieldTest(EnvironTestCase):
         o = FooSN(bar="bar")
         self.assertEqual("bar", o.bar)
 
-    def test_get_size(self):
+    def test_size_info_1(self):
         """Makes sure sizes get set correctly, I've evidently had a bug in this
         for years (1-26-2023)"""
         f = Field(int, True, max_size=100)
         self.assertEqual(100, f.options["max_size"])
+        r = f.size_info()
+        self.assertEqual((0, 100), r["bounds"])
 
         f = Field(int, True, size=100)
         self.assertEqual(100, f.options["size"])
+        r = f.size_info()
+        self.assertEqual((100, 100), r["bounds"])
 
         f = Field(int, True, size=100)
         self.assertEqual(100, f.options["size"])
@@ -700,7 +704,7 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(100, f.options["min_size"])
         self.assertEqual(500, f.options["max_size"])
 
-    def test_size_info_1(self):
+    def test_size_info_2(self):
         # A field with precision 65, scale 30 must round to an absolute value
         # less than 10^35
         f = Field(float, precision=65, scale=30)
