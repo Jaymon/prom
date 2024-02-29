@@ -813,6 +813,11 @@ class Field(object, metaclass=FieldMeta):
 
     @property
     def ref_names(self):
+        """Return the reference names for this field
+
+        :returns: set[str], basically a set of .ref.model_name and
+            .ref.models_name
+        """
         names = set()
         if ref_class := self.ref:
             names.add(ref_class.model_name)
@@ -894,7 +899,8 @@ class Field(object, metaclass=FieldMeta):
         if choices or not self.choices:
             self.choices = choices
 
-        if jsonable := field_options.pop("jsonable", None):
+        if "jsonable" in field_options:
+            jsonable = field_options.pop("jsonable")
             if isinstance(jsonable, str):
                 field_options.setdefault("jsonable_name", jsonable)
 
@@ -1429,7 +1435,11 @@ class Field(object, metaclass=FieldMeta):
 
             if self.is_ref():
                 # Foreign Keys get passed through their Field methods
-                val = self.schema.pk.jsonable(orm, val)
+                _, val = self.schema.pk.jsonable(
+                    orm,
+                    name,
+                    val
+                )
 
             else:
                 if val is None:
@@ -1439,6 +1449,9 @@ class Field(object, metaclass=FieldMeta):
                     format_str = ""
                     if isinstance(val, (datetime.datetime, datetime.date)):
                         val = Datetime(val).isoformat()
+
+                    elif isinstance(val, uuid.UUID):
+                        val = str(val)
 
             return self.options.get("jsonable_name", name), val
 

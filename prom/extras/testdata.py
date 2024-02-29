@@ -3,6 +3,7 @@ import datetime
 import functools
 import logging
 import uuid
+import re
 
 from testdata.base import TestData
 from datatypes import (
@@ -239,6 +240,41 @@ class ModelData(TestData):
         )
         return method(**kwargs)
 
+    def _parse_method_name(self, method_name):
+        """Parses method name and returns the magic method name/type, the
+        inferred orm model name, and the found orm_class
+
+        This raises an AttributeError on failure or invalid magic method name
+
+        :param method_name: str, the full method name that will be parsed
+        :returns: tuple[str, str, callable], (name, module_name, orm_class)
+        """
+        parts = method_name.split("_")
+
+        if len(parts) == 1:
+            raise AttributeError(
+                f"Invalid magic method: {method_name}"
+            )
+
+        else:
+            name = parts[0]
+            if parts[-1] in set(["fields", "instance"]):
+                name = parts[-1]
+                model_name = "_".join(parts[1:-1])
+
+            else:
+                model_name = "_".join(parts[1:])
+
+            try:
+                orm_class = self.get_orm_class(model_name)
+
+            except ValueError as e:
+                raise AttributeError(
+                    f"Could not derive orm class from {method_name}"
+                ) from e
+
+        return name, model_name, orm_class
+
     def _find_attr(self, method_name):
         """Internal method used by self.__getattr__ to find the orm and create a
         wrapper method to call
@@ -254,72 +290,131 @@ class ModelData(TestData):
             f"Finding {self.__class__.__name__}.{method_name} method"
         )
 
-        try:
-            # check for <NAME>_<MODEL_NAME>
-            name, model_name = method_name.split("_", 1)
+        name, model_name, orm_class = self._parse_method_name(method_name)
 
-            if model_name.endswith("_fields"):
-                name = "fields"
-                model_name, _ = model_name.rsplit("_", 1)
+#         try:
+#             # check for <NAME>_<MODEL_NAME>
+#             name, model_name = method_name.split("_", 1)
+# 
+#             for suffix in ["_fields", "_instance"]:
+#                 if model_name.endswith(suffix):
+#                     name = suffix[1:]
+#                     model_name, _ = model_name.rsplit("_", 1)
+#                     break
+# 
+# #             if model_name.endswith("_fields"):
+# #                 name = "fields"
+# #                 model_name, _ = model_name.rsplit("_", 1)
+# # 
+# #             elif model_name.endswith("_instance"):
+# #                 name = "instance"
+# #                 model_name, _ = model_name.rsplit("_", 1)
+# 
+#         except ValueError as e:
+#             raise AttributeError(
+#                 f"invalid potential method: {method_name}"
+#             ) from e
+# 
+#         else:
+#             try:
+#                 orm_class = self.get_orm_class(model_name)
+# 
+#             except ValueError as e:
+#                 raise AttributeError(
+#                     f"Could not find orm class from {method_name}"
+#                 ) from e
+# 
+#             else:
 
-        except ValueError as e:
-            raise AttributeError(
-                f"invalid potential method: {method_name}"
-            ) from e
-
-        else:
-            try:
-                orm_class = self.get_orm_class(model_name)
-
-            except ValueError as e:
-                raise AttributeError(
-                    f"Could not find orm class from {method_name}"
-                ) from e
+        orm_method = None
+        if name == "get":
+            if orm_class.model_name == model_name:
+                orm_method = self.get_orm
 
             else:
-                orm_method = None
-                if name == "get":
-                    if orm_class.model_name == model_name:
-                        orm_method = self.get_orm
+                orm_method = self.get_orms
 
-                    else:
-                        orm_method = self.get_orms
+        elif name == "create":
+            if orm_class.model_name == model_name:
+                orm_method = self.create_orm
 
-                elif name == "create":
-                    if orm_class.model_name == model_name:
-                        orm_method = self.create_orm
+            else:
+                orm_method = self.create_orms
 
-                    else:
-                        orm_method = self.create_orms
+        elif name == "fields":
+            orm_method = self.get_orm_fields
 
-                elif name == "fields":
-                    orm_method = self.get_orm_fields
+        elif name == "instance":
+            orm_method = self.create_orm_instance
 
-                if orm_method:
-                    logger.debug(
-                        f"Found {orm_method.__name__} for {orm_class.__name__}"
-                    )
+        if orm_method:
+            logger.debug(
+                f"Found {orm_method.__name__} for {orm_class.__name__}"
+            )
 
-                    def method(**kwargs):
-                        # https://github.com/Jaymon/prom/issues/166
-                        # we want to override the passed in orm_class if it
-                        # doesn't match our found orm class because this has
-                        # most likely been called internally by another magic
-                        # method that just passed kwargs
-                        kwargs.setdefault("orm_class", orm_class)
-                        if not isinstance(orm_class, kwargs["orm_class"]):
-                            kwargs["orm_class"] = orm_class
+            def method(**kwargs):
+                # https://github.com/Jaymon/prom/issues/166
+                # we want to override the passed in orm_class if it
+                # doesn't match our found orm class because this has
+                # most likely been called internally by another magic
+                # method that just passed kwargs
+                kwargs.setdefault("orm_class", orm_class)
+                if not isinstance(orm_class, kwargs["orm_class"]):
+                    kwargs["orm_class"] = orm_class
 
-                        return orm_method(**kwargs)
+                return orm_method(**kwargs)
 
-                    # could also use functools.wraps here on method instead of
-                    # just setting the name, but I like that it explicitely
-                    # says it is wrapped in the name instead of just
-                    # transparantly using orm_method's name
-                    method.__name__ = f"wrapped_{orm_method.__name__}"
-                    return method
+            # could also use functools.wraps here on method instead of
+            # just setting the name, but I like that it explicitely
+            # says it is wrapped in the name instead of just
+            # transparantly using orm_method's name
+            method.__name__ = f"wrapped_getattr_{orm_method.__name__}"
+            return method
 
         raise AttributeError(f"Could not find an orm matching {method_name}")
+
+    def __getattribute__(self, method_name):
+        attribute = super().__getattribute__(method_name)
+
+        if not method_name.startswith("_") and callable(attribute):
+            if not re.search(r"_orm(?:$|_)", method_name):
+                try:
+                    name, model_name, orm_class = self._parse_method_name(
+                        method_name
+                    )
+
+                except AttributeError:
+                    pass
+
+                else:
+                    attribute = functools.partial(
+                        attribute,
+                        orm_class=orm_class
+                    )
+
+                    attribute.__name__ = f"wrapped_getattribute_{method_name}"
+
+        return attribute
+
+        #return super().__getattribute__(method_name)
+
+
+
+
+#         return super().__getattribute__(method_name)
+#         if method_name.startswith("_"):
+#             return super().__getattribute__(method_name)
+# 
+#         else:
+#             parts = method_name.split("_")
+#             command = parts[0]
+#             if parts[-1] in set(["fields", "instance"]):
+#                 command = parts[-1]
+#                 model_name = "_".join(parts[1:-1])
+# 
+#             else:
+#                 model_name = "_".join(parts[1:])
+
 
     def __getattr__(self, method_name):
         try:

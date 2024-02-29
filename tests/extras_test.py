@@ -73,6 +73,12 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         from prom.extras.testdata import ModelData
         cls.data.delete_class(ModelData)
 
+    def setUp(self):
+        # clear caches since I have a tendency to use the same names over
+        # and over again when testing
+        Orm.orm_classes = {}
+        self.ModelData.model_cache = {}
+
     async def test_references_1(self):
         testdata = self.InterfaceData
         ref_class = testdata.get_orm_class()
@@ -117,24 +123,76 @@ class ModelDataTest(IsolatedAsyncioTestCase):
             "",
             "class Bar(Orm):",
             "    two = Field(str)",
-        ])
+        ], load=True)
 
-        m = modpath.module()
+        #m = modpath.module()
         did_run = {}
 
-        class OtherData(self.ModelData.__class__):
+        class _OtherData(self.ModelData.__class__):
             async def get_foo_fields(s, **kwargs):
                 bar = await s.get_bar(**kwargs)
                 self.assertEqual("Bar", bar.__class__.__name__)
                 self.assertNotIsInstance(bar, kwargs["orm_class"])
                 did_run["get_foo_fields"] = True
 
-        d = OtherData()
+        d = _OtherData()
         foo = await d.get_foo() # this method runs the asserts
         self.assertTrue(did_run["get_foo_fields"])
 
         # cleanup/remove this class
-        self.data.delete_class(OtherData)
+        #self.data.delete_class(OtherData)
+
+    async def test___getattribute__(self):
+        """
+        https://github.com/Jaymon/prom/issues/166
+        """
+        modpath = self.create_module([
+            "from prom import Orm, Field",
+            "",
+            "class Foo(Orm):",
+            "    one = Field(str)",
+            "",
+            "class Bar(Orm):",
+            "    two = Field(str)",
+        ], load=True)
+
+        did_run = {}
+
+        class _OtherData(self.ModelData.__class__):
+            async def get_foo_fields(self, **kwargs):
+                did_run["get_foo_fields"] = True
+                return await super().get_orm_fields(**kwargs)
+
+        d = _OtherData()
+        r = await d.get_foo_fields()
+        self.assertTrue(did_run["get_foo_fields"])
+
+        # cleanup/remove this class
+        #self.data.delete_class(OtherData)
+
+    def test__parse_method_name(self):
+
+        modpath = self.create_module([
+            "from prom import Orm, Field",
+            "",
+            "class Foo(Orm):",
+            "    pass",
+        ], load=True)
+
+        r = self.ModelData._parse_method_name("get_foos")
+        self.assertEqual("get", r[0])
+        self.assertEqual("foos", r[1])
+        self.assertEqual("foo", r[2].model_name)
+
+        with self.assertRaises(AttributeError):
+            self.ModelData._parse_method_name("foobarche")
+
+        with self.assertRaises(AttributeError):
+            self.ModelData._parse_method_name("get_orm_fields")
+
+        r = self.ModelData._parse_method_name("get_foo_instance")
+        self.assertEqual("instance", r[0])
+        self.assertEqual("foo", r[1])
 
     async def test_children_create(self):
         """
