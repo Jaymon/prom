@@ -125,7 +125,6 @@ class ModelDataTest(IsolatedAsyncioTestCase):
             "    two = Field(str)",
         ], load=True)
 
-        #m = modpath.module()
         did_run = {}
 
         class _OtherData(self.ModelData.__class__):
@@ -138,9 +137,6 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         d = _OtherData()
         foo = await d.get_foo() # this method runs the asserts
         self.assertTrue(did_run["get_foo_fields"])
-
-        # cleanup/remove this class
-        #self.data.delete_class(OtherData)
 
     async def test___getattribute__(self):
         """
@@ -166,9 +162,6 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         d = _OtherData()
         r = await d.get_foo_fields()
         self.assertTrue(did_run["get_foo_fields"])
-
-        # cleanup/remove this class
-        #self.data.delete_class(OtherData)
 
     def test__parse_method_name(self):
 

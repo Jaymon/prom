@@ -292,41 +292,8 @@ class ModelData(TestData):
 
         name, model_name, orm_class = self._parse_method_name(method_name)
 
-#         try:
-#             # check for <NAME>_<MODEL_NAME>
-#             name, model_name = method_name.split("_", 1)
-# 
-#             for suffix in ["_fields", "_instance"]:
-#                 if model_name.endswith(suffix):
-#                     name = suffix[1:]
-#                     model_name, _ = model_name.rsplit("_", 1)
-#                     break
-# 
-# #             if model_name.endswith("_fields"):
-# #                 name = "fields"
-# #                 model_name, _ = model_name.rsplit("_", 1)
-# # 
-# #             elif model_name.endswith("_instance"):
-# #                 name = "instance"
-# #                 model_name, _ = model_name.rsplit("_", 1)
-# 
-#         except ValueError as e:
-#             raise AttributeError(
-#                 f"invalid potential method: {method_name}"
-#             ) from e
-# 
-#         else:
-#             try:
-#                 orm_class = self.get_orm_class(model_name)
-# 
-#             except ValueError as e:
-#                 raise AttributeError(
-#                     f"Could not find orm class from {method_name}"
-#                 ) from e
-# 
-#             else:
-
         orm_method = None
+
         if name == "get":
             if orm_class.model_name == model_name:
                 orm_method = self.get_orm
@@ -395,26 +362,6 @@ class ModelData(TestData):
                     attribute.__name__ = f"wrapped_getattribute_{method_name}"
 
         return attribute
-
-        #return super().__getattribute__(method_name)
-
-
-
-
-#         return super().__getattribute__(method_name)
-#         if method_name.startswith("_"):
-#             return super().__getattribute__(method_name)
-# 
-#         else:
-#             parts = method_name.split("_")
-#             command = parts[0]
-#             if parts[-1] in set(["fields", "instance"]):
-#                 command = parts[-1]
-#                 model_name = "_".join(parts[1:-1])
-# 
-#             else:
-#                 model_name = "_".join(parts[1:])
-
 
     def __getattr__(self, method_name):
         try:
@@ -727,127 +674,6 @@ class ModelData(TestData):
 
         return ret
 
-    async def get_orm_fields(self, orm_class, **kwargs):
-        """Get the fields of an orm_class
-
-        :param orm_class: Orm
-        :param **kwargs: the fields found in orm_class.schema
-            * require_fields: bool, default True, this will require that all
-                fields have values even if they aren't required, this does not
-                apply to foreign key references
-            * field_callbacks: dict, the key is the field name and the value is
-                a callable that can take self
-            * ignore_field_names: set[str]|list[str], a set of field names that
-                should be ignored when creating refs
-            * fields: dict[str, Any], these will be used to seed the return
-                dict, you use this to get non schema fields to be passed to
-                orm's __init__ method
-        :returns: dict, these are the fields that will be passed to Orm.__init__
-            with one exception, if the dict contains a key "**" then that key
-            will be popped and it's value (which should be a dict) will update
-            the kwargs that are passed to .get_orm_instance to create the
-            actual orm instance. The "**" key is just a handy way to do all
-            customizing in one overridden method
-        """
-        ret = kwargs.get("fields", {})
-        schema = orm_class.schema
-
-        kwargs.setdefault("ignore_refs", True)
-        kwargs = await self.assure_orm_refs(orm_class, **kwargs)
-
-        require_fields = kwargs.get("require_fields", True)
-        field_callbacks = kwargs.get("field_callbacks", {})
-        ignore_field_names = set(kwargs.get("ignore_field_names", []))
-
-        for field_name, field in schema.fields.items():
-            if field_name in kwargs:
-                # this value was passed in so we don't need to do anything
-                ret[field_name] = kwargs[field_name]
-
-            elif field_name in ignore_field_names:
-                # we were explicitely told to ignore this field
-                pass
-
-            elif field.is_auto():
-                # db will handle any auto-generating fields
-                pass
-
-            elif field.is_pk():
-                # primary key isn't auto-generating and wasn't passed in, so
-                # we'll cross our fingers and hope it will be taken care of
-                # somewhere else
-                pass
-
-            elif field.is_ref():
-                # foreign keys are handled in .assure_orm_refs
-                pass
-
-            else:
-                if require_fields or field.is_required() or self.yes():
-
-                    field_type = field.interface_type
-
-                    if field.choices:
-                        ret[field_name] = self.choice(field.choices)
-
-                    else:
-                        cb = getattr(
-                            field,
-                            "testdata",
-                            field.options.get(
-                                "testdata",
-                                field_callbacks.get(field_name, None)
-                            )
-                        )
-                        if cb:
-                            ret[field_name] = cb(self)
-
-                        else:
-                            if issubclass(field_type, bool):
-                                ret[field_name] = bool(self.yes())
-
-                            elif issubclass(field_type, int):
-                                size_info = field.size_info()
-                                ret[field_name] = self.get_posint(
-                                    size_info["size"]
-                                )
-
-                            elif issubclass(field_type, str):
-                                size_info = field.size_info()
-                                if "bounds" in size_info:
-                                    ret[field_name] = self.get_words(
-                                        min_size=size_info["bounds"][0],
-                                        max_size=size_info["bounds"][1],
-                                    )
-
-                                else:
-                                    ret[field_name] = self.get_words()
-
-                            elif issubclass(field_type, dict):
-                                ret[field_name] = self.get_dict()
-
-                            elif issubclass(field_type, float):
-                                size_info = field.size_info()
-                                ret[field_name] = self.get_posfloat(
-                                    size_info["size"]
-                                )
-
-                            elif issubclass(field_type, datetime.datetime):
-                                ret[field_name] = self.get_past_datetime()
-
-                            elif issubclass(field_type, datetime.date):
-                                ret[field_name] = self.get_past_date()
-
-                            elif issubclass(field_type, uuid.UUID):
-                                ret[field_name] = str(uuid.uuid4())
-
-                            else:
-                                raise ValueError(
-                                    f"Not sure what to do with {field.type}"
-                                )
-
-        return ret
-
     async def create_orm_instance(self, orm_class, **kwargs):
         """Semi-internal method to actually create an instance of orm_class
 
@@ -879,4 +705,226 @@ class ModelData(TestData):
                 setattr(instance, name, value)
 
         return instance
+
+    async def get_orm_fields(self, orm_class, **kwargs):
+        """Get the fields of an orm_class
+
+        :param orm_class: Orm
+        :param **kwargs: the fields found in orm_class.schema
+            * require_fields: bool, default True, this will require that all
+                fields have values even if they aren't required, this does not
+                apply to foreign key references
+            * field_callbacks: dict, the key is the field name and the value is
+                a callable that can take self
+            * ignore_field_names: set[str]|list[str], a set of field names that
+                should be ignored when creating refs
+            * fields: dict[str, Any], these will be used to seed the return
+                dict, you use this to get non schema fields to be passed to
+                orm's __init__ method
+        :returns: dict, these are the fields that will be passed to Orm.__init__
+            with one exception, if the dict contains a key "**" then that key
+            will be popped and it's value (which should be a dict) will update
+            the kwargs that are passed to .get_orm_instance to create the
+            actual orm instance. The "**" key is just a handy way to do all
+            customizing in one overridden method
+        """
+        ret = kwargs.pop("fields", {})
+        schema = orm_class.schema
+
+        kwargs.setdefault("ignore_refs", True)
+        kwargs = await self.assure_orm_refs(orm_class, **kwargs)
+
+        ignore_field_names = set(kwargs.get("ignore_field_names", []))
+
+        for field_name, field in schema.fields.items():
+            if field_name in kwargs:
+                # this value was passed in so we don't need to do anything
+                ret[field_name] = kwargs[field_name]
+
+            elif field_name in ignore_field_names:
+                # we were explicitely told to ignore this field
+                pass
+
+            elif field.is_auto():
+                # db will handle any auto-generating fields
+                pass
+
+            elif field.is_pk():
+                # primary key isn't auto-generating and wasn't passed in, so
+                # we'll cross our fingers and hope it will be taken care of
+                # somewhere else
+                pass
+
+            elif field.is_ref():
+                # foreign keys are handled in .assure_orm_refs
+                pass
+
+            elif not self.get_orm_field_required(field_name, field, **kwargs):
+                pass
+
+            else:
+                ret[field_name] = self.get_orm_field_value(
+                    field_name,
+                    field,
+                    fields=ret,
+                    **kwargs
+                )
+
+        return ret
+
+    def get_orm_field_value(self, field_name, field, **kwargs):
+        """Returns the generated value for the specific field
+
+        This is a wrapper around all the specific field type generators, see the
+        other get_orm_field_* methods
+
+        :param field_name: str
+        :param field: Field, the orm's field property
+        :param **kwargs: see .get_orm_fields for values this can have
+        :returns: Any, the generated value
+        """
+        if field.choices:
+            ret = self.get_orm_field_choice(
+                field_name,
+                field,
+                **kwargs
+            )
+
+        else:
+            field_callbacks = kwargs.get("field_callbacks", {})
+            field_type = field.interface_type
+
+            cb = getattr(
+                field,
+                "testdata",
+                field.options.get(
+                    "testdata",
+                    field_callbacks.get(field_name, None)
+                )
+            )
+            if cb:
+                ret = cb(self)
+
+            else:
+                if issubclass(field_type, bool):
+                    ret = self.get_orm_field_bool(
+                        field_name,
+                        field,
+                        **kwargs
+                    )
+
+                elif issubclass(field_type, int):
+                    ret = self.get_orm_field_int(
+                        field_name,
+                        field,
+                        **kwargs
+                    )
+
+                elif issubclass(field_type, str):
+                    ret = self.get_orm_field_str(
+                        field_name,
+                        field,
+                        **kwargs
+                    )
+
+                elif issubclass(field_type, dict):
+                    ret = self.get_orm_field_dict(
+                        field_name,
+                        field,
+                        **kwargs
+                    )
+
+                elif issubclass(field_type, float):
+                    ret = self.get_orm_field_float(
+                        field_name,
+                        field,
+                        **kwargs
+                    )
+
+                elif issubclass(field_type, datetime.datetime):
+                    ret = self.get_orm_field_datetime(
+                        field_name,
+                        field,
+                        **kwargs
+                    )
+
+                elif issubclass(field_type, datetime.date):
+                    ret = self.get_orm_field_date(
+                        field_name,
+                        field,
+                        **kwargs
+                    )
+
+                elif issubclass(field_type, uuid.UUID):
+                    ret = self.get_orm_field_uuid(
+                        field_name,
+                        field,
+                        **kwargs
+                    )
+
+                else:
+                    ret = self.get_orm_field_any(
+                        field_name,
+                        field,
+                        **kwargs
+                    )
+
+        return ret
+
+    def get_orm_field_required(self, field_name, field, **kwargs):
+        """Returns True if field is required"""
+        require_fields = kwargs.get("require_fields", True)
+        return require_fields or field.is_required() or self.yes()
+
+    def get_orm_field_choice(self, field_name, field, **kwargs):
+        """Returns one of field's defined choices"""
+        return self.choice(field.choices)
+
+    def get_orm_field_bool(self, field_name, field, **kwargs):
+        return bool(self.yes())
+
+    def get_orm_field_int(self, field_name, field, **kwargs):
+        size_info = field.size_info()
+        return self.get_posint(
+            size_info["size"]
+        )
+
+    def get_orm_field_str(self, field_name, field, **kwargs):
+        size_info = field.size_info()
+        if "bounds" in size_info:
+            ret = self.get_words(
+                min_size=size_info["bounds"][0],
+                max_size=size_info["bounds"][1],
+            )
+
+        else:
+            ret = self.get_words()
+
+        return ret
+
+    def get_orm_field_dict(self, field_name, field, **kwargs):
+        return self.get_dict()
+
+    def get_orm_field_float(self, field_name, field, **kwargs):
+        size_info = field.size_info()
+        return self.get_posfloat(
+            size_info["size"]
+        )
+
+    def get_orm_field_datetime(self, field_name, field, **kwargs):
+        return self.get_past_datetime()
+
+    def get_orm_field_date(self, field_name, field, **kwargs):
+        return self.get_past_date()
+
+    def get_orm_field_uuid(self, field_name, field, **kwargs):
+        return str(uuid.uuid4())
+
+    def get_orm_field_any(self, field_name, field, **kwargs):
+        """If one of the other field type generators isn't called then this
+        will be called. It's designed for children classes to customize the
+        field value generator further and support more types"""
+        raise ValueError(
+            f"Not sure what to do with {field.type}"
+        )
 
