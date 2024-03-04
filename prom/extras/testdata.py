@@ -148,34 +148,18 @@ class ModelData(TestData):
             )
         )
 
-#     def _get_method(self, method_name, default_method=None, **kwargs):
-#         """Find the method, this will return the user defined method or the
-#         default method if no user defined method exists
-# 
-#         :param method_name: str, the method name
-#         :param default_method: callable, the fallback method
-#         :param **kwargs:
-#         :returns: callable
-#         """
-#         method = getattr(self, method_name, None)
-#         if method:
-#             return method_name, method
-# 
-#         else:
-#             return method_name, default_method
-
-    def _run_method(self, orm_class, method, method_name, **kwargs):
-        """This can run both asyncronous and syncronous methods, it's not async
-        but should be awaited when running async methods"""
-        kwargs.setdefault("orm_class", orm_class)
-        logger.debug(
-            "Running {} as {} for orm_class {}".format(
-                method.__name__,
-                method_name,
-                orm_class.__name__,
-            )
-        )
-        return method(**kwargs)
+#     def _run_method(self, orm_class, method, method_name, **kwargs):
+#         """This can run both asyncronous and syncronous methods, it's not async
+#         but should be awaited when running async methods"""
+#         kwargs.setdefault("orm_class", orm_class)
+#         logger.debug(
+#             "Running {} as {} for orm_class {}".format(
+#                 method.__name__,
+#                 method_name,
+#                 orm_class.__name__,
+#             )
+#         )
+#         return method(**kwargs)
 
     async def _dispatch_method(self, orm_class, method, **kwargs):
         m = re.match(r"^([^_]+)_(orms?)(?:_(.+))?$", method.__name__)
@@ -193,7 +177,17 @@ class ModelData(TestData):
 
         method_name = "_".join(parts)
         method = getattr(self, method_name, method)
-        return await self._run_method(orm_class, method, method_name, **kwargs)
+
+        kwargs.setdefault("orm_class", orm_class)
+        logger.debug(
+            "Running {} as {} for orm_class {}".format(
+                method.__name__,
+                method_name,
+                orm_class.__name__,
+            )
+        )
+        return await method(**kwargs)
+#         return await self._run_method(orm_class, method, method_name, **kwargs)
 
     def _parse_method_name(self, method_name):
         """Parses method name and returns the magic method name/type, the
