@@ -7,6 +7,8 @@ from datatypes import (
     OrderedSubclasses,
     ReflectModule,
     Environ,
+    Dirpath,
+    ReflectPath,
 )
 
 from .compat import *
@@ -39,6 +41,9 @@ class Orms(OrderedSubclasses):
 
         # set to True in .insert_modules
         self.inserted_modules = False
+
+        # holds any loaded model prefixes
+        self.model_prefixes = set()
 
         # model(s)_name is the key, an Orm class child is the value
         self.lookup_table = {}
@@ -90,7 +95,15 @@ class Orms(OrderedSubclasses):
         if not self.inserted_modules:
             environ = Environ("PROM_")
             for modpath in environ.paths("PREFIX"):
+                self.model_prefixes.add(modpath)
                 super().insert_modules(modpath)
+
+            # if there aren't any defined prefixes let's inspect the current
+            # working directory
+            if not self.model_prefixes:
+                rp = ReflectPath(Dirpath.cwd())
+                for mod in rp.find_modules("models"):
+                    self.model_prefixes.add(mod.__name__)
 
             self.inserted_modules = True
 
