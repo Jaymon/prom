@@ -3,7 +3,10 @@
 from datatypes import (
     EnglishWord,
     NamingConvention,
-    classproperty
+    classproperty,
+    OrderedSubclasses,
+    ReflectModule,
+    Environ,
 )
 
 from .compat import *
@@ -15,6 +18,68 @@ from .config import (
     AutoDatetime,
     AutoIncrement,
 )
+
+
+class Orms(OrderedSubclasses):
+
+    def default_cutoff(self):
+        return (Orm,)
+
+    def __init__(self):
+        super().__init__()
+
+        self.inserted_modules = False
+        self.lookup_table = {}
+
+        self.module_name = ReflectModule(__name__).modroot
+
+    def _insert(self, orm_class, class_info):
+        super()._insert(orm_class, class_info)
+
+        if not class_info["in_info"]:
+            # this orm class is the new edge for this model name
+            self.lookup_table[orm_class.model_name] = orm_class
+            self.lookup_table[orm_class.models_name] = orm_class
+
+    def __getitem__(self, index_or_name):
+        if isinstance(index_or_name, int):
+            return super().__getitem__(index_or_name)
+
+        else:
+            return self.lookup_table[index_or_name]
+
+    def __contains__(self, name_or_class):
+        if isinstance(name_or_class, str):
+            return name_or_class in self.lookup_table
+
+        else:
+            return super().__contains__(name_or_class)
+
+    def insert_modules(self):
+        if not self.inserted_modules:
+            environ = Environ("PROM_")
+            for modpath in environ.paths("PREFIX"):
+                super().insert_modules(modpath)
+
+            self.inserted_modules = True
+
+    def get(self, model_name):
+        try:
+            return self.lookup_table[model_name]
+
+        except KeyError:
+            return None
+
+    def _is_valid_subclass(self, orm_class, cutoff_classes):
+        ret = super()._is_valid_subclass(orm_class, cutoff_classes)
+        if ret:
+            # while we check for Orm derived child classes, we also don't want
+            # any Orm child classes that are defined in prom since those are
+            # also base classes and we're only interested in valid child classes
+            # that can access a db
+            ret = not orm_class.__module__.startswith(self.module_name)
+
+        return ret
 
 
 class Orm(object):
@@ -56,7 +121,7 @@ class Orm(object):
     This is returned from the Query.get
     """
 
-    orm_classes = {}
+    orm_classes = Orms()
     """This will hold all other orm classes that have been loaded into memory
     the class path is the key and the class object is the value"""
 
@@ -283,6 +348,26 @@ class Orm(object):
 
         return fields
 
+    @classmethod
+    def find_orm_class(cls, model_name):
+        if model_name not in cls.orm_classes:
+            cls.orm_classes.insert_modules()
+
+        try:
+            return cls.orm_classes[model_name]
+
+        except KeyError as e:
+            raise ValueError(
+                f"Could not find an orm_class for {model_name}"
+            ) from e
+
+    @classmethod
+    def add_orm_class(cls, orm_class):
+        cls.orm_classes.insert(orm_class)
+
+        #classpath = f"{orm_class.__module__}:{orm_class.__qualname__}"
+        #cls.orm_classes[classpath] = orm_class
+
     def __init__(self, fields=None, **fields_kwargs):
         """Create an Orm object
 
@@ -320,7 +405,8 @@ class Orm(object):
         https://peps.python.org/pep-0487/
         """
         super().__init_subclass__()
-        cls.orm_classes[f"{cls.__module__}:{cls.__qualname__}"] = cls
+
+        cls.add_orm_class(cls)
 
     def fk(self, orm_class):
         """find the field value in self that is the primary key of the passed in
@@ -731,23 +817,43 @@ class Orm(object):
             # Go through all the orm_classes looking for a model_name or
             # models_name match and query that model using that model's FK field
             # name that matches self.pk
-            for orm_class in self.orm_classes.values():
-                if k == orm_class.models_name or k == orm_class.model_name:
-                    ref_items = orm_class.schema.ref_fields.items()
-                    for ref_field_name, ref_field in ref_items:
-                        ref_class = ref_field.ref
-                        if ref_class and isinstance(self, ref_class):
-                            query = orm_class.query.eq_field(
-                                ref_field_name,
-                                self.pk
-                            )
-                            if k == orm_class.models_name:
-                                # this is a coroutine
-                                return query.get()
+            if orm_class := self.orm_classes.get(k):
+                ref_items = orm_class.schema.ref_fields.items()
+                for ref_field_name, ref_field in ref_items:
+                    ref_class = ref_field.ref
+                    if ref_class and isinstance(self, ref_class):
+                        query = orm_class.query.eq_field(
+                            ref_field_name,
+                            self.pk
+                        )
+                        if k == orm_class.models_name:
+                            # this is a coroutine
+                            return query.get()
 
-                            else:
-                                # this is a coroutine
-                                return query.one()
+                        else:
+                            # this is a coroutine
+                            return query.one()
+
+
+
+
+#             for orm_class in self.orm_classes.values():
+#                 if k == orm_class.models_name or k == orm_class.model_name:
+#                     ref_items = orm_class.schema.ref_fields.items()
+#                     for ref_field_name, ref_field in ref_items:
+#                         ref_class = ref_field.ref
+#                         if ref_class and isinstance(self, ref_class):
+#                             query = orm_class.query.eq_field(
+#                                 ref_field_name,
+#                                 self.pk
+#                             )
+#                             if k == orm_class.models_name:
+#                                 # this is a coroutine
+#                                 return query.get()
+# 
+#                             else:
+#                                 # this is a coroutine
+#                                 return query.one()
 
             raise
 

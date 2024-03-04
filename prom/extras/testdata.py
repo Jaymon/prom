@@ -127,12 +127,15 @@ class ModelData(TestData):
 
         :returns: generator[Orm], each orm class
         """
-        orm_classes = OrderedSubclasses(classes=Orm.orm_classes.values())
-        module_name = ReflectModule(__name__).modroot
+        Orm.orm_classes.insert_modules()
 
-        for orm_class in orm_classes.edges():
-            if module_name not in orm_class.__module__:
-                yield orm_class
+#         orm_classes = OrderedSubclasses(classes=Orm.orm_classes.values())
+#         module_name = ReflectModule(__name__).modroot
+
+        for orm_class in Orm.orm_classes.edges():
+            yield orm_class
+#             if not orm_class.__module__.startswith(module_name):
+#                 yield orm_class
 
     def _find_method(self, method_name, default_method=None, **kwargs):
         """Find the method, this will return the user defined method or the
@@ -389,7 +392,7 @@ class ModelData(TestData):
         for inter in get_interfaces().values():
             await inter.unsafe_delete_tables()
 
-    async def unsafe_install_orms(self, modulepaths):
+    async def unsafe_install_orms(self, modulepaths=None):
         """Go through and install all the Orm subclasses found in the passed in
         module paths
 
@@ -397,9 +400,10 @@ class ModelData(TestData):
         "che"])
         """
         # import the module paths to load the Orms into memory
-        for modulepath in modulepaths:
-            rm = ReflectModule(modulepath)
-            m = rm.module() 
+        if modulepaths:
+            for modulepath in modulepaths:
+                rm = ReflectModule(modulepath)
+                m = rm.module() 
 
         # now go through all the orm classes that have been loaded and install
         # them
@@ -606,27 +610,29 @@ class ModelData(TestData):
         :param model_name: str, the name of the orm class
         :returns: Orm, the orm_class.model_name that matches model_name
         """
-        if model_name in self.model_cache:
-            return self.model_cache[model_name]
+        return Orm.find_orm_class(model_name)
 
-        elif model_name in Orm.orm_classes:
-            orm_class = Orm.orm_classes[model_name]
-            self.model_cache[model_name] = orm_class
-            return orm_class
-
-        else:
-            for oc in self._orm_classes():
-                if model_name in set([oc.model_name, oc.models_name]):
-                    orm_class = oc
-                    self.model_cache[model_name] = orm_class
-                    return orm_class
-
-            for orm_classpath, orm_class in Orm.orm_classes.items():
-                if orm_classpath.endswith(f":{model_name}"):
-                    self.model_cache[model_name] = orm_class
-                    return orm_class
-
-        raise ValueError(f"could not find an orm_class for {model_name}")
+#         if model_name in self.model_cache:
+#             return self.model_cache[model_name]
+# 
+#         elif model_name in Orm.orm_classes:
+#             orm_class = Orm.orm_classes[model_name]
+#             self.model_cache[model_name] = orm_class
+#             return orm_class
+# 
+#         else:
+#             for oc in self._orm_classes():
+#                 if model_name in set([oc.model_name, oc.models_name]):
+#                     orm_class = oc
+#                     self.model_cache[model_name] = orm_class
+#                     return orm_class
+# 
+#             for orm_classpath, orm_class in Orm.orm_classes.items():
+#                 if orm_classpath.endswith(f":{model_name}"):
+#                     self.model_cache[model_name] = orm_class
+#                     return orm_class
+# 
+#         raise ValueError(f"could not find an orm_class for {model_name}")
 
     async def get_orm(self, orm_class, **kwargs):
         """get an instance of the orm but don't save it into the db

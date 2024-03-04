@@ -73,11 +73,11 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         from prom.extras.testdata import ModelData
         cls.data.delete_class(ModelData)
 
-    def setUp(self):
-        # clear caches since I have a tendency to use the same names over
-        # and over again when testing
-        Orm.orm_classes = {}
-        self.ModelData.model_cache = {}
+#     def setUp(self):
+#         # clear caches since I have a tendency to use the same names over
+#         # and over again when testing
+#         Orm.orm_classes = {}
+#         self.ModelData.model_cache = {}
 
     async def test_references_1(self):
         testdata = self.InterfaceData
@@ -164,7 +164,6 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         self.assertTrue(did_run["get_foo_fields"])
 
     def test__parse_method_name(self):
-
         modpath = self.create_module([
             "from prom import Orm, Field",
             "",
@@ -180,6 +179,8 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         with self.assertRaises(AttributeError):
             self.ModelData._parse_method_name("foobarche")
 
+        # this should raise an AttributeError because `orm` shouldn't return a
+        # valid orm_class since Orm is a base class
         with self.assertRaises(AttributeError):
             self.ModelData._parse_method_name("get_orm_fields")
 

@@ -373,7 +373,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
                 d = dict(await i.one(s, Query().eq__id(pk)))
 
                 for k, v in dt["output"].items():
-                    self.assertEqual(v, getattr(d["bar"], k))
+                    self.assertEqual(v, getattr(d["bar"], k), dt["input"])
 
             else:
                 output = (dt["output"], InterfaceError)

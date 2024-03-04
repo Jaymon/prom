@@ -1283,3 +1283,19 @@ class OrmTest(EnvironTestCase):
         o = await orm_class.query.eq_pk(pk).one()
         self.assertIsNone(o.che)
 
+    def test_find_orm_class(self):
+        mpath = self.create_module([
+            "from prom import Field, Orm",
+            "",
+            "class Foo(Orm):",
+            "    pass",
+            "",
+            "class Bar(Orm):",
+            "    foo_id = Field(Foo, True)",
+        ])
+
+        with self.environment(PROM_PREFIX=mpath):
+            orm_class = Orm.find_orm_class("bar")
+            self.assertTrue(issubclass(orm_class, Orm))
+            self.assertEqual("bar", orm_class.model_name)
+

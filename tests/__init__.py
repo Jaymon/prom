@@ -43,6 +43,10 @@ class IsolatedAsyncioTestCase(_IsolatedAsyncioTestCase):
     def setUp(self):
         self.data.interface_class = self.interface_class
 
+        # clear caches since I have a tendency to use the same names over
+        # and over again when testing
+        prom.Orm.orm_classes.clear()
+
     def tearDown(self):
         self.data.interface_class = None
 
