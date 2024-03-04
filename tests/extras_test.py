@@ -166,22 +166,33 @@ class ModelDataTest(IsolatedAsyncioTestCase):
             "    pass",
         ], load=True)
 
-        r = self.ModelData._parse_method_name("get_foos")
-        self.assertEqual("get", r[0])
-        self.assertEqual("foos", r[1])
-        self.assertEqual("foo", r[2].model_name)
+        class _OtherData(self.ModelData.__class__):
+            """Override to make it easier to test ._parse_method_names in
+            isolation"""
+            def __getattr__(self, k):
+                return super().__getattr__(k)
 
-        with self.assertRaises(AttributeError):
-            self.ModelData._parse_method_name("foobarche")
+            def __getattribute__(self, k):
+                return super().__getattribute__(k)
 
-        # this should raise an AttributeError because `orm` shouldn't return a
-        # valid orm_class since Orm is a base class
-        with self.assertRaises(AttributeError):
-            self.ModelData._parse_method_name("get_orm_fields")
+        d = _OtherData()
 
-        r = self.ModelData._parse_method_name("get_foo_instance")
-        self.assertEqual("instance", r[0])
-        self.assertEqual("foo", r[1])
+        r = d._parse_method_name("create_foo_instance")
+        self.assertEqual("foo", r[0].model_name)
+        self.assertEqual("create_orm_instance", r[1].__name__)
+
+        r = d._parse_method_name("get_foos")
+        self.assertEqual("Foo", r[0].__name__)
+        self.assertEqual("get_orms", r[1].__name__)
+        self.assertEqual("foo", r[0].model_name)
+
+        r = d._parse_method_name("foobarche")
+        self.assertIsNone(r[0])
+        self.assertIsNone(r[1])
+
+        r = d._parse_method_name("get_orm_fields")
+        self.assertIsNone(r[0])
+        self.assertIsNone(r[1])
 
     async def test_children_create(self):
         """
