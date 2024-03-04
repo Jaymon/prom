@@ -116,9 +116,6 @@ class ModelData(TestData):
     below, so if you pass in a value to .create_orm it will be available in
     .get_fields
     """
-    model_cache = {}
-    """Caches the found models for a given model name"""
-
     def _orm_classes(self):
         """Iterate through a list of orms that should be injected into testdata
 
@@ -129,13 +126,8 @@ class ModelData(TestData):
         """
         Orm.orm_classes.insert_modules()
 
-#         orm_classes = OrderedSubclasses(classes=Orm.orm_classes.values())
-#         module_name = ReflectModule(__name__).modroot
-
         for orm_class in Orm.orm_classes.edges():
             yield orm_class
-#             if not orm_class.__module__.startswith(module_name):
-#                 yield orm_class
 
     def _find_method(self, method_name, default_method=None, **kwargs):
         """Find the method, this will return the user defined method or the
@@ -607,32 +599,15 @@ class ModelData(TestData):
     def get_orm_class(self, model_name, **kwargs):
         """get the orm class found at model_name
 
+        Yes, I'm aware I've basically just changed the name from find_* to
+        get_* but, for some reason, it makes sense to me to have get_* here
+        because it matches all the other get_orm_* methods while it feels right
+        to have Orm.find_*, no idea why but Orm.get_orm_class didn't feel right
+
         :param model_name: str, the name of the orm class
         :returns: Orm, the orm_class.model_name that matches model_name
         """
         return Orm.find_orm_class(model_name)
-
-#         if model_name in self.model_cache:
-#             return self.model_cache[model_name]
-# 
-#         elif model_name in Orm.orm_classes:
-#             orm_class = Orm.orm_classes[model_name]
-#             self.model_cache[model_name] = orm_class
-#             return orm_class
-# 
-#         else:
-#             for oc in self._orm_classes():
-#                 if model_name in set([oc.model_name, oc.models_name]):
-#                     orm_class = oc
-#                     self.model_cache[model_name] = orm_class
-#                     return orm_class
-# 
-#             for orm_classpath, orm_class in Orm.orm_classes.items():
-#                 if orm_classpath.endswith(f":{model_name}"):
-#                     self.model_cache[model_name] = orm_class
-#                     return orm_class
-# 
-#         raise ValueError(f"could not find an orm_class for {model_name}")
 
     async def get_orm(self, orm_class, **kwargs):
         """get an instance of the orm but don't save it into the db

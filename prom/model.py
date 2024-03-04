@@ -21,16 +21,30 @@ from .config import (
 
 
 class Orms(OrderedSubclasses):
+    """Holds all the Orms loaded into memory
 
+    See Orm.__init_subclass__, this is a class attribute found Orm.orm_classes.
+
+    See Orm.find_orm_class to see how this can be used exeternally
+
+    This class is a hybrid Mapping and Sequence, if you iterate through it will
+    iterate the values like a list, if you use item indexes then it will act
+    like a dict
+    """
     def default_cutoff(self):
         return (Orm,)
 
     def __init__(self):
         super().__init__()
 
+        # set to True in .insert_modules
         self.inserted_modules = False
+
+        # model(s)_name is the key, an Orm class child is the value
         self.lookup_table = {}
 
+        # should always be `prom` and is used in ._is_valid_subclass to make
+        # sure only true child classes are inserted
         self.module_name = ReflectModule(__name__).modroot
 
     def _insert(self, orm_class, class_info):
@@ -42,6 +56,13 @@ class Orms(OrderedSubclasses):
             self.lookup_table[orm_class.models_name] = orm_class
 
     def __getitem__(self, index_or_name):
+        """If int then treat it like getting the index of a list, if str then
+        treat it like fetching a key on a dictionary
+
+        :param index_or_name: int|str, either the index of the list you want or
+            the model name you want
+        :returns: type, the requested Orm child class
+        """
         if isinstance(index_or_name, int):
             return super().__getitem__(index_or_name)
 
@@ -49,6 +70,12 @@ class Orms(OrderedSubclasses):
             return self.lookup_table[index_or_name]
 
     def __contains__(self, name_or_class):
+        """If str then it checks model_name keys as a dict, if type then it will
+        check for the class in the list
+
+        :param name_or_class: str|type
+        :returns: bool
+        """
         if isinstance(name_or_class, str):
             return name_or_class in self.lookup_table
 
@@ -56,6 +83,10 @@ class Orms(OrderedSubclasses):
             return super().__contains__(name_or_class)
 
     def insert_modules(self):
+        """Goes through the PROM_PREFIX evnironment variables and loads any
+        found module classpaths and loads all the Orm classes found in those
+        modules
+        """
         if not self.inserted_modules:
             environ = Environ("PROM_")
             for modpath in environ.paths("PREFIX"):
@@ -64,6 +95,11 @@ class Orms(OrderedSubclasses):
             self.inserted_modules = True
 
     def get(self, model_name):
+        """Returns the Orm class found at model_name
+
+        :param model_name: str, the model name you want
+        :returns: type, Orm chiild class
+        """
         try:
             return self.lookup_table[model_name]
 
@@ -350,6 +386,15 @@ class Orm(object):
 
     @classmethod
     def find_orm_class(cls, model_name):
+        """Using the internal Orm class tracker (Orm.orm_classes) return the
+        Orm class for model_name
+
+        This is handy for introspection and enables a whole bunch of magic in
+        various places
+
+        :param model_name: str, the model name you're looking for
+        :returns: type, the Orm class where Orm.model_name matches
+        """
         if model_name not in cls.orm_classes:
             cls.orm_classes.insert_modules()
 
@@ -833,27 +878,6 @@ class Orm(object):
                         else:
                             # this is a coroutine
                             return query.one()
-
-
-
-
-#             for orm_class in self.orm_classes.values():
-#                 if k == orm_class.models_name or k == orm_class.model_name:
-#                     ref_items = orm_class.schema.ref_fields.items()
-#                     for ref_field_name, ref_field in ref_items:
-#                         ref_class = ref_field.ref
-#                         if ref_class and isinstance(self, ref_class):
-#                             query = orm_class.query.eq_field(
-#                                 ref_field_name,
-#                                 self.pk
-#                             )
-#                             if k == orm_class.models_name:
-#                                 # this is a coroutine
-#                                 return query.get()
-# 
-#                             else:
-#                                 # this is a coroutine
-#                                 return query.one()
 
             raise
 
