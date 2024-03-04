@@ -73,12 +73,6 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         from prom.extras.testdata import ModelData
         cls.data.delete_class(ModelData)
 
-#     def setUp(self):
-#         # clear caches since I have a tendency to use the same names over
-#         # and over again when testing
-#         Orm.orm_classes = {}
-#         self.ModelData.model_cache = {}
-
     async def test_references_1(self):
         testdata = self.InterfaceData
         ref_class = testdata.get_orm_class()
@@ -129,6 +123,7 @@ class ModelDataTest(IsolatedAsyncioTestCase):
 
         class _OtherData(self.ModelData.__class__):
             async def get_foo_fields(s, **kwargs):
+                pout.h()
                 bar = await s.get_bar(**kwargs)
                 self.assertEqual("Bar", bar.__class__.__name__)
                 self.assertNotIsInstance(bar, kwargs["orm_class"])
@@ -247,4 +242,21 @@ class ModelDataTest(IsolatedAsyncioTestCase):
             5,
             modeldata._gets_count(orm_class, **{"count": 5})
         )
+
+    async def test__dispatch_method(self):
+        testdata = self.InterfaceData
+        modeldata = self.ModelData
+        orm_class = testdata.get_orm_class()
+
+        fields = await modeldata._dispatch_method(
+            orm_class,
+            modeldata.get_orm_fields
+        )
+        self.assertTrue(isinstance(fields, dict))
+
+        o = await modeldata._dispatch_method(
+            orm_class,
+            modeldata.get_orm
+        )
+        self.assertTrue(isinstance(o, orm_class))
 

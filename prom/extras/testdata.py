@@ -129,22 +129,6 @@ class ModelData(TestData):
         for orm_class in Orm.orm_classes.edges():
             yield orm_class
 
-    def _find_method(self, method_name, default_method=None, **kwargs):
-        """Find the method, this will return the user defined method or the
-        default method if no user defined method exists
-
-        :param method_name: str, the method name
-        :param default_method: callable, the fallback method
-        :param **kwargs:
-        :returns: callable
-        """
-        method = getattr(self, method_name, None)
-        if method:
-            return method_name, method
-
-        else:
-            return method_name, default_method
-
     def _gets_count(self, orm_class, **kwargs):
         """Find how many orm_class should be created
 
@@ -164,65 +148,81 @@ class ModelData(TestData):
             )
         )
 
-    async def _get(self, orm_class, **kwargs):
-        """Internal dispatcher method for get_orm, this will first try and find
-        a get_<ORM-NAME> method and fallback to get_orm"""
-        method_name = f"get_{orm_class.model_name}"
-        kwargs["default_method"] = self.get_orm
-        method_name, method = self._find_method(method_name, **kwargs)
+#     async def _get(self, orm_class, **kwargs):
+#         """Internal dispatcher method for get_orm, this will first try and find
+#         a get_<ORM-NAME> method and fallback to get_orm"""
+#         method_name = f"get_{orm_class.model_name}"
+#         kwargs["default_method"] = self.get_orm
+#         method_name, method = self._find_method(method_name, **kwargs)
+# 
+#         return await self._run_method(method_name, method, orm_class, **kwargs)
 
-        return await self._run_method(method_name, method, orm_class, **kwargs)
+#     async def _gets(self, orm_class, **kwargs):
+#         """Internal dispatcher method for get_orms, this will first try and find
+#         a get_<ORM-MODELS-NAME> method and fallback to get_orms"""
+#         method_name = f"get_{orm_class.models_name}"
+#         kwargs["default_method"] = self.get_orms
+#         method_name, method = self._find_method(method_name, **kwargs)
+# 
+#         return await self._run_method(method_name, method, orm_class, **kwargs)
 
-    async def _gets(self, orm_class, **kwargs):
-        """Internal dispatcher method for get_orms, this will first try and find
-        a get_<ORM-MODELS-NAME> method and fallback to get_orms"""
-        method_name = f"get_{orm_class.models_name}"
-        kwargs["default_method"] = self.get_orms
-        method_name, method = self._find_method(method_name, **kwargs)
+#     async def _create(self, orm_class, **kwargs):
+#         """Internal dispatcher method for create_orm, this will first try and
+#         find a create_<ORM-NAME> method and fallback to create_orm"""
+#         method_name = f"create_{orm_class.model_name}"
+#         kwargs["default_method"] = self.create_orm
+#         method_name, method = self._find_method(method_name, **kwargs)
+# 
+#         return await self._run_method(method_name, method, orm_class, **kwargs)
 
-        return await self._run_method(method_name, method, orm_class, **kwargs)
+#     async def _creates(self, orm_class, **kwargs):
+#         """Internal dispatcher method for create_orms, this will first try and
+#         find a create_<ORM-MODELS-NAME> method and fallback to create_orm"""
+#         method_name = f"create_{orm_class.models_name}"
+#         kwargs["default_method"] = self.create_orms
+#         method_name, method = self._find_method(method_name, **kwargs)
+# 
+#         return await self._run_method(method_name, method, orm_class, **kwargs)
 
-    async def _create(self, orm_class, **kwargs):
-        """Internal dispatcher method for create_orm, this will first try and
-        find a create_<ORM-NAME> method and fallback to create_orm"""
-        method_name = f"create_{orm_class.model_name}"
-        kwargs["default_method"] = self.create_orm
-        method_name, method = self._find_method(method_name, **kwargs)
+#     async def _fields(self, orm_class, **kwargs):
+#         """Internal dispatcher method for get_orm_fields, this will first try
+#         and find a get_<ORM-NAME>_fields method and fallback to get_orm_fields
+#         """
+#         method_name = f"get_{orm_class.model_name}_fields"
+#         kwargs["default_method"] = self.get_orm_fields
+#         method_name, method = self._find_method(method_name, **kwargs)
+# 
+#         return await self._run_method(method_name, method, orm_class, **kwargs)
 
-        return await self._run_method(method_name, method, orm_class, **kwargs)
+#     async def _instance(self, orm_class, **kwargs):
+#         """Internal dispatcher method for create_orm_instance, this will first
+#         try and find a create_<ORM-NAME>_instance method and fallback to
+#         create_orm_instance
+#         """
+#         method_name = f"create_{orm_class.model_name}_instance"
+#         #kwargs.setdefault("default_method", self.create_orm_instance)
+#         kwargs["default_method"] = self.create_orm_instance
+#         method_name, method = self._find_method(method_name, **kwargs)
+# 
+#         return await self._run_method(method_name, method, orm_class, **kwargs)
 
-    async def _creates(self, orm_class, **kwargs):
-        """Internal dispatcher method for create_orms, this will first try and
-        find a create_<ORM-MODELS-NAME> method and fallback to create_orm"""
-        method_name = f"create_{orm_class.models_name}"
-        kwargs["default_method"] = self.create_orms
-        method_name, method = self._find_method(method_name, **kwargs)
+    def _find_method(self, method_name, default_method=None, **kwargs):
+        """Find the method, this will return the user defined method or the
+        default method if no user defined method exists
 
-        return await self._run_method(method_name, method, orm_class, **kwargs)
-
-    async def _fields(self, orm_class, **kwargs):
-        """Internal dispatcher method for get_orm_fields, this will first try
-        and find a get_<ORM-NAME>_fields method and fallback to get_orm_fields
+        :param method_name: str, the method name
+        :param default_method: callable, the fallback method
+        :param **kwargs:
+        :returns: callable
         """
-        method_name = f"get_{orm_class.model_name}_fields"
-        kwargs["default_method"] = self.get_orm_fields
-        method_name, method = self._find_method(method_name, **kwargs)
+        method = getattr(self, method_name, None)
+        if method:
+            return method_name, method
 
-        return await self._run_method(method_name, method, orm_class, **kwargs)
+        else:
+            return method_name, default_method
 
-    async def _instance(self, orm_class, **kwargs):
-        """Internal dispatcher method for create_orm_instance, this will first
-        try and find a create_<ORM-NAME>_instance method and fallback to
-        create_orm_instance
-        """
-        method_name = f"create_{orm_class.model_name}_instance"
-        #kwargs.setdefault("default_method", self.create_orm_instance)
-        kwargs["default_method"] = self.create_orm_instance
-        method_name, method = self._find_method(method_name, **kwargs)
-
-        return await self._run_method(method_name, method, orm_class, **kwargs)
-
-    def _run_method(self, method_name, method, orm_class, **kwargs):
+    def _run_method(self, orm_class, method, method_name, **kwargs):
         """This can run both asyncronous and syncronous methods, it's not async
         but should be awaited when running async methods"""
         kwargs.setdefault("orm_class", orm_class)
@@ -234,6 +234,26 @@ class ModelData(TestData):
             )
         )
         return method(**kwargs)
+
+    async def _dispatch_method(self, orm_class, method, **kwargs):
+        m = re.match(r"^([^_]+)_(orms?)(?:_(.+))?$", method.__name__)
+
+        parts = [m.group(1)]
+
+        if m.group(2) == "orm":
+            parts.append(orm_class.model_name)
+
+        else:
+            parts.append(orm_class.models_name)
+
+        if suffix := m.group(3):
+            parts.append(suffix)
+
+        method_name = "_".join(parts)
+        kwargs["default_method"] = method
+        method_name, method = self._find_method(method_name, **kwargs)
+
+        return await self._run_method(orm_class, method, method_name, **kwargs)
 
     def _parse_method_name(self, method_name):
         """Parses method name and returns the magic method name/type, the
@@ -530,14 +550,17 @@ class ModelData(TestData):
                                     **kwargs
                                 ))
 
-                                kwargs[ref_field_name] = await self._create(
+                                fields = await self._dispatch_method(
                                     ref_class,
+                                    self.create_orm,
                                     **self.assure_ref_field_names(
                                         assure_orm_class,
                                         ref_class,
                                         **kwargs
                                     )
                                 )
+
+                                kwargs[ref_field_name] = fields
                                 kwargs[field_name] = kwargs[ref_field_name].pk
 
         return kwargs
@@ -550,7 +573,11 @@ class ModelData(TestData):
         :returns: Orm, the orm saved into the db
         """
         kwargs.setdefault("ignore_refs", False)
-        instance = await self._get(orm_class, **kwargs)
+        instance = await self._dispatch_method(
+            orm_class,
+            self.get_orm,
+            **kwargs
+        )
         try:
             await instance.save(nest=True)
 
@@ -591,7 +618,11 @@ class ModelData(TestData):
             the db
         """
         kwargs.setdefault("ignore_refs", False)
-        instances = await self._gets(orm_class, **kwargs)
+        instances = await self._dispatch_method(
+            orm_class,
+            self.get_orms,
+            **kwargs
+        )
         for instance in instances:
             await instance.save(nest=True)
         return instances
@@ -619,13 +650,18 @@ class ModelData(TestData):
         kwargs.setdefault("ignore_refs", True)
         instance = kwargs.get(orm_class.model_name, None)
         if not instance:
-            kwargs["fields"] = await self._fields(orm_class, **kwargs)
+            kwargs["fields"] = await self._dispatch_method(
+                orm_class,
+                self.get_orm_fields,
+                **kwargs
+            )
 
             if kwargs["fields"] and "**" in kwargs["fields"]:
                 kwargs.update(kwargs["fields"].pop("**"))
 
-            instance = await self._instance(
+            instance = await self._dispatch_method(
                 orm_class,
+                self.create_orm_instance,
                 **kwargs
             )
 
@@ -651,7 +687,11 @@ class ModelData(TestData):
 
         count = self._gets_count(orm_class, **kwargs)
         for _ in range(count):
-            ret.append(await self._get(orm_class, **kwargs))
+            ret.append(await self._dispatch_method(
+                orm_class,
+                self.get_orm,
+                **kwargs
+            ))
 
         return ret
 
@@ -705,7 +745,7 @@ class ModelData(TestData):
         :returns: dict, these are the fields that will be passed to Orm.__init__
             with one exception, if the dict contains a key "**" then that key
             will be popped and it's value (which should be a dict) will update
-            the kwargs that are passed to .get_orm_instance to create the
+            the kwargs that are passed to .create_orm_instance to create the
             actual orm instance. The "**" key is just a handy way to do all
             customizing in one overridden method
         """
