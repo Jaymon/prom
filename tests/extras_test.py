@@ -133,7 +133,7 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         foo = await d.get_foo() # this method runs the asserts
         self.assertTrue(did_run["get_foo_fields"])
 
-    async def test___getattribute__(self):
+    async def test___getattribute__1(self):
         """
         https://github.com/Jaymon/prom/issues/166
         """
@@ -157,6 +157,44 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         d = _OtherData()
         r = await d.get_foo_fields()
         self.assertTrue(did_run["get_foo_fields"])
+
+    async def test___getattribute__2(self):
+        modpath = self.create_module([
+            "from prom import Orm, Field",
+            "",
+            "class Foo(Orm):",
+            "    one = Field(str)",
+            "",
+            "class Bar(Orm):",
+            "    foo_id = Field(Foo)",
+        ], load=True)
+
+        class _OtherData(self.ModelData.__class__):
+            async def get_foo(self, **kwargs):
+                f = await self.get_orm(**kwargs)
+                b = await self.get_bar(**kwargs)
+                f.get_foo_get_bar = b
+                return f
+
+            async def get_bar(self, **kwargs):
+                return await self.get_orm(**kwargs)
+
+        d = _OtherData()
+
+        f = await d.get_foo()
+        self.assertEqual("foo", f.model_name)
+        self.assertEqual("bar", f.get_foo_get_bar.model_name)
+
+    async def test___getattribute__3(self):
+        modpath = self.create_module([
+            "from prom import Orm, Field",
+            "",
+            "class Foo(Orm):",
+            "    one = Field(str)",
+        ], load=True)
+
+        f = await self.get_foo()
+        self.assertEqual("foo", f.model_name)
 
     def test__parse_method_name(self):
         modpath = self.create_module([

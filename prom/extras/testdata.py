@@ -231,71 +231,210 @@ class ModelData(TestData):
 
         return orm_class, method
 
+
+
     def __getattribute__(self, method_name):
-        """To be even more magical this will try and parse method_name and if
+        """Introspect method_name to see if it is a valid Orm reflection
+        request, if it isn't then pass the call on down the line
+
+        To be even more magical this will try and parse method_name and if
         it is valid it will return a partial that has the orm_class property
         set to make it easier to call without having to worry about things like
         having the right orm_class
 
         :param method_name: str, the method name we're looking for, if this
             isn't actually a method_name then it will pass it on down the line
-        :returns: Any
-        """
-        attribute = super().__getattribute__(method_name)
-
-        if not method_name.startswith("_") and callable(attribute):
-            orm_class, method = self._parse_method_name(method_name)
-            if orm_class:
-                attribute = functools.partial(
-                    attribute,
-                    orm_class=orm_class
-                )
-
-                attribute.__name__ = f"wrapped_getattribute_{method_name}"
-
-        return attribute
-
-    def __getattr__(self, method_name):
-        """Introspect method_name to see if it is a valid Orm reflection
-        request, if it isn't then pass the call on down the line
-
-        :param method_name: str, the method name that contains the model class
-            we're ultimately looking for
         :returns: Any, if it successfully identified method_name then this will
             return a callable, otherwise it's whatever on down the line returns
         """
-        logger.debug(
-            f"Finding {self.__class__.__name__}.{method_name} method"
-        )
+        if method_name.startswith("_"):
+            return super().__getattribute__(method_name)
 
-        orm_class, method = self._parse_method_name(method_name)
+        orm_class = None
 
-        if method:
+        try:
+            method = super().__getattribute__(method_name)
+
+        except AttributeError:
             logger.debug(
-                f"Found {method.__name__} for {orm_class.__name__}"
+                f"Finding {self.__class__.__name__}.{method_name} method"
             )
 
-            def wrapper(**kwargs):
-                # https://github.com/Jaymon/prom/issues/166
-                # we want to override the passed in orm_class if it
-                # doesn't match our found orm class because this has
-                # most likely been called internally by another magic
-                # method that just passed kwargs
-                kwargs.setdefault("orm_class", orm_class)
-                if not isinstance(orm_class, kwargs["orm_class"]):
-                    kwargs["orm_class"] = orm_class
+            orm_class, method = self._parse_method_name(method_name)
 
-                return method(**kwargs)
+            if method:
+                logger.debug(
+                    f"Found {method.__name__} for {orm_class.__name__}"
+                )
 
-            # could also use functools.wraps here on method instead of
-            # just setting the name, but I like that it explicitely
-            # says it is wrapped in the name instead of just
-            # transparantly using orm_method's name
-            wrapper.__name__ = f"wrapped_getattr_{method.__name__}"
-            return wrapper
+            else:
+                raise
 
-        else:
-            return super().__getattr__(method_name)
+        if callable(method):
+            if not orm_class:
+                orm_class, _ = self._parse_method_name(method_name)
+
+            if orm_class:
+                def wrapper(**kwargs):
+                    # https://github.com/Jaymon/prom/issues/166
+                    # we want to override the passed in orm_class if it
+                    # doesn't match our found orm class because this has
+                    # most likely been called internally by another magic
+                    # method that just passed kwargs
+                    kwargs.setdefault("orm_class", orm_class)
+                    if not isinstance(orm_class, kwargs["orm_class"]):
+                        kwargs["orm_class"] = orm_class
+
+                    return method(**kwargs)
+
+                wrapper.__name__ = f"wrapped_getattribute_{method_name}"
+                return wrapper
+
+        return method
+
+
+
+
+
+
+
+
+
+
+
+#     def xx__getattribute__(self, method_name):
+#         """To be even more magical this will try and parse method_name and if
+#         it is valid it will return a partial that has the orm_class property
+#         set to make it easier to call without having to worry about things like
+#         having the right orm_class
+# 
+#         :param method_name: str, the method name we're looking for, if this
+#             isn't actually a method_name then it will pass it on down the line
+#         :returns: Any
+#         """
+#         orm_class = method = None
+# 
+#         try:
+#             attribute = super().__getattribute__(method_name)
+# 
+#         except AttributeError:
+#             logger.debug(
+#                 f"Finding {self.__class__.__name__}.{method_name} method"
+#             )
+# 
+#             orm_class, method = self._parse_method_name(method_name)
+# 
+#             if method:
+#                 logger.debug(
+#                     f"Found {method.__name__} for {orm_class.__name__}"
+#                 )
+# 
+#                 def attribute(**kwargs):
+#                     # https://github.com/Jaymon/prom/issues/166
+#                     # we want to override the passed in orm_class if it
+#                     # doesn't match our found orm class because this has
+#                     # most likely been called internally by another magic
+#                     # method that just passed kwargs
+#                     kwargs.setdefault("orm_class", orm_class)
+#                     if not isinstance(orm_class, kwargs["orm_class"]):
+#                         kwargs["orm_class"] = orm_class
+# 
+#                     return method(**kwargs)
+# 
+#             else:
+#                 raise
+# 
+#         if not method_name.startswith("_") and callable(attribute):
+#             if not orm_class and not method:
+#                 orm_class, method = self._parse_method_name(method_name)
+# 
+#             if orm_class:
+#                 attribute = functools.partial(
+#                     attribute,
+#                     orm_class=orm_class
+#                 )
+# 
+#                 attribute.__name__ = f"wrapped_getattribute_{method_name}"
+# 
+#         return attribute
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+#     def x__getattribute__(self, method_name):
+#         """To be even more magical this will try and parse method_name and if
+#         it is valid it will return a partial that has the orm_class property
+#         set to make it easier to call without having to worry about things like
+#         having the right orm_class
+# 
+#         :param method_name: str, the method name we're looking for, if this
+#             isn't actually a method_name then it will pass it on down the line
+#         :returns: Any
+#         """
+#         try:
+#             attribute = super().__getattribute__(method_name)
+# 
+#         except AttributeError:
+#             pout.h()
+#             raise
+# 
+#         if not method_name.startswith("_") and callable(attribute):
+#             orm_class, method = self._parse_method_name(method_name)
+#             if orm_class:
+#                 attribute = functools.partial(
+#                     attribute,
+#                     orm_class=orm_class
+#                 )
+# 
+#                 attribute.__name__ = f"wrapped_getattribute_{method_name}"
+# 
+#         return attribute
+# 
+#     def x__getattr__(self, method_name):
+#         """Introspect method_name to see if it is a valid Orm reflection
+#         request, if it isn't then pass the call on down the line
+# 
+#         :param method_name: str, the method name that contains the model class
+#             we're ultimately looking for
+#         :returns: Any, if it successfully identified method_name then this will
+#             return a callable, otherwise it's whatever on down the line returns
+#         """
+#         logger.debug(
+#             f"Finding {self.__class__.__name__}.{method_name} method"
+#         )
+# 
+#         orm_class, method = self._parse_method_name(method_name)
+# 
+#         if method:
+#             logger.debug(
+#                 f"Found {method.__name__} for {orm_class.__name__}"
+#             )
+# 
+#             def wrapper(**kwargs):
+#                 # https://github.com/Jaymon/prom/issues/166
+#                 # we want to override the passed in orm_class if it
+#                 # doesn't match our found orm class because this has
+#                 # most likely been called internally by another magic
+#                 # method that just passed kwargs
+#                 kwargs.setdefault("orm_class", orm_class)
+#                 if not isinstance(orm_class, kwargs["orm_class"]):
+#                     kwargs["orm_class"] = orm_class
+# 
+#                 return method(**kwargs)
+# 
+#             # could also use functools.wraps here on method instead of
+#             # just setting the name, but I like that it explicitely
+#             # says it is wrapped in the name instead of just
+#             # transparantly using orm_method's name
+#             wrapper.__name__ = f"wrapped_getattr_{method.__name__}"
+#             return wrapper
+# 
+#         else:
+#             return super().__getattr__(method_name)
 
     async def close_orm_interfaces(self):
         """Close down all the globally created interfaces
