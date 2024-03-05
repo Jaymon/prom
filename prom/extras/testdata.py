@@ -149,6 +149,16 @@ class ModelData(TestData):
         )
 
     async def _dispatch_method(self, orm_class, method, **kwargs):
+        """Internal dispatch method. This uses the orm_class to first try and
+        call a magical wrapper method (eg, if orm_class was name Foo and method
+        was .get_orm then this would first try and run .get_foo and only then
+        would it fallback to method
+
+        :param orm_class: type, the Orm child
+        :param method: callable, the fallback method
+        :param **kwargs: passed through to whatever method is ran
+        :returns: Any, whatever the ran method returns
+        """
         m = re.match(r"^([^_]+)_(orms?)(?:_(.+))?$", method.__name__)
 
         parts = [m.group(1)]
@@ -177,6 +187,15 @@ class ModelData(TestData):
         return await method(**kwargs)
 
     def _parse_method_name(self, method_name):
+        """Parses method name and returns the found orm_class and method
+
+        NOTE -- this is where a lot of the parsing magic happens, for adding
+        functionality in the future this is probably the method to start with
+
+        :param method_name: str, the full method name that will be parsed
+        :returns: tuple[type, callable], (orm_class, method), this will return
+            (None, None) if method_name isn't valid
+        """
         orm_class = method = None
 
         parts = method_name.split("_")
@@ -212,107 +231,16 @@ class ModelData(TestData):
 
         return orm_class, method
 
-#     def x_parse_method_name(self, method_name):
-#         """Parses method name and returns the magic method name/type, the
-#         inferred orm model name, and the found orm_class
-# 
-#         This raises an AttributeError on failure or invalid magic method name
-# 
-#         :param method_name: str, the full method name that will be parsed
-#         :returns: tuple[str, str, callable], (name, module_name, orm_class)
-#         """
-#         parts = method_name.split("_")
-# 
-#         if len(parts) == 1:
-#             raise AttributeError(
-#                 f"Invalid magic method: {method_name}"
-#             )
-# 
-#         else:
-#             name = parts[0]
-#             if parts[-1] in set(["fields", "instance"]):
-#                 name = parts[-1]
-#                 model_name = "_".join(parts[1:-1])
-# 
-#             else:
-#                 model_name = "_".join(parts[1:])
-# 
-#             try:
-#                 orm_class = self.get_orm_class(model_name)
-# 
-#             except ValueError as e:
-#                 raise AttributeError(
-#                     f"Could not derive orm class from {method_name}"
-#                 ) from e
-# 
-#         return name, model_name, orm_class
-
-#     def _find_attr(self, method_name):
-#         """Internal method used by self.__getattr__ to find the orm and create a
-#         wrapper method to call
-# 
-#         NOTE -- this method must raise AttributeError on expected errors
-# 
-#         :param method_name: str, the method name that contains the model class
-#             we're ultimately looking for
-#         :returns: callable, the method that should be ran for the passed in
-#             method_name
-#         """
-#         logger.debug(
-#             f"Finding {self.__class__.__name__}.{method_name} method"
-#         )
-# 
-#         name, model_name, orm_class = self._parse_method_name(method_name)
-# 
-#         orm_method = None
-# 
-#         if name == "get":
-#             if orm_class.model_name == model_name:
-#                 orm_method = self.get_orm
-# 
-#             else:
-#                 orm_method = self.get_orms
-# 
-#         elif name == "create":
-#             if orm_class.model_name == model_name:
-#                 orm_method = self.create_orm
-# 
-#             else:
-#                 orm_method = self.create_orms
-# 
-#         elif name == "fields":
-#             orm_method = self.get_orm_fields
-# 
-#         elif name == "instance":
-#             orm_method = self.create_orm_instance
-# 
-#         if orm_method:
-#             logger.debug(
-#                 f"Found {orm_method.__name__} for {orm_class.__name__}"
-#             )
-# 
-#             def method(**kwargs):
-#                 # https://github.com/Jaymon/prom/issues/166
-#                 # we want to override the passed in orm_class if it
-#                 # doesn't match our found orm class because this has
-#                 # most likely been called internally by another magic
-#                 # method that just passed kwargs
-#                 kwargs.setdefault("orm_class", orm_class)
-#                 if not isinstance(orm_class, kwargs["orm_class"]):
-#                     kwargs["orm_class"] = orm_class
-# 
-#                 return orm_method(**kwargs)
-# 
-#             # could also use functools.wraps here on method instead of
-#             # just setting the name, but I like that it explicitely
-#             # says it is wrapped in the name instead of just
-#             # transparantly using orm_method's name
-#             method.__name__ = f"wrapped_getattr_{orm_method.__name__}"
-#             return method
-# 
-#         raise AttributeError(f"Could not find an orm matching {method_name}")
-
     def __getattribute__(self, method_name):
+        """To be even more magical this will try and parse method_name and if
+        it is valid it will return a partial that has the orm_class property
+        set to make it easier to call without having to worry about things like
+        having the right orm_class
+
+        :param method_name: str, the method name we're looking for, if this
+            isn't actually a method_name then it will pass it on down the line
+        :returns: Any
+        """
         attribute = super().__getattribute__(method_name)
 
         if not method_name.startswith("_") and callable(attribute):
@@ -327,31 +255,15 @@ class ModelData(TestData):
 
         return attribute
 
-#     def __getattribute__(self, method_name):
-#         attribute = super().__getattribute__(method_name)
-#         return attribute
-# 
-#         if not method_name.startswith("_") and callable(attribute):
-#             if not re.search(r"_orm(?:$|_)", method_name):
-#                 try:
-#                     name, model_name, orm_class = self._parse_method_name(
-#                         method_name
-#                     )
-# 
-#                 except AttributeError:
-#                     pass
-# 
-#                 else:
-#                     attribute = functools.partial(
-#                         attribute,
-#                         orm_class=orm_class
-#                     )
-# 
-#                     attribute.__name__ = f"wrapped_getattribute_{method_name}"
-# 
-#         return attribute
-
     def __getattr__(self, method_name):
+        """Introspect method_name to see if it is a valid Orm reflection
+        request, if it isn't then pass the call on down the line
+
+        :param method_name: str, the method name that contains the model class
+            we're ultimately looking for
+        :returns: Any, if it successfully identified method_name then this will
+            return a callable, otherwise it's whatever on down the line returns
+        """
         logger.debug(
             f"Finding {self.__class__.__name__}.{method_name} method"
         )
@@ -384,14 +296,6 @@ class ModelData(TestData):
 
         else:
             return super().__getattr__(method_name)
-
-#     def x__getattr__(self, method_name):
-#         return super().__getattr__(method_name)
-#         try:
-#             return self._find_attr(method_name)
-# 
-#         except AttributeError:
-#             return super().__getattr__(method_name)
 
     async def close_orm_interfaces(self):
         """Close down all the globally created interfaces
