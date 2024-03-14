@@ -123,11 +123,11 @@ class ModelDataTest(IsolatedAsyncioTestCase):
 
         class _OtherData(self.ModelData.__class__):
             async def get_foo_fields(s, **kwargs):
-                pout.h()
                 bar = await s.get_bar(**kwargs)
                 self.assertEqual("Bar", bar.__class__.__name__)
                 self.assertNotIsInstance(bar, kwargs["orm_class"])
                 did_run["get_foo_fields"] = True
+                return {}
 
         d = _OtherData()
         foo = await d.get_foo() # this method runs the asserts

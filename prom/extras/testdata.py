@@ -283,6 +283,11 @@ class ModelData(TestData):
                     if not isinstance(orm_class, kwargs["orm_class"]):
                         kwargs["orm_class"] = orm_class
 
+                    # if these are always there it's easier to mess with them
+                    # in child methods
+                    kwargs.setdefault("fields", {})
+                    kwargs.setdefault("attributes", {})
+
                     return method(**kwargs)
 
                 wrapper.__name__ = f"wrapped_getattribute_{method_name}"
@@ -473,6 +478,12 @@ class ModelData(TestData):
     async def create_orm(self, orm_class, **kwargs):
         """create an instance of the orm and save it into the db
 
+        The typical method call hierarchy from here:
+
+            <CREATE-ORM>
+                <GET-ORM>
+                [<CREATE-ORMS>]
+
         :param orm_class: Orm
         :param **kwargs:
         :returns: Orm, the orm saved into the db
@@ -554,6 +565,12 @@ class ModelData(TestData):
     async def get_orm(self, orm_class, **kwargs):
         """get an instance of the orm but don't save it into the db
 
+        The method call hierarchy from here:
+
+            <GET-ORM>
+                <GET-ORM-FIELDS>
+                <CREATE-ORM-INSTANCE>
+
         :param orm_class: Orm
         :param **kwargs:
         :returns: Orm
@@ -566,6 +583,23 @@ class ModelData(TestData):
                 self.get_orm_fields,
                 **kwargs
             )
+
+            # since .get_orm_fields is the most common overrided method, this
+            # is just a nice message to notify that you most likely forgot to
+            # return something
+            if kwargs["fields"] is None:
+                raise ValueError(" ".join([
+                    "Dispatched {}".format(orm_class.model_name),
+                    "get fields method returned None instead of dict"
+                ]))
+
+            # If get fields method returns an attribute dict we want to add
+            # it to the passed in attributes dict, this is just syntactic
+            # sugar so child classes only really ever need to override the
+            # fields method
+            attributes = kwargs["fields"].get("attributes", {})
+            attributes.update(kwargs.get("attributes", {}))
+            kwargs["attributes"] = attributes
 
             if kwargs["fields"] and "**" in kwargs["fields"]:
                 kwargs.update(kwargs["fields"].pop("**"))
@@ -610,7 +644,7 @@ class ModelData(TestData):
         """Semi-internal method to actually create an instance of orm_class
 
         This is semi-internal because it can be overridden and customized but
-        it can't be called externally, it is designed to only be called 
+        it shouldn't be called externally, it is designed to only be called 
         internally by the other methods but never to be called externally
 
         https://github.com/Jaymon/prom/issues/170
@@ -641,6 +675,12 @@ class ModelData(TestData):
     async def get_orm_fields(self, orm_class, **kwargs):
         """Get the fields of an orm_class
 
+        The method call hierarchy from here:
+
+            <GET-ORM-FIELDS>
+                <ASSURE-ORM-REFS>
+                <GET-ORM-FIELD-VALUE>
+
         :param orm_class: Orm
         :param **kwargs: the fields found in orm_class.schema
             * require_fields: bool, default True, this will require that all
@@ -653,12 +693,20 @@ class ModelData(TestData):
             * fields: dict[str, Any], these will be used to seed the return
                 dict, you use this to get non schema fields to be passed to
                 orm's __init__ method
-        :returns: dict, these are the fields that will be passed to Orm.__init__
-            with one exception, if the dict contains a key "**" then that key
-            will be popped and it's value (which should be a dict) will update
-            the kwargs that are passed to .create_orm_instance to create the
-            actual orm instance. The "**" key is just a handy way to do all
-            customizing in one overridden method
+        :returns: dict, these are the fields that will be passed to
+            Orm.__init__ with one exception, if the dict contains a key "**"
+            then that key will be popped and it's value (which should be a
+            dict) will update the kwargs that are passed to
+            .create_orm_instance to create the actual orm instance. The "**"
+            key is just a handy way to do all customizing in one overridden
+            method, certain returned keys do certain things:
+                * **: dict, yes, that's right, a double asterisks key will
+                    move any of the value in the dict value back into kwargs
+                    that will be passed to the .create_orm_instance method
+                * attributes: dict, these will be merged with the **kwargs
+                    attributes (with kwargs taking precedence) and is a handy
+                    way for this method to pass values that will be set on
+                    the orm instance
         """
         ret = kwargs.pop("fields", {})
         schema = orm_class.schema
@@ -707,8 +755,8 @@ class ModelData(TestData):
     def get_orm_field_value(self, field_name, field, **kwargs):
         """Returns the generated value for the specific field
 
-        This is a wrapper around all the specific field type generators, see the
-        other get_orm_field_* methods
+        This is a wrapper around all the specific field type generators, see
+        the other get_orm_field_* methods
 
         :param field_name: str
         :param field: Field, the orm's field property
