@@ -87,25 +87,34 @@ class Orms(OrderedSubclasses):
         else:
             return super().__contains__(name_or_class)
 
-    def insert_modules(self):
+    def insert_modules(self, modpaths=None):
         """Goes through the PROM_PREFIX evnironment variables and loads any
         found module classpaths and loads all the Orm classes found in those
         modules
+
+        :param modpaths: Sequence[str], a list of modpaths (eg ["foo.bar",
+            "che"])
         """
-        if not self.inserted_modules:
-            environ = Environ("PROM_")
-            for modpath in environ.paths("PREFIX"):
+        if modpaths:
+            for modath in modpaths:
                 self.model_prefixes.add(modpath)
                 super().insert_modules(modpath)
 
-            # if there aren't any defined prefixes let's inspect the current
-            # working directory
-            if not self.model_prefixes:
-                rp = ReflectPath(Dirpath.cwd())
-                for mod in rp.find_modules("models"):
-                    self.model_prefixes.add(mod.__name__)
+        else:
+            if not self.inserted_modules:
+                environ = Environ("PROM_")
+                for modpath in environ.paths("PREFIX"):
+                    self.model_prefixes.add(modpath)
+                    super().insert_modules(modpath)
 
-            self.inserted_modules = True
+                # if there aren't any defined prefixes let's inspect the current
+                # working directory
+                if not self.model_prefixes:
+                    rp = ReflectPath(Dirpath.cwd())
+                    for mod in rp.find_modules("models"):
+                        self.model_prefixes.add(mod.__name__)
+
+                self.inserted_modules = True
 
     def get(self, model_name):
         """Returns the Orm class found at model_name

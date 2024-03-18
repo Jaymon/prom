@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from contextlib import asynccontextmanager
 
 from .config import (
     DsnConnection,
@@ -30,6 +31,7 @@ from . import utils
 __version__ = '5.0.0'
 
 
+@asynccontextmanager
 async def transaction(connection_name="", **kwargs):
     """Create a transaction 
 
@@ -43,15 +45,19 @@ async def transaction(connection_name="", **kwargs):
             o = FooOrm(foo=1)
             await o.save(connection=conn)
 
-    :param connection_name: str, the connection name corresponding to the anchor
-        of the DSN, defaults to the default "" connection
-    :param **kwargs: passed through to the Interface.transaction context manager
-        * prefix: str, the name of the transaction you want to use
-        * nest: bool, True if you want nested transactions to be created, False
-            to ignore nested transactions
+    https://docs.python.org/3/library/contextlib.html#contextlib.asynccontextmanager
+
+    :param connection_name: str, the connection name corresponding to the
+        anchor of the DSN, defaults to the default "" connection
+    :param **kwargs: passed through to the Interface.transaction context
+        manager
+            * prefix: str, the name of the transaction you want to use
+            * nest: bool, True if you want nested transactions to be created,
+                False to ignore nested transactions
     :returns: Connection instance
     """
-    kwargs.setdefault("nest", False)
+    #kwargs.setdefault("nest", False)
     kwargs.setdefault("prefix", f"prom_{connection_name}_tx")
-    return await get_interface(connection_name).transaction(**kwargs)
+    async with get_interface(connection_name).transaction(**kwargs) as conn:
+        yield conn
 

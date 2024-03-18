@@ -314,18 +314,21 @@ class ModelData(TestData):
         for inter in get_interfaces().values():
             await inter.unsafe_delete_tables()
 
-    async def unsafe_install_orms(self, modulepaths=None):
+    async def unsafe_install_orms(self, modpaths=None):
         """Go through and install all the Orm subclasses found in the passed in
         module paths
 
-        :param modulepaths: Sequence[str], a list of modpaths (eg ["foo.bar",
-        "che"])
+        This exists because if you are making use of a lot of transactions
+        that don't nest that can cause prom's built-in error handling to
+        completely fail so it's easier to create all the tables in the 
+        beginning than rely on prom to magically do it
+
+        :param modpaths: Sequence[str], a list of modpaths (eg ["foo.bar",
+            "che"])
         """
         # import the module paths to load the Orms into memory
-        if modulepaths:
-            for modulepath in modulepaths:
-                rm = ReflectModule(modulepath)
-                m = rm.module() 
+        if modpaths:
+            Orm.orm_classes.insert_modules(modpaths)
 
         # now go through all the orm classes that have been loaded and install
         # them
@@ -335,6 +338,18 @@ class ModelData(TestData):
                 if s.table_name not in seen_table_names:
                     await s.orm_class.install()
                     seen_table_names.add(s.table_name)
+
+    async def unsafe_reset_orms(self, modpaths=None):
+        """Delete all the tables in the db and then load all the Orm child
+        classes and make sure they have a table
+
+        NOTE -- this is incredibly unsafe, it deletes and creates tables in
+        the configured db
+
+        :param modpaths: passed through to .unsafe_install_orms
+        """
+        await self.unsafe_delete_orm_tables()
+        await self.unsafe_install_orms(modpaths=modpaths)
 
     def assure_orm_field_names(self, orm_class, **kwargs):
         """Field instances can have aliases, in order to allow you to pass in
@@ -348,8 +363,8 @@ class ModelData(TestData):
             print(kwargs["che"]) # "1"
 
         :param orm_class: Orm
-        :param **kwargs: the fields where keys will be normalized to field names
-            in orm_class.schema
+        :param **kwargs: the fields where keys will be normalized to field
+            names in orm_class.schema
         :returns: dict, the normalized kwargs
         """
         schema = orm_class.schema
