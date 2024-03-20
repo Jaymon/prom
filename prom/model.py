@@ -27,8 +27,6 @@ class Orms(OrderedSubclasses):
 
     See Orm.__init_subclass__, this is a class attribute found Orm.orm_classes.
 
-    See Orm.find_orm_class to see how this can be used exeternally
-
     This class is a hybrid Mapping and Sequence, if you iterate through it will
     iterate the values like a list, if you use item indexes then it will act
     like a dict
@@ -161,15 +159,6 @@ class Orms(OrderedSubclasses):
 
         except KeyError:
             return default
-
-#     def get_model_name(self, name_or_class):
-#         if isinstance(name_or_class, str):
-#             model_name = name_or_class
-# 
-#         else:
-#             model_name = name_or_class.model_name
-# 
-#         return model_name
 
     def get_ref_classes(self, name_or_class):
         """Get reference classes for the given orm class
@@ -563,40 +552,6 @@ class Orm(object):
                     fields[fn] = fields.pop(field_name)
 
         return fields
-
-    @classmethod
-    def find_ref_classes(cls, model_name):
-        orm_class = cls.find_orm_class(model_name)
-        return orm_class.schema.ref_fields.values()
-
-    @classmethod
-    def find_dep_classes(cls, model_name):
-        pass
-
-
-
-
-    @classmethod
-    def find_orm_class(cls, model_name):
-        """Using the internal Orm class tracker (Orm.orm_classes) return the
-        Orm class for model_name
-
-        This is handy for introspection and enables a whole bunch of magic in
-        various places
-
-        :param model_name: str, the model name you're looking for
-        :returns: type, the Orm class where Orm.model_name matches
-        """
-        if model_name not in cls.orm_classes:
-            cls.orm_classes.insert_modules()
-
-        try:
-            return cls.orm_classes[model_name]
-
-        except KeyError as e:
-            raise ValueError(
-                f"Could not find an orm_class for {model_name}"
-            ) from e
 
     @classmethod
     def add_orm_class(cls, orm_class):
@@ -1013,14 +968,133 @@ class Orm(object):
                 setattr(self, fn, field_val)
 
     def modify_fields(self, fields):
-        """In child classes you should override this method to do any default 
-        customizations on the fields, so if you want to set defaults or anything
-        you should do that here
+        """In child classes you should override this method to do any default
+        customizations on the fields, so if you want to set defaults or
+        anything you should do that here
 
         :param fields: dict, the fields you might want to be modified
         :returns: dict, the fields you want to actually be modified
         """
         return fields
+
+    def get_ref_value(self, k):
+        """Internal method called in .__getattr__. If k is a model_name for a
+        reference class this will return the actual orm instance for the value
+        found in the field in self
+
+        Go through looking for a FK's model name, if a match is found
+        then load that FK's row using this orm's field value and return
+        an orm instance where this row's orm field value is the primary
+        key
+
+        :Example:
+            f = await Foo.query.one()
+
+            f.bar_id # 100
+
+            b = await f.bar
+            b.pk # 100
+
+        :param k: str, the model name of foreign key field on self
+        :returns: coroutine[Orm]
+        """
+        for ref_field_name, ref_field in self.schema.ref_fields.items():
+            ref_class = ref_field.ref_class
+            if k == ref_class.model_name:
+                ref_field_value = getattr(self, ref_field_name, None)
+
+                if ref_field_value:
+                    # this is a coroutine
+                    ret = ref_class.query.eq_pk(ref_field_value).one()
+
+                else:
+                    # we do this so if there isn't a value it can still be
+                    # awaited and return None
+                    async def await_none(): return None
+                    ret = await_none()
+
+                return ret
+
+        raise AttributeError(f"No reference for {k}")
+
+    def get_dep_value(self, k):
+        """Internal method called in .__getattr__. If k represents an Orm
+        instance that a foreign key reference to self with the value .pk
+
+        Go through all the orm_classes looking for a model_name or
+        models_name match and query that model using that model's FK field
+        name that matches self.pk
+
+        :Example:
+            f = await Foo.query.one()
+            f.pk # 100
+
+            b = await Bar.query.eq_foo_id(f.pk).one()
+            b.foo_id # 100
+
+            b2 = await f.bar
+            b2.foo_id # 100
+
+            async for b in await f.bars:
+                b.foo_id # 100
+
+        :param k: str, the model(s) name of an orm class that contains a
+            foreign key field for self and has values of .pk
+        :returns: coroutine[Orm]|coroutine[Iterator]
+        """
+        if orm_class := self.orm_classes.get(k):
+            ref_items = orm_class.schema.ref_fields.items()
+            for ref_field_name, ref_field in ref_items:
+                ref_class = ref_field.ref
+                if ref_class and isinstance(self, ref_class):
+                    query = orm_class.query.eq_field(
+                        ref_field_name,
+                        self.pk
+                    )
+                    if k == orm_class.models_name:
+                        # this is a coroutine
+                        return query.get()
+
+                    else:
+                        # this is a coroutine
+                        return query.one()
+
+        raise AttributeError(f"No dependency for {k}")
+
+    def get_rel_value(self, k):
+        """Internal method called in .__getattr__. This one is a bit harder
+        to understand because self doesn't have a direct relationship to k,
+        but if there is a third orm_class that has a relationship to both
+        self and k then this will use that to lookup values matching .pk
+
+        :param k: str, the model(s) name of an orm class that might have a
+            relationship with self
+        :returns: coroutine[Orm]|coroutine[Iterator]
+        """
+        model_name_1 = self.model_name
+        for dep_class in self.orm_classes.get_rel_classes(model_name_1, k):
+            field_name_1 = dep_class.schema.field_model_name(model_name_1)
+            orm_class_1 = dep_class.schema.fields[field_name_1].ref_class
+
+            field_name_2 = dep_class.schema.field_model_name(k)
+            orm_class_2 = dep_class.schema.fields[field_name_2].ref_class
+
+            query = orm_class_2.query.in_pk(
+                dep_class.query.select(field_name_2).eq_field(
+                    field_name_1,
+                    self.pk
+                )
+            )
+
+            if k == orm_class_2.models_name:
+                # this is a coroutine
+                return query.get()
+
+            else:
+                # this is a coroutine
+                return query.one()
+
+        raise AttributeError(f"No relationship for {model_name_1} and {k}")
 
     def __getattr__(self, k):
         """
@@ -1031,45 +1105,19 @@ class Orm(object):
             field_name = self.schema.field_name(k)
 
         except AttributeError:
-            # Go through looking for a FK's model name, if a match is found then
-            # load that FK's row using this orm's field value and return an
-            # orm instance where this row's orm field value is the primary key
-            for ref_field_name, ref_field in self.schema.ref_fields.items():
-                ref_class = ref_field.ref
-                if k == ref_class.model_name:
-                    ref_field_value = getattr(self, ref_field_name, None)
+            try:
+                return self.get_ref_value(k)
 
-                    if ref_field_value:
-                        # this is a coroutine
-                        ret = ref_class.query.eq_pk(ref_field_value).one()
+            except AttributeError:
+                try:
+                    return self.get_dep_value(k)
 
-                    else:
-                        # we do this so if there isn't a value it can still be
-                        # awaited and return None
-                        async def await_none(): return None
-                        ret = await_none()
+                except AttributeError:
+                    try:
+                        return self.get_rel_value(k)
 
-                    return ret
-
-            # Go through all the orm_classes looking for a model_name or
-            # models_name match and query that model using that model's FK field
-            # name that matches self.pk
-            if orm_class := self.orm_classes.get(k):
-                ref_items = orm_class.schema.ref_fields.items()
-                for ref_field_name, ref_field in ref_items:
-                    ref_class = ref_field.ref
-                    if ref_class and isinstance(self, ref_class):
-                        query = orm_class.query.eq_field(
-                            ref_field_name,
-                            self.pk
-                        )
-                        if k == orm_class.models_name:
-                            # this is a coroutine
-                            return query.get()
-
-                        else:
-                            # this is a coroutine
-                            return query.one()
+                    except (AttributeError, KeyError):
+                        pass
 
             raise
 

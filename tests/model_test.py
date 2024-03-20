@@ -566,7 +566,8 @@ class OrmTest(EnvironTestCase):
             o2.blahblah
 
     async def test___getattr___models_name(self):
-        """Makes sure that getting an attribute by models_name works as expected
+        """Makes sure that getting an attribute by models_name works as
+        expected
         """
         o1_class = self.get_orm_class(
             bar=Field(str),
@@ -606,6 +607,49 @@ class OrmTest(EnvironTestCase):
 
         o2r = await o1.o2model
         self.assertEqual(o2.pk, o2r.pk)
+
+    async def test___getattr___rel(self):
+        o1_class = self.get_orm_class(
+            model_name="o1model",
+        )
+        o2_class = self.get_orm_class(
+            model_name="o2model",
+        )
+        lookup_class = self.get_orm_class(
+            o1_id=Field(o1_class),
+            o2_id=Field(o2_class),
+            model_name="lookupmodel",
+        )
+
+        o1 = await self.insert_orm(o1_class)
+        o2 = await self.insert_orm(o2_class)
+        lookup = await self.insert_orm(
+            lookup_class,
+            o1_id=o1.pk,
+            o2_id=o2.pk,
+        )
+
+        # check 1 -> 2
+        self.assertEqual(
+            o2.pk,
+            (await o1.o2model).pk
+        )
+
+        self.assertEqual(
+            1,
+            len(await (await o1.o2models).tolist())
+        )
+
+        # check 2 -> 1
+        self.assertEqual(
+            o1.pk,
+            (await o2.o1model).pk
+        )
+
+        self.assertEqual(
+            1,
+            len(await (await o2.o1models).tolist())
+        )
 
     def test_creation(self):
         orm_class = self.get_orm_class(
@@ -1282,22 +1326,6 @@ class OrmTest(EnvironTestCase):
 
         o = await orm_class.query.eq_pk(pk).one()
         self.assertIsNone(o.che)
-
-    def test_find_orm_class(self):
-        mpath = self.create_module([
-            "from prom import Field, Orm",
-            "",
-            "class Foo(Orm):",
-            "    pass",
-            "",
-            "class Bar(Orm):",
-            "    foo_id = Field(Foo, True)",
-        ])
-
-        with self.environment(PROM_PREFIX=mpath):
-            orm_class = Orm.find_orm_class("bar")
-            self.assertTrue(issubclass(orm_class, Orm))
-            self.assertEqual("bar", orm_class.model_name)
 
 
 class OrmsTest(EnvironTestCase):

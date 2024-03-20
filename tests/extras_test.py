@@ -3,6 +3,8 @@
 from prom.model import Orm
 from prom.config import Field
 from prom.extras.model import MagicOrm
+from prom.extras.testdata import ModelData
+
 from . import IsolatedAsyncioTestCase, EnvironTestCase
 
 
@@ -63,15 +65,12 @@ class MagicOrmTest(EnvironTestCase):
 class ModelDataTest(IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
-        # we import this here because it has .get_orm_class and .get_orm
-        # methods that will stomp the normal ones
-        from prom.extras.testdata import ModelData
+        super().setUpClass()
 
-    @classmethod
-    def tearDownClass(cls):
-        # we remove ModelData here so it doesn't poison other tests
-        from prom.extras.testdata import ModelData
-        cls.data.delete_class(ModelData)
+        # we need to specifically set the ModelData so this class can use it
+        # because parent classes get rid of it because it stomps methods
+        # found in .testdata
+        cls.data.add_class(ModelData)
 
     async def test_references_1(self):
         testdata = self.InterfaceData

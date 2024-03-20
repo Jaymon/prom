@@ -3,13 +3,13 @@ import logging
 
 from prom.compat import *
 from prom.exception import InterfaceError
+from prom.extras.testdata import ModelData
 import prom
 from .testdata import (
     TestData,
     TestCase,
     IsolatedAsyncioTestCase,
     SkipTest,
-    #InterfaceData, # importing hooks into testdata
 )
 
 
@@ -40,6 +40,18 @@ class IsolatedAsyncioTestCase(IsolatedAsyncioTestCase):
     TestCase and then passed to this class in .setUpClass and removed
     in .tearDownClass
     """
+    @classmethod
+    def setUpClass(cls):
+        # we get rid of this because it has .get_orm_class and .get_orm
+        # methods that will stomp the normal ones
+        cls.data.delete_class(ModelData)
+
+    @classmethod
+    def tearDownClass(cls):
+        # we remove ModelData here so it doesn't poison other tests just in
+        # case it got re-added
+        cls.data.delete_class(ModelData)
+
     def setUp(self):
         self.data.interface_class = self.interface_class
 

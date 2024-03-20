@@ -448,9 +448,9 @@ class Schema(object):
     def set_index(self, index_name, index):
         """Add an index to the schema
 
-        for the most part, you will use the __getattr__ method of adding indexes
-        for a more fluid interface, but you can use this if you want to get
-        closer to the bare metal
+        for the most part, you will use the __getattr__ method of adding
+        indexes for a more fluid interface, but you can use this if you want to
+        get closer to the bare metal
 
         :param index_name: str, the name of the index
         :param index: Index, an Index instance
@@ -480,8 +480,8 @@ class Schema(object):
         most of the time, the field name of field_name will just be field_name,
         but this checks the configured aliases to return the canonical name
 
-        :param field_name: str, the field_name you want the canonical field name
-            for
+        :param field_name: str, the field_name you want the canonical field
+            name for
         :param *default: mixed, if present this will be returned instead of
             AttributeError raised if field_name doesn't exist
         """
@@ -494,7 +494,10 @@ class Schema(object):
 
             else:
                 if field_name in self.lookup["field_names_deleted"]:
-                    return self.lookup["field_names_deleted"][field_name]
+                    try:
+                        return self.lookup["field_names_deleted"][field_name]
+                    except KeyError as e:
+                        raise AttributeError(field_name) from e
 
                 else:
                     raise

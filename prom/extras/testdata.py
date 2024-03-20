@@ -568,9 +568,9 @@ class ModelData(TestData):
         :returns: Orm, the orm_class.model_name that matches model_name
         """
         try:
-            return Orm.find_orm_class(model_name)
+            return Orm.orm_classes[model_name]
 
-        except ValueError:
+        except KeyError:
             if default:
                 return default[0]
 

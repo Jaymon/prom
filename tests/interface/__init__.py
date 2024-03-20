@@ -14,7 +14,6 @@ from prom.compat import *
 import prom
 
 from .. import (
-    InterfaceData,
     IsolatedAsyncioTestCase,
 )
 
