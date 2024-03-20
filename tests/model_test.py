@@ -1299,3 +1299,106 @@ class OrmTest(EnvironTestCase):
             self.assertTrue(issubclass(orm_class, Orm))
             self.assertEqual("bar", orm_class.model_name)
 
+
+class OrmsTest(EnvironTestCase):
+    def test_get_orm_class(self):
+        mpath = self.create_module([
+            "from prom import Field, Orm",
+            "",
+            "class Foo(Orm):",
+            "    pass",
+            "",
+            "class Bar(Orm):",
+            "    foo_id = Field(Foo, True)",
+        ])
+
+        with self.environment(PROM_PREFIX=mpath):
+            orm_class = Orm.orm_classes.get("bar")
+            self.assertTrue(issubclass(orm_class, Orm))
+            self.assertEqual("bar", orm_class.model_name)
+
+    def test_get_ref_classes(self):
+        mpath = self.create_module(
+            [
+                "from prom import Field, Orm",
+                "",
+                "class Foo(Orm):",
+                "    pass",
+                "",
+                "class Bar(Orm):",
+                "    foo_id = Field(Foo, True)",
+                "",
+                "class Che(Orm):",
+                "    pass",
+            ],
+            load=True
+        )
+
+        ref_classes = Orm.orm_classes.get_ref_classes("bar")
+        self.assertEqual(1, len(ref_classes))
+        self.assertTrue(issubclass(ref_classes[0], Orm))
+        self.assertEqual("foo", ref_classes[0].model_name)
+
+    def test_get_dep_classes(self):
+        mpath = self.create_module(
+            [
+                "from prom import Field, Orm",
+                "",
+                "class Foo(Orm):",
+                "    pass",
+                "",
+                "class Bar(Orm):",
+                "    foo_id = Field(Foo, True)",
+                "",
+                "class Che(Orm):",
+                "    foo_id = Field(Foo, False)",
+                "    pass",
+                "",
+                "class Boo(Orm):",
+                "    pass",
+            ],
+            load=True
+        )
+
+        dep_classes = Orm.orm_classes.get_dep_classes("foo")
+        self.assertEqual(2, len(dep_classes))
+        model_names = set(["bar", "che"])
+        for dep_class in dep_classes:
+            self.assertTrue(issubclass(dep_class, Orm))
+            self.assertTrue(dep_class.model_name in model_names)
+
+    def test_get_rel_classes(self):
+        mpath = self.create_module(
+            [
+                "from prom import Field, Orm",
+                "",
+                "class Foo(Orm):",
+                "    pass",
+                "",
+                "class Bar(Orm):",
+                "    pass",
+                "",
+                "class FooBar(Orm):",
+                "    foo_id = Field(Foo, True)",
+                "    bar_id = Field(Bar, True)",
+                "",
+                "class Che(Orm):",
+                "    foo_id = Field(Foo, False)",
+                "    pass",
+                "",
+                "class Boo(Orm):",
+                "    pass",
+            ],
+            load=True
+        )
+
+        rel_classes = Orm.orm_classes.get_rel_classes("foo", "bars")
+        self.assertEqual(1, len(rel_classes))
+        self.assertTrue(issubclass(rel_classes[0], Orm))
+        self.assertEqual("foo_bar", rel_classes[0].model_name)
+
+        rel_classes = Orm.orm_classes.get_rel_classes("bar", "foos")
+        self.assertEqual(1, len(rel_classes))
+        self.assertTrue(issubclass(rel_classes[0], Orm))
+        self.assertEqual("foo_bar", rel_classes[0].model_name)
+

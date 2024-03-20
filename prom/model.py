@@ -39,6 +39,21 @@ class Orms(OrderedSubclasses):
     def __init__(self):
         super().__init__()
 
+        self.prepare()
+
+        # should always be `prom` and is used in ._is_valid_subclass to make
+        # sure only true child classes are inserted
+        self.module_name = ReflectModule(__name__).modroot
+
+    def prepare(self):
+        """These initializations are broken out from __init__ because .clear
+        will also need to use them
+
+        NOTE -- This completely resets the state of the class but that means
+        it won't reload any classes previously added so even though 
+        .insert_modules will rerun, it might not actually load any classes
+        """
+
         # set to True in .insert_modules
         self.inserted_modules = False
 
@@ -46,19 +61,34 @@ class Orms(OrderedSubclasses):
         self.model_prefixes = set()
 
         # model(s)_name is the key, an Orm class child is the value
-        self.lookup_table = {}
+        self.lookup_orm_table = {}
 
-        # should always be `prom` and is used in ._is_valid_subclass to make
-        # sure only true child classes are inserted
-        self.module_name = ReflectModule(__name__).modroot
+        # refs lookup table (a ref is a foreign key present on an orm
+        self.lookup_ref_table = {}
+
+        # dependency lookup table (a dependency is all the orms that ref
+        # an orm
+        self.lookup_dep_table = {}
+
+        # lookup table for "lookup table" orms
+        self.lookup_rel_table = {}
+
+    def clear(self):
+        super().clear()
+        self.prepare()
 
     def _insert(self, orm_class, class_info):
         super()._insert(orm_class, class_info)
 
         if not class_info["in_info"]:
             # this orm class is the new edge for this model name
-            self.lookup_table[orm_class.model_name] = orm_class
-            self.lookup_table[orm_class.models_name] = orm_class
+            self.lookup_orm_table[orm_class.model_name] = orm_class
+            self.lookup_orm_table[orm_class.models_name] = orm_class
+
+        # we reset the dependency tables because we've potentially added new
+        # dependencies
+        self.lookup_dep_table = {}
+        self.lookup_rel_table = {}
 
     def __getitem__(self, index_or_name):
         """If int then treat it like getting the index of a list, if str then
@@ -72,17 +102,20 @@ class Orms(OrderedSubclasses):
             return super().__getitem__(index_or_name)
 
         else:
-            return self.lookup_table[index_or_name]
+            if index_or_name not in self.lookup_orm_table:
+                self.insert_modules()
+
+            return self.lookup_orm_table[index_or_name]
 
     def __contains__(self, name_or_class):
-        """If str then it checks model_name keys as a dict, if type then it will
-        check for the class in the list
+        """If str then it checks model_name keys as a dict, if type then it
+        will check for the class in the list
 
         :param name_or_class: str|type
         :returns: bool
         """
         if isinstance(name_or_class, str):
-            return name_or_class in self.lookup_table
+            return name_or_class in self.lookup_orm_table
 
         else:
             return super().__contains__(name_or_class)
@@ -107,8 +140,8 @@ class Orms(OrderedSubclasses):
                     self.model_prefixes.add(modpath)
                     super().insert_modules(modpath)
 
-                # if there aren't any defined prefixes let's inspect the current
-                # working directory
+                # if there aren't any defined prefixes let's inspect the
+                # current working directory
                 if not self.model_prefixes:
                     rp = ReflectPath(Dirpath.cwd())
                     for mod in rp.find_modules("models"):
@@ -116,25 +149,150 @@ class Orms(OrderedSubclasses):
 
                 self.inserted_modules = True
 
-    def get(self, model_name):
+    def get(self, model_name, default=None):
         """Returns the Orm class found at model_name
 
         :param model_name: str, the model name you want
-        :returns: type, Orm chiild class
+        :param default: Any, only here for full compatibility with dict.get
+        :returns: type, Orm child class
         """
         try:
-            return self.lookup_table[model_name]
+            return self.__getitem__(model_name)
 
         except KeyError:
-            return None
+            return default
+
+#     def get_model_name(self, name_or_class):
+#         if isinstance(name_or_class, str):
+#             model_name = name_or_class
+# 
+#         else:
+#             model_name = name_or_class.model_name
+# 
+#         return model_name
+
+    def get_ref_classes(self, name_or_class):
+        """Get reference classes for the given orm class
+
+        A reference class has a foreign key reference on the given orm class
+
+        :Example:
+            class Foo(Orm):
+                pass
+
+            class Bar(Orm):
+                foo_id = Field(Foo, True)
+
+            Orm.orm_classes.get_dep_classes("bar") # [Foo]
+            Orm.orm_classes.get_dep_classes("foo") # []
+
+        :param name_or_class: str|Orm
+        :returns: list[Orm]
+        """
+        orm_class = self[name_or_class]
+        model_name = orm_class.model_name
+
+        if model_name not in self.lookup_ref_table:
+            ref_classes = list(
+                f.ref_class for f in orm_class.schema.ref_fields.values()
+            )
+            self.lookup_ref_table[model_name] = ref_classes
+
+        return self.lookup_ref_table[model_name]
+
+    def get_dep_classes(self, name_or_class):
+        """Get dependency classes for the given orm
+
+        A dependency class is an orm class that contains a foreign key
+        reference for the given orm class (ie, it is dependent on the given
+        orm class but the given orm class doesn't have a reference to the
+        dependent class)
+
+        :Example:
+            class Foo(Orm):
+                pass
+
+            class Bar(Orm):
+                foo_id = Field(Foo, True)
+
+            Orm.orm_classes.get_dep_classes("foo") # [Bar]
+            Orm.orm_classes.get_dep_classes("bar") # []
+
+        :param name_or_class: str|Orm
+        :returns: list[Orm]
+        """
+        orm_class = self[name_or_class]
+        model_name = orm_class.model_name
+
+        if model_name not in self.lookup_dep_table:
+            dep_classes = []
+            for dep_class in self:
+                for ref_class in self.get_ref_classes(dep_class.model_name):
+                    if ref_class.model_name == model_name:
+                        dep_classes.append(dep_class)
+
+            self.lookup_dep_table[model_name] = dep_classes
+
+        return self.lookup_dep_table[model_name]
+
+    def get_rel_classes(self, name_or_class_1, name_or_class_2):
+        """Get lookup table classes for the given orm classes
+
+        a relationship class is an orm class that contains foreign key
+        references to both passed in orm classes (ie, the returned orm
+        classes are basically lookup tables for the relationship between
+        the two passed in orm classes)
+
+        :Example:
+            class Foo(Orm):
+                pass
+
+            class Bar(Orm):
+                pass
+
+            class FooBar(Orm):
+                foo_id = Field(Foo, True)
+                bar_id = Field(Bar, True)
+
+            Orm.orm_classes.get_rel_classes("foo", "bar") # [FooBar]
+            Orm.orm_classes.get_rel_classes("bar", "foo") # [FooBar]
+
+        :param name_or_class_1: str|Orm
+        :param name_or_class_2: str|Orm
+        :returns: list[Orm]
+        """
+        orm_class_1 = self[name_or_class_1]
+        model_name_1 = orm_class_1.model_name
+
+        orm_class_2 = self[name_or_class_2]
+        model_name_2 = orm_class_2.model_name
+
+        key_name = f"{model_name_1}-{model_name_2}"
+
+        if key_name not in self.lookup_rel_table:
+            rel_classes = []
+
+            dep_classes_1 = {
+                oc.model_name: oc for oc in self.get_dep_classes(model_name_1)
+            }
+
+            for oc in self.get_dep_classes(model_name_2):
+                if oc.model_name in dep_classes_1:
+                    rel_classes.append(oc)
+
+            self.lookup_rel_table[key_name] = rel_classes
+            key_name_2 = f"{model_name_2}-{model_name_1}"
+            self.lookup_rel_table[key_name_2] = rel_classes
+
+        return self.lookup_rel_table[key_name]
 
     def _is_valid_subclass(self, orm_class, cutoff_classes):
         ret = super()._is_valid_subclass(orm_class, cutoff_classes)
         if ret:
             # while we check for Orm derived child classes, we also don't want
             # any Orm child classes that are defined in prom since those are
-            # also base classes and we're only interested in valid child classes
-            # that can access a db
+            # also base classes and we're only interested in valid child
+            # classes that can access a db
             ret = not orm_class.__module__.startswith(self.module_name)
 
         return ret
@@ -405,6 +563,18 @@ class Orm(object):
                     fields[fn] = fields.pop(field_name)
 
         return fields
+
+    @classmethod
+    def find_ref_classes(cls, model_name):
+        orm_class = cls.find_orm_class(model_name)
+        return orm_class.schema.ref_fields.values()
+
+    @classmethod
+    def find_dep_classes(cls, model_name):
+        pass
+
+
+
 
     @classmethod
     def find_orm_class(cls, model_name):

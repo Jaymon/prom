@@ -7,9 +7,9 @@ import prom
 from .testdata import (
     TestData,
     TestCase,
-    IsolatedAsyncioTestCase as _IsolatedAsyncioTestCase,
+    IsolatedAsyncioTestCase,
     SkipTest,
-    InterfaceData, # importing hooks into testdata
+    #InterfaceData, # importing hooks into testdata
 )
 
 
@@ -31,7 +31,7 @@ testdata.basic_logging(
 logger = logging.getLogger(__name__)
 
 
-class IsolatedAsyncioTestCase(_IsolatedAsyncioTestCase):
+class IsolatedAsyncioTestCase(IsolatedAsyncioTestCase):
     interface_class = None
     """Set this to an Interface class and only that class will be used to create
     interfaces
