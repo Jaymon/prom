@@ -88,22 +88,35 @@ class Orms(OrderedSubclasses):
         self.lookup_dep_table = {}
         self.lookup_rel_table = {}
 
-    def __getitem__(self, index_or_name):
+    def __getitem__(self, index_or_name_or_class):
         """If int then treat it like getting the index of a list, if str then
         treat it like fetching a key on a dictionary
 
-        :param index_or_name: int|str, either the index of the list you want or
-            the model name you want
+        :param index_or_name_or_class: int|str|Orm, either the index of the
+            list you want or the model name you want
         :returns: type, the requested Orm child class
         """
-        if isinstance(index_or_name, int):
-            return super().__getitem__(index_or_name)
+        if isinstance(index_or_name_or_class, int):
+            return super().__getitem__(index_or_name_or_class)
 
         else:
-            if index_or_name not in self.lookup_orm_table:
+            if isinstance(index_or_name_or_class, str):
+                model_name = index_or_name_or_class
+
+            else:
+                model_name = index_or_name_or_class.model_name
+
+            if model_name not in self.lookup_orm_table:
                 self.insert_modules()
 
-            return self.lookup_orm_table[index_or_name]
+            return self.lookup_orm_table[model_name]
+
+    def __getattr__(self, model_name):
+        try:
+            return self.__getitem__(model_name)
+
+        except KeyError as e:
+            raise AttributeError(model_name) from e
 
     def __contains__(self, name_or_class):
         """If str then it checks model_name keys as a dict, if type then it
@@ -601,8 +614,8 @@ class Orm(object):
         cls.add_orm_class(cls)
 
     def fk(self, orm_class):
-        """find the field value in self that is the primary key of the passed in
-        orm_class
+        """find the field value in self that is the primary key of the passed
+        in orm_class
 
         :example:
             class Foo(Orm):
@@ -641,7 +654,8 @@ class Orm(object):
         return self.query.ref(orm_classpath).orm_class
 
     def ref_class(self, orm_classpath):
-        """Alias for .ref to be more consistent with other *_class attributes"""
+        """Alias for .ref to be more consistent with other *_class
+        attributes"""
         return self.ref(orm_classpath)
 
     def is_hydrated(self):

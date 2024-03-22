@@ -159,6 +159,9 @@ class ModelData(TestData):
         :param **kwargs: passed through to whatever method is ran
         :returns: Any, whatever the ran method returns
         """
+        if isinstance(orm_class, str):
+            orm_class = self.get_orm_class(orm_class)
+
         m = re.match(r"^([^_]+)_(orms?)(?:_(.+))?$", method.__name__)
 
         parts = [m.group(1)]
@@ -280,6 +283,7 @@ class ModelData(TestData):
                     # most likely been called internally by another magic
                     # method that just passed kwargs
                     kwargs.setdefault("orm_class", orm_class)
+
                     if not isinstance(orm_class, kwargs["orm_class"]):
                         kwargs["orm_class"] = orm_class
 
