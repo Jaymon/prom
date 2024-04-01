@@ -414,6 +414,7 @@ class QueryField(object):
         self.operator = kwargs.pop("operator", None)
         self.is_list = kwargs.pop("is_list", False)
         self.direction = kwargs.pop("direction", None) # 1 = ASC, -1 = DESC
+        self.increment = kwargs.pop("increment", False) # Query.incr_field
         self.raw = kwargs.pop("raw", False)
         self.or_clause = False
         self.kwargs = kwargs
@@ -502,6 +503,22 @@ class QueryFields(list):
         super().append(field)
         self.field_names[field.name].append(index)
 
+    def get_field(self, field_name):
+        """Return the last field information for field_name
+
+        This is handy for getting set information. If you need all the set
+        values for field_name then you would just use
+        self.field_names[field_name]
+
+        :param field_name: str, the field name you're looking for
+        :returns: QueryField|None
+        """
+        try:
+            return self[self.field_names[field_name][-1]]
+
+        except KeyError:
+            return None
+
     def __contains__(self, field_name):
         return field_name in self.field_names
 
@@ -518,14 +535,15 @@ class QueryFields(list):
 class Query(object):
     """Handle standard query creation and allow interface querying
 
-    This is the glue between Orm and Interface. For the most part you will never
-    interact with the Interface directly but instead use Orm and Query, and you
-    won't usually ever instantiate this class directly but instead use the 
-    Orm.query magic class property
+    This is the glue between Orm and Interface. For the most part you will
+    never interact with the Interface directly but instead use Orm and Query,
+    and you won't usually ever instantiate this class directly but instead use
+    the Orm.query magic class property
 
     :example:
         q = Query(orm_class)
-        q.select_bar().select_che().eq_foo(1).desc_bar().limit(10).page(2).get()
+        q.select_bar().select_che().eq_foo(1).desc_bar().limit(10).page(2)
+        q.get()
         # SELECT
         #   bar,
         #   che
@@ -580,8 +598,8 @@ class Query(object):
         """Wraps left and right field statements with an OR clause, you can
         chain as many OR calls as you want to create an any length OR clause
 
-        I don't love that I had to use OR instead of "or" but "or" is a reserved
-        keyword and I thought OR was better than like _or, or_ or _or_
+        I don't love that I had to use OR instead of "or" but "or" is a
+        reserved keyword and I thought OR was better than like _or, or_ or _or_
 
         :Example:
             self.eq_foo(1).OR.eq_foo(5).OR.eq_foo(10)
@@ -810,8 +828,7 @@ class Query(object):
         return self
 
     def set_field(self, field_name, field_val):
-        """
-        set a field into .fields_set attribute
+        """Set a field into .fields_set attribute
 
         In insert/update queries, these are the fields that will be
         inserted/updated into the db
@@ -827,6 +844,17 @@ class Query(object):
         fields = make_dict(fields, fields_kwargs)
         for field_name, field_val in fields.items():
             self.set_field(field_name, field_val)
+        return self
+
+    def incr_field(self, field_name, field_val):
+        """Set a field to be incremented into .fields_set attribute
+
+        In update queries, these are the fields that will be
+        updated into the db using field_name = field_name + field_val
+        for an atomic increment
+        """
+        field = self.create_field(field_name, field_val, increment=True)
+        self.fields_set.append(field)
         return self
 
     def intersect(self, *queries, **kwargs):

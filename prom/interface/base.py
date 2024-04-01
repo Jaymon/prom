@@ -327,7 +327,7 @@ class InterfaceABC(LogMixin):
         return False
 
     async def _handle_close_error(self, e, **kwargs):
-        self.close()
+        await self.close()
         return True
 
     def render(self, schema, query, **kwargs):

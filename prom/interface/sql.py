@@ -945,11 +945,21 @@ class SQLInterface(SQLInterfaceABC):
 
         field_str = []
         for field_name, field_val in fields.items():
-            field_str.append('{} = {}'.format(
-                self.render_field_name_sql(field_name),
-                self.PLACEHOLDER
-            ))
-            query_args.append(field_val)
+            field = query.fields_set.get_field(field_name)
+            if field and field.increment:
+                field_str.append('{} = {} + {}'.format(
+                    self.render_field_name_sql(field_name),
+                    self.render_field_name_sql(field_name),
+                    self.PLACEHOLDER
+                ))
+                query_args.append(field_val)
+
+            else:
+                field_str.append('{} = {}'.format(
+                    self.render_field_name_sql(field_name),
+                    self.PLACEHOLDER
+                ))
+                query_args.append(field_val)
 
         query_str += 'SET {}'.format(',\n'.join(field_str))
 

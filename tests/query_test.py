@@ -985,6 +985,27 @@ class QueryTest(EnvironTestCase):
         for i, r in enumerate(rows):
             self.assertEqual(vs[i][0], r)
 
+    async def test_incr_field(self):
+        q = self.get_query()
+        pks = await self.insert(q, 3)
+
+        foos = {}
+        os = await q.copy().in_pk(pks).get()
+        async for o in os:
+            foos[o.pk] = o.foo
+
+        await q.copy().incr_foo(1).in_pk(pks).update()
+        os = await q.copy().in_pk(pks).get()
+        async for o in os:
+            self.assertLess(foos[o.pk], o.foo)
+            self.assertEqual(foos[o.pk], o.foo - 1)
+
+        # make sure decrement works also
+        await q.copy().incr_foo(-1).in_pk(pks).update()
+        os = await q.copy().in_pk(pks).get()
+        async for o in os:
+            self.assertEqual(foos[o.pk], o.foo)
+
 
 class IteratorTest(EnvironTestCase):
     async def get_iterator(self, count=5, limit=5, page=0):
