@@ -528,8 +528,9 @@ class Orm(object):
     def hydrate(cls, fields=None, **fields_kwargs):
         """return a populated instance with the present fields
 
-        NOTE -- you probably shouldn't override this method since 
-        Iterator.hydrate relies on this method signature to create each instance
+        NOTE -- you probably shouldn't override this method since
+        Iterator.hydrate relies on this method signature to create each
+        instance
 
         :param fields: dict, the fields to populate in this instance
         :param **fields_kwargs: dict, the fields in key=val form to populate in
@@ -543,7 +544,7 @@ class Orm(object):
         return instance
 
     @classmethod
-    def make_dict(cls, fields, fields_kwargs, schema=None):
+    def make_dict(cls, *fields, schema=None):
         """Lots of methods take a dict and key=val for fields, this combines
         fields and fields_kwargs into one master dict, turns out we want to do
         this more than I would've thought to keep api compatibility with prom
@@ -556,7 +557,7 @@ class Orm(object):
             resolve any aliases
         :returns: dict, the combined fields
         """
-        fields = utils.make_dict(fields, fields_kwargs)
+        fields = utils.make_dict(*fields)
 
         if schema:
             # since schema is passed in resolve any aliases
@@ -746,13 +747,8 @@ class Orm(object):
         schema = self.schema
         q = self.modify_query()
 
-        pk = await q.insert(**kwargs)
-        if pk:
-            fields = q.fields_set.fields
-            pk_name = schema.pk_name
-            if pk_name:
-                fields[pk_name] = pk
-                self.from_interface(fields)
+        if fields := await q.insert(**kwargs):
+            self.from_interface(self.make_dict(fields))
 
         else:
             ret = False
@@ -768,9 +764,8 @@ class Orm(object):
         ret = True
         q = self.modify_query()
 
-        if await q.update(**kwargs):
-            fields = q.fields_set.fields
-            self.from_interface(fields)
+        if rows := await q.update(**kwargs):
+            self.from_interface(self.make_dict(rows[0]))
 
         else:
             ret = False
@@ -781,14 +776,15 @@ class Orm(object):
         """Perform an UPSERT query where we insert the fields if they don't
         already exist on the db or we UPDATE if they do
 
-        We only want to upsert on specific occasions where we know we've set the
-        conflict values and will be sending them to the db. UPSERT queries need
-        to have a unique index on the table they can use for the conflict fields
+        We only want to upsert on specific occasions where we know we've set
+        the conflict values and will be sending them to the db. UPSERT queries
+        need to have a unique index on the table they can use for the conflict
+        fields
 
         This method will go through the indexes and try and find a unique index
-        that has all fields that are being sent to the interface and it will use
-        those fields as the conflict fields, it will raise a ValueError if it
-        can't find a valid set of conflict fields
+        that has all fields that are being sent to the interface and it will
+        use those fields as the conflict fields, it will raise a ValueError if
+        it can't find a valid set of conflict fields
 
         :param **kwargs: passed through to the interface
         """
@@ -829,17 +825,14 @@ class Orm(object):
         _id is set, otherwise it will insert
 
         see also -- .insert(), .update()
-        """
-        ret = False
 
-        pk = self._interface_pk
-        if pk:
-            ret = await self.update(**kwargs)
+        :returns: bool, True if the save was successful
+        """
+        if pk := self._interface_pk:
+            return await self.update(**kwargs)
 
         else:
-            ret = await self.insert(**kwargs)
-
-        return ret
+            return await self.insert(**kwargs)
 
     async def delete(self, **kwargs):
         """delete the object from the db if pk is set"""

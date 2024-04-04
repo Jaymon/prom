@@ -429,7 +429,11 @@ class SQLInterface(SQLInterfaceABC):
         return await self._raw(query_str, *query_args, **kwargs)
 
     async def _count(self, schema, query, **kwargs):
-        query_str, query_args = self.render_sql(schema, query, count_query=True)
+        query_str, query_args = self.render_sql(
+            schema,
+            query,
+            count_query=True
+        )
         ret = await self._raw(query_str, *query_args, **kwargs)
         if ret:
             ret = int(ret[0]['ct'])

@@ -461,7 +461,11 @@ class InterfaceData(TestData):
         )
         for fs in fields:
             d = await interface.insert(schema, fs)
-            pks.append(d[schema.pk_name])
+            if pk_name := schema.pk_name:
+                pks.append(d[pk_name])
+
+            else:
+                pks.append(None)
 
         return pks if len(pks) > 1 else pks[0]
 

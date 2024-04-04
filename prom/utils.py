@@ -75,7 +75,7 @@ def make_list(vals):
     return ret
 
 
-def make_dict(fields, fields_kwargs):
+def make_dict(*fields):
     """lot's of methods take a dict or kwargs, this combines those
 
     Basically, we do a lot of def method(fields, **kwargs) and we want to merge
@@ -87,12 +87,10 @@ def make_dict(fields, fields_kwargs):
     return -- dict -- a merged fields and fields_kwargs
     """
     ret = {}
-    if fields:
-        ret.update(fields)
 
-    if fields_kwargs:
-        ret.update(fields_kwargs)
+    for d in fields:
+        if d:
+            ret.update(d)
 
     return ret
-
 
