@@ -416,6 +416,8 @@ class QueryField(object):
         self.direction = kwargs.pop("direction", None) # 1 = ASC, -1 = DESC
         self.increment = kwargs.pop("increment", False) # Query.incr_field
         self.raw = kwargs.pop("raw", False)
+        self.select = kwargs.pop("select", False)
+        self.function_name = kwargs.pop("function_name", "")
         self.or_clause = False
         self.kwargs = kwargs
 
@@ -429,8 +431,14 @@ class QueryField(object):
 
     def set_name(self, field_name):
         field_name, function_name = self.parse(field_name, self.schema)
-        self.function_name = function_name
+
         self.name = field_name
+
+        if function_name:
+            self.function_name = function_name
+
+        if self.function_name and self.select:
+            self.alias = field_name
 
     def set_value(self, field_val):
         if not isinstance(field_val, Query):
@@ -483,6 +491,7 @@ class QueryFields(list):
         ret = {}
         for f in self:
             ret[f.name] = f.value
+
         return ret
 
     def __init__(self):
@@ -530,6 +539,14 @@ class QueryFields(list):
         self.field_names = defaultdict(list)
         self.options = {}
         super().clear()
+
+    def todict(self):
+        """Returns a dict of field_name: QueryField instance"""
+        ret = {}
+        for f in self:
+            ret[f.name] = f
+
+        return ret
 
 
 class Query(object):
@@ -805,35 +822,37 @@ class Query(object):
         self.fields_sort.append(f)
         return self
 
-    def distinct(self, *field_names):
+    def distinct(self, *field_names, **kwargs):
         """Mark the passed in query select fields as distinct"""
         self.fields_select.options["distinct"] = True
-        return self.select(*field_names)
+        return self.select(*field_names, **kwargs)
 
-    def select_field(self, field_name):
+    def select_field(self, field_name, **kwargs):
         """set a field to be selected, this is automatically called when you do
         select_FIELDNAME(...)"""
         if field_name == "*":
             self.fields_select.options["all"] = True
+
         else:
-            field = self.create_field(field_name)
+            field = self.create_field(field_name, select=True, **kwargs)
             self.fields_select.append(field)
+
         return self
 
-    def select(self, *field_names):
+    def select(self, *field_names, **kwargs):
         """set multiple fields to be selected, this is the many version of 
         .select_field"""
         for field_name in make_list(field_names):
-            self.select_field(field_name)
+            self.select_field(field_name, **kwargs)
         return self
 
-    def set_field(self, field_name, field_val):
+    def set_field(self, field_name, field_val, **kwargs):
         """Set a field into .fields_set attribute
 
         In insert/update queries, these are the fields that will be
         inserted/updated into the db
         """
-        field = self.create_field(field_name, field_val)
+        field = self.create_field(field_name, field_val, **kwargs)
         self.fields_set.append(field)
         return self
 
@@ -846,16 +865,19 @@ class Query(object):
             self.set_field(field_name, field_val)
         return self
 
-    def incr_field(self, field_name, field_val):
+    def incr_field(self, field_name, increment=1, field_val=None, **kwargs):
         """Set a field to be incremented into .fields_set attribute
 
         In update queries, these are the fields that will be
         updated into the db using field_name = field_name + field_val
         for an atomic increment
         """
-        field = self.create_field(field_name, field_val, increment=True)
-        self.fields_set.append(field)
-        return self
+        return self.set_field(
+            field_name,
+            field_val,
+            increment=increment,
+            **kwargs
+        )
 
     def intersect(self, *queries, **kwargs):
         """Intersect a set of queries. Returns rows that are common in all the 
@@ -1245,7 +1267,7 @@ class Query(object):
         """
         return await self.interface.insert(
             self.schema,
-            self.fields_set.fields,
+            self.fields_set.todict(),
             **kwargs
         )
 
@@ -1253,7 +1275,7 @@ class Query(object):
         """persist the .fields set in .set and .set_field using .fields_where"""
         return await self.interface.update(
             self.schema,
-            self.fields_set.fields,
+            self.fields_set.todict(),
             self,
             **kwargs
         )
@@ -1272,7 +1294,7 @@ class Query(object):
         :param **kwargs: passed through to the interface upsert method
         :returns: str|int|None, the primary key of the inserted/updated row
         """
-        insert_fields = self.fields_set.fields
+        insert_fields = self.fields_set.todict()
         update_fields = dict(insert_fields)
 
         if not conflict_field_names:

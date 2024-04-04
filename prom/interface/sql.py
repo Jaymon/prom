@@ -7,7 +7,7 @@ import uuid
 from functools import cached_property
 import inspect
 
-from ..query import Query
+from ..query import Query, QueryField
 from ..exception import (
     TableError,
     FieldError,
@@ -515,10 +515,30 @@ class SQLInterface(SQLInterfaceABC):
 
         https://blog.christosoft.de/2012/10/sqlite-escaping-table-acolumn-names/
 
-        :param name: str, the name that should be prepared to be queried
+        :param name: str|QueryField|Schema, the name that should be prepared to
+            be queried
         :returns: the modified name ready to be added to a query string
         """
-        return '"{}"'.format(name)
+        if isinstance(name, QueryField):
+            if name.function_name:
+                if name.alias:
+                    return "{}(\"{}\") AS \"{}\"".format(
+                        name.function_name,
+                        name.name,
+                        name.alias
+                    )
+
+                else:
+                    return "{}(\"{}\")".format(
+                        name.function_name,
+                        name.name,
+                    )
+
+            else:
+                return "\"{}\"".format(name.name)
+
+        else:
+            return "\"{}\"".format(name)
 
     def render_select_sql(self, schema, query, **kwargs):
         query_str = []
@@ -537,11 +557,11 @@ class SQLInterface(SQLInterfaceABC):
                 if select_fields:
                     distinct_fields = select_fields.options.get(
                         "distinct",
-                        select_fields.options.get("unique", False)
+                        False
                     )
                     distinct = "DISTINCT " if distinct_fields else ""
                     select_fields_str = distinct + ", ".join(
-                        (self.render_field_name_sql(f.name) for f in select_fields)
+                        (self.render_field_name_sql(f) for f in select_fields)
                     )
 
                 else:
@@ -550,7 +570,10 @@ class SQLInterface(SQLInterfaceABC):
 
                     else:
                         select_fields_str = ", ".join(
-                            (self.render_field_name_sql(fname) for fname in schema.fields.keys())
+                            (
+                                self.render_field_name_sql(fname)
+                                for fname in schema.fields.keys()
+                            )
                         )
 
             if is_count_query:
@@ -597,10 +620,10 @@ class SQLInterface(SQLInterfaceABC):
             query_str.append(") I")
         return query_str, query_args
 
-    def render_field_raw_sql(self, schema, field):
+    def render_where_field_raw_sql(self, schema, field):
         return field.name, field.value
 
-    def render_field_sql(self, schema, field):
+    def render_where_field_sql(self, schema, field):
         format_str = ''
         format_args = []
         is_list = field.is_list
@@ -716,7 +739,9 @@ class SQLInterface(SQLInterfaceABC):
                 if isinstance(field_val, Query):
                     subquery_schema = field_val.schema
                     if not subquery_schema:
-                        raise ValueError(f"{field_name} subquery has no schema")
+                        raise ValueError(
+                            f"{field_name} subquery has no schema"
+                        )
 
                     subquery_sql, subquery_args = self.render_sql(
                         subquery_schema,
@@ -756,13 +781,13 @@ class SQLInterface(SQLInterfaceABC):
                 field_args = []
 
                 if field.raw:
-                    field_str, field_args = self.render_field_raw_sql(
+                    field_str, field_args = self.render_where_field_raw_sql(
                         schema,
                         field,
                     )
 
                 else:
-                    field_str, field_args = self.render_field_sql(
+                    field_str, field_args = self.render_where_field_sql(
                         schema,
                         field,
                     )
@@ -898,24 +923,80 @@ class SQLInterface(SQLInterfaceABC):
         query_str = "\n".join(query_str)
         return query_str, query_args
 
+    def render_subquery_sql(self, subquery):
+        subquery_schema = subquery.schema
+        if not subquery_schema:
+            raise ValueError(f"Subquery has no schema")
+
+        return self.render_sql(subquery_schema, subquery)
+
+    def render_set_value_sql(self, field_val):
+        if isinstance(field_val, QueryField):
+            if field_val.increment:
+                if field_val.value:
+                    query_str, query_vals = self.render_set_value_sql(
+                        field_val.value
+                    )
+
+                    # We use COALESCE here to make sure there is a value to
+                    # start with if there isn't a starting value
+                    query_str = "COALESCE({}, 0) + {}".format(
+                        query_str,
+                        self.PLACEHOLDER
+                    )
+                    query_vals.append(field_val.increment)
+
+                else:
+                    query_str = "{} + {}".format(
+                        self.render_field_name_sql(field_val.name),
+                        self.PLACEHOLDER
+                    )
+                    query_vals = [field_val.increment]
+
+            else:
+                query_str, query_vals = self.render_set_value_sql(
+                    field_val.value
+                )
+
+        elif isinstance(field_val, Query):
+            subquery_sql, query_vals = self.render_subquery_sql(field_val)
+            query_str = "({})".format(subquery_sql)
+
+        else:
+            query_str = self.PLACEHOLDER
+            query_vals = [field_val]
+
+        return query_str, query_vals
+
     def render_insert_sql(self, schema, fields, **kwargs):
         """
         https://www.sqlite.org/lang_insert.html
         """
         field_names = []
+        field_values = []
         query_vals = []
         for field_name, field_val in fields.items():
-            field_names.append(field_name)
-            query_vals.append(field_val)
+            field_names.append(self.render_field_name_sql(field_name))
 
-        query_str = self.render_inserts_sql(schema, field_names, **kwargs)
+            field_value, field_query_vals = self.render_set_value_sql(
+                field_val
+            )
+            field_values.append(field_value)
+            query_vals.extend(field_query_vals)
+
+        query_str = "INSERT INTO {} ({}) VALUES ({})".format(
+            self.render_table_name_sql(schema),
+            ", ".join(field_names),
+            ", ".join(field_values),
+        )
 
         if not kwargs.get("ignore_return_clause", False):
             # https://www.sqlite.org/lang_returning.html
             pk_name = schema.pk_name
             if pk_name:
-                query_str += ' RETURNING {}'.format(
-                    self.render_field_name_sql(pk_name)
+                field_names.append(self.render_field_name_sql(pk_name))
+                query_str += " RETURNING {}".format(
+                    ", ".join(field_names)
                 )
 
         return query_str, query_vals
@@ -937,31 +1018,31 @@ class SQLInterface(SQLInterfaceABC):
         )
 
     def render_update_sql(self, schema, fields, query, **kwargs):
+        """
+        https://www.sqlite.org/lang_update.html
+        https://www.postgresql.org/docs/current/sql-update.html
+        """
         query_str = ''
         query_args = []
+        returning_names = []
 
         if not kwargs.get("only_set_clause", False):
-            query_str = 'UPDATE {} '.format(self.render_table_name_sql(schema))
+            query_str = "UPDATE {} ".format(self.render_table_name_sql(schema))
 
         field_str = []
         for field_name, field_val in fields.items():
-            field = query.fields_set.get_field(field_name)
-            if field and field.increment:
-                field_str.append('{} = {} + {}'.format(
-                    self.render_field_name_sql(field_name),
-                    self.render_field_name_sql(field_name),
-                    self.PLACEHOLDER
-                ))
-                query_args.append(field_val)
+            field_name_query_str = self.render_field_name_sql(field_name)
+            field_query_str, field_query_vals = self.render_set_value_sql(
+                field_val
+            )
+            field_str.append("{} = {}".format(
+                field_name_query_str,
+                field_query_str,
+            ))
+            query_args.extend(field_query_vals)
+            returning_names.append(field_name_query_str)
 
-            else:
-                field_str.append('{} = {}'.format(
-                    self.render_field_name_sql(field_name),
-                    self.PLACEHOLDER
-                ))
-                query_args.append(field_val)
-
-        query_str += 'SET {}'.format(',\n'.join(field_str))
+        query_str += "SET {}".format(",\n".join(field_str))
 
         if query:
             where_query_str, where_query_args = self.render_sql(
@@ -969,8 +1050,14 @@ class SQLInterface(SQLInterfaceABC):
                 query,
                 only_where_clause=True
             )
-            query_str += ' {}'.format(where_query_str)
+            query_str += " {}".format(where_query_str)
             query_args.extend(where_query_args)
+
+        if not kwargs.get("ignore_return_clause", False):
+            if returning_names:
+                query_str += " RETURNING {}".format(
+                    ",\n".join(returning_names)
+                )
 
         return query_str, query_args
 

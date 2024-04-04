@@ -985,8 +985,16 @@ class QueryTest(EnvironTestCase):
         for i, r in enumerate(rows):
             self.assertEqual(vs[i][0], r)
 
-    async def test_incr_field(self):
-        q = self.get_query()
+    async def test_incr_field_name(self):
+        """Makes sure field_name = field_name + <N> works as expected
+
+        In SQLite this will work on insert but in Postgres it fails
+        """
+        q = self.get_query(
+            foo=Field(int, default=0),
+            _created=None,
+            _updated=None
+        )
         pks = await self.insert(q, 3)
 
         foos = {}
@@ -994,7 +1002,7 @@ class QueryTest(EnvironTestCase):
         async for o in os:
             foos[o.pk] = o.foo
 
-        await q.copy().incr_foo(1).in_pk(pks).update()
+        await q.copy().incr_foo().in_pk(pks).update()
         os = await q.copy().in_pk(pks).get()
         async for o in os:
             self.assertLess(foos[o.pk], o.foo)
@@ -1005,6 +1013,53 @@ class QueryTest(EnvironTestCase):
         os = await q.copy().in_pk(pks).get()
         async for o in os:
             self.assertEqual(foos[o.pk], o.foo)
+
+    async def test_incr_field_subquery(self):
+        """Makes sure field_name = (SELECT ...) + <N> works as expected"""
+        q = self.get_query(
+            foo=Field(int),
+            _created=None,
+            _updated=None
+        )
+
+        pk1 = await q.copy().incr_foo(
+            field_val=q.copy().select_foo(function_name="MAX"),
+        ).insert()
+
+        foo1 = await q.copy().select_foo().eq_pk(pk1).one()
+        self.assertEqual(1, foo1)
+
+        await q.copy().incr_foo(
+            field_val=q.copy().select_foo(function_name="MAX"),
+        ).eq_pk(pk1).update()
+
+        foo2 = await q.copy().select_foo().eq_pk(pk1).one()
+        self.assertEqual(2, foo2)
+
+    async def test_set_subquery(self):
+        q = self.get_query(
+            foo=Field(int),
+            _created=None,
+            _updated=None
+        )
+
+        pk1 = await self.insert(q, 1)
+
+        pk2 = await q.copy().set_foo(
+            q.copy().select("MAX(foo)").eq_pk(pk1)
+        ).insert()
+
+        foo1 = await q.copy().select_foo().eq_pk(pk1).one()
+        foo2 = await q.copy().select_foo().eq_pk(pk2).one()
+        self.assertEqual(foo1, foo2)
+
+    async def test_select_sql_method(self):
+        q = self.get_query(foo=Field(int))
+        pk = await self.insert(q, 1)
+
+        foo1 = await q.copy().select_foo().eq_pk(pk).one()
+        foo2 = await q.copy().select("MAX(foo)").one()
+        self.assertEqual(foo1, foo2)
 
 
 class IteratorTest(EnvironTestCase):

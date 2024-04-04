@@ -724,15 +724,28 @@ class Orm(object):
 
         return fields
 
+    def modify_query(self):
+        """Get a query instance ready to be used for modifying the row
+        represented by this orm in the db
+
+        :returns: Query, the query with all the fields set and ready to be
+            used in an insert or update query
+        """
+        fields = self.to_interface()
+        q = self.query.set(fields)
+
+        pk = self._interface_pk
+        if pk:
+            q.eq_field(self.schema.pk.name, pk)
+
+        return q
+
     async def insert(self, **kwargs):
         """persist the field values of this orm"""
         ret = True
-
         schema = self.schema
-        fields = self.to_interface()
+        q = self.modify_query()
 
-        q = self.query
-        q.set(fields)
         pk = await q.insert(**kwargs)
         if pk:
             fields = q.fields_set.fields
@@ -749,18 +762,11 @@ class Orm(object):
     async def update(self, **kwargs):
         """re-persist the updated field values of this orm that has a primary
         key"""
-        ret = True
-        fields = self.to_interface()
-
-        q = self.query
-        q.set(fields)
-
-        pk = self._interface_pk
-        if pk:
-            q.eq_field(self.schema.pk.name, pk)
-
-        else:
+        if not self._interface_pk:
             raise ValueError("Cannot update an unhydrated orm instance")
+
+        ret = True
+        q = self.modify_query()
 
         if await q.update(**kwargs):
             fields = q.fields_set.fields
@@ -829,6 +835,7 @@ class Orm(object):
         pk = self._interface_pk
         if pk:
             ret = await self.update(**kwargs)
+
         else:
             ret = await self.insert(**kwargs)
 

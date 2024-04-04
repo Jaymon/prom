@@ -333,7 +333,7 @@ class InterfaceData(TestData):
 
         return s
 
-    def get_query(self, table_name=None, prefix="query"):
+    def get_query(self, table_name=None, prefix="query", **properties):
         """Get a query instance
 
         :param table_name: str, if passed in the table will be named this
@@ -342,7 +342,11 @@ class InterfaceData(TestData):
         :returns: Query, this query will belong to an Orm, so Query.orm_class
             should return the orm class
         """
-        orm_class = self.get_orm_class(table_name, prefix=prefix)
+        orm_class = self.get_orm_class(
+            table_name,
+            prefix=prefix,
+            **properties
+        )
         return orm_class.query
 
     def get_fields(self, schema, **field_kwargs):
@@ -367,9 +371,6 @@ class InterfaceData(TestData):
 
             elif issubclass(v.interface_type, int):
                 fields[k] = self.get_int32()
-
-            elif issubclass(v.interface_type, long):
-                fields[k] = self.get_int64()
 
             elif issubclass(v.interface_type, datetime.datetime):
                 fields[k] = self.get_past_datetime()
