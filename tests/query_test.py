@@ -265,7 +265,7 @@ class QueryTest(EnvironTestCase):
         )
         fields = dict(foo=1, bar="value 1")
 
-        pk = await orm_class.query.set(fields).insert()
+        pk = (await orm_class.query.set(fields).insert())["_id"]
         self.assertLess(0, pk)
 
         o = await orm_class.query.eq_pk(pk).one()
@@ -275,8 +275,8 @@ class QueryTest(EnvironTestCase):
 
         fields["foo"] = 2
         fields["bar"] = "value 2"
-        row_count = await orm_class.query.set(fields).eq_pk(pk).update()
-        self.assertEqual(1, row_count)
+        rows = await orm_class.query.set(fields).eq_pk(pk).update()
+        self.assertEqual(1, len(rows))
 
         o2 = await orm_class.query.eq_pk(pk).one()
         self.assertEqual(2, o2.foo)
@@ -304,7 +304,7 @@ class QueryTest(EnvironTestCase):
             .ne_bar(None)
             .update()
         )
-        self.assertEqual(0, ret)
+        self.assertEqual(0, len(ret))
 
         ret = await (orm_class.query
             .set_foo(2)
@@ -312,7 +312,7 @@ class QueryTest(EnvironTestCase):
             .eq_bar(None)
             .update()
         )
-        self.assertEqual(1, ret)
+        self.assertEqual(1, len(ret))
 
     async def test_delete(self):
         orm_class = self.get_orm_class()
@@ -1022,9 +1022,9 @@ class QueryTest(EnvironTestCase):
             _updated=None
         )
 
-        pk1 = await q.copy().incr_foo(
+        pk1 = (await q.copy().incr_foo(
             field_val=q.copy().select_foo(function_name="MAX"),
-        ).insert()
+        ).insert())["_id"]
 
         foo1 = await q.copy().select_foo().eq_pk(pk1).one()
         self.assertEqual(1, foo1)
@@ -1045,9 +1045,9 @@ class QueryTest(EnvironTestCase):
 
         pk1 = await self.insert(q, 1)
 
-        pk2 = await q.copy().set_foo(
+        pk2 = (await q.copy().set_foo(
             q.copy().select("MAX(foo)").eq_pk(pk1)
-        ).insert()
+        ).insert())["_id"]
 
         foo1 = await q.copy().select_foo().eq_pk(pk1).one()
         foo2 = await q.copy().select_foo().eq_pk(pk2).one()
