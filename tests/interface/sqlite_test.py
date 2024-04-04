@@ -275,14 +275,14 @@ class InterfaceTest(_BaseTestInterface):
         method is completely original"""
         i, s = await self.create_table()
 
-        _id = (await self.insert(i, s, 1))
+        _id = await self.insert(i, s, 1)
         d = await i.one(s, Query().eq__id(_id))
         self.assertGreater(len(d), 0)
 
         await i._connection.close()
         self.assertTrue(i.is_connected())
 
-        _id = (await self.insert(i, s, 1))
+        _id = await self.insert(i, s, 1)
         d = await i.one(s, Query().eq__id(_id))
         self.assertGreater(len(d), 0)
 

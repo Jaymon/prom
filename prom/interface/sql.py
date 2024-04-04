@@ -189,10 +189,6 @@ class SQLInterface(SQLInterfaceABC):
         return self._raw(query_str, ignore_result=True, **kwargs)
 
     async def _insert(self, schema, fields, **kwargs):
-        pk_names = schema.pk_names
-        kwargs.setdefault("ignore_return_clause", len(pk_names) == 0)
-        kwargs.setdefault("ignore_result", len(pk_names) == 0)
-
         query_str, query_args = self.render_insert_sql(
             schema,
             fields,
@@ -200,12 +196,7 @@ class SQLInterface(SQLInterfaceABC):
         )
 
         r = await self._raw(query_str, *query_args, **kwargs)
-        if r and pk_names:
-            if len(pk_names) > 1:
-                r = r[0]
-            else:
-                r = r[0][pk_names[0]]
-        return r
+        return r[0] if r else {}
 
     async def _inserts(self, schema, field_names, field_values, **kwargs):
         """Do a mutli insert
@@ -243,7 +234,6 @@ class SQLInterface(SQLInterfaceABC):
         return await self._raw(
             query_str,
             *query_args,
-            count_result=True,
             **kwargs
         )
 
@@ -275,7 +265,7 @@ class SQLInterface(SQLInterfaceABC):
             # conflict fields should not be in the update fields (this is more
             # for safety, they should use .update if they want to change them)
             if field_name in update_fields:
-                errmsg = "Upsert update fields on {} contains conflict field {}"
+                errmsg = "Upsert update fields on {} contain conflict field {}"
                 raise ValueError(
                     errmsg.format(
                         schema,
@@ -975,6 +965,13 @@ class SQLInterface(SQLInterfaceABC):
         field_names = []
         field_values = []
         query_vals = []
+
+        ignore_result = kwargs.get("ignore_result", False)
+        ignore_return_clause = kwargs.get(
+            "ignore_return_clause",
+            ignore_result
+        )
+
         for field_name, field_val in fields.items():
             field_names.append(self.render_field_name_sql(field_name))
 
@@ -990,14 +987,14 @@ class SQLInterface(SQLInterfaceABC):
             ", ".join(field_values),
         )
 
-        if not kwargs.get("ignore_return_clause", False):
+        if not ignore_return_clause:
             # https://www.sqlite.org/lang_returning.html
-            pk_name = schema.pk_name
-            if pk_name:
+            if pk_name := schema.pk_name:
                 field_names.append(self.render_field_name_sql(pk_name))
-                query_str += " RETURNING {}".format(
-                    ", ".join(field_names)
-                )
+
+            query_str += " RETURNING {}".format(
+                ", ".join(field_names)
+            )
 
         return query_str, query_vals
 
@@ -1026,7 +1023,15 @@ class SQLInterface(SQLInterfaceABC):
         query_args = []
         returning_names = []
 
-        if not kwargs.get("only_set_clause", False):
+        count_result = kwargs.get("count_result", False)
+        ignore_result = kwargs.get("ignore_result", False)
+        only_set_clause = kwargs.get("only_set_clause", False)
+        ignore_return_clause = kwargs.get(
+            "ignore_return_clause",
+            only_set_clause or ignore_result or count_result
+        )
+
+        if not only_set_clause:
             query_str = "UPDATE {} ".format(self.render_table_name_sql(schema))
 
         field_str = []
@@ -1053,7 +1058,7 @@ class SQLInterface(SQLInterfaceABC):
             query_str += " {}".format(where_query_str)
             query_args.extend(where_query_args)
 
-        if not kwargs.get("ignore_return_clause", False):
+        if not ignore_return_clause:
             if returning_names:
                 query_str += " RETURNING {}".format(
                     ",\n".join(returning_names)

@@ -83,7 +83,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         # make sure more exotic datatypes are respected
         s_ref = self.get_schema()
         await i.set_table(s_ref)
-        s_ref_id = (await self.insert(i, s_ref, 1))
+        s_ref_id = await self.insert(i, s_ref, 1)
 
         s = self.get_schema(
             _id=Field(int, autopk=True),
@@ -112,7 +112,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             ),
             'nine': datetime.date(2005, 9, 14),
         }
-        pk = await i.insert(s, d)
+        pk = (await i.insert(s, d))["_id"]
         q = Query().eq__id(pk)
         odb = await i.one(s, q)
         for k, v in d.items():
@@ -207,14 +207,14 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             bar=Field(str)
         )
 
-        pk = await i.insert(s, {"bar": "barvalue"})
+        pk = (await i.insert(s, {"bar": "barvalue"}))["_id"]
         self.assertLess(0, pk)
 
         d = await i.one(s, Query().select__id().eq__id(pk))
         self.assertEqual(pk, d["_id"])
 
         pk_custom = self.get_int()
-        pk = await i.insert(s, {"_id": pk_custom})
+        pk = (await i.insert(s, {"_id": pk_custom}))["_id"]
         self.assertEqual(pk_custom, pk)
 
         d = await i.one(s, Query().select__id().eq__id(pk_custom))
@@ -224,7 +224,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         """There was a bug where SQLite boolean field always returned True, this
         tests to make sure that is fixed and it won't happen again"""
         i, s = await self.create_table(bar=Field(bool), che=Field(bool))
-        pk = await i.insert(s, {"bar": False, "che": True})
+        pk = (await i.insert(s, {"bar": False, "che": True}))["_id"]
 
         d = dict(await i.one(s, Query().eq__id(pk)))
         self.assertFalse(d["bar"])
@@ -236,7 +236,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         )
 
         foo = {"bar": 1, "che": "che 1"}
-        pk = await i.insert(s, {"foo": foo})
+        pk = (await i.insert(s, {"foo": foo}))["_id"]
 
         d = await i.one(s, Query().eq__id(pk))
         self.assertEqual(1, d["foo"]["bar"])
@@ -263,7 +263,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         )
 
         datestr = "2019-10-08 20:18:59.566Z"
-        pk = await i.insert(s, {"bar": datestr})
+        pk = (await i.insert(s, {"bar": datestr}))["_id"]
 
         d = await i.one(s, Query().eq__id(pk))
         self.assertEqual(Datetime(datestr), d["bar"])
@@ -368,7 +368,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
         for dt in dts:
             if isinstance(dt["output"], dict):
-                pk = await i.insert(s, {"bar": dt["input"]})
+                pk = (await i.insert(s, {"bar": dt["input"]}))["_id"]
                 d = dict(await i.one(s, Query().eq__id(pk)))
 
                 for k, v in dt["output"].items():
@@ -377,7 +377,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             else:
                 output = (dt["output"], InterfaceError)
                 with self.assertRaises(output, msg=dt["input"]):
-                    pk = await i.insert(s, {"bar": dt["input"]})
+                    pk = (await i.insert(s, {"bar": dt["input"]}))["_id"]
                     i.one(s, Query().eq__id(pk))
 
     async def test_field_none(self):
@@ -392,11 +392,11 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
         r = await i.get(s, Query().eq_two(None))
         self.assertEqual(1, len(r))
-        self.assertEqual(pk_eq_null, r[0]["_id"])
+        self.assertEqual(pk_eq_null["_id"], r[0]["_id"])
 
         r = await i.get(s, Query().ne_two(None))
         self.assertEqual(1, len(r))
-        self.assertEqual(pk_ne_null, r[0]["_id"])
+        self.assertEqual(pk_ne_null["_id"], r[0]["_id"])
 
     async def test_insert_1(self):
         i, s = await self.create_table()
@@ -406,7 +406,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             'bar': 'this is the value',
         }
 
-        pk = await i.insert(s, d)
+        pk = (await i.insert(s, d))["_id"]
         self.assertGreater(pk, 0)
 
     async def test_inserts(self):
@@ -475,13 +475,13 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             'foo': 1,
             'bar': 'v1',
         })
-        pk = await i.insert(s, q.fields_set.fields)
+        pk = (await i.insert(s, q.fields_set.fields))["_id"]
 
         q = Query().set({
             'foo': 2,
             'bar': 'v2',
         })
-        pk2 = await i.insert(s, q.fields_set.fields)
+        pk2 = (await i.insert(s, q.fields_set.fields))["_id"]
 
         q = Query().desc__id().offset(1)
         d = await i.one(s, q)
@@ -603,14 +603,14 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         l = await i.get(s, q)
         self.assertEqual(0, len(l))
 
-    async def test_update(self):
+    async def test_update_single(self):
         i, s = await self.create_table()
         d = {
             'foo': 1,
             'bar': 'value 1',
         }
 
-        pk = await i.insert(s, d)
+        pk = (await i.insert(s, d))["_id"]
         self.assertGreater(pk, 0)
 
         d = {
@@ -618,13 +618,33 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             'bar': 'value 2',
         }
         q = Query().set(d).eq__id(pk)
-        row_count = await i.update(s, d, q)
+        rd = await i.update(s, d, q)
 
         # let's pull it out and make sure it persisted
         gd = await i.one(s, Query().eq__id(pk))
         self.assertEqual(d['foo'], gd['foo'])
         self.assertEqual(d['bar'], gd['bar'])
         self.assertEqual(pk, gd["_id"])
+
+    async def test_update_multiple(self):
+        i, s = await self.create_table()
+        pks = await self.insert(i, s, 10)
+
+        d = {
+            'foo': 2,
+            'bar': 'value 2',
+        }
+        q = Query().set(d).in__id(pks)
+        rds = await i.update(s, d, q)
+        self.assertEqual(len(pks), len(rds))
+
+        q = Query().set_foo(3).in__id(pks)
+        count = await i.update(s, d, q, count_result=True)
+        self.assertEqual(len(pks), count)
+
+        q = Query().set_foo(4).in__id(pks)
+        r = await i.update(s, d, q, ignore_result=True)
+        self.assertTrue(r)
 
     async def test_ref_strong(self):
         i = self.get_interface()
@@ -640,8 +660,8 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         await i.set_table(s_1)
         await i.set_table(s_2)
 
-        pk1 = await i.insert(s_1, {'foo': 1})
-        pk2 = await i.insert(s_2, {'s_pk': pk1})
+        pk1 = (await i.insert(s_1, {'foo': 1}))["_id"]
+        pk2 = (await i.insert(s_2, {'s_pk': pk1}))["_id"]
         q2 = Query().eq__id(pk2)
 
         # make sure it exists and is visible
@@ -668,8 +688,8 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         await i.set_table(s_1)
         await i.set_table(s_2)
 
-        pk1 = await i.insert(s_1, {'foo': 1})
-        pk2 = await i.insert(s_2, {'s_pk': pk1})
+        pk1 = (await i.insert(s_1, {'foo': 1}))["_id"]
+        pk2 = (await i.insert(s_2, {'s_pk': pk1}))["_id"]
         q2 = Query().eq__id(pk2)
 
         # make sure it exists and is visible
@@ -749,7 +769,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
         s = self.get_schema()
         s.set_field("che", Field(str, False)) # not required
-        pk = await i.insert(s, fields)
+        pk = (await i.insert(s, fields))["_id"]
         self.assertLess(0, pk)
 
     async def test_handle_error_subquery(self):
@@ -786,10 +806,10 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         )
 
         # add one with non NULL foo
-        pk1 = await i.insert(s, {"bar": 1, "foo": 2})
+        pk1 = (await i.insert(s, {"bar": 1, "foo": 2}))["_id"]
 
         # and one with NULL foo
-        pk2 = await i.insert(s, {"bar": 1})
+        pk2 = (await i.insert(s, {"bar": 1}))["_id"]
 
         r = await i.one(s, Query().eq_bar(1).eq_foo(None))
         self.assertEqual(pk2, r['_id'])
@@ -810,12 +830,16 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         )
 
         async with i.transaction() as connection:
-            pk1 = await i.insert(s1, {"foo": 1}, connection=connection)
-            pk2 = await i.insert(
+            pk1 = (await i.insert(
+                s1,
+                {"foo": 1},
+                connection=connection
+            ))["_id"]
+            pk2 = (await i.insert(
                 s2,
                 {"bar": 2, "s_pk": pk1},
                 connection=connection
-            )
+            ))["_id"]
 
         r1 = await i.one(s1, Query().eq__id(pk1))
         self.assertEqual(pk1, r1['_id'])
@@ -840,12 +864,16 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         )
 
         async with i.transaction() as connection:
-            pk1 = await i.insert(s1, {"foo": 1}, connection=connection)
-            pk2 = await i.insert(
+            pk1 = (await i.insert(
+                s1,
+                {"foo": 1},
+                connection=connection
+            ))["_id"]
+            pk2 = (await i.insert(
                 s2,
                 {"bar": 2, "s_pk": pk1},
                 connection=connection
-            )
+            ))["_id"]
 
         r1 = await i.one(s1, query.Query().eq__id(pk1))
         self.assertEqual(pk1, r1['_id'])
@@ -870,9 +898,12 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             s_pk2=Field(s1, True),
         )
 
-        pk1 = await i.insert(s1, {"foo": 1})
-        pk2 = await i.insert(s1, {"foo": 1})
-        pk3 = await i.insert(s2, {"bar": 2, "s_pk": pk1, "s_pk2": pk2})
+        pk1 = (await i.insert(s1, {"foo": 1}))["_id"]
+        pk2 = (await i.insert(s1, {"foo": 1}))["_id"]
+        pk3 = (await i.insert(
+            s2,
+            {"bar": 2, "s_pk": pk1, "s_pk2": pk2}
+        ))["_id"]
 
         r1 = await i.one(s1, Query().eq__id(pk1))
         self.assertEqual(r1['_id'], pk1)
@@ -905,19 +936,18 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             s_pk=Field(s1, True),
         )
 
-        pk1 = await i.insert(s1, {"foo": 1})
-        pk12 = await i.insert(s1, {"foo": 12})
+        pk1 = (await i.insert(s1, {"foo": 1}))["_id"]
+        pk12 = (await i.insert(s1, {"foo": 12}))["_id"]
 
         self.assertEqual(0, await i.count(s2, Query()))
 
         async with i.transaction() as connection:
-
             # create something and put in table 2
-            pk2 = await i.insert(
+            pk2 = (await i.insert(
                 s2,
                 {"bar": 2, "s_pk": pk1, "s_pk2": pk12},
                 connection=connection
-            )
+            ))["_id"]
 
             # now this should cause the stuff to fail
             # it fails on the select because a new transaction isn't started, so 
@@ -1013,14 +1043,18 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
         try:
             async with i.transaction() as connection:
-                pk1 = await i.insert(s1, {"foo": 1}, connection=connection)
+                pk1 = (await i.insert(
+                    s1,
+                    {"foo": 1},
+                    connection=connection
+                ))["_id"]
 
                 async with i.transaction(connection) as connection:
-                    pk2 = await i.set(
+                    pk2 = (await i.insert(
                         s2,
                         {"bar": 2, "s_pk": pk1},
                         connection=connection
-                    )
+                    ))["_id"]
                     raise RuntimeError("testing")
 
         except Exception as e:
@@ -1035,7 +1069,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
         async with i.transaction() as connection:
             fields = self.get_fields(s)
-            _id = await i.insert(s, fields, connection=connection)
+            _id = (await i.insert(s, fields, connection=connection))["_id"]
 
         self.assertTrue(_id)
 
@@ -1045,7 +1079,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             async with i.transaction() as connection:
                 fields = self.get_fields(s)
-                _id = await i.insert(s, fields, connection=connection)
+                _id = (await i.insert(s, fields, connection=connection))["_id"]
                 raise RuntimeError("this should fail")
 
         d = await i.one(s, Query().eq__id(_id))
@@ -1073,11 +1107,11 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         s.set_field("should_be_unique", Field(int, True, unique=True))
         await i.set_table(s)
 
-        d = await i.insert(s, {'foo': 1, 'bar': 'v1', 'should_be_unique': 1})
+        await i.insert(s, {'foo': 1, 'bar': 'v1', 'should_be_unique': 1})
 
         #with self.assertRaises(prom.InterfaceError):
         with self.assertRaises(prom.UniqueError):
-            d = await i.insert(
+            await i.insert(
                 s,
                 {'foo': 2, 'bar': 'v2', 'should_be_unique': 1}
             )
@@ -1088,7 +1122,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             foo=Field(int, True),
         )
 
-        pk = await i.insert(s, {'_id': "FOO", "foo": 1})
+        await i.insert(s, {'_id': "FOO", "foo": 1})
 
         with self.assertRaises(InterfaceError):
             await i.insert(s, {'_id': "foo", "foo": 2})
@@ -1098,8 +1132,8 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             foo=Field(str, True, ignore_case=True),
         )
 
-        pk = await i.insert(s, {'foo': "FOO"})
-        pk2 = await i.insert(s, {'foo': "BAR"})
+        pk = (await i.insert(s, {'foo': "FOO"}))["_id"]
+        pk2 = (await i.insert(s, {'foo': "BAR"}))["_id"]
 
         d = await i.one(s, Query().eq_foo("foo"))
         self.assertEqual(pk, d["_id"])
@@ -1115,7 +1149,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         )
 
         v = 'foo-bar@example.com'
-        d = await i.insert(s, {'foo': v, 'bar': 'bar'})
+        await i.insert(s, {'foo': v, 'bar': 'bar'})
         r = await i.one(s, Query().eq_foo(v))
         self.assertGreater(len(r), 0)
 
@@ -1128,7 +1162,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             self.assertGreater(len(r), 0)
             lv[x] = lv[x].lower()
 
-        d = await i.insert(s, {'foo': 'FoO', 'bar': 'bar'})
+        await i.insert(s, {'foo': 'FoO', 'bar': 'bar'})
         r = await i.one(s, Query().eq_foo('foo'))
         self.assertGreater(len(r), 0)
         self.assertEqual(r['foo'], 'FoO')
@@ -1140,7 +1174,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         self.assertGreater(len(r), 0)
         self.assertEqual(r['foo'], 'FoO')
 
-        d = await i.insert(s, {'foo': 'foo2', 'bar': 'bar'})
+        await i.insert(s, {'foo': 'foo2', 'bar': 'bar'})
         r = await i.one(s, Query().eq_foo('foo2'))
         self.assertGreater(len(r), 0)
         self.assertEqual(r['foo'], 'foo2')
@@ -1161,8 +1195,8 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             index_foo=Index('foo'),
         )
 
-        pk20 = await i.insert(s, {'foo': Datetime(2014, 4, 20)})
-        pk21 = await i.insert(s, {'foo': Datetime(2014, 4, 21)})
+        pk20 = (await i.insert(s, {'foo': Datetime(2014, 4, 20)}))["_id"]
+        pk21 = (await i.insert(s, {'foo': Datetime(2014, 4, 21)}))["_id"]
 
         d = await i.one(s, Query().eq_foo(day=20))
         self.assertEqual(d['_id'], pk20)
@@ -1179,7 +1213,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         )
 
         text = self.get_words()
-        pk = await i.insert(s, {'group': text})
+        pk = (await i.insert(s, {'group': text}))["_id"]
         d = dict(await i.one(s, Query().eq__id(pk)))
         self.assertEqual(text, d["group"])
         self.assertEqual(pk, d["_id"])
@@ -1190,7 +1224,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         )
 
         foo = int("5" * 78)
-        pk = await i.insert(s, {"foo": foo})
+        pk = (await i.insert(s, {"foo": foo}))["_id"]
         d = await i.one(s, Query().eq__id(pk))
         self.assertEqual(foo, d["foo"])
 
@@ -1206,7 +1240,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         with self.assertRaises(InterfaceError):
             await i.insert(s, {"foo": self.get_ascii(5)})
 
-        pk = await i.insert(s, {"foo": self.get_ascii(15)})
+        pk = (await i.insert(s, {"foo": self.get_ascii(15)}))["_id"]
         self.assertLess(0, pk)
 
         # just size
@@ -1220,7 +1254,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         with self.assertRaises(InterfaceError):
             await i.insert(s, {"foo": self.get_ascii(5)})
 
-        pk = await i.insert(s, {"foo": self.get_ascii(10)})
+        pk = (await i.insert(s, {"foo": self.get_ascii(10)}))["_id"]
         self.assertLess(0, pk)
 
         # just max size
@@ -1229,15 +1263,15 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         )
 
         with self.assertRaises(InterfaceError):
-            pk = await i.insert(s, {"foo": self.get_ascii(20)})
+            pk = (await i.insert(s, {"foo": self.get_ascii(20)}))["_id"]
 
         foo = self.get_ascii(5)
-        pk = await i.insert(s, {"foo": foo})
+        pk = (await i.insert(s, {"foo": foo}))["_id"]
         d = await i.one(s, Query().eq__id(pk))
         self.assertEqual(foo, d["foo"])
 
         foo = self.get_ascii(10)
-        pk = await i.insert(s, {"foo": foo})
+        pk = (await i.insert(s, {"foo": foo}))["_id"]
         d = await i.one(s, Query().eq__id(pk))
         self.assertEqual(foo, d["foo"])
 
@@ -1250,7 +1284,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         )
 
         d = {"foo": 1, "bar": "bar 1"}
-        pk = await i.insert(s, d)
+        pk = (await i.insert(s, d))["_id"]
 
         # makes sure conflict update works as expected
         di = {"_id": pk, "foo": 2, "bar": "bar 2"}

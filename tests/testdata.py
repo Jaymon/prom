@@ -460,7 +460,8 @@ class InterfaceData(TestData):
             **kwargs
         )
         for fs in fields:
-            pks.append(await interface.insert(schema, fs))
+            d = await interface.insert(schema, fs)
+            pks.append(d[schema.pk_name])
 
         return pks if len(pks) > 1 else pks[0]
 

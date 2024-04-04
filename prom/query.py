@@ -1229,7 +1229,8 @@ class Query(object):
         fields_select = self.fields_select
         self.fields_select = self.fields_select_class()
 
-        # setting bounds causes count(*) to return 0 in both Postgres and SQLite
+        # setting bounds causes count(*) to return 0 in both Postgres and
+        # SQLite
         bounds = self.bounds
         self.bounds = self.bounds_class()
 
@@ -1263,7 +1264,8 @@ class Query(object):
     async def insert(self, **kwargs):
         """persist the .fields that were set with .set_field and .set
 
-        :returns: int|str|None, the primary key of the inserted row if it exists
+        :returns: int|str|None, the primary key of the inserted row if it
+            exists
         """
         return await self.interface.insert(
             self.schema,
@@ -1272,7 +1274,8 @@ class Query(object):
         )
 
     async def update(self, **kwargs):
-        """persist the .fields set in .set and .set_field using .fields_where"""
+        """persist the .fields set in .set and .set_field using .fields_where
+        """
         return await self.interface.update(
             self.schema,
             self.fields_set.todict(),

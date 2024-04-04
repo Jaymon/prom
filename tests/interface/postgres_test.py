@@ -155,43 +155,10 @@ class InterfaceTest(_BaseTestInterface):
             'five': 1.98765,
             'six': 4000000000,
         }
-        pk = await i.insert(s, d)
+        pk = (await i.insert(s, d))["_id"]
         odb = await i.one(s, Query().eq__id(pk))
         for k, v in d.items():
             self.assertEqual(v, odb[k])
-
-#     def test_db_disconnect(self):
-#         """make sure interface can recover if the db disconnects mid script
-#         execution"""
-#         self.skip_test("this test does not work with docker")
-# 
-#         i, s = self.get_table()
-#         _id = self.insert(i, s, 1)[0]
-#         d = i.get_one(s, Query().eq__id(_id))
-#         self.assertLess(0, len(d))
-# 
-#         testdata.restart_service("postgresql")
-# 
-#         d = i.get_one(s, Query().eq__id(_id))
-#         self.assertLess(0, len(d))
-# 
-#     def test_no_connection(self):
-#         """this will make sure prom handles it gracefully if there is no
-#         connection available ever"""
-#         self.skip_test("this test does not work with docker")
-# 
-#         postgresql = testdata.stop_service("postgresql", ignore_failure=False)
-#         time.sleep(1)
-# 
-#         try:
-#             i = self.create_interface()
-#             s = self.get_schema()
-#             q = Query()
-#             with self.assertRaises(prom.InterfaceError):
-#                 i.get(s, q)
-# 
-#         finally:
-#             postgresql.start()
 
     async def test_render_sql_eq(self):
         orm_class = self.get_orm_class(
@@ -257,7 +224,7 @@ class InterfaceTest(_BaseTestInterface):
             foo=Field(int, True),
         )
 
-        pk = await i.insert(s, {"foo": 1})
+        pk = (await i.insert(s, {"foo": 1}))["_id"]
         self.assertEqual(36, len(str(pk)))
 
         d = dict(await i.one(s, query.Query().eq__id(pk)))
@@ -274,13 +241,13 @@ class InterfaceTest(_BaseTestInterface):
             fk=Field(s1, True),
         )
 
-        pk = await i.insert(s1, {"foo": 1})
+        pk = (await i.insert(s1, {"foo": 1}))["_id"]
         await i.insert(s2, {"fk": pk})
 
         # make sure psycopg2.errors.InvalidTextRepresentation doesn't get
         # misrepresented
         with self.assertRaises(prom.InterfaceError):
-            o3 = await i.insert(s2, {"fk": "foo"})
+            await i.insert(s2, {"fk": "foo"})
 
     async def test_get_fields_postgres(self):
         i = self.get_interface()

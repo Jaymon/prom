@@ -889,8 +889,17 @@ class Interface(InterfaceABC):
         :param schema: Schema instance, the table the query will run against
         :param fields: dict, the fields {field_name: field_value} to persist
         :param query: Query instance, will be used to create the where clause
-        :param **kwargs: passed through
-        :returns: int, how many rows where updated
+        :param **kwargs:
+            * count_result: bool, True if you want to return how many rows
+                where touched by the update query
+            * ignore_result: bool, True if you don't care about returning
+                any result
+            * ignore_return_clause: bool, True if you don't want to return
+                the updated values of the rows that were touched by the query
+        :returns: list[dict]|int|bool, by default this will return the touched
+            rows that were updated by the query. If return value is an int then
+            it will be how many rows were updated. If return value is a boolean
+            then it will be True showing that the query succeeded
         """
         return await self.execute_write(
             self._update,
