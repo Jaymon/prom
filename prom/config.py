@@ -581,12 +581,12 @@ class FieldMeta(type):
     """Allows a class definition to be a descriptor also
 
     I don't love this solution, but I like the syntax of just being able to
-    define a subclass inside an Orm and have it work. The problem is an embedded
-    class isn't, by default, a descriptor instance, so it wasn't calling fset,
-    fget, and fdel.
+    define a subclass inside an Orm and have it work. The problem is an
+    embedded class isn't, by default, a descriptor instance, so it wasn't
+    calling fset, fget, and fdel.
 
-    This makes it so an embedded field class will be treated as a descriptor. It
-    uses an embedded .instance property to actually perform the operations
+    This makes it so an embedded field class will be treated as a descriptor.
+    It uses an embedded .instance property to actually perform the operations
     """
     def __set_name__(cls, orm_class, name):
         """I'm not quite sure why this works, but it does. Basically, when you

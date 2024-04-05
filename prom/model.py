@@ -358,8 +358,8 @@ class Orm(object):
     """
 
     _updated = AutoDatetime(created=False, updated=True, aliases=["updated"])
-    """Anytime a row is written to this will be updated, that means it will have
-    roughly the same value as ._created when the row is first inserted
+    """Anytime a row is written to this will be updated, that means it will
+    have roughly the same value as ._created when the row is first inserted
 
     If you don't want this functionality just do `_updated = None` in your
     child class
@@ -725,7 +725,7 @@ class Orm(object):
 
         return fields
 
-    def modify_query(self):
+    def insert_query(self):
         """Get a query instance ready to be used for modifying the row
         represented by this orm in the db
 
@@ -733,11 +733,31 @@ class Orm(object):
             used in an insert or update query
         """
         fields = self.to_interface()
-        q = self.query.set(fields)
+        return self.query.set(fields)
 
-        pk = self._interface_pk
-        if pk:
+    def update_query(self):
+        q = self.insert_query()
+
+        if pk := self._interface_pk:
             q.eq_field(self.schema.pk.name, pk)
+
+        else:
+            raise ValueError("Cannot update an unhydrated orm instance")
+
+        return q
+
+    def upsert_query(self):
+        q = self.insert_query()
+
+        conflict_fields = self.conflict_fields(q.fields_set.fields)
+        if not conflict_fields:
+            raise ValueError(
+                "Failed to find conflict field names from: {}".format(
+                    q.fields_set.names()
+                )
+            )
+
+        q.fields_conflict = [t[0] for t in conflict_fields]
 
         return q
 
@@ -745,7 +765,7 @@ class Orm(object):
         """persist the field values of this orm"""
         ret = True
         schema = self.schema
-        q = self.modify_query()
+        q = self.insert_query()
 
         if fields := await q.insert(**kwargs):
             self.from_interface(self.make_dict(fields))
@@ -758,11 +778,8 @@ class Orm(object):
     async def update(self, **kwargs):
         """re-persist the updated field values of this orm that has a primary
         key"""
-        if not self._interface_pk:
-            raise ValueError("Cannot update an unhydrated orm instance")
-
         ret = True
-        q = self.modify_query()
+        q = self.update_query()
 
         if rows := await q.update(**kwargs):
             self.from_interface(self.make_dict(rows[0]))
@@ -794,20 +811,10 @@ class Orm(object):
             ret = await self.update(**kwargs)
 
         else:
+            q = self.upsert_query()
             schema = self.schema
-            fields = self.to_interface()
 
-            conflict_fields = self.conflict_fields(fields)
-            if not conflict_fields:
-                raise ValueError(
-                    "Failed to find conflict field names from: {}".format(
-                        list(fields.keys())
-                    )
-                )
-
-            q = self.query
-            q.set(fields)
-            pk = await q.upsert([t[0] for t in conflict_fields], **kwargs)
+            pk = await q.upsert(q.fields_conflict, **kwargs)
             if pk:
                 fields = q.fields_set.fields
                 pk_name = schema.pk_name
