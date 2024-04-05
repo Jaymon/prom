@@ -308,8 +308,8 @@ class Schema(object):
                         seen_properties[k] = v
 
                     elif isinstance(v, type) and issubclass(v, Field):
-                        # We've defined a Field class inline of the Orm, so
-                        # we want to instantiate it and set it in all the places
+                        # We've defined a Field class inline of the Orm, so we
+                        # want to instantiate it and set it in all the places
                         field = v.get_instance()
 
                     else:
@@ -537,8 +537,8 @@ class Schema(object):
             {"table_name": self.table_name, "schema": self}
         )
 
-        # clear all the Field and Index properties in anticipation of adding the
-        # fields from the Schema
+        # clear all the Field and Index properties in anticipation of adding
+        # the fields from the Schema
         seen_properties = set()
         for klass in inspect.getmro(child_class):
             for k, v in vars(klass).items():
@@ -593,10 +593,10 @@ class FieldMeta(type):
         define the field as an embedded class in the orm, this method will get
         called when the class is being parsed/loaded the first time.
 
-        So this method gets called and we use cls to create a Field instance and
-        we then set our newly created instance onto orm_class.name. So after
-        this method is called, orm_class.name will be a Field instance instead
-        of a Field subclass
+        So this method gets called and we use cls to create a Field instance
+        and we then set our newly created instance onto orm_class.name. So
+        after this method is called, orm_class.name will be a Field instance
+        instead of a Field subclass
         """
         logger.debug(
             "Creating field descriptor {}.{} with class {}".format(
@@ -659,9 +659,9 @@ class Field(object, metaclass=FieldMeta):
     python getters and setters because they always need to return a value and
     they always take in the object instance manipulating them and the value.
 
-    NOTE -- Foreign key's can be passed orm instances from other classes because
-    those classes will call the FK's field methods when getting/setting the
-    field
+    NOTE -- Foreign key's can be passed orm instances from other classes
+    because those classes will call the FK's field methods when getting/setting
+    the field
 
     You can also configure the Field using a class:
 
@@ -750,9 +750,9 @@ class Field(object, metaclass=FieldMeta):
 
     @property
     def type(self):
-        """alias of the interface type, this is really here so you can set it to
-        a value if you are inline defining a field, this will get passed to the
-        __init__ method and then be used to set ._interface_type"""
+        """alias of the interface type, this is really here so you can set it
+        to a value if you are inline defining a field, this will get passed to
+        the __init__ method and then be used to set ._interface_type"""
         return self.interface_type
 
     @property
@@ -877,7 +877,8 @@ class Field(object, metaclass=FieldMeta):
                 - callable, will be used as self.jsonable
                 - bool, will set jsonable_field to False
             * empty: bool, (default is True), set to False if the value cannot
-                be empty when being sent to the db (empty is None, "", 0, False)
+                be empty when being sent to the db (empty is None, "", 0,
+                or False)
             * pk: bool, True to make this field the primary key
             * auto: bool, True to tag this field as an auto-generated field.
                 Used with an int to set it to an auto-increment, use it with
@@ -888,7 +889,8 @@ class Field(object, metaclass=FieldMeta):
                 the orm
             * ivalue: callable[Any], called in the default .iset method to
                 normalize the value before sending the value to the db
-        :param **field_options_kwargs: dict, will be combined with field_options
+        :param **field_options_kwargs: dict, will be combined with
+            field_options
         """
         field_options = utils.make_dict(field_options, field_options_kwargs)
 
@@ -1037,8 +1039,8 @@ class Field(object, metaclass=FieldMeta):
                 ret["scale"] = int(parts[1])
                 ret["precision"] = int(parts[0]) + ret["scale"]
 
-                # the set size was actually precision and scale so we don't have
-                # sizing information
+                # the set size was actually precision and scale so we don't
+                # have sizing information
                 ret["has_precision"] = True
                 ret.pop("size")
 
@@ -1068,7 +1070,8 @@ class Field(object, metaclass=FieldMeta):
                     ret["size"] = int("9" * ret["precision"])
 
             elif "precision" not in ret and "size" not in ret:
-                # this is 32bit, it might be worth setting defined size to 64bit
+                # this is 32bit, it might be worth setting defined size to
+                # 64bit
                 ret["size"] = 2147483647
                 ret["precision"] = len(str(ret["size"]))
 
@@ -1087,7 +1090,8 @@ class Field(object, metaclass=FieldMeta):
         return ret
 
     def set_type(self, field_type):
-        """Try to infer as much about the type as can be inferred at this moment
+        """Try to infer as much about the type as can be inferred at this
+        moment
 
         Because the Field supports string classpaths (eg, "modname.Classname")
         we can't figure everything out in this method, so we figure out as much
@@ -1130,9 +1134,6 @@ class Field(object, metaclass=FieldMeta):
 
             elif issubclass(field_type, enum.Enum):
                 # https://docs.python.org/3/library/enum.html
-                self.iquerier(self._iquery_enum)
-                self.fsetter(self._fset_enum)
-
                 for enum_property in field_type:
                     self._interface_type = type(enum_property.value)
                     break
@@ -1162,8 +1163,8 @@ class Field(object, metaclass=FieldMeta):
             # check if field_type is a string classpath so we have to defer
             # setting the type
             if isinstance(field_type, basestring):
-                # no ._schema property will make .schema treat .original_type as
-                # a classpath
+                # no ._schema property will make .schema treat .original_type
+                # as a classpath
                 del self._schema
 
             else:
@@ -1190,6 +1191,10 @@ class Field(object, metaclass=FieldMeta):
         """Return True if this field should be serialized"""
         return True if self.serializer else False
 
+    def is_enum(self):
+        """Return True if this field represents an enum value"""
+        return issubclass(self.original_type, enum.Enum)
+
     def fget(self, orm, val):
         """Called anytime the field is accessed through the Orm (eg, Orm.foo)
 
@@ -1215,13 +1220,14 @@ class Field(object, metaclass=FieldMeta):
         think of this as when the orm receives the field value from the
         interface
 
-        :param orm: Orm, the Orm instance the field is being set on. This can be
-            None if the select query had selected fields so a full orm instance
-            isn't being returned but rather just the selected values
+        :param orm: Orm, the Orm instance the field is being set on. This can
+            be None if the select query had selected fields so a full orm
+            instance isn't being returned but rather just the selected values
         :param val: mixed, the current value of the field
         :returns: mixed
         """
         logger.debug(f"iget {orm.__class__.__name__}.{self.name}")
+
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
             val = self.schema.pk.iget(orm, val)
@@ -1253,34 +1259,45 @@ class Field(object, metaclass=FieldMeta):
         :returns: mixed
         """
         logger.debug(f"fset {orm.__class__.__name__}.{self.name}")
-        if val is not None:
-            if fvalues := self.options.get("fvalue", None):
-                if callable(fvalues):
-                    fvalues = [fvalues]
 
-                for fvalue in fvalues:
-                    val = fvalue(val)
+        if self.is_enum():
+            val = self._fset_enum(orm, val)
 
-            if self.choices and val not in self.choices:
-                raise ValueError("Value {} not in {} value choices".format(
-                    val,
-                    self.name
-                ))
+        else:
+            if val is not None:
+                if fvalues := self.options.get("fvalue", None):
+                    if callable(fvalues):
+                        fvalues = [fvalues]
 
-            if regex := self.options.get("regex", ""):
-                if not re.search(regex, val):
+                    for fvalue in fvalues:
+                        val = fvalue(val)
+
+                if self.choices and val not in self.choices:
                     raise ValueError(
-                        f"regex failed for {orm.__class__.__name__}.{self.name}"
+                        "Value {} not in {} value choices".format(
+                            val,
+                            self.name
+                        )
                     )
 
-        if self.is_ref():
-            # Foreign Keys get passed through their Field methods
-            val = self.schema.pk.fset(orm, val)
+                if regex := self.options.get("regex", ""):
+                    if not re.search(regex, val):
+                        raise ValueError(
+                            "regex failed for {}.{}".format(
+                                orm.__class__.__name__,
+                                self.name
+                            )
+                        )
+
+            if self.is_ref():
+                # Foreign Keys get passed through their Field methods
+                val = self.schema.pk.fset(orm, val)
 
         return val
 
     def _fset_enum(self, orm, val):
-        """This is set using .fsetter in .set_type when an Enum is identified"""
+        """This is set using .fsetter in .set_type when an Enum is identified
+        """
         if val is not None:
             val = find_value(self.original_type, val)
 
@@ -1355,8 +1372,8 @@ class Field(object, metaclass=FieldMeta):
         return self
 
     def fdefault(self, orm, val):
-        """On a new Orm instantiation, this will be called for each field and if
-        val equals None then this will decide how to use self.default to set
+        """On a new Orm instantiation, this will be called for each field and
+        if val equals None then this will decide how to use self.default to set
         the default value of the field
 
         If you just want to set a default value you won't need to override this
@@ -1391,23 +1408,28 @@ class Field(object, metaclass=FieldMeta):
         self.fdefault = v
         return self
 
-    def iquery(self, query, val):
+    def iquery(self, query_field, val):
         """This will be called when setting the field onto a query instance
 
         :example:
             o = Orm(foo=1)
             o.query.eq_foo(1) # iquery called here
 
-        :param query: Query
+        :param query_field: QueryField
         :param val: mixed, the fields value
         :returns: mixed
         """
-        if self.is_ref():
-            # Foreign Keys get passed through their Field methods
-            val = self.schema.pk.iquery(query, val)
+        if self.is_enum():
+            val = self._iquery_enum(query_field, val)
+
+        else:
+            if self.is_ref():
+                # Foreign Keys get passed through their Field methods
+                val = self.schema.pk.iquery(query_field, val)
+
         return val
 
-    def _iquery_enum(self, query, val):
+    def _iquery_enum(self, query_field, val):
         """This is set using .iquerier in .set_type when an Enum is identified
         """
         if val is not None:
@@ -1503,7 +1525,6 @@ class Field(object, metaclass=FieldMeta):
         if val is None: return val
 
         if self.serializer == "pickle":
-            #return base64.b64encode(pickle.dumps(val, pickle.HIGHEST_PROTOCOL))
             return pickle.dumps(val, pickle.HIGHEST_PROTOCOL)
 
         elif self.serializer == "json":
@@ -1526,8 +1547,8 @@ class Field(object, metaclass=FieldMeta):
             raise ValueError("Unknown serializer {}".format(self.serializer))
 
     def fval(self, orm):
-        """return the raw value that this property is holding internally for the
-        orm instance"""
+        """return the raw value that this property is holding internally for
+        the orm instance"""
         try:
             val = orm.__dict__[self.orm_field_name]
 
@@ -1549,9 +1570,9 @@ class Field(object, metaclass=FieldMeta):
         raw_val = self.fval(orm)
         ret = self.fget(orm, raw_val)
 
-        # we want to compensate for default values right here, so if the raw val
-        # is None but the new val is not then we save the returned value, this
-        # allows us to handle things like dict with no surprises
+        # we want to compensate for default values right here, so if the raw
+        # val is None but the new val is not then we save the returned value,
+        # this allows us to handle things like dict with no surprises
         if raw_val is None:
             if ret is not None:
                 orm.__dict__[self.orm_field_name] = ret
@@ -1577,8 +1598,8 @@ class Field(object, metaclass=FieldMeta):
 
 
 class AutoUUID(Field):
-    """an auto-generating UUID field, by default this will be set as primary key
-    """
+    """an auto-generating UUID field, by default this will be set as primary
+    key"""
     def __init__(self, **kwargs):
         kwargs.setdefault("pk", True)
         kwargs.setdefault("auto", True)
@@ -1591,8 +1612,8 @@ class AutoUUID(Field):
 
 
 class AutoIncrement(Field):
-    """an auto-incrementing Serial field, by default this will be set as primary
-    key"""
+    """an auto-incrementing Serial field, by default this will be set as
+    primary key"""
     def __init__(self, **kwargs):
         kwargs.setdefault("pk", True)
         kwargs.setdefault("auto", True)

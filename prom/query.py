@@ -404,7 +404,7 @@ class QueryBounds(object):
 
 
 class QueryField(object):
-    """Holds information for a field in a WHERE clause"""
+    """Holds information for a field in the query"""
     @property
     def schema(self):
         return self.query.schema if self.query else None
@@ -416,7 +416,10 @@ class QueryField(object):
         self.direction = kwargs.pop("direction", None) # 1 = ASC, -1 = DESC
         self.increment = kwargs.pop("increment", False) # Query.incr_field
         self.raw = kwargs.pop("raw", False)
-        self.select = kwargs.pop("select", False)
+
+        self.clause = kwargs.pop("clause", "")
+
+#         self.select = kwargs.pop("select", False)
         self.function_name = kwargs.pop("function_name", "")
         self.or_clause = False
         self.kwargs = kwargs
@@ -437,32 +440,31 @@ class QueryField(object):
         if function_name:
             self.function_name = function_name
 
-        if self.function_name and self.select:
+        if self.function_name and self.in_select_clause():
             self.alias = field_name
 
     def set_value(self, field_val):
-        if not isinstance(field_val, Query):
-            if self.is_list:
-                if field_val:
-                    field_val = make_list(field_val)
-                    for i in range(len(field_val)):
-                        field_val[i] = self.iquery(field_val[i])
+        if self.is_list and not isinstance(field_val, Query):
+            if field_val:
+                field_val = make_list(field_val)
+                for i in range(len(field_val)):
+                    field_val[i] = self.iquery(field_val[i])
 
-            else:
-                field_val = self.iquery(field_val)
+        else:
+            field_val = self.iquery(field_val)
 
         self.value = field_val
 
     def iquery(self, field_val):
-        query = self.query
         schema = self.schema
-        if query and schema:
+        if schema:
             schema_field = getattr(schema, self.name)
-            if ref_class := schema_field.ref:
+            if ref_class := schema_field.ref_class:
                 if isinstance(field_val, ref_class):
                     field_val = field_val.pk
 
-            field_val = schema_field.iquery(query, field_val)
+            field_val = schema_field.iquery(self, field_val)
+
         return field_val
 
     def parse(self, field_name, schema):
@@ -481,6 +483,32 @@ class QueryField(object):
                 field_name = schema.field_model_name(field_name)
 
         return field_name, function_name
+
+    def in_clause(self, clause):
+        return self.clause == clause
+
+    def in_select_clause(self):
+        return self.in_clause("select")
+
+    def in_set_clause(self):
+        """Return True if this field instance belongs to the fields_set
+        clause/portion of the query"""
+        return self.in_clause("set")
+
+#         for index in self.query.fields_set.field_names.get(self.name, []):
+#             if self is self.query.fields_set[index]:
+#                 return True
+# 
+#         return False
+
+    def in_where_clause(self):
+        """Return True if this field instance belongs to the fields_where
+        clause/portion of the query"""
+        return self.in_clause("where")
+
+#         for index in self.query.fields_where.field_names.get(self.name, []):
+#             if self is self.query.fields_where[index]:
+#                 return True
 
 
 class QueryFields(list):
@@ -585,8 +613,7 @@ class Query(object):
 
     @property
     def schema(self):
-        if not self.orm_class: return None
-        return self.orm_class.schema
+        return self.orm_class.schema if self.orm_class else None
 
     @property
     def schemas(self):
@@ -792,6 +819,7 @@ class Query(object):
     def append_operation(self, operator, field_name, field_val=None, **kwargs):
         """Internal method that appends an operation to the where clause"""
         kwargs["operator"] = operator
+        kwargs["clause"] = "where"
         f = self.create_field(field_name, field_val, **kwargs)
         self.fields_where.append(f)
         return self
@@ -818,6 +846,7 @@ class Query(object):
 
         kwargs["direction"] = direction
         kwargs["is_list"] = True
+        kwargs["clause"] = "sort"
         f = self.create_field(field_name, field_val, **kwargs)
         self.fields_sort.append(f)
         return self
@@ -834,7 +863,8 @@ class Query(object):
             self.fields_select.options["all"] = True
 
         else:
-            field = self.create_field(field_name, select=True, **kwargs)
+            kwargs["clause"] = "select"
+            field = self.create_field(field_name, **kwargs)
             self.fields_select.append(field)
 
         return self
@@ -852,6 +882,7 @@ class Query(object):
         In insert/update queries, these are the fields that will be
         inserted/updated into the db
         """
+        kwargs["clause"] = "set"
         field = self.create_field(field_name, field_val, **kwargs)
         self.fields_set.append(field)
         return self

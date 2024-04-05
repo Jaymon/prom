@@ -26,6 +26,22 @@ class QueryFieldTest(TestCase):
         self.assertEqual("foo", f.name)
         self.assertEqual("MAX", f.function_name)
 
+    def test_in_set_clause(self):
+        q = self.get_query()
+        q.set_field("foo", 1)
+
+        qf = q.fields_set.get_field("foo")
+        self.assertTrue(qf.in_set_clause())
+        self.assertFalse(qf.in_where_clause())
+
+    def test_in_where_clause(self):
+        q = self.get_query()
+        q.eq_field("foo", 1)
+
+        qf = q.fields_where.get_field("foo")
+        self.assertTrue(qf.in_where_clause())
+        self.assertFalse(qf.in_set_clause())
+
 
 class QueryFieldsTest(TestCase):
     def test_fields(self):
@@ -378,7 +394,7 @@ class QueryTest(EnvironTestCase):
         Bar = self.get_orm_class()
 
         bar_q = Bar.query.select_foo()
-        foo_q = Foo.query.select_pk().in_foo(bar_q)
+        foo_q = Foo.query.select_pk().in_bar(bar_q)
 
         schemas = foo_q.schemas
         self.assertEqual(2, len(schemas))
