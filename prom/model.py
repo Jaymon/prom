@@ -550,9 +550,8 @@ class Orm(object):
         this more than I would've thought to keep api compatibility with prom
         proper
 
-        :param fields: dict, the fields in a dict
-        :param fields_kwargs: dict, if you would like to pass the fields as
-            key=val this picks those up and combines them with fields
+        :param *fields: dict, usually a fields dict passed in directly and the
+            second index are the kwargs passed in
         :schema: Schema, if passed in then this will normalize field names and
             resolve any aliases
         :returns: dict, the combined fields
@@ -575,11 +574,11 @@ class Orm(object):
         #cls.orm_classes[classpath] = orm_class
 
     def __init__(self, fields=None, **fields_kwargs):
-        """Create an Orm object
+        """Create an Orm instance
 
-        While you can override this method to customize the signature, you might
-        also need to override .hydrate (but don't change .hydrate's signature)
-        since .hydrate creates an instance using no arguments
+        While you can override this method to customize the signature, you
+        might also need to override .hydrate (but don't change .hydrate's
+        signature) since .hydrate creates an instance using no arguments
 
         NOTE -- Honestly, I've tried it multiple times and it's almost never
             worth overriding this method nor .hydrate. If you ever get tempted
@@ -725,18 +724,17 @@ class Orm(object):
 
         return fields
 
-    def insert_query(self):
+    def insert_query(self, fields):
         """Get a query instance ready to be used for modifying the row
         represented by this orm in the db
 
         :returns: Query, the query with all the fields set and ready to be
             used in an insert or update query
         """
-        fields = self.to_interface()
         return self.query.set(fields)
 
-    def update_query(self):
-        q = self.insert_query()
+    def update_query(self, fields):
+        q = self.insert_query(fields)
 
         if pk := self._interface_pk:
             q.eq_field(self.schema.pk.name, pk)
@@ -746,8 +744,8 @@ class Orm(object):
 
         return q
 
-    def upsert_query(self):
-        q = self.insert_query()
+    def upsert_query(self, fields):
+        q = self.insert_query(fields)
 
         conflict_fields = self.conflict_fields(q.fields_set.fields)
         if not conflict_fields:
@@ -765,7 +763,7 @@ class Orm(object):
         """persist the field values of this orm"""
         ret = True
         schema = self.schema
-        q = self.insert_query()
+        q = self.insert_query(self.to_interface())
 
         if fields := await q.insert(**kwargs):
             self.from_interface(self.make_dict(fields))
@@ -779,7 +777,7 @@ class Orm(object):
         """re-persist the updated field values of this orm that has a primary
         key"""
         ret = True
-        q = self.update_query()
+        q = self.update_query(self.to_interface())
 
         if rows := await q.update(**kwargs):
             self.from_interface(self.make_dict(rows[0]))
@@ -811,7 +809,7 @@ class Orm(object):
             ret = await self.update(**kwargs)
 
         else:
-            q = self.upsert_query()
+            q = self.upsert_query(self.to_interface())
             schema = self.schema
 
             pk = await q.upsert(q.fields_conflict, **kwargs)
