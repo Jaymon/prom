@@ -442,7 +442,11 @@ class QueryField(object):
             self.alias = field_name
 
     def set_value(self, field_val):
-        if self.is_list and not isinstance(field_val, Query):
+        # we set this here so things like .is_subquery work as expected in a
+        # Field.iquery method body
+        self.value = field_val
+
+        if self.is_list and not self.is_subquery():
             if field_val:
                 field_val = make_list(field_val)
                 for i in range(len(field_val)):
@@ -502,6 +506,10 @@ class QueryField(object):
         """Return True if this field instance belongs to the fields_where
         clause/portion of the query"""
         return self.in_clause("where")
+
+    def is_subquery(self):
+        """Return True if this field's value is a subquery"""
+        return isinstance(self.value, Query)
 
 
 class QueryFields(list):

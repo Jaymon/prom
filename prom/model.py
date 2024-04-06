@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from contextlib import asynccontextmanager
 
 from datatypes import (
     EnglishWord,
@@ -479,6 +480,7 @@ class Orm(object):
         return {k:getattr(self, k) for k in self.modified_field_names}
 
     @classmethod
+    @asynccontextmanager
     async def transaction(cls, **kwargs):
         """Create a transaction for this Orm
 
@@ -493,9 +495,11 @@ class Orm(object):
                 False to ignore nested transactions
         :returns: Connection, the connection instance with an active tx
         """
-        kwargs.setdefault("nest", False)
+        #kwargs.setdefault("nest", False)
         kwargs.setdefault("prefix", f"{cls.__name__}_{cls.connection_name}_tx")
-        return cls.interface.transaction(**kwargs)
+
+        async with cls.interface.transaction(**kwargs) as conn:
+            yield conn
 
     @classmethod
     async def create(cls, *args, **kwargs):
