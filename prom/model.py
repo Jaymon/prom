@@ -495,7 +495,6 @@ class Orm(object):
                 False to ignore nested transactions
         :returns: Connection, the connection instance with an active tx
         """
-        #kwargs.setdefault("nest", False)
         kwargs.setdefault("prefix", f"{cls.__name__}_{cls.connection_name}_tx")
 
         async with cls.interface.transaction(**kwargs) as conn:
@@ -570,13 +569,6 @@ class Orm(object):
 
         return fields
 
-    @classmethod
-    def add_orm_class(cls, orm_class):
-        cls.orm_classes.insert(orm_class)
-
-        #classpath = f"{orm_class.__module__}:{orm_class.__qualname__}"
-        #cls.orm_classes[classpath] = orm_class
-
     def __init__(self, fields=None, **fields_kwargs):
         """Create an Orm instance
 
@@ -613,9 +605,8 @@ class Orm(object):
 
         https://peps.python.org/pep-0487/
         """
+        cls.orm_classes.insert(orm_class)
         super().__init_subclass__()
-
-        cls.add_orm_class(cls)
 
     def fk(self, orm_class):
         """find the field value in self that is the primary key of the passed

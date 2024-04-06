@@ -56,7 +56,6 @@ async def transaction(connection_name="", **kwargs):
                 False to ignore nested transactions
     :returns: Connection instance
     """
-    #kwargs.setdefault("nest", False)
     kwargs.setdefault("prefix", f"prom_{connection_name}_tx")
     async with get_interface(connection_name).transaction(**kwargs) as conn:
         yield conn

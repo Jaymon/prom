@@ -4,6 +4,7 @@ Classes and stuff that handle querying the interface for a passed in Orm class
 """
 import copy
 from collections import defaultdict
+from collections.abc import AsyncIterable
 import re
 
 from datatypes import ListIterator
@@ -12,7 +13,7 @@ from .compat import *
 from .utils import make_list, get_objects, make_dict
 
 
-class Iterator(ListIterator):
+class Iterator(ListIterator, AsyncIterable):
     """The main iterator for all query methods that return iterators
 
     This is returned from the Query.get() method, this is also
@@ -578,7 +579,7 @@ class QueryFields(list):
         return ret
 
 
-class Query(object):
+class Query(AsyncIterable):
     """Handle standard query creation and allow interface querying
 
     This is the glue between Orm and Interface. For the most part you will
