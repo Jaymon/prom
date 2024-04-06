@@ -1167,13 +1167,13 @@ class Orm(object):
 
         Note that this does not return _id, _created, _updated, the reason why
         is because lots of times you have a different name for _id (like if it
-        is a user object, then you might want to call it user_id instead of _id)
-        and I didn't want to make assumptions
+        is a user object, then you might want to call it user_id instead of
+        _id) and I didn't want to make assumptions
 
         note 2, I'm not crazy about the name, but I didn't like to_dict() and
-        pretty much any time I need to convert the object to a dict is for json,
-        I kind of like dictify() though, but I've already used this method in so
-        many places. Another name I don't mind is .tojson
+        pretty much any time I need to convert the object to a dict is for
+        json, I kind of like dictify() though, but I've already used this
+        method in so many places. Another name I don't mind is .tojson
         """
         d = {}
         for field_name, field in self.schema.fields.items():

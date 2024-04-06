@@ -263,7 +263,6 @@ class QueryBounds(object):
     @property
     def limit(self):
         l = self._limit
-        #l = self.limit_paginate if self.paginate else self._limit
         return l if l else 0
 
     @limit.setter
@@ -387,7 +386,9 @@ class QueryBounds(object):
             if self.has_limit():
                 maximum_offset = self.limit + self.offset
                 if offset > maximum_offset:
-                    raise IndexError("Iterator index {} out of range".format(i))
+                    raise IndexError(
+                        "Iterator index {} out of range".format(i)
+                    )
 
         else:
             limit = self.limit
@@ -416,10 +417,7 @@ class QueryField(object):
         self.direction = kwargs.pop("direction", None) # 1 = ASC, -1 = DESC
         self.increment = kwargs.pop("increment", False) # Query.incr_field
         self.raw = kwargs.pop("raw", False)
-
         self.clause = kwargs.pop("clause", "")
-
-#         self.select = kwargs.pop("select", False)
         self.function_name = kwargs.pop("function_name", "")
         self.or_clause = False
         self.kwargs = kwargs
@@ -485,6 +483,11 @@ class QueryField(object):
         return field_name, function_name
 
     def in_clause(self, clause):
+        """Check if clause corresponds to self.clause
+
+        :param clause: str, the clause name (eg, where, select, sort, set)
+        :returns: bool, True if the clauses match
+        """
         return self.clause == clause
 
     def in_select_clause(self):
@@ -495,20 +498,10 @@ class QueryField(object):
         clause/portion of the query"""
         return self.in_clause("set")
 
-#         for index in self.query.fields_set.field_names.get(self.name, []):
-#             if self is self.query.fields_set[index]:
-#                 return True
-# 
-#         return False
-
     def in_where_clause(self):
         """Return True if this field instance belongs to the fields_where
         clause/portion of the query"""
         return self.in_clause("where")
-
-#         for index in self.query.fields_where.field_names.get(self.name, []):
-#             if self is self.query.fields_where[index]:
-#                 return True
 
 
 class QueryFields(list):
