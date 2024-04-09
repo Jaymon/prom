@@ -1153,14 +1153,14 @@ class IteratorTest(EnvironTestCase):
         await self.insert(orm_class, count)
 
         class CustomIterator(Iterator):
-            def ifilter(self, o):
+            def filter(self, o):
                 return not o.pk == 1
         orm_class.iterator_class = CustomIterator
 
         it = await orm_class.query.tolist()
         self.assertEqual(count - 1, len(await orm_class.query.tolist()))
 
-    async def test_ifilter(self):
+    async def test_filter(self):
         q = self.get_query()
         await self.insert(q, 3)
 
@@ -1170,7 +1170,7 @@ class IteratorTest(EnvironTestCase):
         def ifilter(o): return o.pk == 1
 
         l = await q.copy().tolist()
-        l2 = await q.copy().ifilter(ifilter).tolist()
+        l2 = await q.copy().filter(ifilter).tolist()
         self.assertEqual(len(list(filter(ifilter, l))), len(l2))
 
     async def test_select_fields(self):

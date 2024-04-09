@@ -20,8 +20,8 @@ class Iterator(ListIterator, AsyncIterable):
     the Iterator class that is set in Orm.iterator_class
 
     fields --
-        ifilter: callback, an iterator filter, all yielded rows will be passed
-            through this callback and skipped if ifilter(row) returns False
+        filter: callback, an iterator filter, all yielded rows will be passed
+            through this callback and skipped if filter(row) returns False
 
     :example:
         # iterate through all the primary keys of some orm
@@ -38,9 +38,8 @@ class Iterator(ListIterator, AsyncIterable):
         :param cursor: object, the cursor object retrieved from the interface
         :param query: Query, the query instance that produced this iterator
         """
-        if query._ifilter:
-            # https://docs.python.org/2/library/itertools.html#itertools.ifilter
-            self.ifilter = query._ifilter
+        if query._filter:
+            self.filter = query._filter
 
         self.query = query
 
@@ -56,8 +55,8 @@ class Iterator(ListIterator, AsyncIterable):
         ret = False
         if self.query.bounds.has_more():
             cursor = self._cursor
-            # https://www.psycopg.org/docs/cursor.html#cursor.rowcount says that
-            # future versions of the spec reserve the right to return None
+            # https://www.psycopg.org/docs/cursor.html#cursor.rowcount says
+            # that future versions of the spec reserve the right to return None
             if cursor.rowcount == -1 or cursor.rowcount is None:
                 try:
                     if await self[self.query.bounds.find_more_index()]:
@@ -115,7 +114,7 @@ class Iterator(ListIterator, AsyncIterable):
                     break
 
                 o = self.hydrate(row)
-                if self.ifilter(o):
+                if self.filter(o):
                     yield o
 
                 cursor_i += 1
@@ -210,14 +209,14 @@ class Iterator(ListIterator, AsyncIterable):
 
         return format_str.format(*format_args)
 
-    def ifilter(self, o):
+    def filter(self, o):
         """run o through the filter, if True then orm o should be included
 
-        NOTE -- The ifilter callback needs to account for non Orm instance
+        NOTE -- The filter callback needs to account for non Orm instance
             values of o
 
-        :param o: Orm|tuple[Any]|Any, usually an Orm instance but can also be a
-            tuple or single value
+        :param o: Orm|tuple[Any]|Any, usually an Orm instance but can also be
+            a tuple or single value
         :returns: boolean, True if o should be filtered
         """
         return True
@@ -682,7 +681,7 @@ class Query(AsyncIterable):
         self.reset()
 
     def reset(self):
-        self._ifilter = None
+        self._filter = None
         self.fields_set = self.fields_set_class()
         self.fields_select = self.fields_select_class()
         self.fields_where = self.fields_where_class()
@@ -1125,17 +1124,15 @@ class Query(AsyncIterable):
         """<FIELD_NAME> DESC"""
         return self.append_sort(-1, field_name, field_val)
 
-    def ifilter(self, predicate):
+    def filter(self, predicate):
         """Set the predicate (callback) for an iterator returned from this
         instance
-
-        https://docs.python.org/2/library/itertools.html#itertools.ifilter
 
         :param predicate: callable, this will be passed to the iterator in the
             .create_iterator method
         :returns: self, for fluid interface
         """
-        self._ifilter = predicate
+        self._filter = predicate
         return self
 
     def limit(self, limit):
