@@ -195,7 +195,7 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         f = await self.get_foo()
         self.assertEqual("foo", f.model_name)
 
-    def test__parse_method_name(self):
+    def test__parse_dispatch(self):
         modpath = self.create_module([
             "from prom import Orm, Field",
             "",
@@ -214,20 +214,20 @@ class ModelDataTest(IsolatedAsyncioTestCase):
 
         d = _OtherData()
 
-        r = d._parse_method_name("create_foo_instance")
+        r = d._parse_dispatch("create_foo_instance")
         self.assertEqual("foo", r[0].model_name)
         self.assertEqual("create_orm_instance", r[1].__name__)
 
-        r = d._parse_method_name("get_foos")
+        r = d._parse_dispatch("get_foos")
         self.assertEqual("Foo", r[0].__name__)
         self.assertEqual("get_orms", r[1].__name__)
         self.assertEqual("foo", r[0].model_name)
 
-        r = d._parse_method_name("foobarche")
+        r = d._parse_dispatch("foobarche")
         self.assertIsNone(r[0])
         self.assertIsNone(r[1])
 
-        r = d._parse_method_name("get_orm_fields")
+        r = d._parse_dispatch("get_orm_fields")
         self.assertIsNone(r[0])
         self.assertIsNone(r[1])
 
@@ -291,7 +291,7 @@ class ModelDataTest(IsolatedAsyncioTestCase):
             modeldata._gets_count(orm_class, **{"count": 5})
         )
 
-    async def test__dispatch_method(self):
+    async def test__dispatch_method_1(self):
         testdata = self.InterfaceData
         modeldata = self.ModelData
         orm_class = testdata.get_orm_class()
@@ -307,4 +307,35 @@ class ModelDataTest(IsolatedAsyncioTestCase):
             modeldata.get_orm
         )
         self.assertTrue(isinstance(o, orm_class))
+
+    async def test__dispatch_method_2(self):
+        """
+        https://github.com/Jaymon/prom/issues/182
+        """
+        modpath = self.create_module([
+            "from prom import Orm",
+            "",
+            "class Parent(Orm):",
+            "    pass",
+            "",
+            "class Child(Parent):",
+            "    pass",
+            "",
+            "class GrandChild(Child):",
+            "    pass",
+        ], load=True)
+
+        class _OtherData(self.ModelData.__class__):
+            async def get_parent_fields(self, **kwargs):
+                fields = await self.get_orm_fields(**kwargs)
+                fields["attributes"] = {"parent_fields": True}
+                return fields
+
+        d = _OtherData()
+
+        fields = await d.get_grand_child_fields()
+        self.assertTrue(fields["attributes"]["parent_fields"])
+
+        c = await d.get_child()
+        self.assertTrue(c.parent_fields)
 

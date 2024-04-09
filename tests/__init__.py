@@ -18,6 +18,7 @@ testdata.basic_logging(
         "prom": "DEBUG",
         #"prom": "ERROR",
         #"prom": "INFO",
+        #"prom.extras.testdata": "DEBUG",
         "datatypes": "WARNING",
         "dsnparse": "WARNING",
         "psycopg": "WARNING",

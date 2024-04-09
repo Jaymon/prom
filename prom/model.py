@@ -36,7 +36,9 @@ class Orms(OrderedSubclasses):
         return (Orm,)
 
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            insert_cutoff_classes=False
+        )
 
         self.prepare()
 
@@ -605,7 +607,7 @@ class Orm(object):
 
         https://peps.python.org/pep-0487/
         """
-        cls.orm_classes.insert(orm_class)
+        cls.orm_classes.insert(cls)
         super().__init_subclass__()
 
     def fk(self, orm_class):

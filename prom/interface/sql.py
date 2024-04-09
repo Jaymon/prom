@@ -934,6 +934,9 @@ class SQLInterface(SQLInterfaceABC):
 
                     # We use COALESCE here to make sure there is a value to
                     # start with if there isn't a starting value
+                    # Given a list of values, the COALESCE function returns
+                    # the first non-null value
+                    # https://www.postgresql.org/docs/current/functions-conditional.html#FUNCTIONS-COALESCE-NVL-IFNULL
                     query_str = "COALESCE({}, 0) + {}".format(
                         query_str,
                         self.PLACEHOLDER

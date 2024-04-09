@@ -9,6 +9,7 @@ from testdata.base import TestData
 from datatypes import (
     OrderedSubclasses,
     ReflectModule,
+    ReflectClass,
 )
 
 from ..model import Orm
@@ -162,21 +163,25 @@ class ModelData(TestData):
         if isinstance(orm_class, str):
             orm_class = self.get_orm_class(orm_class)
 
+        method_names = set(dir(self))
         m = re.match(r"^([^_]+)_(orms?)(?:_(.+))?$", method.__name__)
 
-        parts = [m.group(1)]
+        for oc in Orm.orm_classes.getmro(orm_class):
+            parts = [m.group(1)]
 
-        if m.group(2) == "orm":
-            parts.append(orm_class.model_name)
+            if m.group(2) == "orm":
+                parts.append(oc.model_name)
 
-        else:
-            parts.append(orm_class.models_name)
+            else:
+                parts.append(oc.models_name)
 
-        if suffix := m.group(3):
-            parts.append(suffix)
+            if suffix := m.group(3):
+                parts.append(suffix)
 
-        method_name = "_".join(parts)
-        method = getattr(self, method_name, method)
+            method_name = "_".join(parts)
+            if method_name in method_names:
+                method = getattr(self, method_name)
+                break
 
         logger.debug(
             "Running {} as {} for orm_class {}".format(
@@ -189,8 +194,9 @@ class ModelData(TestData):
         kwargs.setdefault("orm_class", orm_class)
         return await method(**kwargs)
 
-    def _parse_method_name(self, method_name):
-        """Parses method name and returns the found orm_class and method
+    def _parse_dispatch(self, method_name):
+        """Parses method name and returns the found orm_class and the
+        default/fallback method that can be passed to ._dispatch_method
 
         NOTE -- this is where a lot of the parsing magic happens, for adding
         functionality in the future this is probably the method to start with
@@ -206,7 +212,7 @@ class ModelData(TestData):
         if len(parts) > 1 and parts[1] not in set(["orm", "orms"]):
             prefix = parts[0]
             model_name = suffix = ""
-            method_names = dir(self)
+            method_names = set(dir(self))
 
             method_name = "_".join([prefix, "orm", parts[-1]])
             if method_name in method_names:
@@ -251,7 +257,7 @@ class ModelData(TestData):
         if method_name.startswith("_"):
             return super().__getattribute__(method_name)
 
-        orm_class = None
+        orm_class = default_method = method = None
 
         try:
             method = super().__getattribute__(method_name)
@@ -261,19 +267,19 @@ class ModelData(TestData):
                 f"Finding {self.__class__.__name__}.{method_name} method"
             )
 
-            orm_class, method = self._parse_method_name(method_name)
+            orm_class, default_method = self._parse_dispatch(method_name)
 
-            if method:
+            if default_method:
                 logger.debug(
-                    f"Found {method.__name__} for {orm_class.__name__}"
+                    f"Found {default_method.__name__} for {orm_class.__name__}"
                 )
 
             else:
                 raise
 
-        if callable(method):
+        if callable(method) or default_method:
             if not orm_class:
-                orm_class, _ = self._parse_method_name(method_name)
+                orm_class, _ = self._parse_dispatch(method_name)
 
             if orm_class:
                 def wrapper(**kwargs):
@@ -292,7 +298,14 @@ class ModelData(TestData):
                     kwargs.setdefault("fields", {})
                     kwargs.setdefault("attributes", {})
 
-                    return method(**kwargs)
+                    if method:
+                        return method(**kwargs)
+
+                    else:
+                        return self._dispatch_method(
+                            method=default_method,
+                            **kwargs
+                        )
 
                 wrapper.__name__ = f"wrapped_getattribute_{method_name}"
                 return wrapper
