@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 
 class IsolatedAsyncioTestCase(IsolatedAsyncioTestCase):
     interface_class = None
-    """Set this to an Interface class and only that class will be used to create
-    interfaces
+    """Set this to an Interface class and only that class will be used to
+    create interfaces
 
     Holds the interface class that should be used. This is set on the actual
     TestCase and then passed to this class in .setUpClass and removed
