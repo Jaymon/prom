@@ -176,6 +176,30 @@ class Orms(OrderedSubclasses):
         except KeyError:
             return default
 
+    def get_subclass(
+        self,
+        child_name_or_class,
+        parent_name_or_class,
+        default=None
+    ):
+        """Returns the orm_class of child_name_or_class only if it is a
+        child of parent_name_or_class
+
+        :param child_name_or_class: str|Orm, the child class we're looking for
+        :param parent_name_or_class: str|Orm, the parent class which child
+            must extend
+        :param default: Any
+        :returns: Orm, the class if it is found
+        """
+        child_orm_class = self.get(child_name_or_class)
+        parent_orm_class = self.get(parent_name_or_class)
+
+        if child_orm_class is not None:
+            if not issubclass(child_orm_class, parent_orm_class):
+                return default
+
+            return child_orm_class
+
     def get_ref_classes(self, name_or_class):
         """Get reference classes for the given orm class
 
