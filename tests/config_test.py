@@ -129,22 +129,6 @@ class SchemaTest(IsolatedAsyncioTestCase):
         q = orm_class.query.lte_updated(datetime.datetime.utcnow())
         self.assertTrue("_updated" in q.fields_where)
 
-    def test_create_orm_1(self):
-        s = self.get_schema()
-        o = s.create_orm()
-        self.assertEqual(s, o.schema)
-        self.assertEqual(s.table_name, o.table_name)
-        self.assertEqual(s.fields.keys(), o().fields.keys())
-
-    def test_create_orm_2(self):
-        self.assertTrue(hasattr(Orm, "_id"))
-
-        s = self.get_schema(_id=None)
-        o = s.create_orm()
-
-        self.assertEqual(None, o._id)
-        self.assertTrue(hasattr(Orm, "_id"))
-
     def test_field_name(self):
         s = self.get_schema(_id=None)
         with self.assertRaises(AttributeError):

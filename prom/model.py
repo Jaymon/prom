@@ -437,16 +437,6 @@ class Orm(object):
         """
         return EnglishWord(cls.model_name).plural()
 
-#     @classproperty
-#     def schema(cls):
-#         """the Schema instance that this class will derive all its db info from
-# 
-#         Unless you really know what you are doing you should never have to set
-#         this value, it will be automatically created using the Field instances
-#         you define on your child class
-#         """
-#         return Schema.get_instance(cls)
-
     @classproperty
     def schema(cls):
         """the Schema instance that this class will derive all its db info from

@@ -194,9 +194,6 @@ class Schema(object):
     the table schema definition includes the table name, the fields the table
     has, and the indexes that are on the table
     """
-    instances = {}
-    """class variable, holds different schema instances for various orms"""
-
     table_name = ""
     """string -- set the table name for this schema instance"""
 
@@ -274,61 +271,6 @@ class Schema(object):
         schemas.append(self)
 
         return schemas
-
-#     @classmethod
-#     def get_instance(cls, orm_class, **kwargs):
-#         """return a Schema singleton instance for the given orm_class
-# 
-#         if there isn't already an instance in cache then a new instance will be
-#         created. If a Schema instance is already in cache then it will be
-#         returned
-# 
-#         :param orm_class: Orm, the class to create the schema for
-#         :returns: Schema
-#         """
-#         table_name = orm_class.table_name
-#         if table_name in cls.instances:
-#             s = cls.instances[table_name]
-# 
-#         else:
-#             s = cls(table_name)
-#             s.orm_class = orm_class
-# 
-#             seen_properties = {}
-#             for klass in inspect.getmro(orm_class)[:-1]:
-#                 for k, v in vars(klass).items():
-#                     k = String(k)
-#                     field = None
-# 
-#                     if isinstance(v, Field):
-#                         field = v
-# 
-#                     elif isinstance(v, Index):
-#                         s.set_index(k, v)
-#                         seen_properties[k] = v
-# 
-#                     elif isinstance(v, type) and issubclass(v, Field):
-#                         # We've defined a Field class inline of the Orm, so we
-#                         # want to instantiate it and set it in all the places
-#                         field = v.get_instance()
-# 
-#                     else:
-#                         if v is None:
-#                             seen_properties[k] = v
-# 
-#                     if field:
-#                         if k in seen_properties:
-#                             if seen_properties[k] is None:
-#                                 for fn in field.names:
-#                                     s.lookup["field_names_deleted"][fn] = k
-# 
-#                         else:
-#                             s.set_field(k, field)
-#                             seen_properties[k] = field
-# 
-#             cls.instances[table_name] = s
-# 
-#         return s
 
     def __init__(self, table_name, orm_class=None, **fields_or_indexes):
         """Create an instance
@@ -517,45 +459,6 @@ class Schema(object):
 
         raise AttributeError(field_name)
 
-    def create_orm(self, orm_class=None):
-        """If you have a schema but don't have an Orm for it, you can call this
-        method and have an orm_class created that will have the fields and
-        table_name of this schema
-
-        :param orm_class: Orm, if you want your generated class to have a
-            certain parent class you can pass in the parent class you want
-        :returns: Orm, your child orm populated with information from this
-            schema
-        """
-        if not orm_class:
-            from .model import Orm # avoid circular dependency
-            orm_class = Orm
-
-        child_class = type(
-            String(self.table_name),
-            (orm_class,),
-            {"table_name": self.table_name, "schema": self}
-        )
-
-        # clear all the Field and Index properties in anticipation of adding
-        # the fields from the Schema
-        seen_properties = set()
-        for klass in inspect.getmro(child_class):
-            for k, v in vars(klass).items():
-                if k not in seen_properties:
-                    if isinstance(v, (Field, Index)):
-                        setattr(child_class, k, None)
-
-                    elif isinstance(v, type) and issubclass(v, Field):
-                        setattr(child_class, k, None)
-
-                    seen_properties.add(k)
-
-        for field_name, field in self:
-            setattr(child_class, field_name, field)
-
-        return child_class
-
 
 class Index(object):
     """Each index on the table is configured using this class
@@ -577,41 +480,6 @@ class Index(object):
         self.unique = options.get("unique", False)
 
 
-# class FieldMeta(type):
-#     """Allows a class definition to be a descriptor also
-# 
-#     I don't love this solution, but I like the syntax of just being able to
-#     define a subclass inside an Orm and have it work. The problem is an
-#     embedded class isn't, by default, a descriptor instance, so it wasn't
-#     calling fset, fget, and fdel.
-# 
-#     This makes it so an embedded field class will be treated as a descriptor.
-#     It uses an embedded .instance property to actually perform the operations
-#     """
-#     def __set_name__(cls, orm_class, name):
-#         """I'm not quite sure why this works, but it does. Basically, when you
-#         define the field as an embedded class in the orm, this method will get
-#         called when the class is being parsed/loaded the first time.
-# 
-#         So this method gets called and we use cls to create a Field instance
-#         and we then set our newly created instance onto orm_class.name. So
-#         after this method is called, orm_class.name will be a Field instance
-#         instead of a Field subclass
-#         """
-#         logger.debug(
-#             "Creating field descriptor {}.{} with class {}".format(
-#                 orm_class.__name__,
-#                 name,
-#                 cls.__name__
-#             )
-#         )
-# 
-#         instance = cls(cls.type, cls.required, cls.options)
-#         instance.__set_name__(orm_class, name)
-#         setattr(orm_class, name, instance)
-
-
-#class Field(object, metaclass=FieldMeta):
 class Field(object):
     """Each column in the database is configured using this class
 
