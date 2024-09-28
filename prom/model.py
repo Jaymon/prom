@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from contextlib import asynccontextmanager
+import inspect
 
 from datatypes import (
     EnglishWord,
@@ -20,6 +21,8 @@ from .config import (
     Schema,
     AutoDatetime,
     AutoIncrement,
+    Field,
+    Index,
 )
 
 
@@ -366,6 +369,12 @@ class Orm(object):
     This is returned from the Query.get
     """
 
+    schema_class = Schema
+    """The class the orm will use for its schema
+
+    This is created in .create_schema and cached/returned in .schema
+    """
+
     orm_classes = Orms()
     """This will hold all other orm classes that have been loaded into memory
     the class path is the key and the class object is the value"""
@@ -428,6 +437,16 @@ class Orm(object):
         """
         return EnglishWord(cls.model_name).plural()
 
+#     @classproperty
+#     def schema(cls):
+#         """the Schema instance that this class will derive all its db info from
+# 
+#         Unless you really know what you are doing you should never have to set
+#         this value, it will be automatically created using the Field instances
+#         you define on your child class
+#         """
+#         return Schema.get_instance(cls)
+
     @classproperty
     def schema(cls):
         """the Schema instance that this class will derive all its db info from
@@ -436,7 +455,9 @@ class Orm(object):
         this value, it will be automatically created using the Field instances
         you define on your child class
         """
-        return Schema.get_instance(cls)
+        s = cls.create_schema()
+        cls.schema = s # cache the schema so we don't need to create it again
+        return s
 
     @classproperty
     def interface(cls):
@@ -594,6 +615,54 @@ class Orm(object):
                     fields[fn] = fields.pop(field_name)
 
         return fields
+
+    @classmethod
+    def create_schema(cls):
+        """Create the schema instance for this class
+
+        This is the method you will want to override to customize fields in
+        parent classes, this is only called once and then cached in .schema
+
+        :returns: Schema
+        """
+        table_name = cls.table_name
+        s = cls.schema_class(table_name, cls)
+
+        seen_properties = {}
+        for klass in inspect.getmro(cls)[:-1]:
+            for k, v in vars(klass).items():
+                field = None
+
+                if isinstance(v, Field):
+                    field = v
+
+                elif isinstance(v, Index):
+                    s.set_index(k, v)
+                    seen_properties[k] = v
+
+                elif isinstance(v, type) and issubclass(v, Field):
+                    # We've defined a Field class inline of the Orm, so we
+                    # want to instantiate it and set it in all the places
+                    #field = v.get_instance()
+                    field = v(v.type, v.required, v.options)
+                    field.__set_name__(cls, k)
+                    setattr(cls, k, field)
+
+                else:
+                    if v is None:
+                        seen_properties[k] = v
+
+                if field:
+                    if k in seen_properties:
+                        if seen_properties[k] is None:
+                            for fn in field.names:
+                                s.lookup["field_names_deleted"][fn] = k
+
+                    else:
+                        s.set_field(k, field)
+                        seen_properties[k] = field
+
+        return s
 
     def __init__(self, fields=None, **fields_kwargs):
         """Create an Orm instance
