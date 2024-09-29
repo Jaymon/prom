@@ -11,7 +11,7 @@ import enum
 import dsnparse
 from datatypes import (
     Datetime,
-    property as cachedproperty,
+    cachedproperty,
 )
 from datatypes.enum import (
     find_value,
@@ -528,9 +528,9 @@ class Field(object):
     python getters and setters because they always need to return a value and
     they always take in the object instance manipulating them and the value.
 
-    NOTE -- Foreign key's can be passed orm instances from other classes
-    because those classes will call the FK's field methods when getting/setting
-    the field
+    NOTE -- Foreign key Field instances can be passed orm instances from other
+    classes because those classes will call the FK's field methods when
+    getting/setting the field
 
     You can also configure the Field using a class:
 
@@ -599,7 +599,7 @@ class Field(object):
     orm_class = None
     """Holds the model class this field is defined on"""
 
-    @cachedproperty(cached="_schema")
+    @cachedproperty()
     def schema(self):
         """return the schema instance if this field is a reference to another
         table
@@ -974,7 +974,7 @@ class Field(object):
         self.original_type = field_type
         self.serializer = ""
         self._interface_type = None
-        self._schema = None
+        self.schema = None
 
         if isinstance(field_type, type):
             std_types = (
@@ -1018,7 +1018,7 @@ class Field(object):
             else:
                 schema = getattr(field_type, "schema", None)
                 if schema:
-                    self._schema = schema
+                    self.schema = schema
 
                 else:
                     # We have just some random class that isn't an Orm
@@ -1026,15 +1026,15 @@ class Field(object):
                     self._interface_type = bytes
 
         elif isinstance(field_type, Schema):
-            self._schema = field_type
+            self.schema = field_type
 
         else:
             # check if field_type is a string classpath so we have to defer
             # setting the type
             if isinstance(field_type, basestring):
-                # no ._schema property will make .schema treat .original_type
+                # no .schema property will make .schema treat .original_type
                 # as a classpath
-                del self._schema
+                del self.schema
 
             else:
                 raise ValueError("Unknown field type {}".format(field_type))

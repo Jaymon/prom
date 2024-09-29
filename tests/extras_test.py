@@ -36,11 +36,24 @@ class MagicOrmTest(EnvironTestCase):
         o.bar = False
         self.assertFalse(o.is_bar())
 
-    async def test_jsonable(self):
+    async def test_jsonable_1(self):
         o = await self.create_1(_id=500, bar=False, che="1")
         d = o.jsonable()
         self.assertTrue(o.pk_name in d)
         self.assertFalse("_id" in d)
+
+    async def test_jsonable_2(self):
+        class O11(MagicOrm):
+            pass
+
+        class O12(MagicOrm):
+            pass
+
+        o11 = O11(_id=11)
+        o12 = O12(_id=12)
+
+        self.assertTrue("o11_id" in o11.jsonable())
+        self.assertTrue("o12_id" in o12.jsonable())
 
     def test___getattr___error(self):
         class O4(MagicOrm):
@@ -60,6 +73,7 @@ class MagicOrmTest(EnvironTestCase):
         o = O3()
         with self.assertRaises(ValueError):
             o.foo
+
 
 
 class ModelDataTest(IsolatedAsyncioTestCase):

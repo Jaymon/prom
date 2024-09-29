@@ -654,6 +654,11 @@ class Orm(object):
 
         return s
 
+    @classmethod
+    async def install(cls):
+        """install the Orm's table using the Orm's schema"""
+        return await cls.interface.set_table(cls.schema)
+
     def __init__(self, fields=None, **fields_kwargs):
         """Create an Orm instance
 
@@ -1266,9 +1271,4 @@ class Orm(object):
                 d[field_name] = field_val
 
         return d
-
-    @classmethod
-    async def install(cls):
-        """install the Orm's table using the Orm's schema"""
-        return await cls.interface.set_table(cls.schema)
 
