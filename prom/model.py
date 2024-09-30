@@ -1180,6 +1180,77 @@ class Orm(object):
 
         raise AttributeError(f"No relationship for {model_name_1} and {k}")
 
+    def get_method_value(self, k):
+        """Adds some magic methods to check the value of field
+
+        Adds support for:
+            * .is_fieldname() = if fieldname is a boolean then returns
+                True/False, if fieldname is another value then you can do
+                .is_fieldname(val) to compare val to the fieldname's value
+
+        The magic method is of the form `<COMPARE>_<FIELD_NAME>`, so if you
+        had a field `foo`, you could do:
+
+            * eq_foo(<VALUE>) - <VALUE> == foo's value
+            * ne_foo(<VALUE>) - <VALUE> != foo's value
+            * lt_foo(<VALUE>) - <VALUE> < foo's value
+            * lte_foo(<VALUE>) - <VALUE> <= foo's value
+            * gt_foo(<VALUE>) - <VALUE> > foo's value
+            * gte_foo(<VALUE>) - <VALUE> >= foo's value
+            * in_foo(<VALUE>) - <VALUE> in foo's value
+            * nin_foo(<VALUE>) - <VALUE> not in foo's value
+            * is_foo() - foo's value is True
+
+        These roughly match the equivalent magic methods in Query
+
+        :returns: callable -> bool, this returns a callable that returns
+            a boolean
+        """
+        ret = None
+
+        prefix = k[:3]
+        field_name = k[3:]
+        if field := self.schema.fields.get(field_name, None):
+            if prefix.startswith("is_"):
+                if issubclass(field.type, bool):
+                    ret = lambda: getattr(self, field_name)
+
+                else:
+                    ret = lambda x: x == getattr(self, field_name)
+
+            elif prefix.startswith("eq_"):
+                ret = lambda x: x == getattr(self, field_name)
+
+            elif prefix.startswith("ne_"):
+                ret = lambda x: x != getattr(self, field_name)
+
+            elif prefix.startswith("lt_"):
+                ret = lambda x: x < getattr(self, field_name)
+
+            elif prefix.startswith("gt_"):
+                ret = lambda x: x > getattr(self, field_name)
+
+            elif prefix.startswith("in_"):
+                ret = lambda x: x in getattr(self, field_name)
+
+        if not ret:
+            prefix = k[:4]
+            field_name = k[4:]
+            if field := self.schema.fields.get(field_name, None):
+                if prefix.startswith("nin_"):
+                    ret = lambda x: x not in getattr(self, field_name)
+
+                elif prefix.startswith("lte_"):
+                    ret = lambda x: x <= getattr(self, field_name)
+
+                elif prefix.startswith("gte_"):
+                    ret = lambda x: x >= getattr(self, field_name)
+
+        if not ret:
+            raise AttributeError(f"No method name for {k}")
+
+        return ret
+
     def __getattr__(self, k):
         """
         NOTE -- this is a hybrid method, sometimes it will return coroutines
@@ -1190,18 +1261,22 @@ class Orm(object):
 
         except AttributeError:
             try:
-                return self.get_ref_value(k)
+                return self.get_method_value(k)
 
             except AttributeError:
                 try:
-                    return self.get_dep_value(k)
+                    return self.get_ref_value(k)
 
                 except AttributeError:
                     try:
-                        return self.get_rel_value(k)
+                        return self.get_dep_value(k)
 
-                    except (AttributeError, KeyError):
-                        pass
+                    except AttributeError:
+                        try:
+                            return self.get_rel_value(k)
+
+                        except (AttributeError, KeyError):
+                            pass
 
             raise
 

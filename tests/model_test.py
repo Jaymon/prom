@@ -651,6 +651,64 @@ class OrmTest(EnvironTestCase):
             len(await (await o2.o1models).tolist())
         )
 
+    def test___getattr___method(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int),
+            bar=Field(bool),
+            che=Field(str),
+        )
+        o = orm_class()
+
+        o.foo = 5
+        self.assertTrue(o.is_foo(o.foo))
+        self.assertTrue(o.eq_foo(o.foo))
+        self.assertFalse(o.eq_foo(o.foo + 1))
+
+        self.assertFalse(o.gt_foo(o.foo - 1))
+        self.assertTrue(o.gt_foo(o.foo + 1))
+        self.assertTrue(o.gte_foo(o.foo))
+        self.assertTrue(o.gte_foo(o.foo + 1))
+
+        self.assertFalse(o.lt_foo(o.foo + 1))
+        self.assertTrue(o.lt_foo(o.foo - 1))
+        self.assertTrue(o.lte_foo(o.foo))
+        self.assertTrue(o.lte_foo(o.foo - 1))
+
+        self.assertFalse(o.ne_foo(o.foo))
+        self.assertTrue(o.ne_foo(o.foo - 1))
+
+        o.bar = True
+        self.assertTrue(o.is_bar())
+
+        o.bar = False
+        self.assertFalse(o.is_bar())
+
+        o.che = "foobooche"
+        self.assertFalse(o.in_che("bam"))
+        self.assertTrue(o.in_che("boo"))
+
+        self.assertFalse(o.nin_che("boo"))
+        self.assertTrue(o.nin_che("bam"))
+
+    def test___getattr___error(self):
+        class O4(Orm):
+            @property
+            def foo(self):
+                raise KeyError("This error should not be buried")
+
+        o = O4()
+        with self.assertRaises(KeyError):
+            o.foo
+
+        class O3(Orm):
+            @property
+            def foo(self):
+                raise ValueError("This error should not be buried")
+
+        o = O3()
+        with self.assertRaises(ValueError):
+            o.foo
+
     def test_creation(self):
         orm_class = self.get_orm_class(
             foo = Field(int),
