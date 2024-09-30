@@ -611,7 +611,8 @@ class Orm(object):
         """Create the schema instance for this class
 
         This is the method you will want to override to customize fields in
-        parent classes, this is only called once and then cached in .schema
+        parent classes, this is only called once and then cached in the
+        instance's .schema property
 
         :returns: Schema
         """
@@ -1199,7 +1200,9 @@ class Orm(object):
             * gte_foo(<VALUE>) - <VALUE> >= foo's value
             * in_foo(<VALUE>) - <VALUE> in foo's value
             * nin_foo(<VALUE>) - <VALUE> not in foo's value
-            * is_foo() - foo's value is True
+            * is_foo() - only works if foo's type is bool, checks if foo's
+                value is True
+            * is_foo(<VALUE>) - equivalent to eq_foo(<VALUE>)
 
         These roughly match the equivalent magic methods in Query
 
