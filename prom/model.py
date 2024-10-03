@@ -614,6 +614,11 @@ class Orm(object):
         parent classes, this is only called once and then cached in the
         instance's .schema property
 
+        NOTE -- This is a class method and works on the class schema, that
+        means if you set a value (like in a Field's options) then it will be
+        set for all classes that use this schema and if the value is dynamic
+        in some way you might end up with unexpected results
+
         :returns: Schema
         """
         table_name = cls.table_name
