@@ -208,6 +208,8 @@ class Orms(OrderedSubclasses):
 
         A reference class has a foreign key reference on the given orm class
 
+        A reference class is a class referenced in `name_or_class` fields
+
         :Example:
             class Foo(Orm):
                 pass
@@ -215,8 +217,8 @@ class Orms(OrderedSubclasses):
             class Bar(Orm):
                 foo_id = Field(Foo, True)
 
-            Orm.orm_classes.get_dep_classes("bar") # [Foo]
-            Orm.orm_classes.get_dep_classes("foo") # []
+            Orm.orm_classes.get_ref_classes("bar") # [Foo]
+            Orm.orm_classes.get_ref_classes("foo") # []
 
         :param name_or_class: str|Orm
         :returns: list[Orm]
@@ -239,6 +241,9 @@ class Orms(OrderedSubclasses):
         reference for the given orm class (ie, it is dependent on the given
         orm class but the given orm class doesn't have a reference to the
         dependent class)
+
+        A dependency class is a class that references `name_or_class` in
+        its fields
 
         :Example:
             class Foo(Orm):
@@ -274,6 +279,9 @@ class Orms(OrderedSubclasses):
         references to both passed in orm classes (ie, the returned orm
         classes are basically lookup tables for the relationship between
         the two passed in orm classes)
+
+        A relatonship class is a class that references both `name_or_class_1`
+        and `name_or_class_2` in its fields
 
         :Example:
             class Foo(Orm):

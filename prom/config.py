@@ -1064,6 +1064,10 @@ class Field(object):
         """Return True if this field represents an enum value"""
         return issubclass(self.original_type, enum.Enum)
 
+    def is_jsonable(self):
+        """Returns True if this field should be in .jsonable output"""
+        return self.options.get("jsonable_field", True)
+
     def fget(self, orm, val):
         """Called anytime the field is accessed through the Orm (eg, Orm.foo)
 
