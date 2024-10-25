@@ -325,26 +325,27 @@ class Schema(object):
         else:
             raise TypeError("Not a Field or Index instance")
 
-    def __getattr__(self, name):
+    def __getattr__(self, field_name):
         """return the Field instance for the given name
 
         :returns: str, the string value of the attribute name, eg, self.foo
             returns "foo"
         """
         try:
-            return self.lookup["field_names"][name]
+            return self.get_field(field_name)
+            #return self.lookup["field_names"][name]
 
         except KeyError:
             raise AttributeError(
-                "No {} field in schema {}".format(name, self.table_name)
+                "No {} field in schema {}".format(field_name, self.table_name)
             )
+
+    def __contains__(self, field_name):
+        return self.has_field(field_name)
 
     def has_field(self, field_name):
         """Return True if schema contains field_name"""
         return field_name in self.lookup["field_names"]
-
-    def __contains__(self, field_name):
-        return self.has_field(field_name)
 
     def set_field(self, field_name, field):
         if not field_name:
@@ -386,6 +387,9 @@ class Schema(object):
                 self.lookup["field_names"][fn] = field
 
         return self
+
+    def get_field(self, field_name):
+        return self.lookup["field_names"][field_name]
 
     def set_index(self, index_name, index):
         """Add an index to the schema
