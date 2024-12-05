@@ -5,6 +5,7 @@ import logging
 import psycogreen.gevent
 import gevent.monkey
 from gevent.queue import Queue
+from gevent.lock import Semaphore
 import psycopg2
 from psycopg2 import extensions, OperationalError, connect
 from psycopg2.pool import AbstractConnectionPool, PoolError
@@ -50,6 +51,7 @@ class ConnectionPool(AbstractConnectionPool):
         self._kwargs = kwargs
         self._pool = Queue()
         self._used = {} # required for interface compatibility
+        self._locks = {}
 
         for i in range(self.minconn):
             connection = self._connect()
@@ -58,46 +60,69 @@ class ConnectionPool(AbstractConnectionPool):
     def _connect(self, key=None):
         self.size += 1
         try:
-            # I think connect() causes a WAIT, so we need to increment size before
-            # we call connect() in order to actually make it increment
             conn = psycopg2.connect(*self._args, **self._kwargs)
-
+            logger.info("Connection created. Current pool size: %d", self.size)
         except:
             self.size -= 1
             raise
 
+        self._locks[conn] = Semaphore()  # Create a lock for the new connection
         return conn
 
-    def getconn(self, key=None):
-        if self.closed: raise PoolError("connection pool is closed")
+    def getconn(self, key=None, timeout=10):
+        if self.closed:
+            raise PoolError("connection pool is closed")
+
         pool = self._pool
-        if self.size >= self.maxconn or pool.qsize():
+        if not pool.empty():
             conn = pool.get()
-
-        else:
             try:
-                conn = self._connect()
-
+                if conn.closed or conn.status != psycopg2.extensions.STATUS_READY:
+                    conn.close()
+                    self.size -= 1
+                    conn = self._connect()
             except:
-                raise
+                conn = self._connect()
+        else:
+            conn = self._connect()
+
+        # Acquire lock before returning the connection
+        if conn not in self._locks:
+            self._locks[conn] = Semaphore()
+
+        lock = self._locks[conn]
+        if not lock.acquire(blocking=False):  # Verifica se está bloqueado
+            self.putconn(conn)
+            conn = self._connect()  # Always open a new connection if busy
 
         return conn
 
     def putconn(self, conn=None, key=None, close=False):
-        if self.closed: raise PoolError("connection pool is closed")
-        if close:
+        if self.closed:
+            raise PoolError("connection pool is closed")
+
+        lock = self._locks.get(conn)
+        if lock:
+            lock.release()  # Release the lock when the connection is returned
+
+        if close or conn.closed or conn.status != psycopg2.extensions.STATUS_READY:
             conn.close()
+            self.size -= 1
         else:
             self._pool.put(conn)
 
     def closeall(self):
-        if self.closed: raise PoolError("connection pool is closed")
-        # TODO -- might be better to do this decrementing self.size?
+        if self.closed:
+            raise PoolError("connection pool is closed")
+        self.closed = True
+
         while not self._pool.empty():
             conn = self._pool.get_nowait()
             try:
                 conn.close()
-            except Exception:
+            except:
                 pass
+        self.size = 0
 
-        self.closed = True
+        # Clear all locks
+        self._locks.clear()
