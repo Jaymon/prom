@@ -272,14 +272,26 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         class _OtherData(self.ModelData.__class__):
             async def get_parent_fields(self, **kwargs):
                 fields = await self.get_orm_fields(**kwargs)
-                fields["attributes"] = {"parent_fields": True}
+                fields["properties"] = {"parent_fields": True}
                 return fields
 
         d = _OtherData()
 
         fields = await d.get_grand_child_fields()
-        self.assertTrue(fields["attributes"]["parent_fields"])
+        self.assertTrue(fields["properties"]["parent_fields"])
 
         c = await d.get_child()
         self.assertTrue(c.parent_fields)
+
+    async def test_magic_keywords(self):
+        testdata = self.InterfaceData
+        orm_class = testdata.get_orm_class()
+        orm_fields = await testdata.get_orm_fields(
+            orm_class,
+            properties={"foo_prop": 1, "bar_prop": 2},
+            fields={"foo_field": 3, "bar_field": 4},
+        )
+
+        self.assertTrue("foo_prop" in orm_fields["properties"])
+        self.assertTrue("foo_field" in orm_fields)
 

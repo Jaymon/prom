@@ -10,10 +10,10 @@ from .testdata import (
     TestCase,
     IsolatedAsyncioTestCase,
     SkipTest,
+    basic_logging,
 )
 
-
-testdata.basic_logging(
+basic_logging(
     levels={
         "prom": "DEBUG",
         #"prom": "ERROR",

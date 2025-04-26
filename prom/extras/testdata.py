@@ -296,7 +296,7 @@ class ModelData(TestData):
                     # if these are always there it's easier to mess with them
                     # in child methods
                     kwargs.setdefault("fields", {})
-                    kwargs.setdefault("attributes", {})
+                    kwargs.setdefault("properties", {})
 
                     if method:
                         return method(**kwargs)
@@ -434,15 +434,15 @@ class ModelData(TestData):
         :param assure_orm_class: Orm|None, the orm that is getting its
             references assured. If this is None then orm_class is considered the
             orm that is being checked
-        :param **kwargs: orm_class's actual field name value will be checked and
-            the ref's orm_class.model_name will be checked
-            * ignore_refs: bool, default False, if True then refs will not be
-                checked, passed in refs will still be set
-            * require_fields: bool, default True, if True then create missing
-                refs, if False, then refs won't be created and so if they are
-                missing their fields will not be populated
-            * ignore_field_names: set[str]|list[str], a set of field names that
-                should be ignored when creating refs
+        :keyword ignore_refs: bool, default False, if True then refs will not
+            be checked, passed in refs will still be set
+        :keyword require_fields: bool, default True, if True then create
+            missing refs, if False, then refs won't be created and so if they
+            are missing their fields will not be populated
+        :keyword ignore_field_names: set[str]|list[str], a set of field names
+            that should be ignored when creating refs
+        :param **kwargs: orm_class's actual field name value will be checked
+            and the ref's orm_class.model_name will be checked
         :returns: dict, the kwargs with ref field_name and ref
             orm_class.model_name will be included
         """
@@ -620,21 +620,23 @@ class ModelData(TestData):
             # is just a nice message to notify that you most likely forgot to
             # return something
             if kwargs["fields"] is None:
-                raise ValueError(" ".join([
-                    "Dispatched {}".format(orm_class.model_name),
-                    "get fields method returned None instead of dict"
-                ]))
+                raise ValueError((
+                    "Dispatched {orm_class.model_name}"
+                    " get fields method returned None instead of dict"
+                ))
 
-            # If get fields method returns an attribute dict we want to add
-            # it to the passed in attributes dict, this is just syntactic
-            # sugar so child classes only really ever need to override the
-            # fields method
-            attributes = kwargs["fields"].get("attributes", {})
-            attributes.update(kwargs.get("attributes", {}))
-            kwargs["attributes"] = attributes
+            # If the `.get_orm_fields` method returns a properties dict we
+            # want to add it to the passed in properties dict, this is just
+            # syntactic sugar so child classes only really ever need to
+            # override the fields method
+            if properties := kwargs["fields"].pop("properties", None):
+                kwargs["properties"] = properties
 
-            if kwargs["fields"] and "**" in kwargs["fields"]:
-                kwargs.update(kwargs["fields"].pop("**"))
+            # the "**" key should be a dict and pulls all the values in the
+            # dict back into the top kwargs so they are passed as keywords
+            # to `.create_orm_instance`
+            if keywords := kwargs["fields"].pop("**", None):
+                kwargs.update(keywords)
 
             instance = await self._dispatch_method(
                 orm_class,
@@ -651,14 +653,14 @@ class ModelData(TestData):
         :param **kwargs:
             * count: int, how many instances you want
             * <MODEL_NAME>_count: int, alias for count
-            * related_refs: bool, default True, all the orms will have the same
-                foreign key references
+            * related_refs: bool, default True, all the orms will have the
+                same foreign key references
         :returns: list, a list of Orm instances
         """
         ret = []
         if kwargs.get("related_refs", True):
-            # because we need related refs, we will need to create refs if they
-            # don't exist
+            # because we need related refs, we will need to create refs if
+            # they don't exist
             kwargs.setdefault("ignore_refs", False)
             kwargs = await self.assure_orm_refs(orm_class, **kwargs)
 
@@ -684,22 +686,21 @@ class ModelData(TestData):
         :param orm_class: Orm
         :param fields: dict[str, Any], these should ruoughly correspond to the
             Orm's Schema fields 
-        :param **kwargs:
-            * attributes: dict[str, Any], These will be set onto the instance
-                after it is created
-            * fields: dict[str, Any], these are the actual fields that will be
-                passed to Orm.__init__, that makes this kwargs different than
-                other methods because the fields have been separated out.
-                Basically, if you did .get_orm_class(FooOrm, bar="...") then
-                by the time we got to here you would access bar with
-                kwargs["fields"]["bar"] instead of just kwargs["bar"] in all
-                the other methods
+        :keyword properties: dict[str, Any], These will be set onto the
+            instance after it is created
+        :keyword fields: dict[str, Any], these are the actual fields that will
+            be passed to Orm.__init__, that makes this kwargs different than
+            other methods because the fields have been separated out.
+            Basically, if you did .get_orm_class(FooOrm, bar="...") then by the
+            time we got to here you would access bar with
+            kwargs["fields"]["bar"] instead of just kwargs["bar"] in all the
+            other methods
         :returns: Orm, the actual instance populated with fields 
         """
         instance = orm_class(kwargs["fields"])
 
-        if attributes := kwargs.get("attributes", {}):
-            for name, value in attributes.items():
+        if properties := kwargs.get("properties", {}):
+            for name, value in properties.items():
                 setattr(instance, name, value)
 
         return instance
@@ -714,17 +715,20 @@ class ModelData(TestData):
                 <GET-ORM-FIELD-VALUE>
 
         :param orm_class: Orm
-        :param **kwargs: the fields found in orm_class.schema
-            * require_fields: bool, default True, this will require that all
-                fields have values even if they aren't required, this does not
-                apply to foreign key references
-            * field_callbacks: dict, the key is the field name and the value is
-                a callable that can take self
-            * ignore_field_names: set[str]|list[str], a set of field names that
-                should be ignored when creating refs
-            * fields: dict[str, Any], these will be used to seed the return
-                dict, you use this to get non schema fields to be passed to
-                orm's __init__ method
+        :keyword require_fields: bool, default True, this will require that all
+            fields have values even if they aren't required, this does not
+            apply to foreign key references
+        :keyword field_callbacks: dict, the key is the field name and the
+            value is a callable that can take self
+        :keyword ignore_field_names: set[str]|list[str], a set of field names
+            that should be ignored when creating refs
+        :keyword fields: dict[str, Any], these will be used to seed the return
+            dict, you use this key to get non schema fields to be passed to
+            orm's __init__ method
+        :keyword: properties: dict[str, Any], these are set in
+            `.create_orm_instance` as properties on the instance, so they
+            aren't passed to the init method but set after the instance is
+            created
         :returns: dict, these are the fields that will be passed to
             Orm.__init__ with one exception, if the dict contains a key "**"
             then that key will be popped and it's value (which should be a
@@ -733,14 +737,22 @@ class ModelData(TestData):
             key is just a handy way to do all customizing in one overridden
             method, certain returned keys do certain things:
                 * **: dict, yes, that's right, a double asterisks key will
-                    move any of the value in the dict value back into kwargs
-                    that will be passed to the .create_orm_instance method
-                * attributes: dict, these will be merged with the **kwargs
-                    attributes (with kwargs taking precedence) and is a handy
-                    way for this method to pass values that will be set on
-                    the orm instance
+                    be moved back into the kwargs that will be passed to the
+                    .create_orm_instance method, this allows a child method
+                    to pass keywords to .get_orm_instance because 
+                    .get_orm_instance expects all the orm init fields to be
+                    in the fields keyword
+                * properties: dict, this dict will be set into the orm
+                    instance after it is created
         """
         ret = kwargs.pop("fields", {})
+
+        if properties := kwargs.pop("properties", None):
+            ret["properties"] = properties
+
+        if keywords := kwargs.pop("**", None):
+            ret["**"] = keywords
+
         schema = orm_class.schema
 
         kwargs.setdefault("ignore_refs", True)
