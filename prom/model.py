@@ -326,16 +326,16 @@ class Orms(OrderedSubclasses):
 
         return self.lookup_rel_table[key_name]
 
-    def _is_valid_subclass(self, orm_class, cutoff_classes):
-        ret = super()._is_valid_subclass(orm_class, cutoff_classes)
-        if ret:
-            # while we check for Orm derived child classes, we also don't want
-            # any Orm child classes that are defined in prom since those are
-            # also base classes and we're only interested in valid child
-            # classes that can access a db
-            ret = not orm_class.__module__.startswith(self.module_name)
-
-        return ret
+#     def _is_valid_subclass(self, orm_class, cutoff_classes):
+#         ret = super()._is_valid_subclass(orm_class, cutoff_classes)
+#         if ret:
+#             # while we check for Orm derived child classes, we also don't want
+#             # any Orm child classes that are defined in prom since those are
+#             # also base classes and we're only interested in valid child
+#             # classes that can access a db
+#             ret = not orm_class.__module__.startswith(self.module_name)
+# 
+#         return ret
 
 
 class Orm(object):

@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
+import string
+import random
 import datetime
 import functools
 import logging
 import uuid
 import re
+from collections.abc import Sequence
 
 from testdata.base import TestData
 from datatypes import (
@@ -13,6 +16,7 @@ from datatypes import (
 )
 
 from ..model import Orm
+from ..config import Schema, Field, Index, AutoIncrement
 from ..interface import get_interfaces
 from ..exception import UniqueError
 
@@ -151,11 +155,11 @@ class ModelData(TestData):
 
     async def _dispatch_method(self, orm_class, method, **kwargs):
         """Internal dispatch method. This uses the orm_class to first try and
-        call a magical wrapper method (eg, if orm_class was name Foo and method
-        was .get_orm then this would first try and run .get_foo and only then
-        would it fallback to method
+        call a magical wrapper method (eg, if `orm_class` was named `Foo` and
+        method was `.get_orm` then this would first try and run `.get_foo`
+        and only then would it fallback to method
 
-        :param orm_class: type, the Orm child
+        :param orm_class: type|str, the Orm child
         :param method: callable, the fallback method
         :param **kwargs: passed through to whatever method is ran
         :returns: Any, whatever the ran method returns
@@ -575,26 +579,60 @@ class ModelData(TestData):
             await instance.save(nest=True)
         return instances
 
-    def get_orm_class(self, model_name, *default, **kwargs):
+    def get_orm_class(self, model_name: str = "", *default, **kwargs):
         """get the orm class found at model_name, if model_name doesn't exist
         than return default if it exists
 
-        :param model_name: str, the name of the orm class
+        :param model_name: str, the name of the orm class, if empty then a
+            random orm will be generated
         :param *default: Any, if exists then this will be returned instead of
-            raising a ValueError if model_name isn't found
+            raising an exception if model_name isn't found
+        :keyword schema: only used if `model_name` is empty, this will be the
+            schema for a generated orm
+        :keyword parent_class: only used if `model_name` is empty, this will
+            be the parent class of the randomly generated Orm subclass
         :returns: Orm, the orm_class.model_name that matches model_name
         """
-        try:
-            return Orm.orm_classes[model_name]
+        if model_name:
+            try:
+                return Orm.orm_classes[model_name]
 
-        except KeyError:
+            except KeyError:
+                if default:
+                    return default[0]
+
+                else:
+                    raise
+
+        else:
             if default:
                 return default[0]
 
             else:
-                raise
+                # generate a new orm class
+                if "schema" in kwargs:
+                    schema = kwargs["schema"]
 
-    async def get_orm(self, orm_class, **kwargs):
+                else:
+                    kwargs.setdefault("suffix", "_orm_class")
+                    schema = self.get_schema(**kwargs)
+
+                parent_class = kwargs.get("parent_class", Orm)
+
+                orm_class = type(
+                    schema.table_name,
+                    (parent_class,),
+                    {
+                        "schema": schema,
+                        "table_name": schema.table_name,
+                        **schema.fields,
+                        **schema.indexes,
+                    },
+                )
+
+                return orm_class
+
+    async def get_orm(self, orm_class: type|None = None, **kwargs):
         """get an instance of the orm but don't save it into the db
 
         The method call hierarchy from here:
@@ -603,10 +641,16 @@ class ModelData(TestData):
                 <GET-ORM-FIELDS>
                 <CREATE-ORM-INSTANCE>
 
-        :param orm_class: Orm
+        :param orm_class: a random Orm subclass using `.get_orm_class` will
+            be generated if None
         :param **kwargs:
         :returns: Orm
         """
+        if not orm_class:
+            # create an orm class if we don't have one
+            kwargs.setdefault("suffix", "orm")
+            orm_class = self.get_orm_class(**kwargs)
+
         kwargs.setdefault("ignore_refs", True)
         instance = kwargs.get(orm_class.model_name, None)
         if not instance:
@@ -616,9 +660,9 @@ class ModelData(TestData):
                 **kwargs
             )
 
-            # since .get_orm_fields is the most common overrided method, this
-            # is just a nice message to notify that you most likely forgot to
-            # return something
+            # since .get_orm_fields is the most common overrided method,
+            # this is just a nice message to notify that you most likely
+            # forgot to return something
             if kwargs["fields"] is None:
                 raise ValueError((
                     "Dispatched {orm_class.model_name}"
@@ -643,6 +687,7 @@ class ModelData(TestData):
                 self.create_orm_instance,
                 **kwargs
             )
+
 
         return instance
 
@@ -745,25 +790,42 @@ class ModelData(TestData):
                 * properties: dict, this dict will be set into the orm
                     instance after it is created
         """
-        ret = kwargs.pop("fields", {})
+        fields = kwargs.pop("fields", {})
 
         if properties := kwargs.pop("properties", None):
-            ret["properties"] = properties
+            fields["properties"] = properties
 
         if keywords := kwargs.pop("**", None):
-            ret["**"] = keywords
-
-        schema = orm_class.schema
+            fields["**"] = keywords
 
         kwargs.setdefault("ignore_refs", True)
         kwargs = await self.assure_orm_refs(orm_class, **kwargs)
 
+        return self.get_schema_fields(
+            orm_class.schema,
+            fields=fields,
+            **kwargs
+        )
+
+    def get_schema_fields(self, schema: Schema, **kwargs) -> dict:
+        """Semi internal method. Generates random values for all the fields
+        in `schema`
+
+        see `.get_orm_fields`, this is separate from that method since it
+        is sometimes useful to generate a random schema with `.get_schema`
+        and then get a set field values for that schema without having
+        an Orm instance.
+
+        Pretty much everything you can pass into `.get_orm_fields` you can
+        pass into this method
+        """
+        fields = kwargs.pop("fields", {})
         ignore_field_names = set(kwargs.get("ignore_field_names", []))
 
         for field_name, field in schema.fields.items():
             if field_name in kwargs:
                 # this value was passed in so we don't need to do anything
-                ret[field_name] = kwargs[field_name]
+                fields[field_name] = kwargs[field_name]
 
             elif field_name in ignore_field_names:
                 # we were explicitely told to ignore this field
@@ -787,14 +849,14 @@ class ModelData(TestData):
                 pass
 
             else:
-                ret[field_name] = self.get_orm_field_value(
+                fields[field_name] = self.get_orm_field_value(
                     field_name,
                     field,
-                    fields=ret,
+                    fields=fields,
                     **kwargs
                 )
 
-        return ret
+        return fields
 
     def get_orm_field_value(self, field_name, field, **kwargs):
         """Returns the generated value for the specific field
@@ -846,6 +908,13 @@ class ModelData(TestData):
 
                 elif issubclass(field_type, str):
                     ret = self.get_orm_field_str(
+                        field_name,
+                        field,
+                        **kwargs
+                    )
+
+                elif issubclass(field_type, (bytes, bytearray)):
+                    ret = self.get_orm_field_bytes(
                         field_name,
                         field,
                         **kwargs
@@ -926,6 +995,10 @@ class ModelData(TestData):
 
         return ret
 
+    def get_orm_field_bytes(self, field_name, field, **kwargs):
+        s = self.get_orm_field_str(field_name, field, **kwargs)
+        return s.encode()
+
     def get_orm_field_dict(self, field_name, field, **kwargs):
         return self.get_dict()
 
@@ -951,4 +1024,148 @@ class ModelData(TestData):
         raise ValueError(
             f"Not sure what to do with {field.type}"
         )
+
+    def get_table_name(self, *args, **kwargs):
+        """return a random table name
+
+        All values are passed through to `.get_field_name`
+        """
+        kwargs.setdefault("suffix", "_table")
+        return self.get_field_name(*args, **kwargs)
+
+    def get_field_name(
+        self,
+        name: str = "",
+        *,
+        prefix: str = "",
+        suffix: str = "",
+        **kwargs
+    ) -> str:
+        """return a random name
+
+        :param name: if passed in then this will be returned
+        :keyword prefix: if passed in then a name will be randomly
+            generated that starts with this value
+        :keyword suffix: if present then generate a random name that ends
+            with this value
+        """
+        if name:
+            return name
+
+        return "{}{}{}".format(
+            prefix,
+            "".join(
+                random.sample(string.ascii_lowercase, random.randint(5, 15))
+            ),
+            suffix,
+        )
+
+    def get_schema_field(
+        self,
+        field_name: str = "",
+        field_type: type|None = None,
+        *,
+        field_required: bool|None = None,
+        **kwargs
+    ) -> Field:
+        """Create a Field instance that can be added to a schema
+
+        :param field_name: the name of the field name, `.get_field_name` will
+            be called if this is empty
+        :param field_type: the type of the field, will be randomly assigned
+            if None
+        :keyword field_required: this will randomly assigned if None
+        """
+        if not field_name:
+            kwargs.setdefault("suffix", "_field")
+            field_name = self.get_field_name(**kwargs)
+
+        if field_type is None:
+            field_type = random.choice([
+                str,
+                bytes,
+                bool,
+                int,
+                datetime.datetime,
+                float
+            ])
+
+        field_class = kwargs.get("field_class", Field)
+
+        if field_required is None:
+            field_required = random.choice([True, False])
+
+        return field_class(field_type, field_required, name=field_name)
+
+    def get_schema(
+        self,
+        field_count: int = 0,
+        *,
+        field_names: Sequence[str] = None,
+        fields: dict[str, Field|type] = None,
+        indexes: dict[str, Sequence[str]|Index] = None,
+        **kwargs
+    ) -> Schema:
+        """Get a Schema instance
+
+        :param field_count: how many fields you want in the schema, a
+            random value will be used if 0
+        :keyword field_names: a list of field names that will be added to
+            the schema
+        :keyword fields: a mapping of field names to types or Field
+            instances that will be added to the schema
+        :keyword indexes: a mapping of index names to Index instances
+        :keyword table_name: if empty a random name will be used
+        """
+        fields = fields or {}
+        field_names = field_names or []
+        indexes = indexes or {}
+
+        for field_name in field_names:
+            if field_name not in fields:
+                fields[field_name] = self.get_schema_field(field_name)
+
+        if len(fields) == 0:
+            if field_count == 0:
+                field_count = random.randint(1, 5)
+
+        else:
+            field_count -= len(fields)
+
+        if "_id" not in fields:
+            fields["_id"] = AutoIncrement()
+
+        if field_count > 0:
+            for i in range(field_count):
+                field = self.get_schema_field()
+                fields[field.name] = field
+
+        for field_name in list(fields.keys()):
+            if fields[field_name]:
+                if not isinstance(fields[field_name], Field):
+                    fields[field_name] = self.get_schema_field(field_name)
+
+            else:
+                # remove any None values
+                fields.pop(field_name)
+
+        for index_name in list(indexes.keys()):
+            if index_name in fields:
+                raise ValueError(f"index {index_name} also in fields")
+
+            if indexes[index_name]:
+                if not isinstance(indexes[index_name], Index):
+                    indexes[index_name] = Index(*indexes[index_name])
+
+            else:
+                # remove any None values
+                indexes.pop(index_name)
+
+        kwargs.setdefault("prefix", "schema")
+        s = Schema(
+            kwargs.get("table_name", self.get_table_name(**kwargs)),
+            **fields,
+            **indexes,
+        )
+        return s
 

@@ -2,6 +2,7 @@
 
 from prom.config import Field
 from prom.extras.testdata import ModelData
+from prom.model import Orm
 
 from . import IsolatedAsyncioTestCase
 
@@ -294,4 +295,20 @@ class ModelDataTest(IsolatedAsyncioTestCase):
 
         self.assertTrue("foo_prop" in orm_fields["properties"])
         self.assertTrue("foo_field" in orm_fields)
+
+    async def test_mock_get_schema(self):
+        testdata = self.ModelData
+        schema = testdata.get_schema()
+        self.assertTrue(schema.table_name)
+        self.assertTrue(schema.fields)
+
+    async def test_mock_get_orm_class(self):
+        testdata = self.ModelData
+        orm_class = testdata.get_orm_class()
+        self.assertTrue(issubclass(orm_class, Orm))
+
+    async def test_mock_get_orm_1(self):
+        testdata = self.ModelData
+        orm = await testdata.get_orm()
+        self.assertTrue(isinstance(orm, Orm))
 
