@@ -7,16 +7,21 @@ from prom.model import Orm
 from . import IsolatedAsyncioTestCase
 
 
-class ModelDataTest(IsolatedAsyncioTestCase):
+class TestCase(IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+
+        # remove the interface data class
+        #cls.data.delete_class(InterfaceData)
 
         # we need to specifically set the ModelData so this class can use it
         # because parent classes get rid of it because it stomps methods
         # found in .testdata
         cls.data.add_class(ModelData)
 
+
+class ModelDataTest(TestCase):
     async def test_references_1(self):
         testdata = self.InterfaceData
         ref_class = testdata.get_orm_class()
@@ -24,7 +29,8 @@ class ModelDataTest(IsolatedAsyncioTestCase):
 
         self.assertEqual(0, await ref_class.query.count())
 
-        orm = await self.get_orm(orm_class, ignore_refs=False)
+        md = self.ModelData
+        orm = await md.get_orm(orm_class, ignore_refs=False)
 
         self.assertEqual(1, await ref_class.query.count())
 
@@ -33,10 +39,10 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         testdata = self.InterfaceData
         foo_class = testdata.get_orm_class(model_name="foo")
         bar_class = testdata.get_orm_class(foo_id=Field(foo_class))
+        foo = await testdata.insert_orm(foo_class)
 
-        foo = await self.insert_orm(foo_class)
-
-        bars = await self.get_orms(
+        md = self.ModelData
+        bars = await md.get_orms(
             bar_class,
             count=count,
             foo=foo,
@@ -296,19 +302,40 @@ class ModelDataTest(IsolatedAsyncioTestCase):
         self.assertTrue("foo_prop" in orm_fields["properties"])
         self.assertTrue("foo_field" in orm_fields)
 
-    async def test_mock_get_schema(self):
+
+class MockModelDataTest(TestCase):
+    """Holds the tests specifically for the ModelData methods that add 
+    orm mocking functionality"""
+    async def test_get_schema(self):
         testdata = self.ModelData
         schema = testdata.get_schema()
         self.assertTrue(schema.table_name)
         self.assertTrue(schema.fields)
 
-    async def test_mock_get_orm_class(self):
+    async def test_get_orm_class(self):
         testdata = self.ModelData
         orm_class = testdata.get_orm_class()
         self.assertTrue(issubclass(orm_class, Orm))
 
-    async def test_mock_get_orm_1(self):
+    async def test_get_orm_1(self):
         testdata = self.ModelData
         orm = await testdata.get_orm()
         self.assertTrue(isinstance(orm, Orm))
+
+    async def test_get_orms(self):
+        testdata = self.ModelData
+        orms = await testdata.get_orms()
+        for orm in orms:
+            self.assertTrue(orm.fields)
+
+    async def test_create_orm_1(self):
+        testdata = self.ModelData
+        orm = await testdata.create_orm(interface=self.get_interface())
+        self.assertTrue(orm.pk)
+
+    async def test_create_orms(self):
+        testdata = self.ModelData
+        orms = await testdata.create_orms(interface=self.get_interface())
+        for orm in orms:
+            self.assertTrue(orm.pk)
 

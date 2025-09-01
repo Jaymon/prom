@@ -7,6 +7,7 @@ import logging
 import uuid
 import re
 from collections.abc import Sequence
+from typing import Type
 
 from testdata.base import TestData
 from datatypes import (
@@ -579,60 +580,26 @@ class ModelData(TestData):
             await instance.save(nest=True)
         return instances
 
-    def get_orm_class(self, model_name: str = "", *default, **kwargs):
+    def get_orm_class(self, model_name, *default, **kwargs):
         """get the orm class found at model_name, if model_name doesn't exist
         than return default if it exists
 
-        :param model_name: str, the name of the orm class, if empty then a
-            random orm will be generated
+        :param model_name: str, the name of the orm class
         :param *default: Any, if exists then this will be returned instead of
-            raising an exception if model_name isn't found
-        :keyword schema: only used if `model_name` is empty, this will be the
-            schema for a generated orm
-        :keyword parent_class: only used if `model_name` is empty, this will
-            be the parent class of the randomly generated Orm subclass
+            raising a ValueError if model_name isn't found
         :returns: Orm, the orm_class.model_name that matches model_name
         """
-        if model_name:
-            try:
-                return Orm.orm_classes[model_name]
+        try:
+            return Orm.orm_classes[model_name]
 
-            except KeyError:
-                if default:
-                    return default[0]
-
-                else:
-                    raise
-
-        else:
+        except KeyError:
             if default:
                 return default[0]
 
             else:
-                # generate a new orm class
-                if "schema" in kwargs:
-                    schema = kwargs["schema"]
+                raise
 
-                else:
-                    kwargs.setdefault("suffix", "_orm_class")
-                    schema = self.get_schema(**kwargs)
-
-                parent_class = kwargs.get("parent_class", Orm)
-
-                orm_class = type(
-                    schema.table_name,
-                    (parent_class,),
-                    {
-                        "schema": schema,
-                        "table_name": schema.table_name,
-                        **schema.fields,
-                        **schema.indexes,
-                    },
-                )
-
-                return orm_class
-
-    async def get_orm(self, orm_class: type|None = None, **kwargs):
+    async def get_orm(self, orm_class, **kwargs):
         """get an instance of the orm but don't save it into the db
 
         The method call hierarchy from here:
@@ -641,16 +608,10 @@ class ModelData(TestData):
                 <GET-ORM-FIELDS>
                 <CREATE-ORM-INSTANCE>
 
-        :param orm_class: a random Orm subclass using `.get_orm_class` will
-            be generated if None
+        :param orm_class: Orm
         :param **kwargs:
         :returns: Orm
         """
-        if not orm_class:
-            # create an orm class if we don't have one
-            kwargs.setdefault("suffix", "orm")
-            orm_class = self.get_orm_class(**kwargs)
-
         kwargs.setdefault("ignore_refs", True)
         instance = kwargs.get(orm_class.model_name, None)
         if not instance:
@@ -660,9 +621,9 @@ class ModelData(TestData):
                 **kwargs
             )
 
-            # since .get_orm_fields is the most common overrided method,
-            # this is just a nice message to notify that you most likely
-            # forgot to return something
+            # since .get_orm_fields is the most common overrided method, this
+            # is just a nice message to notify that you most likely forgot to
+            # return something
             if kwargs["fields"] is None:
                 raise ValueError((
                     "Dispatched {orm_class.model_name}"
@@ -687,7 +648,6 @@ class ModelData(TestData):
                 self.create_orm_instance,
                 **kwargs
             )
-
 
         return instance
 
@@ -1025,6 +985,11 @@ class ModelData(TestData):
             f"Not sure what to do with {field.type}"
         )
 
+
+class ModelData(ModelData):
+    """This contains additional functionality to create/generate Orm classes
+    if they're not passed into the `*_orm*` methods
+    """
     def get_table_name(self, *args, **kwargs):
         """return a random table name
 
@@ -1168,4 +1133,105 @@ class ModelData(TestData):
             **indexes,
         )
         return s
+
+    def _assure_orm_class(
+        self,
+        orm_class: Type[Orm]|None,
+        **kwargs
+    ) -> Type[Orm]:
+        """Internal method. Makes sure orm_class is a valid Orm class"""
+        if orm_class is None:
+            # create an orm class if we don't have one
+            orm_class = self.get_orm_class(**kwargs)
+
+        return orm_class
+
+    def get_orm_class(
+        self,
+        model_name: str = "",
+        *default,
+        **kwargs
+    ) -> Type[Orm]:
+        """get the orm class found at model_name, if model_name doesn't exist
+        than return default if it exists
+
+        :param model_name: str, the name of the orm class, if empty then a
+            random orm will be generated
+        :param *default: Any, if exists then this will be returned instead of
+            raising an exception if model_name isn't found
+        :keyword schema: only used if `model_name` is empty, this will be the
+            schema for a generated orm
+        :keyword parent_class: only used if `model_name` is empty, this will
+            be the parent class of the randomly generated Orm subclass
+        :keyword interface: only used if `model_name` is empty, this will
+            be the interface the generated Orm class uses
+        :returns: Orm, the orm_class.model_name that matches model_name
+        """
+        if model_name:
+            return super().get_orm_class(model_name, *default, **kwargs)
+
+        else:
+            if default:
+                return default[0]
+
+            else:
+                interface = kwargs.pop("interface", None)
+
+                # generate a new orm class
+                if "schema" in kwargs:
+                    schema = kwargs["schema"]
+
+                else:
+                    kwargs.setdefault("suffix", "_orm")
+                    schema = self.get_schema(**kwargs)
+
+                parent_class = kwargs.get("parent_class", Orm)
+
+                orm_class_properties = {
+                    "schema": schema,
+                    "table_name": schema.table_name,
+                }
+                if interface is not None:
+                    orm_class_properties["interface"] = interface
+
+                orm_class = type(
+                    schema.table_name,
+                    (parent_class,),
+                    {
+                        **orm_class_properties,
+                        **schema.fields,
+                        **schema.indexes,
+                    },
+                )
+
+                return orm_class
+
+    async def get_orm(self, orm_class: type|None = None, **kwargs) -> Orm:
+        """Wraps `.get_orm` but creates an `orm_class` if nothing is passed
+        in"""
+        orm_class = self._assure_orm_class(orm_class, **kwargs)
+        return await super().get_orm(orm_class, **kwargs)
+
+    async def get_orms(
+        self,
+        orm_class: type|None = None,
+        **kwargs
+    ) -> Sequence[Orm]:
+        """Wraps `.get_orms` but creates an `orm_class` if None"""
+        orm_class = self._assure_orm_class(orm_class, **kwargs)
+        return await super().get_orms(orm_class, **kwargs)
+
+    async def create_orm(self, orm_class: type|None = None, **kwargs) -> Orm:
+        """Wraps `.create_orm` but creates an `orm_class` if None"""
+        orm_class = self._assure_orm_class(orm_class, **kwargs)
+        return await super().create_orm(orm_class, **kwargs)
+
+    async def create_orms(
+        self,
+        orm_class: type|None = None,
+        **kwargs
+    ) -> Sequence[Orm]:
+        """Wraps `.create_orms` but creates an `orm_class` if None"""
+        orm_class = self._assure_orm_class(orm_class, **kwargs)
+        return await super().create_orms(orm_class, **kwargs)
 
