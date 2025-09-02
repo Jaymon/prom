@@ -203,8 +203,9 @@ class ModelData(TestData):
         """Parses method name and returns the found orm_class and the
         default/fallback method that can be passed to ._dispatch_method
 
-        NOTE -- this is where a lot of the parsing magic happens, for adding
-        functionality in the future this is probably the method to start with
+        .. note:: this is where a lot of the parsing magic happens, for
+            adding functionality in the future this is probably the method
+            to start with
 
         :param method_name: str, the full method name that will be parsed
         :returns: tuple[type, callable], (orm_class, method), this will return
@@ -1067,7 +1068,7 @@ class ModelData(ModelData):
         field_count: int = 0,
         *,
         field_names: Sequence[str] = None,
-        fields: dict[str, Field|type] = None,
+        fields: dict[str, Field|Type] = None,
         indexes: dict[str, Sequence[str]|Index] = None,
         **kwargs
     ) -> Schema:
@@ -1106,13 +1107,16 @@ class ModelData(ModelData):
                 fields[field.name] = field
 
         for field_name in list(fields.keys()):
-            if fields[field_name]:
-                if not isinstance(fields[field_name], Field):
-                    fields[field_name] = self.get_schema_field(field_name)
-
-            else:
+            if fields[field_name] is None:
                 # remove any None values
                 fields.pop(field_name)
+
+            else:
+                if not isinstance(fields[field_name], Field):
+                    fields[field_name] = self.get_schema_field(
+                        field_name,
+                        fields[field_name],
+                    )
 
         for index_name in list(indexes.keys()):
             if index_name in fields:
@@ -1126,7 +1130,6 @@ class ModelData(ModelData):
                 # remove any None values
                 indexes.pop(index_name)
 
-        kwargs.setdefault("prefix", "schema")
         s = Schema(
             kwargs.get("table_name", self.get_table_name(**kwargs)),
             **fields,
@@ -1203,6 +1206,8 @@ class ModelData(ModelData):
                         **schema.indexes,
                     },
                 )
+
+                schema.orm_class = orm_class
 
                 return orm_class
 

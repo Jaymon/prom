@@ -337,7 +337,7 @@ class Schema(object):
 
         except KeyError:
             raise AttributeError(
-                "No {} field in schema {}".format(field_name, self.table_name)
+                "No {} field in Schema {}".format(field_name, self.table_name)
             )
 
     def __contains__(self, field_name):
