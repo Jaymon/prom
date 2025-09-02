@@ -1067,9 +1067,10 @@ class ModelData(ModelData):
         self,
         field_count: int = 0,
         *,
-        field_names: Sequence[str] = None,
-        fields: dict[str, Field|Type] = None,
-        indexes: dict[str, Sequence[str]|Index] = None,
+        field_names: Sequence[str]|None = None,
+        fields: dict[str, Field|Type]|None = None,
+        indexes: dict[str, Sequence[str]|Index]|None = None,
+        refs: Sequence[Orm]|None = None,
         **kwargs
     ) -> Schema:
         """Get a Schema instance
@@ -1081,15 +1082,21 @@ class ModelData(ModelData):
         :keyword fields: a mapping of field names to types or Field
             instances that will be added to the schema
         :keyword indexes: a mapping of index names to Index instances
+        :keyword refs: a list of Orm classes where a foreign key field
+            will be added to the schema
         :keyword table_name: if empty a random name will be used
         """
         fields = fields or {}
-        field_names = field_names or []
-        indexes = indexes or {}
 
+        field_names = field_names or []
         for field_name in field_names:
             if field_name not in fields:
                 fields[field_name] = self.get_schema_field(field_name)
+
+        refs = refs or []
+        for orm_class in refs:
+            field_name = f"{orm_class}_id"
+            fields[field_name] = self.get_schema_field(field_name, orm_class)
 
         if len(fields) == 0:
             if field_count == 0:
@@ -1118,6 +1125,7 @@ class ModelData(ModelData):
                         fields[field_name],
                     )
 
+        indexes = indexes or {}
         for index_name in list(indexes.keys()):
             if index_name in fields:
                 raise ValueError(f"index {index_name} also in fields")

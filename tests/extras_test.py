@@ -350,9 +350,7 @@ class MockModelDataTest(TestCase):
     async def test_ref_instance(self):
         testdata = self.ModelData
         orm_class = testdata.get_orm_class()
-        ref_class = testdata.get_orm_class(
-            fields={"fk_id": orm_class}
-        )
+        ref_class = testdata.get_orm_class(refs=[orm_class])
 
         o = await testdata.get_orm(ref_class)
         self.assertTrue(isinstance(o, Orm))
