@@ -394,16 +394,27 @@ class Orm(object):
     key, I wouldn't change the name though. The _id name comes from MongoDB
     """
 
-    _created = AutoDatetime(created=True, updated=False, aliases=["created"])
+    _created = AutoDatetime(
+        created=True,
+        updated=False,
+        aliases=["created"],
+        jsonable_field=False, # don't include in .jsonable by default
+    )
     """Anytime a new row is created this will be populated
 
     If you don't want this functionality just do `_created = None` in your
     child class
     """
 
-    _updated = AutoDatetime(created=False, updated=True, aliases=["updated"])
+    _updated = AutoDatetime(
+        created=False,
+        updated=True,
+        aliases=["updated"],
+        jsonable_field=False, # don't include in .jsonable by default
+    )
     """Anytime a row is written to this will be updated, that means it will
-    have roughly the same value as ._created when the row is first inserted
+    have roughly the same value as ._created when the row is first inserted,
+    but will have later values as the row is updated
 
     If you don't want this functionality just do `_updated = None` in your
     child class

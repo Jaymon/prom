@@ -1095,7 +1095,7 @@ class ModelData(ModelData):
 
         refs = refs or []
         for orm_class in refs:
-            field_name = f"{orm_class}_id"
+            field_name = f"{orm_class.model_name}_id"
             fields[field_name] = self.get_schema_field(field_name, orm_class)
 
         if len(fields) == 0:
