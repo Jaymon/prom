@@ -1,19 +1,18 @@
-version: "3.4"
 
 services:
+  # https://docs.docker.com/reference/compose-file/services/
   database:
-    # https://hub.docker.com/_/postgres
-    image: postgres:15
-    restart: always
+    container_name: prom-dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: database
+    restart: always # unless-stopped
     env_file:
-      - .env.local
-#     environment:
-#       - POSTGRES_DB=pgdb
-#       - POSTGRES_PASSWORD=pgpassword
-#       - POSTGRES_USER=postgres
+      - .env
     volumes:
-      - ./cache/postgres/data:/var/lib/postgresql/data
-      - ./cache/postgres/initdb.d/extensions.sql:/docker-entrypoint-initdb.d/extensions.sql
+      #- ./cache/postgres/data:/var/lib/postgresql/data
+      - ./cache/postgres:/var/lib/postgresql
     ports:
       - "5432:5432"
     # https://stackoverflow.com/questions/57015003/log-all-queries-in-the-official-postgres-docker-image
@@ -33,4 +32,5 @@ services:
       #"log_min_duration_statement=2000"
       "log_min_duration_statement=0"
     ]
+
 
