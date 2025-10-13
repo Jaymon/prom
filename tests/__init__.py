@@ -99,6 +99,14 @@ class EnvironTestCase(IsolatedAsyncioTestCase):
             type(self).interface_class = interface_class
             super().run(*args, **kwargs)
 
+    def _tearDownAsyncioRunner(self):
+        """Wrap parent method to make sure we can call `.run` multiple times
+        This seems like a bug in Python 3.12+ where it doesn't set the
+        property to None so `.run` can't be called more than once
+        """
+        super()._tearDownAsyncioRunner()
+        self._asyncioRunner = None
+
     def countTestCases(self):
         ret = super().countTestCases() # this is always 1
 

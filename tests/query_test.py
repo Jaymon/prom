@@ -1091,6 +1091,7 @@ class IteratorTest(EnvironTestCase):
         it = await orm_class.query.get()
         s = it.__repr__()
         self.assertNotEqual("[]", s)
+        await it.close()
 
     async def test___init__(self):
         index = 4
@@ -1118,6 +1119,8 @@ class IteratorTest(EnvironTestCase):
         with self.assertRaises(ValueError):
             await it[1:2:2]
 
+        await it.close()
+
     async def test___getitem___positive_index(self):
         orm_class = self.get_orm_class()
         pks = await self.insert(orm_class, 10)
@@ -1135,6 +1138,8 @@ class IteratorTest(EnvironTestCase):
         with self.assertRaises(IndexError):
             await it[3]
 
+        await it.close()
+
     async def test___getitem___negative_index(self):
         orm_class = self.get_orm_class()
         pks = await self.insert(orm_class, 10)
@@ -1144,6 +1149,8 @@ class IteratorTest(EnvironTestCase):
         self.assertEqual(pks[-2], (await it[-2]).pk)
         with self.assertRaises(IndexError):
             await it[-(len(pks) + 5)]
+
+        await it.close()
 
     async def test_custom(self):
         """make sure setting a custom Iterator class works normally and wrapped
@@ -1157,7 +1164,6 @@ class IteratorTest(EnvironTestCase):
                 return not o.pk == 1
         orm_class.iterator_class = CustomIterator
 
-        it = await orm_class.query.tolist()
         self.assertEqual(count - 1, len(await orm_class.query.tolist()))
 
     async def test_filter(self):
@@ -1210,11 +1216,12 @@ class IteratorTest(EnvironTestCase):
         count = 5
         i = await self.get_iterator(count)
         self.assertEqual(count, await i.count())
+        await i.close()
 
         orm_class = i.orm_class
-
         i = await orm_class.query.limit(3).get()
         self.assertEqual(3, await i.count())
+        await i.close()
 
     async def test_has_more_1(self):
         limit = 3

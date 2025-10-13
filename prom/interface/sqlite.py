@@ -25,7 +25,6 @@ http://www.numericalexpert.com/blog/sqlite_blob_time/
 import os
 import decimal
 import datetime
-from distutils import dir_util
 import re
 import sqlite3
 import json
@@ -59,6 +58,10 @@ class AsyncSQLiteConnection(SQLConnection, aiosqlite.Connection):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.closed = 0
+
+    # https://github.com/omnilib/aiosqlite/issues/251#issuecomment-2812425014
+#     async def _transaction_start(self):
+#         await self.execute("BEGIN IMMEDIATE")
 
     async def close(self, *args, **kwargs):
         try:
@@ -255,7 +258,7 @@ class SQLite(SQLInterface):
 
             else:
                 # let's try and make the directory path and connect again
-                dir_util.mkpath(path_d)
+                os.makedirs(path_d, exist_ok=True)
                 connection = sqlite3.connect(path, **options)
 
         # https://docs.python.org/2/library/sqlite3.html#row-objects
@@ -380,8 +383,8 @@ class SQLite(SQLInterface):
         if isinstance(e, sqlite3.OperationalError):
             e_msg = str(e)
             if "no such column" in e_msg or "has no column" in e_msg:
-                #INSERT: "table yscrmiklbgdtx has no column named che"
-                #SELECT: "no such column: che"
+                #INSERT: "table <TABLE-NAME> has no column named <FIELD-NAME>"
+                #SELECT: "no such column: <FIELD-NAME>"
                 e = FieldError(e)
 
             elif "no such table" in e_msg:
@@ -405,6 +408,15 @@ class SQLite(SQLInterface):
                 e = CloseError(e)
 
             elif "Incorrect number of bindings supplied" in e_msg:
+                e = PlaceholderError(e)
+
+            elif (
+                "Error binding parameter" in e_msg
+                and "is not supported" in e_msg
+            ):
+                # python 3.12+
+                # sqlite3.ProgrammingError: Error binding parameter 3: type
+                # '<FIELD-NAME>' is not supported
                 e = PlaceholderError(e)
 
             else:

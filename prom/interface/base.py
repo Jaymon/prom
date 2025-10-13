@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from contextlib import asynccontextmanager
 import uuid
+from collections import Counter
 
 from datatypes import (
     LogMixin,
@@ -353,6 +354,7 @@ class Interface(InterfaceABC):
 
     def __init__(self, config=None):
         self.config = config
+        self.connection_stack = Counter()
 
     async def connect(self, config=None, *args, **kwargs):
         """connect to the interface
@@ -514,12 +516,16 @@ class Interface(InterfaceABC):
         if prefix:
             prefix += " "
 
+        self.connection_stack[prefix] += 1
+        prefix_i = self.connection_stack[prefix]
+
         try:
             if connection:
                 if connection.closed:
                     self.log_warning(
-                        "{}Existing connection {} is closed",
+                        "{}{} existing connection {} is closed",
                         prefix,
+                        prefix_i,
                         connection
                     )
 
@@ -527,8 +533,9 @@ class Interface(InterfaceABC):
 
                 else:
                     self.log_debug(
-                        "{}Using existing connection {}",
+                        "{}{} using existing connection {}",
                         prefix,
+                        prefix_i,
                         connection
                     )
 
@@ -536,15 +543,17 @@ class Interface(InterfaceABC):
                 free_connection = True
 
                 self.log_debug(
-                    "{}Getting connection",
+                    "{}{} getting connection",
                     prefix,
+                    prefix_i,
                 )
 
                 connection = await self.get_connection()
 
                 self.log_debug(
-                    "{}Got connection {}",
+                    "{}{} got connection {}",
                     prefix,
+                    prefix_i,
                     connection
                 )
 
@@ -554,19 +563,25 @@ class Interface(InterfaceABC):
             await self.raise_error(e)
 
         finally:
+            self.connection_stack[prefix] -= 1
+            if self.connection_stack[prefix] == 0:
+                del self.connection_stack[prefix]
+
             if free_connection and connection:
                 await self.free_connection(connection)
 
                 self.log_debug(
-                    "{}Connection {} was freed",
+                    "{}{} connection {} was freed",
                     prefix,
+                    prefix_i,
                     connection
                 )
 
             else:
                 self.log_debug(
-                    "{}Existing connection {} was NOT freed",
+                    "{}{} existing connection {} was NOT freed",
                     prefix,
+                    prefix_i,
                     connection
                 )
 
