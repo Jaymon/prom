@@ -1399,7 +1399,7 @@ class OrmsTest(EnvironTestCase):
         ])
 
         with self.environment(PROM_PREFIX=mpath):
-            orm_class = Orm.orm_classes.get("bar")
+            orm_class = Orm.orm_classes.find_class("bar")
             self.assertTrue(issubclass(orm_class, Orm))
             self.assertEqual("bar", orm_class.model_name)
 

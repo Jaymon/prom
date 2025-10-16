@@ -122,18 +122,18 @@ class ModelData(TestData):
     below, so if you pass in a value to .create_orm it will be available in
     .get_fields
     """
-    def _orm_classes(self):
-        """Iterate through a list of orms that should be injected into testdata
-
-        by default, we want to ignore any orm classes that are defined in this
-        library since they are by definition base classes
-
-        :returns: generator[Orm], each orm class
-        """
-        Orm.orm_classes.insert_modules()
-
-        for orm_class in Orm.orm_classes.edges():
-            yield orm_class
+#     def _orm_classes(self):
+#         """Iterate through a list of orms that should be injected into testdata
+# 
+#         by default, we want to ignore any orm classes that are defined in this
+#         library since they are by definition base classes
+# 
+#         :returns: generator[Orm], each orm class
+#         """
+#         Orm.orm_classes.insert_modules()
+# 
+#         for orm_class in Orm.orm_classes.get_abs_classes():
+#             yield orm_class
 
     def _gets_count(self, orm_class, **kwargs):
         """Find how many orm_class should be created
@@ -353,14 +353,24 @@ class ModelData(TestData):
         if modpaths:
             Orm.orm_classes.insert_modules(modpaths)
 
+
         # now go through all the orm classes that have been loaded and install
         # them
         seen_table_names = set()
-        for orm_class in self._orm_classes():
+        for orm_class in Orm.orm_classes.get_abs_classes():
             for s in orm_class.schema.schemas:
                 if s.table_name not in seen_table_names:
                     await s.orm_class.install()
                     seen_table_names.add(s.table_name)
+
+        # now go through all the orm classes that have been loaded and install
+        # them
+#         seen_table_names = set()
+#         for orm_class in self._orm_classes():
+#             for s in orm_class.schema.schemas:
+#                 if s.table_name not in seen_table_names:
+#                     await s.orm_class.install()
+#                     seen_table_names.add(s.table_name)
 
     async def unsafe_reset_orms(self, modpaths=None):
         """Delete all the tables in the db and then load all the Orm child
@@ -590,15 +600,17 @@ class ModelData(TestData):
             raising a ValueError if model_name isn't found
         :returns: Orm, the orm_class.model_name that matches model_name
         """
-        try:
-            return Orm.orm_classes[model_name]
+        return Orm.orm_classes.find_class(model_name, *default)
 
-        except KeyError:
-            if default:
-                return default[0]
-
-            else:
-                raise
+#         try:
+#             return Orm.orm_classes[model_name]
+# 
+#         except KeyError:
+#             if default:
+#                 return default[0]
+# 
+#             else:
+#                 raise
 
     async def get_orm(self, orm_class, **kwargs):
         """get an instance of the orm but don't save it into the db

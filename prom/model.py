@@ -25,16 +25,19 @@ from .config import (
 )
 
 
-class Orms(object):
+class Orms(ClassKeyFinder):
     """Holds all the Orms loaded into memory
 
     See `Orm.__init_subclass__`, this is a class attribute for `Orm` found
     at `Orm.orm_classes`.
     """
-    cutoff_class = None
 
     def __init__(self):
+        super().__init__()
         self.clear()
+
+    def get_class_keys(self, orm_class) -> list[str]:
+        return [orm_class.model_name, orm_class.models_name]
 
     def clear(self):
         """These initializations are broken out from __init__ because .clear
@@ -45,12 +48,7 @@ class Orms(object):
         though .insert_modules will rerun, it might not actually load any
         classes
         """
-        self.finder = ClassKeyFinder()
-        self.finder.get_class_keys = (
-            lambda orm_class: [orm_class.model_name, orm_class.models_name]
-        )
-        if self.cutoff_class:
-            self.finder.set_cutoff_class(self.cutoff_class)
+        super().clear()
 
         # set to True in .insert_modules
         self.inserted_modules = False
@@ -59,6 +57,9 @@ class Orms(object):
         #self.model_prefixes = set()
         self.modules = []
 
+        self._clear_lookups()
+
+    def _clear_lookups(self):
         # refs lookup table (a ref is a foreign key present on an orm
         self.lookup_ref_table = {}
 
@@ -71,59 +72,84 @@ class Orms(object):
 
     def __set_name__(self, owner, name):
         """Tricksy way to get the cutoff class"""
-        self.cutoff_class = owner
-        self.finder.set_cutoff_class(owner)
+        self.set_cutoff_class(owner)
 
-    def insert(self, orm_class):
-        # NOTE -- We can't set cutoff class in .clear because that is called
-        # from .__init__ and this class is created in the Orm signature, so
-        # Orm doesn't actually exist when .__init__ is called
-        #self.finder.set_cutoff_class(Orm)
+    def add_class(self, orm_class):
+        super().add_class(orm_class)
+        self._clear_lookups()
 
-        self.finder.add_class(orm_class)
+#     def insert(self, orm_class):
+#         # NOTE -- We can't set cutoff class in .clear because that is called
+#         # from .__init__ and this class is created in the Orm signature, so
+#         # Orm doesn't actually exist when .__init__ is called
+#         #self.finder.set_cutoff_class(Orm)
+# 
+#         self.finder.add_class(orm_class)
+# 
+#         self.lookup_dep_table = {}
+#         self.lookup_rel_table = {}
 
-        self.lookup_dep_table = {}
-        self.lookup_rel_table = {}
-
-    def __getitem__(self, name_or_class):
-        """If int then treat it like getting the index of a list, if str then
-        treat it like fetching a key on a dictionary
-
-        :param index_or_name_or_class: int|str|Orm, either the index of the
-            list you want or the model name you want
-        :returns: type, the requested Orm child class
-        """
+    def find_class(self, name_or_class, *default):
         if isinstance(name_or_class, str):
             model_name = name_or_class
 
         else:
             model_name = name_or_class.model_name
 
-        if model_name not in self.finder:
-            self.insert_modules()
-
-        return self.finder.find_class(model_name)
-
-    def __getattr__(self, model_name):
         try:
-            return self.__getitem__(model_name)
-
-        except KeyError as e:
-            raise AttributeError(model_name) from e
-
-    def __contains__(self, name_or_class):
-        """If str then it checks model_name keys as a dict, if type then it
-        will check for the class in the list
-
-        :param name_or_class: str|type
-        :returns: bool
-        """
-        try:
-            self.__getitem__(name_or_class)
-            return True
+            return super().find_class(model_name)
 
         except KeyError:
-            return False
+            if self.inserted_modules:
+                if default:
+                    return default[0]
+
+                else:
+                    raise
+
+            else:
+                self.insert_modules()
+                return self.find_class(model_name, *default)
+
+#     def __getitem__(self, name_or_class):
+#         """If int then treat it like getting the index of a list, if str then
+#         treat it like fetching a key on a dictionary
+# 
+#         :param index_or_name_or_class: int|str|Orm, either the index of the
+#             list you want or the model name you want
+#         :returns: type, the requested Orm child class
+#         """
+#         if isinstance(name_or_class, str):
+#             model_name = name_or_class
+# 
+#         else:
+#             model_name = name_or_class.model_name
+# 
+#         if model_name not in self.finder:
+#             self.insert_modules()
+# 
+#         return self.finder.find_class(model_name)
+
+#     def __getattr__(self, model_name):
+#         try:
+#             return self.__getitem__(model_name)
+# 
+#         except KeyError as e:
+#             raise AttributeError(model_name) from e
+
+#     def __contains__(self, name_or_class):
+#         """If str then it checks model_name keys as a dict, if type then it
+#         will check for the class in the list
+# 
+#         :param name_or_class: str|type
+#         :returns: bool
+#         """
+#         try:
+#             self.__getitem__(name_or_class)
+#             return True
+# 
+#         except KeyError:
+#             return False
 
     def insert_modules(self, modpaths=None):
         """Goes through the PROM_PREFIX evnironment variables and loads any
@@ -140,7 +166,7 @@ class Orms(object):
 #             self.modules.extend(ReflectModule(modpath).get_modules())
 
         if modpaths:
-            self.modules.extend(self.finder.get_prefix_modules(modpaths))
+            self.modules.extend(self.get_prefix_modules(modpaths))
 #             for modpath in modpaths:
 #                 #init_orm_classes(modpath)
 #                 self.modules.extend(self.finder.get_prefix_modules(modpaths))
@@ -152,7 +178,7 @@ class Orms(object):
 
                 environ = Environ("PROM_")
 
-                self.modules.extend(self.finder.find_modules(
+                self.modules.extend(self.find_modules(
                     list(environ.paths("PREFIX")),
                     [Dirpath.cwd()],
                     environ.get("AUTODISCOVER_NAME", "models"),
@@ -169,18 +195,18 @@ class Orms(object):
 #                     for mod in self.finder.get_path_modules(paths, "models"):
 #                         self.model_prefixes.add(mod.__name__)
 
-    def get(self, model_name, default=None):
-        """Returns the Orm class found at model_name
-
-        :param model_name: str, the model name you want
-        :param default: Any, only here for full compatibility with dict.get
-        :returns: type, Orm child class
-        """
-        try:
-            return self.__getitem__(model_name)
-
-        except KeyError:
-            return default
+#     def get(self, model_name, default=None):
+#         """Returns the Orm class found at model_name
+# 
+#         :param model_name: str, the model name you want
+#         :param default: Any, only here for full compatibility with dict.get
+#         :returns: type, Orm child class
+#         """
+#         try:
+#             return self.__getitem__(model_name)
+# 
+#         except KeyError:
+#             return default
 
     def get_subclass(
         self,
@@ -197,8 +223,8 @@ class Orms(object):
         :param default: Any
         :returns: Orm, the class if it is found
         """
-        child_orm_class = self.get(child_name_or_class)
-        parent_orm_class = self.get(parent_name_or_class)
+        child_orm_class = self.find_class(child_name_or_class, None)
+        parent_orm_class = self.find_class(parent_name_or_class, None)
 
         if child_orm_class is not None:
             if not issubclass(child_orm_class, parent_orm_class):
@@ -226,7 +252,7 @@ class Orms(object):
         :param name_or_class: str|Orm
         :returns: list[Orm]
         """
-        orm_class = self[name_or_class]
+        orm_class = self.find_class(name_or_class, None)
         model_name = orm_class.model_name
 
         if model_name not in self.lookup_ref_table:
@@ -261,13 +287,12 @@ class Orms(object):
         :param name_or_class: str|Orm
         :returns: list[Orm]
         """
-        orm_class = self[name_or_class]
+        orm_class = self.find_class(name_or_class, None)
         model_name = orm_class.model_name
 
         if model_name not in self.lookup_dep_table:
             dep_classes = []
-            #orm_classes = (t[1].key for t in self.finder.leaves())
-            for dep_class in self.finder.get_abs_classes():
+            for dep_class in self.get_abs_classes():
                 for ref_class in self.get_ref_classes(dep_class.model_name):
                     if ref_class.model_name == model_name:
                         dep_classes.append(dep_class)
@@ -305,10 +330,10 @@ class Orms(object):
         :param name_or_class_2: str|Orm
         :returns: list[Orm]
         """
-        orm_class_1 = self[name_or_class_1]
+        orm_class_1 = self.find_class(name_or_class_1, None)
         model_name_1 = orm_class_1.model_name
 
-        orm_class_2 = self[name_or_class_2]
+        orm_class_2 = self.find_class(name_or_class_2, None)
         model_name_2 = orm_class_2.model_name
 
         key_name = f"{model_name_1}-{model_name_2}"
@@ -330,8 +355,8 @@ class Orms(object):
 
         return self.lookup_rel_table[key_name]
 
-    def getmro(self, klass):
-        yield from self.finder.getmro(klass)
+#     def getmro(self, klass):
+#         yield from self.finder.getmro(klass)
 
 
 class Orm(object):
@@ -716,8 +741,7 @@ class Orm(object):
 
         https://peps.python.org/pep-0487/
         """
-        cls.orm_classes.insert(cls)
-        super().__init_subclass__()
+        cls.orm_classes.add_class(cls)
 
     def fk(self, orm_class):
         """find the field value in self that is the primary key of the passed
@@ -1147,7 +1171,7 @@ class Orm(object):
             foreign key field for self and has values of .pk
         :returns: coroutine[Orm]|coroutine[Iterator]
         """
-        if orm_class := self.orm_classes.get(k):
+        if orm_class := self.orm_classes.find_class(k, None):
             ref_items = orm_class.schema.ref_fields.items()
             for ref_field_name, ref_field in ref_items:
                 ref_class = ref_field.ref
