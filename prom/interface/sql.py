@@ -543,7 +543,7 @@ class SQLInterface(SQLInterfaceABC):
             query_str.append('SELECT')
             is_count_query = kwargs.get('count_query', False)
 
-            if (query is None) or query.compounds:
+            if query.compounds:
                 select_fields_str = "*"
 
             else:
@@ -578,7 +578,7 @@ class SQLInterface(SQLInterfaceABC):
 
             query_str.append('FROM')
 
-            if (query is None) or not query.compounds:
+            if not query.compounds:
                 query_str.append("  {}".format(
                     self.render_table_name_sql(schema)
                 ))
@@ -589,7 +589,7 @@ class SQLInterface(SQLInterfaceABC):
         query_str = []
         query_args = []
 
-        if (query is not None) and query.compounds:
+        if query.compounds:
             query_str.append("(")
             for operator, queries in query.compounds:
                 for i, query in enumerate(queries):
@@ -763,7 +763,7 @@ class SQLInterface(SQLInterfaceABC):
         query_str = []
         query_args = []
 
-        if (query is not None) and query.fields_where:
+        if query.fields_where:
             query_str.append('WHERE')
             or_clause = False
 
@@ -805,7 +805,7 @@ class SQLInterface(SQLInterfaceABC):
         query_str = []
         query_args = []
 
-        if (query is not None) and query.fields_sort:
+        if query.fields_sort:
             query_str.append('ORDER BY')
 
             query_sort_str = []
@@ -837,26 +837,22 @@ class SQLInterface(SQLInterfaceABC):
         """
         query_str = []
         query_args = []
-        limit = offset = 0
 
+        bounds = query.bounds
         fetchone = kwargs.get("fetchone", False)
-        if fetchone:
-            limit = 1
+        if bounds or fetchone:
+            if fetchone:
+                limit = 1
+                offset = bounds.offset
 
-        if query is not None:
-            if bounds := query.bounds:
-                if fetchone:
-                    offset = bounds.offset
+            else:
+                if bounds.has_limit():
+                    limit, offset = bounds.get()
 
                 else:
-                    if bounds.has_limit():
-                        limit, offset = bounds.get()
+                    limit = self.LIMIT_NONE
+                    offset = bounds.offset
 
-                    else:
-                        limit = self.LIMIT_NONE
-                        offset = bounds.offset
-
-        if limit or offset:
             query_str.append(f'LIMIT {limit} OFFSET {offset}')
 
         return query_str, query_args

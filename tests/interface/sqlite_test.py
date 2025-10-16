@@ -309,12 +309,12 @@ class InterfaceTest(_BaseTestInterface):
         i, s = await self.create_table(table_name=table_name)
         await self.insert(i, s, 5)
 
-        r = await i.count(s)
+        r = await i.count(s, Query())
         self.assertEqual(5, r)
 
         await i.unsafe_delete_table(table_name)
 
-        r = await i.count(s)
+        r = await i.count(s, Query())
         self.assertEqual(0, r)
 
         await i.unsafe_delete_table(table_name)

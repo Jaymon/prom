@@ -1019,7 +1019,7 @@ class Interface(InterfaceABC):
         )
         return ret or []
 
-    async def count(self, schema, query=None, **kwargs):
+    async def count(self, schema, query, **kwargs):
         """count matching rows according to query filter criteria
 
         :param schema: Schema instance, the table the query will run against
