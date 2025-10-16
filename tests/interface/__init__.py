@@ -965,18 +965,18 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         i, s = await self.create_table()
         conn = await i.get_connection()
 
-        await conn.transaction_start(prefix="c1")
+        await conn.transaction_start(name="c1")
 
         self.assertIsNotNone(conn.interface)
         await i.insert(s, self.get_fields(s), connection=conn)
         self.assertIsNotNone(conn.interface)
 
         await conn.execute("SELECT true")
-        await conn.transaction_start(prefix="c2")
+        await conn.transaction_start(name="c2")
         await conn.execute("SELECT true")
-        await conn.transaction_start(prefix="c3")
+        await conn.transaction_start(name="c3")
         await conn.execute("SELECT true")
-        await conn.transaction_start(prefix="c4")
+        await conn.transaction_start(name="c4")
 
         self.assertIsNotNone(conn.interface)
         await i.insert(s, self.get_fields(s), connection=conn)
@@ -996,22 +996,22 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         i = self.get_interface()
         conn = await i.get_connection()
 
-        await conn.transaction_start(nest=False)
+        await conn.transaction_start(name="c1", nest=False)
         tx = conn.transaction_current()
         self.assertFalse(tx["ignored"])
         self.assertFalse(tx["nest"])
 
-        await conn.transaction_start()
+        await conn.transaction_start(name="c2")
         tx = conn.transaction_current()
         self.assertTrue(tx["ignored"])
         self.assertFalse(tx["nest"])
 
-        await conn.transaction_start(nest=True)
+        await conn.transaction_start(name="c3", nest=True)
         tx = conn.transaction_current()
         self.assertFalse(tx["ignored"])
         self.assertTrue(tx["nest"])
 
-        await conn.transaction_start()
+        await conn.transaction_start(name="c4")
         tx = conn.transaction_current()
         self.assertFalse(tx["ignored"])
         self.assertTrue(tx["nest"])
@@ -1021,7 +1021,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         await conn.transaction_stop()
 
         # a new tx that doesn't set nest should inherit ancestor's setting
-        await conn.transaction_start()
+        await conn.transaction_start(name="c5")
         tx = conn.transaction_current()
         self.assertTrue(tx["ignored"])
         self.assertFalse(tx["nest"])

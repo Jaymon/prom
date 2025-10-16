@@ -45,13 +45,13 @@ class ModelData(TestData):
     Orm.model_name and Orm.models_name (get_*_fields only ever corresponds to
     Orm.model_name).
 
-    NOTE -- Because this class only creates those methods for Orm classes
+    .. note:: Because this class only creates those methods for Orm classes
     loaded into memory you need to import the modules for the classes you want
     to test
 
     Maybe the best way to understand what this does is by example.
 
-    :Example:
+    :example:
         from prom import Orm
 
         class Foobar(Orm):
@@ -88,7 +88,7 @@ class ModelData(TestData):
     get_foobar_fields and get_orm(Foobar, **kwargs) would also call
     get_foobar_fields. So all of these methods can be mixed and matched
 
-    :Example:
+    :example:
         from prom.extras.testdata import ModelData
 
         class MyModelData(ModelData):
@@ -98,7 +98,7 @@ class ModelData(TestData):
     If you'd like to customize the testdata method names, you can set the
     Orm.model_name or the Orm.models_name class properties
 
-    :Example:
+    :example:
         from prom import Orm
 
         class Foobar(Orm):
@@ -122,19 +122,6 @@ class ModelData(TestData):
     below, so if you pass in a value to .create_orm it will be available in
     .get_fields
     """
-#     def _orm_classes(self):
-#         """Iterate through a list of orms that should be injected into testdata
-# 
-#         by default, we want to ignore any orm classes that are defined in this
-#         library since they are by definition base classes
-# 
-#         :returns: generator[Orm], each orm class
-#         """
-#         Orm.orm_classes.insert_modules()
-# 
-#         for orm_class in Orm.orm_classes.get_abs_classes():
-#             yield orm_class
-
     def _gets_count(self, orm_class, **kwargs):
         """Find how many orm_class should be created
 
@@ -353,7 +340,6 @@ class ModelData(TestData):
         if modpaths:
             Orm.orm_classes.insert_modules(modpaths)
 
-
         # now go through all the orm classes that have been loaded and install
         # them
         seen_table_names = set()
@@ -362,15 +348,6 @@ class ModelData(TestData):
                 if s.table_name not in seen_table_names:
                     await s.orm_class.install()
                     seen_table_names.add(s.table_name)
-
-        # now go through all the orm classes that have been loaded and install
-        # them
-#         seen_table_names = set()
-#         for orm_class in self._orm_classes():
-#             for s in orm_class.schema.schemas:
-#                 if s.table_name not in seen_table_names:
-#                     await s.orm_class.install()
-#                     seen_table_names.add(s.table_name)
 
     async def unsafe_reset_orms(self, modpaths=None):
         """Delete all the tables in the db and then load all the Orm child
@@ -601,16 +578,6 @@ class ModelData(TestData):
         :returns: Orm, the orm_class.model_name that matches model_name
         """
         return Orm.orm_classes.find_class(model_name, *default)
-
-#         try:
-#             return Orm.orm_classes[model_name]
-# 
-#         except KeyError:
-#             if default:
-#                 return default[0]
-# 
-#             else:
-#                 raise
 
     async def get_orm(self, orm_class, **kwargs):
         """get an instance of the orm but don't save it into the db
@@ -1169,28 +1136,6 @@ class ModelData(ModelData):
 
         return orm_class
 
-#     def __getattr__(self, key):
-#         pout.v(key)
-#         v = super().__getattr__(key)
-#         pout.v(v)
-#         return v
-# 
-#     def __getattribute__(self, key):
-#         if key == "get_schema":
-#             pout.v(key)
-#         try:
-#             v = super().__getattribute__(key)
-# 
-#         except AttributeError as e:
-#             if key == "get_schema":
-#                 pout.v(e)
-# 
-#             raise
-# 
-#         if key == "get_schema":
-#             pout.v(v)
-#         return v
-
     def get_orm_class(
         self,
         model_name: str = "",
@@ -1228,11 +1173,7 @@ class ModelData(ModelData):
 
                 else:
                     kwargs.setdefault("suffix", "_orm")
-#                     pout.b("start get_schema")
-                    #pout.v(self.get_schema)
-                    #pout.i(self)
                     schema = self.get_schema(**kwargs)
-#                     pout.b("stop get_schema")
 
                 parent_class = kwargs.get("parent_class", Orm)
 

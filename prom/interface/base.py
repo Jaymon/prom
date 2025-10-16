@@ -54,6 +54,7 @@ class ConnectionABC(LogMixin):
 
 class Connection(ConnectionABC):
     """holds common methods that all raw connections should have"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -90,20 +91,7 @@ class Connection(ConnectionABC):
 
         return names
 
-    def transaction_name(self, **kwargs):
-        """generate a random transaction name for use in start_transaction() and
-        fail_transaction()
-
-        :param prefix: str, to better track transactions in logs you can give a
-            prefix name that will be prepended to the auto-generated name
-        """
-        if not (name := kwargs.get("name", "")):
-            suffix = str(uuid.uuid4())[-5:]
-            prefix = kwargs.get("prefix", "") or "p"
-            name = f"{prefix}_{suffix}"
-        return name
-
-    def transaction_info(self, **kwargs):
+    def transaction_info(self, name, **kwargs):
         """Create a new transaction dict that will be placed on the
         .transactions stack
 
@@ -122,7 +110,7 @@ class Connection(ConnectionABC):
             - ignored: bool, True if this tx is going to be ignored
             - index: int, the depth of the transaction
         """
-        name = self.transaction_name(**kwargs)
+        #name = self.transaction_name(**kwargs)
         current_tx = self.transaction_current()
         nest = kwargs.get("nest", current_tx.get("nest", True))
 
@@ -499,6 +487,26 @@ class Interface(InterfaceABC):
         self.log_debug("Closed Connection {}", self.config.interface_name)
         return True
 
+    def create_connection_name(self, prefix: str = "conn", **kwargs) -> str:
+        """Create a new connection name using `prefix`"""
+        self.connection_stack[prefix] += 1
+        return self.get_connection_name(prefix)
+
+    def get_connection_name(self, prefix: str = "conn", **kwargs) -> str:
+        """get the currention connection name at `prefix`
+
+        If you need a new connection name use `.create_connection_name`
+        """
+        suffix = self.connection_stack[prefix]
+        name = f"{prefix}_{suffix}"
+        return name
+
+    def free_connection_name(self, prefix: str = "conn", **kwargs):
+        """Free the connection name at `prefix` so it can be used again"""
+        self.connection_stack[prefix] -= 1
+        if self.connection_stack[prefix] <= 0:
+            del self.connection_stack[prefix]
+
     @asynccontextmanager
     async def connection(self, connection=None, **kwargs):
         """Any time you need a connection you should use this context manager,
@@ -511,50 +519,37 @@ class Interface(InterfaceABC):
                 # do something with connection
         """
         free_connection = False
-
-        prefix = kwargs.get("prefix", "")
-        if prefix:
-            prefix += " "
-
-        self.connection_stack[prefix] += 1
-        prefix_i = self.connection_stack[prefix]
+        conn_name = self.create_connection_name(**kwargs)
 
         try:
             if connection:
                 if connection.closed:
                     self.log_warning(
-                        "{}{} existing connection {} is closed",
-                        prefix,
-                        prefix_i,
-                        connection
+                        "{} existing connection {} is closed",
+                        conn_name,
+                        connection,
                     )
 
                     connection = None
 
                 else:
                     self.log_debug(
-                        "{}{} using existing connection {}",
-                        prefix,
-                        prefix_i,
-                        connection
+                        "{} using existing connection {}",
+                        conn_name,
+                        connection,
                     )
 
             if connection is None:
                 free_connection = True
 
-                self.log_debug(
-                    "{}{} getting connection",
-                    prefix,
-                    prefix_i,
-                )
+                self.log_debug("{} getting connection", conn_name)
 
                 connection = await self.get_connection()
 
                 self.log_debug(
-                    "{}{} got connection {}",
-                    prefix,
-                    prefix_i,
-                    connection
+                    "{} got connection {}",
+                    conn_name,
+                    connection,
                 )
 
             yield connection
@@ -563,26 +558,22 @@ class Interface(InterfaceABC):
             await self.raise_error(e)
 
         finally:
-            self.connection_stack[prefix] -= 1
-            if self.connection_stack[prefix] == 0:
-                del self.connection_stack[prefix]
+            self.free_connection_name(**kwargs)
 
             if free_connection and connection:
                 await self.free_connection(connection)
 
                 self.log_debug(
-                    "{}{} connection {} was freed",
-                    prefix,
-                    prefix_i,
-                    connection
+                    "{} connection {} was freed",
+                    conn_name,
+                    connection,
                 )
 
             else:
                 self.log_debug(
-                    "{}{} existing connection {} was NOT freed",
-                    prefix,
-                    prefix_i,
-                    connection
+                    "{} existing connection {} was NOT freed",
+                    conn_name,
+                    connection,
                 )
 
     @asynccontextmanager
@@ -603,6 +594,8 @@ class Interface(InterfaceABC):
             # those db calls will be committed by this line
         """
         async with self.connection(connection, **kwargs) as connection:
+            conn_name = self.get_connection_name(**kwargs)
+            kwargs["name"] = conn_name
             await connection.transaction_start(**kwargs)
             try:
                 yield connection
