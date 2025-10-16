@@ -1157,6 +1157,28 @@ class ModelData(ModelData):
 
         return orm_class
 
+#     def __getattr__(self, key):
+#         pout.v(key)
+#         v = super().__getattr__(key)
+#         pout.v(v)
+#         return v
+# 
+#     def __getattribute__(self, key):
+#         if key == "get_schema":
+#             pout.v(key)
+#         try:
+#             v = super().__getattribute__(key)
+# 
+#         except AttributeError as e:
+#             if key == "get_schema":
+#                 pout.v(e)
+# 
+#             raise
+# 
+#         if key == "get_schema":
+#             pout.v(v)
+#         return v
+
     def get_orm_class(
         self,
         model_name: str = "",
@@ -1194,7 +1216,11 @@ class ModelData(ModelData):
 
                 else:
                     kwargs.setdefault("suffix", "_orm")
+#                     pout.b("start get_schema")
+                    #pout.v(self.get_schema)
+                    #pout.i(self)
                     schema = self.get_schema(**kwargs)
+#                     pout.b("stop get_schema")
 
                 parent_class = kwargs.get("parent_class", Orm)
 

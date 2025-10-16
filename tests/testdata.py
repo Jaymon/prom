@@ -286,6 +286,7 @@ class InterfaceData(TestData):
             if not fields_or_indexes[k]:
                 fields_or_indexes.pop(k)
 
+        fields_or_indexes.pop("suffix", None)
         s = Schema(
             self.get_table_name(table_name, prefix=prefix),
             **fields_or_indexes

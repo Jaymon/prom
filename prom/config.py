@@ -323,7 +323,9 @@ class Schema(object):
             self.set_index(name, val)
 
         else:
-            raise TypeError("Not a Field or Index instance")
+            raise TypeError(
+                f"Type {type(val)} is not a Field or Index instance"
+            )
 
     def __getattr__(self, field_name):
         """return the Field instance for the given name

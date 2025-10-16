@@ -6,11 +6,10 @@ from datatypes import (
     EnglishWord,
     NamingConvention,
     classproperty,
-    OrderedSubclasses,
+    ClassKeyFinder,
     ReflectModule,
     Environ,
     Dirpath,
-    ReflectPath,
 )
 
 from .compat import *
@@ -26,46 +25,39 @@ from .config import (
 )
 
 
-class Orms(OrderedSubclasses):
+class Orms(object):
     """Holds all the Orms loaded into memory
 
-    See Orm.__init_subclass__, this is a class attribute found Orm.orm_classes.
-
-    This class is a hybrid Mapping and Sequence, if you iterate through it will
-    iterate the values like a list, if you use item indexes then it will act
-    like a dict
+    See `Orm.__init_subclass__`, this is a class attribute for `Orm` found
+    at `Orm.orm_classes`.
     """
-    def default_cutoff(self):
-        return (Orm,)
+    cutoff_class = None
 
     def __init__(self):
-        super().__init__(
-            insert_cutoff_classes=False
-        )
+        self.clear()
 
-        self.prepare()
-
-        # should always be `prom` and is used in ._is_valid_subclass to make
-        # sure only true child classes are inserted
-        self.module_name = ReflectModule(__name__).modroot
-
-    def prepare(self):
+    def clear(self):
         """These initializations are broken out from __init__ because .clear
         will also need to use them
 
         NOTE -- This completely resets the state of the class but that means
-        it won't reload any classes previously added so even though 
-        .insert_modules will rerun, it might not actually load any classes
+        it won't reload any classes previously loaded into memory so even
+        though .insert_modules will rerun, it might not actually load any
+        classes
         """
+        self.finder = ClassKeyFinder()
+        self.finder.get_class_keys = (
+            lambda orm_class: [orm_class.model_name, orm_class.models_name]
+        )
+        if self.cutoff_class:
+            self.finder.set_cutoff_class(self.cutoff_class)
 
         # set to True in .insert_modules
         self.inserted_modules = False
 
         # holds any loaded model prefixes
-        self.model_prefixes = set()
-
-        # model(s)_name is the key, an Orm class child is the value
-        self.lookup_orm_table = {}
+        #self.model_prefixes = set()
+        self.modules = []
 
         # refs lookup table (a ref is a foreign key present on an orm
         self.lookup_ref_table = {}
@@ -77,24 +69,23 @@ class Orms(OrderedSubclasses):
         # lookup table for "lookup table" orms
         self.lookup_rel_table = {}
 
-    def clear(self):
-        super().clear()
-        self.prepare()
+    def __set_name__(self, owner, name):
+        """Tricksy way to get the cutoff class"""
+        self.cutoff_class = owner
+        self.finder.set_cutoff_class(owner)
 
-    def _insert(self, orm_class, class_info):
-        super()._insert(orm_class, class_info)
+    def insert(self, orm_class):
+        # NOTE -- We can't set cutoff class in .clear because that is called
+        # from .__init__ and this class is created in the Orm signature, so
+        # Orm doesn't actually exist when .__init__ is called
+        #self.finder.set_cutoff_class(Orm)
 
-        if not class_info["in_info"]:
-            # this orm class is the new edge for this model name
-            self.lookup_orm_table[orm_class.model_name] = orm_class
-            self.lookup_orm_table[orm_class.models_name] = orm_class
+        self.finder.add_class(orm_class)
 
-        # we reset the dependency tables because we've potentially added new
-        # dependencies
         self.lookup_dep_table = {}
         self.lookup_rel_table = {}
 
-    def __getitem__(self, index_or_name_or_class):
+    def __getitem__(self, name_or_class):
         """If int then treat it like getting the index of a list, if str then
         treat it like fetching a key on a dictionary
 
@@ -102,20 +93,16 @@ class Orms(OrderedSubclasses):
             list you want or the model name you want
         :returns: type, the requested Orm child class
         """
-        if isinstance(index_or_name_or_class, int):
-            return super().__getitem__(index_or_name_or_class)
+        if isinstance(name_or_class, str):
+            model_name = name_or_class
 
         else:
-            if isinstance(index_or_name_or_class, str):
-                model_name = index_or_name_or_class
+            model_name = name_or_class.model_name
 
-            else:
-                model_name = index_or_name_or_class.model_name
+        if model_name not in self.finder:
+            self.insert_modules()
 
-            if model_name not in self.lookup_orm_table:
-                self.insert_modules()
-
-            return self.lookup_orm_table[model_name]
+        return self.finder.find_class(model_name)
 
     def __getattr__(self, model_name):
         try:
@@ -131,11 +118,12 @@ class Orms(OrderedSubclasses):
         :param name_or_class: str|type
         :returns: bool
         """
-        if isinstance(name_or_class, str):
-            return name_or_class in self.lookup_orm_table
+        try:
+            self.__getitem__(name_or_class)
+            return True
 
-        else:
-            return super().__contains__(name_or_class)
+        except KeyError:
+            return False
 
     def insert_modules(self, modpaths=None):
         """Goes through the PROM_PREFIX evnironment variables and loads any
@@ -145,26 +133,41 @@ class Orms(OrderedSubclasses):
         :param modpaths: Sequence[str], a list of modpaths (eg ["foo.bar",
             "che"])
         """
+#         def init_orm_classes(modpath):
+#             #self.model_prefixes.add(modpath)
+#             # this will load all the modules into memory, causing
+#             # the Orm.__init_subclass__  method to fire
+#             self.modules.extend(ReflectModule(modpath).get_modules())
+
         if modpaths:
-            for modath in modpaths:
-                self.model_prefixes.add(modpath)
-                super().insert_modules(modpath)
+            self.modules.extend(self.finder.get_prefix_modules(modpaths))
+#             for modpath in modpaths:
+#                 #init_orm_classes(modpath)
+#                 self.modules.extend(self.finder.get_prefix_modules(modpaths))
+#                 self.modules.extend(ReflectModule(modpath).get_modules())
 
         else:
             if not self.inserted_modules:
-                environ = Environ("PROM_")
-                for modpath in environ.paths("PREFIX"):
-                    self.model_prefixes.add(modpath)
-                    super().insert_modules(modpath)
-
-                # if there aren't any defined prefixes let's inspect the
-                # current working directory
-                if not self.model_prefixes:
-                    rp = ReflectPath(Dirpath.cwd())
-                    for mod in rp.find_modules("models"):
-                        self.model_prefixes.add(mod.__name__)
-
                 self.inserted_modules = True
+
+                environ = Environ("PROM_")
+
+                self.modules.extend(self.finder.find_modules(
+                    list(environ.paths("PREFIX")),
+                    [Dirpath.cwd()],
+                    environ.get("AUTODISCOVER_NAME", "models"),
+                ))
+
+#                 environ = Environ("PROM_")
+#                 for modpath in environ.paths("PREFIX"):
+#                     init_orm_classes(modpath)
+# 
+#                 # if there aren't any defined prefixes let's inspect the
+#                 # current working directory
+#                 if not self.model_prefixes:
+#                     paths = [Dirpath.cwd()]
+#                     for mod in self.finder.get_path_modules(paths, "models"):
+#                         self.model_prefixes.add(mod.__name__)
 
     def get(self, model_name, default=None):
         """Returns the Orm class found at model_name
@@ -183,7 +186,7 @@ class Orms(OrderedSubclasses):
         self,
         child_name_or_class,
         parent_name_or_class,
-        default=None
+        default=None,
     ):
         """Returns the orm_class of child_name_or_class only if it is a
         child of parent_name_or_class
@@ -210,7 +213,7 @@ class Orms(OrderedSubclasses):
 
         A reference class is a class referenced in `name_or_class` fields
 
-        :Example:
+        :example:
             class Foo(Orm):
                 pass
 
@@ -263,7 +266,8 @@ class Orms(OrderedSubclasses):
 
         if model_name not in self.lookup_dep_table:
             dep_classes = []
-            for dep_class in self:
+            #orm_classes = (t[1].key for t in self.finder.leaves())
+            for dep_class in self.finder.get_abs_classes():
                 for ref_class in self.get_ref_classes(dep_class.model_name):
                     if ref_class.model_name == model_name:
                         dep_classes.append(dep_class)
@@ -283,7 +287,7 @@ class Orms(OrderedSubclasses):
         A relatonship class is a class that references both `name_or_class_1`
         and `name_or_class_2` in its fields
 
-        :Example:
+        :example:
             class Foo(Orm):
                 pass
 
@@ -326,16 +330,8 @@ class Orms(OrderedSubclasses):
 
         return self.lookup_rel_table[key_name]
 
-#     def _is_valid_subclass(self, orm_class, cutoff_classes):
-#         ret = super()._is_valid_subclass(orm_class, cutoff_classes)
-#         if ret:
-#             # while we check for Orm derived child classes, we also don't want
-#             # any Orm child classes that are defined in prom since those are
-#             # also base classes and we're only interested in valid child
-#             # classes that can access a db
-#             ret = not orm_class.__module__.startswith(self.module_name)
-# 
-#         return ret
+    def getmro(self, klass):
+        yield from self.finder.getmro(klass)
 
 
 class Orm(object):

@@ -284,6 +284,9 @@ class ModelDataTest(TestCase):
 
         d = _OtherData()
 
+        pout.v(Orm.orm_classes)
+        pout.v(Orm.orm_classes.finder.class_keys)
+
         fields = await d.get_grand_child_fields()
         self.assertTrue(fields["properties"]["parent_fields"])
 
