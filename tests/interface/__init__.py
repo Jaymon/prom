@@ -529,7 +529,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         i, s = await self.create_table()
         _ids = await self.insert(i, s, 5)
 
-        l = await i.get(s, None)
+        l = await i.get(s, Query())
         self.assertEqual(5, len(l))
 
     async def test_get_pagination_1(self):

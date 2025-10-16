@@ -9,7 +9,6 @@ from datatypes import (
 )
 
 from ..compat import *
-from ..query import Query
 from ..exception import (
     InterfaceError,
     UniqueError,
@@ -95,14 +94,11 @@ class Connection(ConnectionABC):
         """Create a new transaction dict that will be placed on the
         .transactions stack
 
-        :param **kwargs:
-            - nest: bool, True if this (and children unless passed in) will run
-                nested transactions. If this is False then subsequent calls to
-                .transaction_start will be ignored unless nest=True is passed in
-                again
-            - name: str, the transaction name
-            - prefix: str, used to create a transaction name (see
-              .transaction_name)
+        :param name: str, the transaction name
+        :keyword nest: bool, True if this (and children unless passed in) will
+            run nested transactions. If this is False then subsequent calls to
+            .transaction_start will be ignored unless nest=True is passed in
+            again
         :returns: dict[str], the created transaction with keys:
             - nest: bool, the value of kwargs["nest"] or of
               .transaction_current()["nest"]
@@ -110,7 +106,6 @@ class Connection(ConnectionABC):
             - ignored: bool, True if this tx is going to be ignored
             - index: int, the depth of the transaction
         """
-        #name = self.transaction_name(**kwargs)
         current_tx = self.transaction_current()
         nest = kwargs.get("nest", current_tx.get("nest", True))
 
@@ -1000,7 +995,7 @@ class Interface(InterfaceABC):
             **kwargs
         )
 
-    async def one(self, schema, query=None, **kwargs):
+    async def one(self, schema, query, **kwargs):
         """get one row from the db matching filters set in query
 
         :param schema: Schema instance, the table the query will run against
@@ -1009,7 +1004,7 @@ class Interface(InterfaceABC):
         """
         return await self.get(schema, query, fetchone=True, **kwargs) or {}
 
-    async def get(self, schema, query=None, **kwargs):
+    async def get(self, schema, query, **kwargs):
         """get matching rows from the db matching filters set in query
 
         :param schema: Schema instance, the table the query will run against
@@ -1019,7 +1014,7 @@ class Interface(InterfaceABC):
         ret = await self.execute_read(
             self._get,
             schema=schema,
-            query=query or Query(),
+            query=query,
             **kwargs
         )
         return ret or []
@@ -1034,7 +1029,7 @@ class Interface(InterfaceABC):
         ret = await self.execute_read(
             self._count,
             schema=schema,
-            query=query or Query(),
+            query=query,
             **kwargs
         )
         return int(ret) if ret else 0
