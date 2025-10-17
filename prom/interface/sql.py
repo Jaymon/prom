@@ -465,47 +465,68 @@ class SQLInterface(SQLInterfaceABC):
         await self.set_table(schema, **kwargs)
         return True
 
-    async def _transaction_start(self, connection, tx):
+    async def _transaction_start(self, connection, tx, **kwargs):
         if tx["index"] == 0:
-            await self._raw("BEGIN", ignore_result=True)
+            query_str = "BEGIN"
 
         else:
             # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-            await self._raw(
-                "SAVEPOINT {}".format(
-                    self.render_field_name_sql(tx["name"])
-                ),
-                ignore_result=True,
+            query_str = "SAVEPOINT {}".format(
+                self.render_field_name_sql(tx["name"])
             )
 
-    async def _transaction_stop(self, connection, tx):
+        tx_kwargs = {
+            "connection": connection,
+            "ignore_result": True,
+        }
+
+        await self._raw(
+            query_str,
+            **{**kwargs, **tx_kwargs},
+        )
+
+    async def _transaction_stop(self, connection, tx, **kwargs):
         """
         http://initd.org/psycopg/docs/usage.html#transactions-control
         https://news.ycombinator.com/item?id=4269241
         """
         if tx["index"] == 0:
-            await self._raw("COMMIT", ignore_result=True)
+            query_str = "COMMIT"
 
         else:
-            await self._raw(
-                "RELEASE {}".format(
-                    self.render_field_name_sql(tx["name"])
-                ),
-                ignore_result=True,
+            query_str = "RELEASE {}".format(
+                self.render_field_name_sql(tx["name"])
             )
 
-    async def _transaction_fail(self, connection, tx):
+        tx_kwargs = {
+            "connection": connection,
+            "ignore_result": True,
+        }
+
+        await self._raw(
+            query_str,
+            **{**kwargs, **tx_kwargs},
+        )
+
+    async def _transaction_fail(self, connection, tx, **kwargs):
         if tx["index"] == 0:
-            await self._raw("ROLLBACK", ignore_result=True)
+            query_str = "ROLLBACK"
 
         else:
             # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-            await self._raw(
-                "ROLLBACK TO SAVEPOINT {}".format(
-                    self.render_field_name_sql(tx["name"])
-                ),
-                ignore_result=True,
+            query_str = "ROLLBACK TO SAVEPOINT {}".format(
+                self.render_field_name_sql(tx["name"])
             )
+
+        tx_kwargs = {
+            "connection": connection,
+            "ignore_result": True,
+        }
+
+        await self._raw(
+            query_str,
+            **{**kwargs, **tx_kwargs},
+        )
 
     def render_table_name_sql(self, schema):
         return self.render_field_name_sql(schema)

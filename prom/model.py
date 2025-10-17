@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, AbstractAsyncContextManager
 import inspect
 
 from datatypes import (
@@ -469,21 +469,29 @@ class Orm(object):
 
     @classmethod
     @asynccontextmanager
-    async def transaction(cls, **kwargs):
+    async def transaction(
+        cls,
+        prefix: str = "",
+        **kwargs
+    ) -> AbstractAsyncContextManager:
         """Create a transaction for this Orm
 
-        :Example:
+        :example:
             async with FooOrm.transaction() as conn:
                 o = FooOrm(foo=1)
                 o.save(connection=conn)
 
-        :param **kwargs: passed through to the Interface.transaction
-            * prefix: str, the name of the transaction you want to use
-            * nest: bool, True if you want nested transactions to be created,
-                False to ignore nested transactions
+        :param prefix: str, the name of the transaction you want to use
+        :keyword nest: bool, True if you want nested transactions to be created,
+            False to ignore nested transactions
+        :keyword **kwargs: passed through to the Interface.transaction
         :returns: Connection, the connection instance with an active tx
         """
-        kwargs.setdefault("prefix", f"{cls.__name__}_{cls.connection_name}_tx")
+        if prefix:
+            kwargs["prefix"] = prefix
+
+        else:
+            kwargs["prefix"] = f"{cls.__name__}_{cls.connection_name}_tx"
 
         async with cls.interface.transaction(**kwargs) as conn:
             yield conn

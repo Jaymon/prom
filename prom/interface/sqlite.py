@@ -48,33 +48,6 @@ from ..compat import *
 from .sql import SQLInterface
 
 
-class AsyncSQLiteConnection(aiosqlite.Connection):
-    """Thin wrapper around the default connection to make sure it has a similar
-    interface to Postgres' connection instance so the common code can all be the
-    same in the Interface class
-
-    https://docs.python.org/3.11/library/sqlite3.html#sqlite3.Connection
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.closed = 0
-
-    # https://github.com/omnilib/aiosqlite/issues/251#issuecomment-2812425014
-#     async def _transaction_start(self):
-#         await self.execute("BEGIN IMMEDIATE")
-
-    async def close(self, *args, **kwargs):
-        try:
-            return await super().close(*args, **kwargs)
-
-        except ValueError:
-            # aiosqlite: ValueError: no active connection
-            pass
-
-        finally:
-            self.closed = 1
-
-
 class BooleanType(object):
     FIELD_TYPE = 'BOOL'
 
@@ -300,13 +273,14 @@ class SQLite(SQLInterface):
         return connection
 
     async def _connect(self, config):
-        self._connection = AsyncSQLiteConnection(
-        #self._connection = aiosqlite.Connection(
+        #self._connection = AsyncSQLiteConnection(
+        self._connection = aiosqlite.Connection(
             self._connector,
             iter_chunk_size=config.options.get("iter_chunk_size", 64)
         )
         self._connection.start()
         await self._connection._connect()
+        self._connection.closed = 0
         await self.configure_connection(connection=self._connection)
 
     async def _configure_connection(self, **kwargs):
@@ -323,6 +297,7 @@ class SQLite(SQLInterface):
 
     async def _close(self):
         await self._connection.close()
+        self._connection.closed = 1 # let other references know
         self._connection = None
 
     async def _readonly(self, readonly, **kwargs):

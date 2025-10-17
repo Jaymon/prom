@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, AbstractAsyncContextManager
 import uuid
 from collections import Counter, defaultdict
 
@@ -135,19 +135,19 @@ class InterfaceABC(LogMixin):
         """
         raise NotImplementedError()
 
-    async def _transaction_start(self, connection, tx):
+    async def _transaction_start(self, connection, tx, **kwargs):
         """Called when the first transaction is started"""
         pass
 
-    async def _transaction_ignoring(self, connection, tx):
+    async def _transaction_ignoring(self, connection, tx, **kwargs):
         """Called when nested transaction is ignored instead of started"""
         pass
 
-    async def _transaction_stop(self, connection, tx):
+    async def _transaction_stop(self, connection, tx, **kwargs):
         """Called when the last transaction is stopped"""
         pass
 
-    async def _transaction_fail(self, connection, tx):
+    async def _transaction_fail(self, connection, tx, **kwargs):
         """Called when the last transaction has failed"""
         pass
 
@@ -280,15 +280,7 @@ class Interface(InterfaceABC):
         if not self.is_connected():
             await self.connect()
 
-        connection = await self._get_connection()
-
-        if connection.closed:
-            # we've gotten into a bad state so let's try reconnecting
-            await self.reconnect()
-            connection = await self._get_connection()
-
-#         connection.interface = self
-        return connection
+        return await self._get_connection()
 
     async def free_connection(self, connection):
         """When .connection is done with a connection it calls this method"""
@@ -309,12 +301,12 @@ class Interface(InterfaceABC):
         self.log_debug("Closed Connection {}", self.config.interface_name)
         return True
 
-    def create_connection_name(self, prefix: str = "conn", **kwargs) -> str:
+    def create_connection_name(self, prefix: str, **kwargs) -> str:
         """Create a new connection name using `prefix`"""
         self.connection_stack[prefix] += 1
         return self.get_connection_name(prefix)
 
-    def get_connection_name(self, prefix: str = "conn", **kwargs) -> str:
+    def get_connection_name(self, prefix: str, **kwargs) -> str:
         """get the currention connection name at `prefix`
 
         If you need a new connection name use `.create_connection_name`
@@ -323,27 +315,34 @@ class Interface(InterfaceABC):
         name = f"{prefix}_{suffix}"
         return name
 
-    def free_connection_name(self, prefix: str = "conn", **kwargs):
+    def free_connection_name(self, prefix: str, **kwargs):
         """Free the connection name at `prefix` so it can be used again"""
         self.connection_stack[prefix] -= 1
         if self.connection_stack[prefix] <= 0:
             del self.connection_stack[prefix]
 
-    def connection_name(self, connection):
+    def connection_name(self, connection) -> str:
+        """This is used in logging to get an identifiable connection string"""
         return f"0x{id(connection):02x}"
 
     @asynccontextmanager
-    async def connection(self, connection=None, **kwargs):
+    async def connection(
+        self,
+        prefix: str = "",
+        connection = None,
+        **kwargs,
+    ) -> AbstractAsyncContextManager:
         """Any time you need a connection you should use this context manager,
         this is the only place that wraps exceptions in InterfaceError, so all
         connections should go through this method or .transaction if you need
         to start a transaction
 
-        :Example:
+        :example:
             with self.connection(**kwargs) as connection:
                 # do something with connection
         """
         free_connection = False
+        kwargs["prefix"] = prefix if prefix else "conn"
         conn_name = self.create_connection_name(**kwargs)
 
         try:
@@ -364,15 +363,8 @@ class Interface(InterfaceABC):
                         " provided"
                         )
 
-#                 self.log_debug(
-#                     f"{self.connection_name(connection)} Connection"
-#                     f" ({conn_name})"
-#                     " provided"
-#                 )
-
             if connection is None:
                 free_connection = True
-
                 connection = await self.get_connection()
 
                 self.log_debug(
@@ -389,24 +381,24 @@ class Interface(InterfaceABC):
         finally:
             self.free_connection_name(**kwargs)
 
-            if free_connection and connection:
-                await self.free_connection(connection)
+            if connection:
+                if free_connection:
+                    await self.free_connection(connection)
 
+                s = "freed" if free_connection else "NOT freed"
                 self.log_debug(
                     f"{self.connection_name(connection)} Connection"
                     f" ({conn_name})"
-                    " freed"
+                    f" {s}"
                 )
 
-#             else:
-#                 self.log_debug(
-#                     "{} existing connection {} was NOT freed",
-#                     conn_name,
-#                     connection,
-#                 )
-
     @asynccontextmanager
-    async def transaction(self, connection=None, **kwargs):
+    async def transaction(
+        self,
+        prefix: str = "",
+        connection = None,
+        **kwargs,
+    ) -> AbstractAsyncContextManager:
         """A simple context manager useful for when you want to wrap a bunch of
         db calls in a transaction, this is used internally for any write
         statements
@@ -422,7 +414,10 @@ class Interface(InterfaceABC):
                 # do a bunch of calls
             # those db calls will be committed by this line
         """
-        async with self.connection(connection, **kwargs) as connection:
+        kwargs["prefix"] = prefix if prefix else "tx"
+        kwargs["connection"] = connection
+
+        async with self.connection(**kwargs) as connection:
             kwargs["name"] = self.get_connection_name(**kwargs)
             kwargs["connection"] = connection
 
@@ -446,15 +441,11 @@ class Interface(InterfaceABC):
         :returns: str, all the names nested
         """
         transactions = self.transactions.get(connection, [])
-        names = " > ".join((r["name"] for r in reversed(transactions)))
+        names = " > ".join((r["name"] for r in transactions))
         return names
 
     def in_transaction(self, connection):
-        """return true if currently in a transaction
-
-        this was previously named .in_transaction but it turns out SQLite has a
-        property with that name
-        """
+        """return true if currently in a transaction"""
         transactions = self.transactions.get(connection, [])
         return len(transactions) > 0
 
@@ -503,7 +494,7 @@ class Interface(InterfaceABC):
                 f" ({self.transaction_names(connection)})"
                 " ignored"
             )
-            await self._transaction_ignoring(connection, tx)
+            await self._transaction_ignoring(connection, tx, **kwargs)
 
         else:
             self.log_debug(
@@ -511,33 +502,35 @@ class Interface(InterfaceABC):
                 f" ({self.transaction_names(connection)})"
                 " started"
             )
-            await self._transaction_start(connection, tx)
+            await self._transaction_start(connection, tx, **kwargs)
 
     async def transaction_stop(self, connection, **kwargs):
         """stop/commit a transaction if ready"""
         transactions = self.transactions.get(connection, [])
         if transactions:
-            self.log_debug(
-                f"{self.connection_name(connection)} Transaction"
-                f" ({self.transaction_names(connection)})"
-                f" stopped"
-            )
+            tx_names = self.transaction_names(connection)
             tx = transactions.pop(-1)
             if not tx["ignored"]:
-                await self._transaction_stop(connection, tx)
+                self.log_debug(
+                    f"{self.connection_name(connection)} Transaction"
+                    f" ({tx_names})"
+                    f" stopped"
+                )
+                await self._transaction_stop(connection, tx, **kwargs)
 
     async def transaction_fail(self, connection, **kwargs):
         """rollback a transaction if currently in one"""
         transactions = self.transactions.get(connection, [])
         if transactions:
-            self.log_debug(
-                f"{self.connection_name(connection)} Transaction"
-                f" ({self.transaction_names(connection)})"
-                f" failed"
-            )
+            tx_names = self.transaction_names(connection)
             tx = transactions.pop(-1)
             if not tx["ignored"]:
-                await self._transaction_fail(connection, tx)
+                self.log_debug(
+                    f"{self.connection_name(connection)} Transaction"
+                    f" ({tx_names})"
+                    f" failed"
+                )
+                await self._transaction_fail(connection, tx, **kwargs)
 
     async def readonly(self, readonly=True, **kwargs):
         """Make the connection read only (pass in True) or read/write (pass in
@@ -722,7 +715,7 @@ class Interface(InterfaceABC):
         await self.execute_write(
             self._delete_table,
             schema=schema,
-            **kwargs
+            **kwargs,
         )
         return True
 
