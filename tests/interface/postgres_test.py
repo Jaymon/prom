@@ -249,7 +249,7 @@ class InterfaceTest(_BaseTestInterface):
         with self.assertRaises(prom.InterfaceError):
             await i.insert(s2, {"fk": "foo"})
 
-    async def test_get_fields_postgres(self):
+    async def test_get_fields_postgres_1(self):
         i = self.get_interface()
         s = self.get_schema(
             _id=Field(UUID, True, pk=True),
@@ -261,4 +261,18 @@ class InterfaceTest(_BaseTestInterface):
         fields = await i.get_fields(s)
         self.assertTrue(fields["foo"]["ignore_case"])
         self.assertEqual(UUID, fields["_id"]["field_type"])
+        self.assertTrue(fields["_id"]["pk"])
+
+    async def test_get_fields_postgres_ref(self):
+        i = self.get_interface()
+        s1 = self.get_schema()
+        s2 = self.get_schema(
+            fk=Field(s1, True),
+        )
+
+        await i.set_table(s1)
+        await i.set_table(s2)
+
+        fields = await i.get_fields(s2)
+        self.assertTrue("ref_table_name" in fields["fk"])
 

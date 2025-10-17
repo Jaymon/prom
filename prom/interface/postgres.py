@@ -158,8 +158,25 @@ class PostgreSQL(SQLInterface):
             query_args.append(schema_name)
 
         ret = await self._raw(query_str, *query_args, **kwargs)
-        # http://www.postgresql.org/message-id/CA+mi_8Y6UXtAmYKKBZAHBoY7F6giuT5WfE0wi3hR44XXYDsXzg@mail.gmail.com
         return [r['tablename'] for r in ret]
+
+    async def _set_table(self, schema, **kwargs):
+        for field_name, field in schema.fields.items():
+            # https://www.postgresql.org/docs/current/sql-createcollation.html
+            # https://www.postgresql.org/docs/current/collation.html#COLLATION-NONDETERMINISTIC
+            if field.interface_options.get("ignore_case", False):
+                query_str = (
+                    "CREATE COLLATION IF NOT EXISTS case_insensitive (\n"
+                    "  provider = icu,\n"
+                    "  locale = 'und-u-ks-level2',\n"
+                    "  deterministic = false\n"
+                    ")"
+                )
+
+                await self._raw(query_str, ignore_result=True, **kwargs)
+                break
+
+        return await super()._set_table(schema, **kwargs)
 
     async def _delete_table(self, schema, **kwargs):
         """
@@ -224,14 +241,17 @@ class PostgreSQL(SQLInterface):
         # another approach
         # * http://dba.stackexchange.com/questions/22362/
         # * http://gis.stackexchange.com/questions/94049/
+
         query_str = "\n".join([
             "SELECT",
+            #"*",
             "  a.attnum,",
             "  a.attname,",
             "  a.attnotnull,",
             "  t.typname,",
             "  i.indisprimary,",
-            "  c.relname AS confrelname",
+            "  c.relname AS confrelname,",
+            "  o.collation_name",
             "FROM",
             "  pg_attribute a",
             "JOIN pg_type t ON a.atttypid = t.oid",
@@ -244,6 +264,8 @@ class PostgreSQL(SQLInterface):
             "  AND a.attnum = any(s.conkey)",
             "LEFT JOIN",
             "  pg_class c ON s.confrelid = c.oid",
+            "LEFT JOIN",
+            "  information_schema.columns o ON a.attname = o.column_name",
             "WHERE",
             "  a.attrelid = {}::regclass".format(self.PLACEHOLDER),
             "  AND a.attisdropped = False",
@@ -261,7 +283,8 @@ class PostgreSQL(SQLInterface):
             "timestamptz": datetime.datetime,
             "int2": int,
             "int4": int,
-            "int8": long,
+            "int8": int,
+            "bigint": int,
             "numeric": decimal.Decimal,
             "text": str,
             "citext": str,
@@ -288,12 +311,13 @@ class PostgreSQL(SQLInterface):
             }
 
             if row["confrelname"]:
-                # TODO -- I can't decide which name I like
-                field["schema_table_name"] = row["confrelname"]
                 field["ref_table_name"] = row["confrelname"]
 
             if row["typname"] == "citext":
                 field["ignore_case"] = True
+
+            elif collation_name := row["collation_name"]:
+                field["ignore_case"] = collation_name == "case_insensitive"
 
             ret[field["name"]] = field
 
@@ -379,7 +403,8 @@ class PostgreSQL(SQLInterface):
 
     def render_datatype_str_sql(self, field_name, field, **kwargs):
         if field.interface_options.get('ignore_case', False):
-            kwargs.setdefault("datatype", "CITEXT")
+            #kwargs.setdefault("datatype", "CITEXT")
+            kwargs.setdefault("datatype", "TEXT COLLATE case_insensitive")
 
         return super().render_datatype_str_sql(field_name, field, **kwargs)
 
