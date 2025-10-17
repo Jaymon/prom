@@ -45,10 +45,10 @@ from ..exception import (
 )
 
 from ..compat import *
-from .sql import SQLInterface, SQLConnection
+from .sql import SQLInterface
 
 
-class AsyncSQLiteConnection(SQLConnection, aiosqlite.Connection):
+class AsyncSQLiteConnection(aiosqlite.Connection):
     """Thin wrapper around the default connection to make sure it has a similar
     interface to Postgres' connection instance so the common code can all be the
     same in the Interface class
@@ -301,14 +301,12 @@ class SQLite(SQLInterface):
 
     async def _connect(self, config):
         self._connection = AsyncSQLiteConnection(
+        #self._connection = aiosqlite.Connection(
             self._connector,
             iter_chunk_size=config.options.get("iter_chunk_size", 64)
         )
         self._connection.start()
         await self._connection._connect()
-
-        self.log_debug("Connected to connection {}", self._connection)
-
         await self.configure_connection(connection=self._connection)
 
     async def _configure_connection(self, **kwargs):

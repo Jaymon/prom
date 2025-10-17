@@ -22,10 +22,10 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
     """This contains tests that are common to all interfaces, it is extended by
     Postgres's Interface and SQLite's Interface classes
     """
-    async def test_connection___str__(self):
+    async def test_connection_name(self):
         i = self.get_interface()
         async with i.connection() as conn:
-            s = f"{conn}"
+            s = i.connection_name(conn)
             self.assertRegex(s, r"0x[a-f0-9]+")
 
     async def test_connect_close(self):
@@ -53,12 +53,6 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
                 ),
                 [1]
             )
-
-    async def test_transaction_error(self):
-        i = self.get_interface()
-        with self.assertRaises(RuntimeError):
-            async with i.transaction():
-                raise RuntimeError()
 
     async def test_set_table_1(self):
         i, s = self.get_table()
@@ -817,6 +811,12 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         r = await i.one(s, Query().eq_bar(1).ne_foo(None))
         self.assertEqual(pk1, r['_id'])
 
+    async def test_transaction_error(self):
+        i = self.get_interface()
+        with self.assertRaises(RuntimeError):
+            async with i.transaction():
+                raise RuntimeError()
+
     async def test_transaction_nested_fail_1(self):
         """make sure 2 new tables in a wrapped transaction work as expected"""
         i = self.get_interface()
@@ -965,30 +965,26 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         i, s = await self.create_table()
         conn = await i.get_connection()
 
-        await conn.transaction_start(name="c1")
+        await i.transaction_start(conn, name="c1")
 
-        self.assertIsNotNone(conn.interface)
         await i.insert(s, self.get_fields(s), connection=conn)
-        self.assertIsNotNone(conn.interface)
 
         await conn.execute("SELECT true")
-        await conn.transaction_start(name="c2")
+        await i.transaction_start(conn, name="c2")
         await conn.execute("SELECT true")
-        await conn.transaction_start(name="c3")
+        await i.transaction_start(conn, name="c3")
         await conn.execute("SELECT true")
-        await conn.transaction_start(name="c4")
+        await i.transaction_start(conn, name="c4")
 
-        self.assertIsNotNone(conn.interface)
         await i.insert(s, self.get_fields(s), connection=conn)
-        self.assertIsNotNone(conn.interface)
 
-        await conn.transaction_stop()
+        await i.transaction_stop(conn)
         await conn.execute("SELECT true")
-        await conn.transaction_stop()
+        await i.transaction_stop(conn)
         await conn.execute("SELECT true")
-        await conn.transaction_stop()
+        await i.transaction_stop(conn)
         await conn.execute("SELECT true")
-        await conn.transaction_stop()
+        await i.transaction_stop(conn)
 
     async def test_transaction_connection_2(self):
         """Make sure descendant txs inherit settings from ancestors unless
@@ -996,33 +992,36 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         i = self.get_interface()
         conn = await i.get_connection()
 
-        await conn.transaction_start(name="c1", nest=False)
-        tx = conn.transaction_current()
+        def transaction_current():
+            return i.transactions.get(conn)[-1]
+
+        await i.transaction_start(conn, name="c1", nest=False)
+        tx = transaction_current()
         self.assertFalse(tx["ignored"])
         self.assertFalse(tx["nest"])
 
-        await conn.transaction_start(name="c2")
-        tx = conn.transaction_current()
+        await i.transaction_start(conn, name="c2")
+        tx = transaction_current()
         self.assertTrue(tx["ignored"])
         self.assertFalse(tx["nest"])
 
-        await conn.transaction_start(name="c3", nest=True)
-        tx = conn.transaction_current()
+        await i.transaction_start(conn, name="c3", nest=True)
+        tx = transaction_current()
         self.assertFalse(tx["ignored"])
         self.assertTrue(tx["nest"])
 
-        await conn.transaction_start(name="c4")
-        tx = conn.transaction_current()
+        await i.transaction_start(conn, name="c4")
+        tx = transaction_current()
         self.assertFalse(tx["ignored"])
         self.assertTrue(tx["nest"])
 
         # finish the two previous txs that allowed nesting
-        await conn.transaction_stop()
-        await conn.transaction_stop()
+        await i.transaction_stop(conn)
+        await i.transaction_stop(conn)
 
         # a new tx that doesn't set nest should inherit ancestor's setting
-        await conn.transaction_start(name="c5")
-        tx = conn.transaction_current()
+        await i.transaction_start(conn, name="c5")
+        tx = transaction_current()
         self.assertTrue(tx["ignored"])
         self.assertFalse(tx["nest"])
 

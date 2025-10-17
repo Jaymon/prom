@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from contextlib import asynccontextmanager
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
 
 from datatypes import (
     LogMixin,
@@ -16,197 +16,6 @@ from ..exception import (
     FieldError,
     CloseError,
 )
-
-
-class ConnectionABC(LogMixin):
-    """Subclasses should extend Connection and implement the methods in this
-    class
-    """
-    async def _transaction_start(self):
-        """Called when the first transaction is started"""
-        pass
-
-    async def _transaction_starting(self, tx):
-        """Called when a nested transaction is started"""
-        pass
-
-    async def _transaction_ignoring(self, tx):
-        """Called when nested transaction is ignored instead of started"""
-        pass
-
-    async def _transaction_stop(self):
-        """Called when the last transaction is stopped"""
-        pass
-
-    async def _transaction_stopping(self, tx):
-        """Called when a nested transaction is stopped"""
-        pass
-
-    async def _transaction_fail(self):
-        """Called when the last transaction is failed"""
-        pass
-
-    async def _transaction_failing(self, tx):
-        """Called when a nested transaction is failed"""
-        pass
-
-
-class Connection(ConnectionABC):
-    """holds common methods that all raw connections should have"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        # counting-ish semaphore, length will be greater than 0 if in a
-        # transaction, and 0 if there are no current transactions.
-        #
-        # This will push every time transaction_start() is called, and
-        # pop every time transaction_stop() is called.
-        #
-        # transaction_fail will clear this and rollback the transaction
-        #
-        # Holds the active transactions
-        self.transactions = Stack()
-
-    def transaction_count(self):
-        """How many active transactions there currently are"""
-        return len(self.transactions)
-
-    def transaction_names(self, tx=None):
-        """Get all the transaction names for logging
-
-        :param tx: dict, sometimes you pop the transaction before you get the
-            names, passing that popped tx will allow it to be placed at the
-            end
-        :returns: str, all the names nested
-        """
-        names = " > ".join((r["name"] for r in reversed(self.transactions)))
-
-        if tx:
-            if names:
-                names += " > "
-
-            names += tx["name"]
-
-        return names
-
-    def transaction_info(self, name, **kwargs):
-        """Create a new transaction dict that will be placed on the
-        .transactions stack
-
-        :param name: str, the transaction name
-        :keyword nest: bool, True if this (and children unless passed in) will
-            run nested transactions. If this is False then subsequent calls to
-            .transaction_start will be ignored unless nest=True is passed in
-            again
-        :returns: dict[str], the created transaction with keys:
-            - nest: bool, the value of kwargs["nest"] or of
-              .transaction_current()["nest"]
-            - name: str, the tx name
-            - ignored: bool, True if this tx is going to be ignored
-            - index: int, the depth of the transaction
-        """
-        current_tx = self.transaction_current()
-        nest = kwargs.get("nest", current_tx.get("nest", True))
-
-        ignored = False
-        if current_tx:
-            ignored = not nest
-
-        else:
-            ignored = False
-
-        index = self.transaction_count() + 1
-
-        return {
-            "nest": nest,
-            "name": name,
-            "ignored": ignored,
-            "index": index
-        }
-
-    def transaction_current(self):
-        """Returns the current transaction dict, or empty dict if no tx"""
-        return self.transactions[-1] if self.transactions else {}
-
-    def transaction_exists(self):
-        """return true if currently in a transaction
-
-        this was previously named .in_transaction but it turns out SQLite has a
-        property with that name
-        """
-        return self.transaction_count() > 0
-
-    async def transaction_start(self, **kwargs):
-        """start a transaction
-
-        this will increment transaction semaphore and pass it to
-        _transaction_start()
-        """
-        tx = self.transaction_info(**kwargs)
-        self.transactions.push(tx)
-
-        transaction_count = tx["index"]
-        if tx["ignored"]:
-            self.log_debug([
-                f"{transaction_count}.",
-                f"Ignoring {self} transaction {self.transaction_names()}",
-            ])
-            await self._transaction_ignoring(tx)
-
-        else:
-            self.log_debug([
-                f"{transaction_count}.", 
-                f"Start {self} transaction {self.transaction_names()}",
-            ])
-            if transaction_count == 1:
-                await self._transaction_start()
-
-            else:
-                await self._transaction_starting(tx)
-
-        return transaction_count
-
-    async def transaction_stop(self):
-        """stop/commit a transaction if ready"""
-        transaction_count = self.transaction_count()
-        if transaction_count > 0:
-            tx = self.transactions.pop()
-            if not tx["ignored"]:
-                self.log_debug([
-                    f"{transaction_count}.", 
-                    f"Stopping {self} transaction",
-                    self.transaction_names(tx),
-                ])
-
-                if transaction_count == 1:
-                    await self._transaction_stop()
-
-                else:
-                    await self._transaction_stopping(tx)
-
-        return self.transaction_count
-
-    async def transaction_fail(self):
-        """rollback a transaction if currently in one"""
-        transaction_count = self.transaction_count()
-        if transaction_count > 0:
-            tx = self.transactions.pop()
-            if not tx["ignored"]:
-                self.log_debug([
-                    f"{transaction_count}.",
-                    f"Failing {self} transaction",
-                    self.transaction_names(tx),
-                ])
-
-                if transaction_count == 1:
-                    await self._transaction_fail()
-
-                else:
-                    await self._transaction_failing(tx)
-
-    def __str__(self):
-        return f"0x{id(self):02x}"
 
 
 class InterfaceABC(LogMixin):
@@ -326,6 +135,22 @@ class InterfaceABC(LogMixin):
         """
         raise NotImplementedError()
 
+    async def _transaction_start(self, connection, tx):
+        """Called when the first transaction is started"""
+        pass
+
+    async def _transaction_ignoring(self, connection, tx):
+        """Called when nested transaction is ignored instead of started"""
+        pass
+
+    async def _transaction_stop(self, connection, tx):
+        """Called when the last transaction is stopped"""
+        pass
+
+    async def _transaction_fail(self, connection, tx):
+        """Called when the last transaction has failed"""
+        pass
+
 
 class Interface(InterfaceABC):
 
@@ -337,7 +162,20 @@ class Interface(InterfaceABC):
 
     def __init__(self, config=None):
         self.config = config
+
+        # Holds counts for prefixes so transactions have a unique name
         self.connection_stack = Counter()
+
+        # counting-ish semaphore, length will be greater than 0 if in a
+        # transaction, and 0 if there are no current transactions.
+        #
+        # This will push every time transaction_start() is called, and
+        # pop every time transaction_stop() is called.
+        #
+        # transaction_fail will clear this and rollback the transaction
+        #
+        # Holds the active transactions
+        self.transactions = defaultdict(list)
 
     async def connect(self, config=None, *args, **kwargs):
         """connect to the interface
@@ -381,8 +219,8 @@ class Interface(InterfaceABC):
         child interfaces is up to the child interfaces themselves
 
         :param config: Config, this doesn't need to be passed in because it can
-            also be passed into the __init__ method, a valid Config object needs
-            to be present before a connection can be made though
+            also be passed into the __init__ method, a valid Config object
+            needs to be present before a connection can be made though
         :param *args: anything you want that will help the db connect
         :param **kwargs: anything you want that the backend db connection will
             need to actually connect
@@ -449,23 +287,12 @@ class Interface(InterfaceABC):
             await self.reconnect()
             connection = await self._get_connection()
 
-        connection.interface = self
-
-        self.log_debug(
-            "Getting {} connection {}",
-            self.config.interface_name,
-            connection
-        )
+#         connection.interface = self
         return connection
 
     async def free_connection(self, connection):
         """When .connection is done with a connection it calls this method"""
         if self.is_connected():
-            self.log_debug(
-                "Freeing {} connection {}",
-                self.config.interface_name,
-                connection
-            )
             await self._free_connection(connection)
 
     def is_connected(self):
@@ -502,6 +329,9 @@ class Interface(InterfaceABC):
         if self.connection_stack[prefix] <= 0:
             del self.connection_stack[prefix]
 
+    def connection_name(self, connection):
+        return f"0x{id(connection):02x}"
+
     @asynccontextmanager
     async def connection(self, connection=None, **kwargs):
         """Any time you need a connection you should use this context manager,
@@ -520,31 +350,35 @@ class Interface(InterfaceABC):
             if connection:
                 if connection.closed:
                     self.log_warning(
-                        "{} existing connection {} is closed",
-                        conn_name,
-                        connection,
+                        f"{self.connection_name(connection)} Connection"
+                        f" ({conn_name})"
+                        " is closed"
                     )
 
                     connection = None
 
                 else:
                     self.log_debug(
-                        "{} using existing connection {}",
-                        conn_name,
-                        connection,
-                    )
+                        f"{self.connection_name(connection)} Connection"
+                        f" ({conn_name})"
+                        " provided"
+                        )
+
+#                 self.log_debug(
+#                     f"{self.connection_name(connection)} Connection"
+#                     f" ({conn_name})"
+#                     " provided"
+#                 )
 
             if connection is None:
                 free_connection = True
 
-                self.log_debug("{} getting connection", conn_name)
-
                 connection = await self.get_connection()
 
                 self.log_debug(
-                    "{} got connection {}",
-                    conn_name,
-                    connection,
+                    f"{self.connection_name(connection)} Connection"
+                    f" ({conn_name})"
+                    " retrieved"
                 )
 
             yield connection
@@ -559,17 +393,17 @@ class Interface(InterfaceABC):
                 await self.free_connection(connection)
 
                 self.log_debug(
-                    "{} connection {} was freed",
-                    conn_name,
-                    connection,
+                    f"{self.connection_name(connection)} Connection"
+                    f" ({conn_name})"
+                    " freed"
                 )
 
-            else:
-                self.log_debug(
-                    "{} existing connection {} was NOT freed",
-                    conn_name,
-                    connection,
-                )
+#             else:
+#                 self.log_debug(
+#                     "{} existing connection {} was NOT freed",
+#                     conn_name,
+#                     connection,
+#                 )
 
     @asynccontextmanager
     async def transaction(self, connection=None, **kwargs):
@@ -577,30 +411,133 @@ class Interface(InterfaceABC):
         db calls in a transaction, this is used internally for any write
         statements
 
-        NOTE -- psycopg3 now has a transaction context manager:
+        .. note:: psycopg3 now has a transaction context manager:
             https://www.psycopg.org/psycopg3/docs/api/connections.html#psycopg.Connection.transaction
 
             It might be worth switching over to it sometime in the future? I'm
             not sure how that would work with sqlite though
 
-        :Example:
+        :example:
             with self.transaction() as connection
                 # do a bunch of calls
             # those db calls will be committed by this line
         """
         async with self.connection(connection, **kwargs) as connection:
-            conn_name = self.get_connection_name(**kwargs)
-            kwargs["name"] = conn_name
-            await connection.transaction_start(**kwargs)
+            kwargs["name"] = self.get_connection_name(**kwargs)
+            kwargs["connection"] = connection
+
+            await self.transaction_start(**kwargs)
             try:
                 yield connection
 
             except Exception:
-                await connection.transaction_fail()
+                await self.transaction_fail(**kwargs)
                 raise
 
             else:
-                await connection.transaction_stop()
+                await self.transaction_stop(**kwargs)
+
+    def transaction_names(self, connection):
+        """Get all the transaction names for logging
+
+        :param tx: dict, sometimes you pop the transaction before you get the
+            names, passing that popped tx will allow it to be placed at the
+            end
+        :returns: str, all the names nested
+        """
+        transactions = self.transactions.get(connection, [])
+        names = " > ".join((r["name"] for r in reversed(transactions)))
+        return names
+
+    def in_transaction(self, connection):
+        """return true if currently in a transaction
+
+        this was previously named .in_transaction but it turns out SQLite has a
+        property with that name
+        """
+        transactions = self.transactions.get(connection, [])
+        return len(transactions) > 0
+
+    async def transaction_start(self, connection, name, **kwargs):
+        """Create a new transaction dict that will be placed on the
+        .transactions stack
+
+        :param name: str, the transaction name
+        :keyword nest: bool, True if this (and children unless passed in) will
+            run nested transactions. If this is False then subsequent calls to
+            .transaction_start will be ignored unless nest=True is passed in
+            again
+        :returns: dict[str], the created transaction with keys:
+            - nest: bool, the value of kwargs["nest"] or of
+              .transaction_current()["nest"]
+            - ignored: bool, True if this tx is going to be ignored
+            - index: int, the depth of the transaction
+        """
+        """start a transaction
+
+        this will increment transaction semaphore and pass it to
+        _transaction_start()
+        """
+        transactions = self.transactions.get(connection, [])
+        current_tx = transactions[-1] if transactions else {}
+        nest = kwargs.get("nest", current_tx.get("nest", True))
+
+        ignored = False
+        if current_tx:
+            ignored = not nest
+
+        else:
+            ignored = False
+
+        tx = {
+            "nest": nest,
+            "name": name,
+            "ignored": ignored,
+            "index": len(transactions)
+        }
+        self.transactions[connection].append(tx)
+
+        if tx["ignored"]:
+            self.log_debug(
+                f"{self.connection_name(connection)} Transaction"
+                f" ({self.transaction_names(connection)})"
+                " ignored"
+            )
+            await self._transaction_ignoring(connection, tx)
+
+        else:
+            self.log_debug(
+                f"{self.connection_name(connection)} Transaction"
+                f" ({self.transaction_names(connection)})"
+                " started"
+            )
+            await self._transaction_start(connection, tx)
+
+    async def transaction_stop(self, connection, **kwargs):
+        """stop/commit a transaction if ready"""
+        transactions = self.transactions.get(connection, [])
+        if transactions:
+            self.log_debug(
+                f"{self.connection_name(connection)} Transaction"
+                f" ({self.transaction_names(connection)})"
+                f" stopped"
+            )
+            tx = transactions.pop(-1)
+            if not tx["ignored"]:
+                await self._transaction_stop(connection, tx)
+
+    async def transaction_fail(self, connection, **kwargs):
+        """rollback a transaction if currently in one"""
+        transactions = self.transactions.get(connection, [])
+        if transactions:
+            self.log_debug(
+                f"{self.connection_name(connection)} Transaction"
+                f" ({self.transaction_names(connection)})"
+                f" failed"
+            )
+            tx = transactions.pop(-1)
+            if not tx["ignored"]:
+                await self._transaction_fail(connection, tx)
 
     async def readonly(self, readonly=True, **kwargs):
         """Make the connection read only (pass in True) or read/write (pass in
@@ -644,7 +581,7 @@ class Interface(InterfaceABC):
 
             kwargs.setdefault(
                 "execute_in_transaction",
-                connection.transaction_exists()
+                self.in_transaction(connection)
             )
 
             return await self.execute(callback, *args, **kwargs)

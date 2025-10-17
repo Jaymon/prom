@@ -17,47 +17,10 @@ from ..exception import (
 
 from ..compat import *
 from ..utils import make_list
-from .base import Connection, Interface
+from .base import Interface
 
 
 logger = logging.getLogger(__name__)
-
-
-class SQLConnection(Connection):
-    """
-    https://docs.python.org/3.9/library/sqlite3.html#sqlite3-controlling-transactions
-    https://www.sqlite.org/lockingv3.html
-    https://www.sqlite.org/lang_transaction.html
-    """
-    async def _transaction_start(self):
-        await self.execute("BEGIN")
-
-    async def _transaction_starting(self, tx):
-        # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
-        await self.execute("SAVEPOINT {}".format(
-            self.interface.render_field_name_sql(tx["name"])
-        ))
-
-    async def _transaction_stop(self):
-        """
-        http://initd.org/psycopg/docs/usage.html#transactions-control
-        https://news.ycombinator.com/item?id=4269241
-        """
-        await self.execute("COMMIT")
-
-    async def _transaction_stopping(self, tx):
-        await self.execute("RELEASE {}".format(
-            self.interface.render_field_name_sql(tx["name"])
-        ))
-
-    async def _transaction_fail(self):
-        await self.execute("ROLLBACK")
-
-    async def _transaction_failing(self, tx):
-        # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
-        await self.execute("ROLLBACK TO SAVEPOINT {}".format(
-            self.interface.render_field_name_sql(tx["name"])
-        ))
 
 
 class SQLInterfaceABC(Interface):
@@ -83,8 +46,8 @@ class SQLInterfaceABC(Interface):
 
         https://peps.python.org/pep-0249/#paramstyle
 
-        :returns: str, something like "qmark" (for ? placeholders) or "pyformat"
-            (for %s placeholders)
+        :returns: str, something like "qmark" (for ? placeholders) or
+            "pyformat" (for %s placeholders)
         """
         raise NotImplemented()
 
@@ -363,18 +326,19 @@ class SQLInterface(SQLInterfaceABC):
                 # https://stackoverflow.com/a/125140
                 cur.arraysize = kwargs.get("arraysize", 500)
 
+            conn_name = self.connection_name(connection)
             if query_args:
                 self.log_for(
                     debug=(
-                        ["{} - {}\n{}", connection, query_str, query_args],
+                        ["{} - {}\n{}", conn_name, query_str, query_args],
                     ),
-                    info=(["{} - {}", connection, query_str],)
+                    info=(["{} - {}", conn_name, query_str],)
                 )
 
                 execute_args = [query_str, query_args]
 
             else:
-                self.log_info("{} - {}", connection, query_str)
+                self.log_info("{} - {}", conn_name, query_str)
 
                 execute_args = [query_str]
 
@@ -500,6 +464,48 @@ class SQLInterface(SQLInterfaceABC):
         # indexes also
         await self.set_table(schema, **kwargs)
         return True
+
+    async def _transaction_start(self, connection, tx):
+        if tx["index"] == 0:
+            await self._raw("BEGIN", ignore_result=True)
+
+        else:
+            # http://www.postgresql.org/docs/9.2/static/sql-savepoint.html
+            await self._raw(
+                "SAVEPOINT {}".format(
+                    self.render_field_name_sql(tx["name"])
+                ),
+                ignore_result=True,
+            )
+
+    async def _transaction_stop(self, connection, tx):
+        """
+        http://initd.org/psycopg/docs/usage.html#transactions-control
+        https://news.ycombinator.com/item?id=4269241
+        """
+        if tx["index"] == 0:
+            await self._raw("COMMIT", ignore_result=True)
+
+        else:
+            await self._raw(
+                "RELEASE {}".format(
+                    self.render_field_name_sql(tx["name"])
+                ),
+                ignore_result=True,
+            )
+
+    async def _transaction_fail(self, connection, tx):
+        if tx["index"] == 0:
+            await self._raw("ROLLBACK", ignore_result=True)
+
+        else:
+            # http://www.postgresql.org/docs/9.2/static/sql-rollback-to.html
+            await self._raw(
+                "ROLLBACK TO SAVEPOINT {}".format(
+                    self.render_field_name_sql(tx["name"])
+                ),
+                ignore_result=True,
+            )
 
     def render_table_name_sql(self, schema):
         return self.render_field_name_sql(schema)

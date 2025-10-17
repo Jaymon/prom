@@ -6,14 +6,13 @@ import decimal
 import datetime
 import uuid
 import json
-from collections import Counter
 
 # third party
 import psycopg
 from psycopg.adapt import Dumper
 
 # first party
-from .sql import SQLInterface, SQLConnection
+from .sql import SQLInterface
 from ..compat import *
 from ..utils import get_objects
 from ..exception import (
@@ -51,13 +50,6 @@ class DictDumper(Dumper):
         return ByteString(json.dumps(val))
 
 
-class AsyncPostgreSQLConnection(SQLConnection, psycopg.AsyncConnection):
-    """
-    https://www.psycopg.org/docs/connection.html
-    """
-    pass
-
-
 class PostgreSQL(SQLInterface):
     """
     https://www.psycopg.org/psycopg3/docs/advanced/async.html
@@ -87,11 +79,12 @@ class PostgreSQL(SQLInterface):
     async def _connect(self, config):
         """
         https://www.psycopg.org/psycopg3/docs/api/connections.html
+        https://www.psycopg.org/docs/connection.html
 
         If I ever wanted to add pool support back:
             https://www.psycopg.org/psycopg3/docs/advanced/pool.html
         """
-        self._connection = await AsyncPostgreSQLConnection.connect(
+        self._connection = await psycopg.AsyncConnection.connect(
             dbname=config.database,
             user=config.username,
             password=config.password,
@@ -100,8 +93,6 @@ class PostgreSQL(SQLInterface):
             row_factory=psycopg.rows.dict_row,
             autocommit=True, # if False there will be random hangs
         )
-
-        self.log_debug("Connected to connection {}", self._connection)
 
         await self.configure_connection(connection=self._connection)
 
