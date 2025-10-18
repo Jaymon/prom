@@ -163,10 +163,9 @@ class Interface(InterfaceABC):
     def __init__(self, config=None):
         self.config = config
 
-        # Holds counts for prefixes so transactions have a unique name
-#         self.connection_stack = Counter()
-
         # Holds the active transactions
+        #
+        # This is managed in the `.transaction` context manager
         #
         # counting-ish semaphore, length will be greater than 0 if in a
         # transaction, and 0 if there are no current transactions.
@@ -177,6 +176,10 @@ class Interface(InterfaceABC):
         # `.fail_transaction` will clear this and rollback the transaction
         self._transactions = defaultdict(list)
 
+        # holds the active connections
+        #
+        # This is managed in the `.connection` context manager
+        #
         # Holds the active connection in a stack, this could just be a counter
         # but I've done it this way, the amount of entries (which should all
         # be the same connection instance) is the depth of the
@@ -318,26 +321,14 @@ class Interface(InterfaceABC):
         self.log_debug("Closed Connection {}", self.config.interface_name)
         return True
 
-#     def create_connection_name(self, prefix: str, **kwargs) -> str:
-#         """Create a new connection name using `prefix`"""
-#         self.connection_stack[prefix] += 1
-#         return self.get_connection_name(prefix)
-
     def get_connection_name(self, prefix: str, **kwargs) -> str:
         """get the currention connection name at `prefix`
 
         If you need a new connection name use `.create_connection_name`
         """
         suffix = len(self._connections) + 1
-        #suffix = self.connection_stack[prefix]
         name = f"{prefix}_{suffix}"
         return name
-
-#     def free_connection_name(self, prefix: str, **kwargs):
-#         """Free the connection name at `prefix` so it can be used again"""
-#         self.connection_stack[prefix] -= 1
-#         if self.connection_stack[prefix] <= 0:
-#             del self.connection_stack[prefix]
 
     def connection_name(self, connection) -> str:
         """This is used in logging to get an identifiable connection string"""
@@ -359,14 +350,11 @@ class Interface(InterfaceABC):
             with self.connection(**kwargs) as connection:
                 # do something with connection
         """
-#         free_connection = False
         kwargs["prefix"] = prefix if prefix else "conn"
-#         conn_name = self.create_connection_name(**kwargs)
         conn_name = self.get_connection_name(**kwargs)
 
         try:
             if connection:
-#                 if connection.closed:
                 if not self.is_connected(connection):
                     connection = None
 
@@ -386,15 +374,10 @@ class Interface(InterfaceABC):
                         " used previous connection"
                     )
 
-#                     if connection.closed:
                     if not self.is_connected(connection):
                         connection = None
-                        #self._connections.pop(-1)
-                        # clear the stack since the connection is closed
-                        #self._connections = []
 
             if connection is None:
-#                     free_connection = True
                 connection = await self.get_connection()
                 self.log_debug(
                     f"{self.connection_name(connection)} Connection"
@@ -409,8 +392,6 @@ class Interface(InterfaceABC):
             await self.raise_error(e)
 
         finally:
-#             self.free_connection_name(**kwargs)
-
             if connection:
                 self._connections.pop(-1)
 
@@ -421,10 +402,6 @@ class Interface(InterfaceABC):
                     s = "freed"
                     await self.free_connection(connection)
 
-#                 if free_connection:
-#                     await self.free_connection(connection)
-# 
-#                 s = "freed" if free_connection else "NOT freed"
                 self.log_debug(
                     f"{self.connection_name(connection)} Connection"
                     f" ({conn_name})"
@@ -918,7 +895,9 @@ class Interface(InterfaceABC):
         :returns: int, how many rows were deleted ... I think
         """
         if not query or not query.fields_where:
-            raise ValueError("aborting delete because there is no where clause")
+            raise ValueError(
+                "Aborting delete because there is no where clause"
+            )
 
         return await self.unsafe_delete(schema, query, **kwargs)
 
