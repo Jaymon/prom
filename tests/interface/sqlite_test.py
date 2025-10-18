@@ -292,7 +292,7 @@ class InterfaceTest(_BaseTestInterface):
             if getattr(connection, "attempt", False):
                 await connection.close()
                 connection.attempt = False
-            (await connection.cursor()).execute("SELECT true")
+            await (await connection.cursor()).execute("SELECT true")
 
         async with i.connection() as connection:
             connection.attempt = True

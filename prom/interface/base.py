@@ -164,7 +164,7 @@ class Interface(InterfaceABC):
         self.config = config
 
         # Holds counts for prefixes so transactions have a unique name
-        self.connection_stack = Counter()
+#         self.connection_stack = Counter()
 
         # Holds the active transactions
         #
@@ -176,6 +176,13 @@ class Interface(InterfaceABC):
         #
         # `.fail_transaction` will clear this and rollback the transaction
         self._transactions = defaultdict(list)
+
+        # Holds the active connection in a stack, this could just be a counter
+        # but I've done it this way, the amount of entries (which should all
+        # be the same connection instance) is the depth of the
+        # `.connection` context manager, when the list is empty then the
+        # connection can be freed
+        self._connections = []
 
     async def connect(self, config=None, *args, **kwargs):
         """connect to the interface
@@ -202,13 +209,11 @@ class Interface(InterfaceABC):
                 is called in .configure_connection but can be called separately
                 also
             * is_connected: Returns True if an active connection has been made
-            * reconnect: Close any open connections and then call .connect()
-                again
             * connection: The connection context manager that calls
-                .get_connection and .free_connection, most interactions with
-                a connection will use this
+                .get_connection and .free_connection, all interactions with
+                a connection should use this
             * transaction: wraps the .connection context manager and starts a
-                transaction
+                transaction, all transactions should use this
 
         The reason why this class uses the connection interface and that no
         connection anything is fleshed out is because that allows the child
@@ -243,10 +248,6 @@ class Interface(InterfaceABC):
 
         self.log_debug("Connected {}", self.config.interface_name)
         return self.connected
-
-    async def reconnect(self):
-        await self.close()
-        await self.connect()
 
     async def configure_connection(self, **kwargs):
         """Configure a ready connection
@@ -287,9 +288,25 @@ class Interface(InterfaceABC):
         if self.is_connected():
             await self._free_connection(connection)
 
-    def is_connected(self):
-        """Returns True if this Interface has been connected"""
-        return self.connected
+    def is_connected(self, connection=None):
+        """Returns True if this Interface has been connected
+
+        :param connection: Optional[object], an interface connection, if it
+            is passed in then it will check that connection instead of the
+            interface
+        """
+        if connection is None:
+            connected = self.connected
+
+        else:
+            connected = True
+            if connection.closed:
+                self.log_warning(
+                    f"{self.connection_name(connection)} Connection is closed"
+                )
+                connected = False
+
+        return connected
 
     async def close(self):
         """close an open connection"""
@@ -301,25 +318,26 @@ class Interface(InterfaceABC):
         self.log_debug("Closed Connection {}", self.config.interface_name)
         return True
 
-    def create_connection_name(self, prefix: str, **kwargs) -> str:
-        """Create a new connection name using `prefix`"""
-        self.connection_stack[prefix] += 1
-        return self.get_connection_name(prefix)
+#     def create_connection_name(self, prefix: str, **kwargs) -> str:
+#         """Create a new connection name using `prefix`"""
+#         self.connection_stack[prefix] += 1
+#         return self.get_connection_name(prefix)
 
     def get_connection_name(self, prefix: str, **kwargs) -> str:
         """get the currention connection name at `prefix`
 
         If you need a new connection name use `.create_connection_name`
         """
-        suffix = self.connection_stack[prefix]
+        suffix = len(self._connections) + 1
+        #suffix = self.connection_stack[prefix]
         name = f"{prefix}_{suffix}"
         return name
 
-    def free_connection_name(self, prefix: str, **kwargs):
-        """Free the connection name at `prefix` so it can be used again"""
-        self.connection_stack[prefix] -= 1
-        if self.connection_stack[prefix] <= 0:
-            del self.connection_stack[prefix]
+#     def free_connection_name(self, prefix: str, **kwargs):
+#         """Free the connection name at `prefix` so it can be used again"""
+#         self.connection_stack[prefix] -= 1
+#         if self.connection_stack[prefix] <= 0:
+#             del self.connection_stack[prefix]
 
     def connection_name(self, connection) -> str:
         """This is used in logging to get an identifiable connection string"""
@@ -341,19 +359,15 @@ class Interface(InterfaceABC):
             with self.connection(**kwargs) as connection:
                 # do something with connection
         """
-        free_connection = False
+#         free_connection = False
         kwargs["prefix"] = prefix if prefix else "conn"
-        conn_name = self.create_connection_name(**kwargs)
+#         conn_name = self.create_connection_name(**kwargs)
+        conn_name = self.get_connection_name(**kwargs)
 
         try:
             if connection:
-                if connection.closed:
-                    self.log_warning(
-                        f"{self.connection_name(connection)} Connection"
-                        f" ({conn_name})"
-                        " is closed"
-                    )
-
+#                 if connection.closed:
+                if not self.is_connected(connection):
                     connection = None
 
                 else:
@@ -364,28 +378,53 @@ class Interface(InterfaceABC):
                         )
 
             if connection is None:
-                free_connection = True
-                connection = await self.get_connection()
+                if self._connections:
+                    connection = self._connections[-1]
+                    self.log_debug(
+                        f"{self.connection_name(connection)} Connection"
+                        f" ({conn_name})"
+                        " used previous connection"
+                    )
 
+#                     if connection.closed:
+                    if not self.is_connected(connection):
+                        connection = None
+                        #self._connections.pop(-1)
+                        # clear the stack since the connection is closed
+                        #self._connections = []
+
+            if connection is None:
+#                     free_connection = True
+                connection = await self.get_connection()
                 self.log_debug(
                     f"{self.connection_name(connection)} Connection"
                     f" ({conn_name})"
-                    " retrieved"
+                    " used get_connection"
                 )
 
+            self._connections.append(connection)
             yield connection
 
         except Exception as e:
             await self.raise_error(e)
 
         finally:
-            self.free_connection_name(**kwargs)
+#             self.free_connection_name(**kwargs)
 
             if connection:
-                if free_connection:
+                self._connections.pop(-1)
+
+                if self._connections:
+                    s = "NOT freed"
+
+                else:
+                    s = "freed"
                     await self.free_connection(connection)
 
-                s = "freed" if free_connection else "NOT freed"
+#                 if free_connection:
+#                     await self.free_connection(connection)
+# 
+#                 s = "freed" if free_connection else "NOT freed"
                 self.log_debug(
                     f"{self.connection_name(connection)} Connection"
                     f" ({conn_name})"
