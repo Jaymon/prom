@@ -135,19 +135,19 @@ class InterfaceABC(LogMixin):
         """
         raise NotImplementedError()
 
-    async def _transaction_start(self, connection, tx, **kwargs):
+    async def _start_transaction(self, connection, tx, **kwargs):
         """Called when the first transaction is started"""
         pass
 
-    async def _transaction_ignoring(self, connection, tx, **kwargs):
+    async def _ignore_transaction(self, connection, tx, **kwargs):
         """Called when nested transaction is ignored instead of started"""
         pass
 
-    async def _transaction_stop(self, connection, tx, **kwargs):
+    async def _stop_transaction(self, connection, tx, **kwargs):
         """Called when the last transaction is stopped"""
         pass
 
-    async def _transaction_fail(self, connection, tx, **kwargs):
+    async def _fail_transaction(self, connection, tx, **kwargs):
         """Called when the last transaction has failed"""
         pass
 
@@ -170,9 +170,9 @@ class Interface(InterfaceABC):
         # transaction, and 0 if there are no current transactions.
         #
         # This will push every time transaction_start() is called, and
-        # pop every time transaction_stop() is called.
+        # pop every time stop_transaction() is called.
         #
-        # transaction_fail will clear this and rollback the transaction
+        # fail_transaction will clear this and rollback the transaction
         #
         # Holds the active transactions
         self.transactions = defaultdict(list)
@@ -421,16 +421,16 @@ class Interface(InterfaceABC):
             kwargs["name"] = self.get_connection_name(**kwargs)
             kwargs["connection"] = connection
 
-            await self.transaction_start(**kwargs)
+            await self.start_transaction(**kwargs)
             try:
                 yield connection
 
             except Exception:
-                await self.transaction_fail(**kwargs)
+                await self.fail_transaction(**kwargs)
                 raise
 
             else:
-                await self.transaction_stop(**kwargs)
+                await self.stop_transaction(**kwargs)
 
     def transaction_names(self, connection):
         """Get all the transaction names for logging
@@ -449,7 +449,7 @@ class Interface(InterfaceABC):
         transactions = self.transactions.get(connection, [])
         return len(transactions) > 0
 
-    async def transaction_start(self, connection, name, **kwargs):
+    async def start_transaction(self, connection, name, **kwargs):
         """Create a new transaction dict that will be placed on the
         .transactions stack
 
@@ -494,7 +494,7 @@ class Interface(InterfaceABC):
                 f" ({self.transaction_names(connection)})"
                 " ignored"
             )
-            await self._transaction_ignoring(connection, tx, **kwargs)
+            await self._ignore_transaction(connection, tx, **kwargs)
 
         else:
             self.log_debug(
@@ -502,9 +502,9 @@ class Interface(InterfaceABC):
                 f" ({self.transaction_names(connection)})"
                 " started"
             )
-            await self._transaction_start(connection, tx, **kwargs)
+            await self._start_transaction(connection, tx, **kwargs)
 
-    async def transaction_stop(self, connection, **kwargs):
+    async def stop_transaction(self, connection, **kwargs):
         """stop/commit a transaction if ready"""
         transactions = self.transactions.get(connection, [])
         if transactions:
@@ -516,9 +516,9 @@ class Interface(InterfaceABC):
                     f" ({tx_names})"
                     f" stopped"
                 )
-                await self._transaction_stop(connection, tx, **kwargs)
+                await self._stop_transaction(connection, tx, **kwargs)
 
-    async def transaction_fail(self, connection, **kwargs):
+    async def fail_transaction(self, connection, **kwargs):
         """rollback a transaction if currently in one"""
         transactions = self.transactions.get(connection, [])
         if transactions:
@@ -530,7 +530,7 @@ class Interface(InterfaceABC):
                     f" ({tx_names})"
                     f" failed"
                 )
-                await self._transaction_fail(connection, tx, **kwargs)
+                await self._fail_transaction(connection, tx, **kwargs)
 
     async def readonly(self, readonly=True, **kwargs):
         """Make the connection read only (pass in True) or read/write (pass in

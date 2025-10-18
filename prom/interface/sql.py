@@ -465,7 +465,7 @@ class SQLInterface(SQLInterfaceABC):
         await self.set_table(schema, **kwargs)
         return True
 
-    async def _transaction_start(self, connection, tx, **kwargs):
+    async def _start_transaction(self, connection, tx, **kwargs):
         if tx["index"] == 0:
             query_str = "BEGIN"
 
@@ -485,7 +485,7 @@ class SQLInterface(SQLInterfaceABC):
             **{**kwargs, **tx_kwargs},
         )
 
-    async def _transaction_stop(self, connection, tx, **kwargs):
+    async def _stop_transaction(self, connection, tx, **kwargs):
         """
         http://initd.org/psycopg/docs/usage.html#transactions-control
         https://news.ycombinator.com/item?id=4269241
@@ -508,7 +508,7 @@ class SQLInterface(SQLInterfaceABC):
             **{**kwargs, **tx_kwargs},
         )
 
-    async def _transaction_fail(self, connection, tx, **kwargs):
+    async def _fail_transaction(self, connection, tx, **kwargs):
         if tx["index"] == 0:
             query_str = "ROLLBACK"
 
