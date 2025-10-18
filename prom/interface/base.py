@@ -166,16 +166,16 @@ class Interface(InterfaceABC):
         # Holds counts for prefixes so transactions have a unique name
         self.connection_stack = Counter()
 
+        # Holds the active transactions
+        #
         # counting-ish semaphore, length will be greater than 0 if in a
         # transaction, and 0 if there are no current transactions.
         #
-        # This will push every time transaction_start() is called, and
-        # pop every time stop_transaction() is called.
+        # This will push every time `.start_transaction_start` is called, and
+        # pop every time `.stop_transaction` is called.
         #
-        # fail_transaction will clear this and rollback the transaction
-        #
-        # Holds the active transactions
-        self.transactions = defaultdict(list)
+        # `.fail_transaction` will clear this and rollback the transaction
+        self._transactions = defaultdict(list)
 
     async def connect(self, config=None, *args, **kwargs):
         """connect to the interface
@@ -440,13 +440,13 @@ class Interface(InterfaceABC):
             end
         :returns: str, all the names nested
         """
-        transactions = self.transactions.get(connection, [])
+        transactions = self._transactions.get(connection, [])
         names = " > ".join((r["name"] for r in transactions))
         return names
 
     def in_transaction(self, connection):
         """return true if currently in a transaction"""
-        transactions = self.transactions.get(connection, [])
+        transactions = self._transactions.get(connection, [])
         return len(transactions) > 0
 
     async def start_transaction(self, connection, name, **kwargs):
@@ -469,7 +469,7 @@ class Interface(InterfaceABC):
         this will increment transaction semaphore and pass it to
         _transaction_start()
         """
-        transactions = self.transactions.get(connection, [])
+        transactions = self._transactions.get(connection, [])
         current_tx = transactions[-1] if transactions else {}
         nest = kwargs.get("nest", current_tx.get("nest", True))
 
@@ -486,7 +486,7 @@ class Interface(InterfaceABC):
             "ignored": ignored,
             "index": len(transactions)
         }
-        self.transactions[connection].append(tx)
+        self._transactions[connection].append(tx)
 
         if tx["ignored"]:
             self.log_debug(
@@ -506,7 +506,7 @@ class Interface(InterfaceABC):
 
     async def stop_transaction(self, connection, **kwargs):
         """stop/commit a transaction if ready"""
-        transactions = self.transactions.get(connection, [])
+        transactions = self._transactions.get(connection, [])
         if transactions:
             tx_names = self.transaction_names(connection)
             tx = transactions.pop(-1)
@@ -520,7 +520,7 @@ class Interface(InterfaceABC):
 
     async def fail_transaction(self, connection, **kwargs):
         """rollback a transaction if currently in one"""
-        transactions = self.transactions.get(connection, [])
+        transactions = self._transactions.get(connection, [])
         if transactions:
             tx_names = self.transaction_names(connection)
             tx = transactions.pop(-1)

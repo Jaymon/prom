@@ -993,7 +993,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         conn = await i.get_connection()
 
         def transaction_current():
-            return i.transactions.get(conn)[-1]
+            return i._transactions.get(conn)[-1]
 
         await i.start_transaction(conn, name="c1", nest=False)
         tx = transaction_current()
