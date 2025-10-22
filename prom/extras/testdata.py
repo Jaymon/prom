@@ -10,11 +10,6 @@ from collections.abc import Sequence
 from typing import Type
 
 from testdata.base import TestData
-from datatypes import (
-    OrderedSubclasses,
-    ReflectModule,
-    ReflectClass,
-)
 
 from ..model import Orm
 from ..config import Schema, Field, Index, AutoIncrement

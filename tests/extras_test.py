@@ -316,6 +316,8 @@ class MockModelDataTest(TestCase):
         testdata = self.ModelData
         orm_class = testdata.get_orm_class()
         self.assertTrue(issubclass(orm_class, Orm))
+        self.assertTrue(orm_class.schema)
+        self.assertTrue(orm_class.__name__ in orm_class.orm_classes)
 
     async def test_get_orm_1(self):
         testdata = self.ModelData
