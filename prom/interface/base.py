@@ -3,10 +3,8 @@ from contextlib import asynccontextmanager, AbstractAsyncContextManager
 import uuid
 from collections import Counter, defaultdict
 
-from datatypes import (
-    LogMixin,
-    Stack,
-)
+from datatypes import Stack
+from datatypes import logging
 
 from ..compat import *
 from ..exception import (
@@ -18,7 +16,10 @@ from ..exception import (
 )
 
 
-class InterfaceABC(LogMixin):
+logger = logging.getLogger(__name__)
+
+
+class InterfaceABC(object):
     """This is just a convenience abstract base class so child interfaces can
     easily see what methods they might need to implement. They should extend
     Interface and then implement the methods in this class
@@ -249,7 +250,7 @@ class Interface(InterfaceABC):
             self.connected = False
             await self.raise_error(e)
 
-        self.log_debug("Connected {}", self.config.interface_name)
+        logger.debug("Connected %s", self.config.interface_name)
         return self.connected
 
     async def configure_connection(self, **kwargs):
@@ -304,8 +305,9 @@ class Interface(InterfaceABC):
         else:
             connected = True
             if connection.closed:
-                self.log_warning(
-                    f"{self.connection_name(connection)} Connection is closed"
+                logger.warning(
+                    "%s Connection is closed",
+                    self.connection_name(connection),
                 )
                 connected = False
 
@@ -318,7 +320,7 @@ class Interface(InterfaceABC):
 
         await self._close()
         self.connected = False
-        self.log_debug("Closed Connection {}", self.config.interface_name)
+        logger.debug("Closed Connection %s", self.config.interface_name)
         return True
 
     def get_connection_name(self, prefix: str, **kwargs) -> str:
@@ -359,19 +361,19 @@ class Interface(InterfaceABC):
                     connection = None
 
                 else:
-                    self.log_debug(
-                        f"{self.connection_name(connection)} Connection"
-                        f" ({conn_name})"
-                        " provided"
-                        )
+                    logger.debug(
+                        f"%s Connection (%s) provided",
+                        self.connection_name(connection),
+                        conn_name,
+                    )
 
             if connection is None:
                 if self._connections:
                     connection = self._connections[-1]
-                    self.log_debug(
-                        f"{self.connection_name(connection)} Connection"
-                        f" ({conn_name})"
-                        " used previous connection"
+                    logger.debug(
+                        f"%s Connection (%s) used previous connection",
+                        self.connection_name(connection),
+                        conn_name,
                     )
 
                     if not self.is_connected(connection):
@@ -379,10 +381,10 @@ class Interface(InterfaceABC):
 
             if connection is None:
                 connection = await self.get_connection()
-                self.log_debug(
-                    f"{self.connection_name(connection)} Connection"
-                    f" ({conn_name})"
-                    " used get_connection"
+                logger.debug(
+                    f"%s Connection (%s) used get_connection",
+                    self.connection_name(connection),
+                    conn_name,
                 )
 
             self._connections.append(connection)
@@ -402,10 +404,11 @@ class Interface(InterfaceABC):
                     s = "freed"
                     await self.free_connection(connection)
 
-                self.log_debug(
-                    f"{self.connection_name(connection)} Connection"
-                    f" ({conn_name})"
-                    f" {s}"
+                logger.debug(
+                    f"%s Connection (%s) %s",
+                    self.connection_name(connection),
+                    conn_name,
+                    s,
                 )
 
     @asynccontextmanager
@@ -505,18 +508,18 @@ class Interface(InterfaceABC):
         self._transactions[connection].append(tx)
 
         if tx["ignored"]:
-            self.log_debug(
-                f"{self.connection_name(connection)} Transaction"
-                f" ({self.transaction_names(connection)})"
-                " ignored"
+            logger.debug(
+                "%s Transaction (%s) ignored",
+                self.connection_name(connection),
+                self.transaction_names(connection),
             )
             await self._ignore_transaction(connection, tx, **kwargs)
 
         else:
-            self.log_debug(
-                f"{self.connection_name(connection)} Transaction"
-                f" ({self.transaction_names(connection)})"
-                " started"
+            logger.debug(
+                "%s Transaction (%s) started",
+                self.connection_name(connection),
+                self.transaction_names(connection),
             )
             await self._start_transaction(connection, tx, **kwargs)
 
@@ -527,10 +530,10 @@ class Interface(InterfaceABC):
             tx_names = self.transaction_names(connection)
             tx = transactions.pop(-1)
             if not tx["ignored"]:
-                self.log_debug(
-                    f"{self.connection_name(connection)} Transaction"
-                    f" ({tx_names})"
-                    f" stopped"
+                logger.debug(
+                    "%s Transaction (%s) stopped",
+                    self.connection_name(connection),
+                    tx_names,
                 )
                 await self._stop_transaction(connection, tx, **kwargs)
 
@@ -541,10 +544,10 @@ class Interface(InterfaceABC):
             tx_names = self.transaction_names(connection)
             tx = transactions.pop(-1)
             if not tx["ignored"]:
-                self.log_debug(
-                    f"{self.connection_name(connection)} Transaction"
-                    f" ({tx_names})"
-                    f" failed"
+                logger.debug(
+                    "%s Transaction (%s) failed",
+                    self.connection_name(connection),
+                    tx_names,
                 )
                 await self._fail_transaction(connection, tx, **kwargs)
 
@@ -555,10 +558,11 @@ class Interface(InterfaceABC):
         :param readonly: boolean, True if this connection should be readonly,
             False if the connection should be read/write
         """
-        self.log_warning([
-            f"Setting interface {self.config.interface_name}",
-            f"to readonly={readonly}",
-        ])
+        logger.warning(
+            "Setting interface %s to readonly=%s",
+            self.config.interface_name,
+            readonly,
+        )
         self.config.readonly = readonly
 
         await self.execute(
@@ -993,12 +997,12 @@ class Interface(InterfaceABC):
         ret = False
 
         prefix = kwargs.get("prefix", "")
-        self.log_warning(["Handling", prefix, f"error: {e}"])
+        logger.warning("Handling %s error: %s", prefix, e)
 
         e = self.create_error(e)
 
         if isinstance(e, CloseError):
-            self.log_debug("Handling a close error")
+            logger.debug("Handling a close error")
             ret = await self._handle_close_error(e=e, **kwargs)
 
         else:
@@ -1007,26 +1011,26 @@ class Interface(InterfaceABC):
                 kwargs["connection"] = connection
 
                 if isinstance(e, UniqueError):
-                    self.log_debug("Handling a unique error")
+                    logger.debug("Handling a unique error")
                     ret = await self._handle_unique_error(e=e, **kwargs)
 
                 elif isinstance(e, FieldError):
-                    self.log_debug("Handling a field error")
+                    logger.debug("Handling a field error")
                     ret = await self._handle_field_error(e=e, **kwargs)
 
                 elif isinstance(e, TableError):
-                    self.log_debug("Handling a table error")
+                    logger.debug("Handling a table error")
                     ret = await self._handle_table_error(e=e, **kwargs)
 
                 else:
-                    self.log_debug("Handling a general error")
+                    logger.debug("Handling a general error")
                     ret = await self._handle_general_error(e=e, **kwargs)
 
         if ret:
-            self.log_info(["Successfully handled", prefix, "error"])
+            logger.info("Successfully handled %s error", prefix)
 
         else:
-            self.log_warning(["Failed to handle", prefix, "error"])
+            logger.warning("Failed to handle %s error", prefix)
 
         return ret
 

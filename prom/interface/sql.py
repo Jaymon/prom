@@ -2,10 +2,11 @@
 import os
 import datetime
 import decimal
-import logging
 import uuid
 from functools import cached_property
 import inspect
+
+from datatypes import logging
 
 from ..query import Query, QueryField
 from ..exception import (
@@ -328,17 +329,15 @@ class SQLInterface(SQLInterfaceABC):
 
             conn_name = self.connection_name(connection)
             if query_args:
-                self.log_for(
-                    debug=(
-                        ["{} - {}\n{}", conn_name, query_str, query_args],
-                    ),
-                    info=(["{} - {}", conn_name, query_str],)
+                logger.log_for(
+                    debug=("%s - %s\n%s", conn_name, query_str, query_args),
+                    info=("%s - %s", conn_name, query_str),
                 )
 
                 execute_args = [query_str, query_args]
 
             else:
-                self.log_info("{} - {}", conn_name, query_str)
+                logger.info("%s - %s", conn_name, query_str)
 
                 execute_args = [query_str]
 
@@ -416,9 +415,9 @@ class SQLInterface(SQLInterfaceABC):
         for field_name, field in schema.fields.items():
             if field_name not in current_fields:
                 if field.required:
-                    self.log_error(
-                        "Required field {} cannot be safely add on the fly",
-                        field_name
+                    logger.error(
+                        "Required field %s cannot be safely add on the fly",
+                        field_name,
                     )
                     return False
 
@@ -446,8 +445,10 @@ class SQLInterface(SQLInterfaceABC):
         if query := kwargs.pop("query", None):
             if schemas := query.schemas:
                 for s in schemas:
-                    self.log_warning(
-                        f"Verifying {schema} query foreign key table: {s}"
+                    logger.warning(
+                        "Verifying %s query foreign key table: %s",
+                        schema,
+                        s,
                     )
                     if not await self._handle_table_error(s, e=e, **kwargs):
                         return False
@@ -455,7 +456,7 @@ class SQLInterface(SQLInterfaceABC):
         for field_name, field_val in schema.fields.items():
             s = field_val.schema
             if s:
-                self.log_warning(f"Verifying {schema} foreign key table: {s}")
+                logger.warning("Verifying %s foreign key table: %s", schema, s)
                 if not await self._handle_table_error(schema=s, e=e, **kwargs):
                     return False
 
