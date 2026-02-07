@@ -748,7 +748,7 @@ class ModelData(TestData):
 
         see `.get_orm_fields`, this is separate from that method since it
         is sometimes useful to generate a random schema with `.get_schema`
-        and then get a set field values for that schema without having
+        and then get a set of field values for that schema without having
         an Orm instance.
 
         Pretty much everything you can pass into `.get_orm_fields` you can
@@ -793,6 +793,24 @@ class ModelData(TestData):
 
         return fields
 
+    def get_orm_field(self, field_name: str, **kwargs):
+        """Returns the value for `field_name`
+
+        :keyword schema: Schema, optional if `orm_class` is passed in
+        :keyword orm_class: Orm, optional if `schema` is passed in
+        :returns: Any, the value of field_name
+        """
+        if schema := kwargs.get("schema", None):
+            field = schema.fields[field_name]
+
+        elif orm_class := kwargs.get("orm_class", None):
+            field = orm_class.schema.fields[field_name]
+
+        else:
+            raise TypeError("Missing schema or orm_class")
+
+        return self.get_orm_field_value(field_name, field, **kwargs)
+
     def get_orm_field_value(self, field_name, field, **kwargs):
         """Returns the generated value for the specific field
 
@@ -808,7 +826,14 @@ class ModelData(TestData):
             ret = self.get_orm_field_choice(
                 field_name,
                 field,
-                **kwargs
+                **kwargs,
+            )
+
+        elif field.is_enum():
+            ret = self.get_orm_field_enum(
+                field_name,
+                field,
+                **kwargs,
             )
 
         else:
@@ -820,7 +845,7 @@ class ModelData(TestData):
                 "testdata",
                 field.options.get(
                     "testdata",
-                    field_callbacks.get(field_name, None)
+                    field_callbacks.get(field_name, None),
                 )
             )
             if cb:
@@ -831,73 +856,81 @@ class ModelData(TestData):
                     ret = self.get_orm_field_bool(
                         field_name,
                         field,
-                        **kwargs
+                        **kwargs,
                     )
 
                 elif issubclass(field_type, int):
                     ret = self.get_orm_field_int(
                         field_name,
                         field,
-                        **kwargs
+                        **kwargs,
                     )
 
                 elif issubclass(field_type, str):
                     ret = self.get_orm_field_str(
                         field_name,
                         field,
-                        **kwargs
+                        **kwargs,
                     )
 
                 elif issubclass(field_type, (bytes, bytearray)):
                     ret = self.get_orm_field_bytes(
                         field_name,
                         field,
-                        **kwargs
+                        **kwargs,
                     )
 
                 elif issubclass(field_type, dict):
                     ret = self.get_orm_field_dict(
                         field_name,
                         field,
-                        **kwargs
+                        **kwargs,
                     )
 
                 elif issubclass(field_type, float):
                     ret = self.get_orm_field_float(
                         field_name,
                         field,
-                        **kwargs
+                        **kwargs,
                     )
 
                 elif issubclass(field_type, datetime.datetime):
                     ret = self.get_orm_field_datetime(
                         field_name,
                         field,
-                        **kwargs
+                        **kwargs,
                     )
 
                 elif issubclass(field_type, datetime.date):
                     ret = self.get_orm_field_date(
                         field_name,
                         field,
-                        **kwargs
+                        **kwargs,
                     )
 
                 elif issubclass(field_type, uuid.UUID):
                     ret = self.get_orm_field_uuid(
                         field_name,
                         field,
-                        **kwargs
+                        **kwargs,
                     )
 
                 else:
                     ret = self.get_orm_field_any(
                         field_name,
                         field,
-                        **kwargs
+                        **kwargs,
                     )
 
         return ret
+
+    def get_orm_field_enum(self, field_name, field, **kwargs):
+        """Choose a random enum value"""
+        choices = []
+        for ep in field.original_type:
+            choices.append(ep.value)
+
+        return random.choice(choices)
 
     def get_orm_field_required(self, field_name, field, **kwargs):
         """Returns True if field is required"""

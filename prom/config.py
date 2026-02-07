@@ -997,7 +997,7 @@ class Field(object):
                 dict,
             )
 
-            json_types = ()
+#             json_types = ()
 
             pickle_types = (
                 set,
@@ -1013,9 +1013,15 @@ class Field(object):
                     self._interface_type = type(enum_property.value)
                     break
 
-            elif issubclass(field_type, json_types):
-                self.serializer = self.options.pop("serializer", "json")
-                self._interface_type = str
+                # only enum values are allowed
+#                 if not self.choices:
+#                     self.choices = set()
+#                     for ep in field_type:
+#                         self.choices.add(ep.value)
+
+#             elif issubclass(field_type, json_types):
+#                 self.serializer = self.options.pop("serializer", "json")
+#                 self._interface_type = str
 
             elif issubclass(field_type, pickle_types):
                 self.serializer = self.options.pop("serializer", "pickle")
@@ -1068,7 +1074,7 @@ class Field(object):
 
     def is_enum(self):
         """Return True if this field represents an enum value"""
-        return issubclass(self.original_type, enum.Enum)
+        return issubclass(self.original_type, enum.EnumType)
 
     def is_jsonable(self):
         """Returns True if this field should be in .jsonable output"""

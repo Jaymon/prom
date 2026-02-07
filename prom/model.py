@@ -100,7 +100,7 @@ class Orms(ClassKeyFinder):
                 return self.find_class(model_name, *default)
 
     def insert_modules(self, modpaths=None):
-        """Goes through the PROM_PREFIX evnironment variables and loads any
+        """Goes through the PROM_PREFIX environment variables and loads any
         found module classpaths and loads all the Orm classes found in those
         modules
 
@@ -620,9 +620,9 @@ class Orm(object):
         return s
 
     @classmethod
-    async def install(cls):
+    async def install(cls, **kwargs):
         """install the Orm's table using the Orm's schema"""
-        return await cls.interface.set_table(cls.schema)
+        return await cls.interface.set_table(cls.schema, **kwargs)
 
     def __init__(self, fields=None, **fields_kwargs):
         """Create an Orm instance
