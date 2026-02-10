@@ -725,6 +725,9 @@ class Field(object):
         field_required=False,
         default: Any = None,
         default_factory: Callable[[], Any]|None = None,
+        jsonable: bool = True,
+        jsonable_name: str = "",
+        jget: Callable[[object, str, Any], tuple[str, Any]]|None = None,
         field_options=None,
         **field_options_kwargs,
     ):
@@ -784,16 +787,22 @@ class Field(object):
         if choices or not self.choices:
             self.choices = choices
 
-        if "jsonable" in field_options:
-            jsonable = field_options.pop("jsonable")
-            if isinstance(jsonable, str):
-                field_options.setdefault("jsonable_name", jsonable)
+        field_options.setdefault("jsonable_field", jsonable)
+        if jsonable_name:
+            field_options["jsonable_name"] = jsonable_name
+        if jget:
+            self.jget = jget
 
-            elif isinstance(jsonable, bool):
-                field_options.setdefault("jsonable_field", jsonable)
-
-            else:
-                field_options["jsonable"] = jsonable
+#         if "jsonable" in field_options:
+#             jsonable = field_options.pop("jsonable")
+#             if isinstance(jsonable, str):
+#                 field_options.setdefault("jsonable_name", jsonable)
+# 
+#             elif isinstance(jsonable, bool):
+#                 field_options.setdefault("jsonable_field", jsonable)
+# 
+#             else:
+#                 field_options["jsonable"] = jsonable
 
         if autopk := field_options.pop("autopk", False):
             field_options["pk"] = autopk
@@ -1353,7 +1362,7 @@ class Field(object):
         return self
 
     def jsonable(self, orm, name, val):
-        """This is called in Orm.jsonable() to set the field name nad value
+        """This is called in Orm.jsonable() to set the field name and value
 
         :param orm: Orm, the instance currently calling jsonable
         :param name: str, the Orm field name that will be used if the
@@ -1376,8 +1385,8 @@ class Field(object):
                 )
 
             else:
-                if val is None:
-                    val = self.get_default(orm, val)
+                name = self.options.get("jsonable_name", name)
+                name, val = self.jget(orm, name, val)
 
                 if val is not None:
                     format_str = ""
@@ -1387,7 +1396,7 @@ class Field(object):
                     elif isinstance(val, uuid.UUID):
                         val = str(val)
 
-            return self.options.get("jsonable_name", name), val
+            return name, val
 
         else:
             logger.debug(
@@ -1395,10 +1404,16 @@ class Field(object):
             )
             return "", None
 
-    def jsonabler(self, v):
+    def jget(self, orm, name, val):
+        if val is None:
+            val = self.get_default(orm, val)
+
+        return name, val
+
+    def jgetter(self, v):
         """Decorator for the method called for a field when an Orm's .jsonable
         method is called"""
-        self.jsonable = v
+        self.jget = v
         return self
 
     def modified(self, orm, val):
