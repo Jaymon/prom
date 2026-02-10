@@ -721,12 +721,18 @@ class Field(object):
 
     def __init__(
         self,
-        field_type,
-        field_required=False,
+        field_type: type,
+        field_required: bool = False,
         default: Any = None,
         default_factory: Callable[[], Any]|None = None,
         jsonable: bool = True,
         jsonable_name: str = "",
+        fget: Callable[[object, Any], Any] = None,
+        fset: Callable[[object, Any], Any] = None,
+        fdel: Callable[[object, Any], Any] = None,
+        iget: Callable[[object, Any], Any] = None,
+        iset: Callable[[object, Any], Any] = None,
+#         idel: Callable[[object, Any], Any] = None,
         jget: Callable[[object, str, Any], tuple[str, Any]]|None = None,
         field_options=None,
         **field_options_kwargs,
@@ -767,11 +773,6 @@ class Field(object):
                 Used with an int to set it to an auto-increment, use it with
                 UUID to have uuids auto generated
             * autopk: bool, shortcut for setting pk=True, auto=True
-            * fvalue: callable[Any], called in the default .fset method to
-                normalize the value before setting the value as an attribute on
-                the orm
-            * ivalue: callable[Any], called in the default .iset method to
-                normalize the value before sending the value to the db
         :param **field_options_kwargs: dict, will be combined with
             field_options
         """
@@ -792,17 +793,6 @@ class Field(object):
             field_options["jsonable_name"] = jsonable_name
         if jget:
             self.jget = jget
-
-#         if "jsonable" in field_options:
-#             jsonable = field_options.pop("jsonable")
-#             if isinstance(jsonable, str):
-#                 field_options.setdefault("jsonable_name", jsonable)
-# 
-#             elif isinstance(jsonable, bool):
-#                 field_options.setdefault("jsonable_field", jsonable)
-# 
-#             else:
-#                 field_options["jsonable"] = jsonable
 
         if autopk := field_options.pop("autopk", False):
             field_options["pk"] = autopk
@@ -825,6 +815,24 @@ class Field(object):
         self.options = field_options
         self.required = field_required or self.is_pk()
 
+        if fget:
+            self.fget = fget
+
+        if fset:
+            self.fset = fset
+
+        if fdel:
+            self.fdel = fdel
+
+        if iget:
+            self.iget = iget
+
+        if iset:
+            self.iset = iset
+
+#         if idel:
+#             self.idel = idel
+
         self.set_type(field_type)
 
         # this class is being created manually so mimic what the python parser
@@ -837,9 +845,6 @@ class Field(object):
 
         elif name:
             self.__set_name__(orm_class, name)
-
-#         self.iset = None
-#         self.iget = None
 
     def __set_name__(self, orm_class, name):
         """This is called right after __init__
@@ -1170,12 +1175,12 @@ class Field(object):
             val = self.fset(orm, val)
 
             if val is not None:
-                if fvalues := self.options.get("fvalue", None):
-                    if callable(fvalues):
-                        fvalues = [fvalues]
-
-                    for fvalue in fvalues:
-                        val = fvalue(val)
+#                 if fvalues := self.options.get("fvalue", None):
+#                     if callable(fvalues):
+#                         fvalues = [fvalues]
+# 
+#                     for fvalue in fvalues:
+#                         val = fvalue(val)
 
                 if self.choices and val not in self.choices:
                     raise ValueError(
@@ -1233,13 +1238,13 @@ class Field(object):
 
         val = self.iset(orm, val)
 
-        if val is not None:
-            if ivalues := self.options.get("ivalue", None):
-                if callable(ivalues):
-                    ivalues = [ivalues]
-
-                for ivalue in ivalues:
-                    val = ivalue(val)
+#         if val is not None:
+#             if ivalues := self.options.get("ivalue", None):
+#                 if callable(ivalues):
+#                     ivalues = [ivalues]
+# 
+#                 for ivalue in ivalues:
+#                     val = ivalue(val)
 
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
@@ -1264,9 +1269,6 @@ class Field(object):
         logger.debug(f"{orm_class.__name__}.{self.name}.del_value")
 
         val = self.fdel(orm, val)
-
-#         if val is None:
-#             val = self.get_default(orm, val)
 
         orm.__dict__.pop(self.orm_interface_hash, None)
         return val
@@ -1295,11 +1297,6 @@ class Field(object):
         logger.debug(f"{orm_class.__name__}.{self.name}.del_interface")
         orm.__dict__.pop(self.orm_interface_hash, None)
         return None if self.is_pk() else val
-
-#     def ideleter(self, v):
-#         """decorator for setting field's idel function"""
-#         self.idel = v
-#         return self
 
     def get_default(self, orm, val):
         """On a new Orm instantiation, this will be called for each field and
@@ -1529,9 +1526,6 @@ class Field(object):
         Python's built-in @property deleter because the fdel method *NEEDS* to
         return something and it accepts the current value as an argument"""
         val = self.del_value(orm, self.fval(orm))
-#         self.__set__(orm, val)
-
-#         val = self.fdel(orm, self.fval(orm))
         orm.__dict__[self.orm_field_name] = val
 
 
