@@ -444,21 +444,21 @@ class QueryField(object):
 
     def set_value(self, field_val):
         # we set this here so things like .is_subquery work as expected in a
-        # Field.iquery method body
+        # Field.to_query method body
         self.value = field_val
 
         if self.is_list and not self.is_subquery():
             if field_val:
                 field_val = make_list(field_val)
                 for i in range(len(field_val)):
-                    field_val[i] = self.iquery(field_val[i])
+                    field_val[i] = self.to_query(field_val[i])
 
         else:
-            field_val = self.iquery(field_val)
+            field_val = self.to_query(field_val)
 
         self.value = field_val
 
-    def iquery(self, field_val):
+    def to_query(self, field_val):
         schema = self.schema
         if schema:
             schema_field = getattr(schema, self.name)
@@ -466,7 +466,7 @@ class QueryField(object):
                 if isinstance(field_val, ref_class):
                     field_val = field_val.pk
 
-            field_val = schema_field.iquery(self, field_val)
+            field_val = schema_field.to_query(self, field_val)
 
         return field_val
 

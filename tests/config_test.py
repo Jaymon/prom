@@ -416,12 +416,12 @@ class FieldTest(EnvironTestCase):
         fields2 = o.to_interface()
         self.assertLess(fields["foo"], fields2["foo"])
 
-    def test_iquery(self):
+    def test_qset(self):
         class IqueryOrm(Orm):
             foo = Field(int)
 
-            @foo.iquerier
-            def foo(query, v):
+            @foo.qsetter
+            def foo(query_field, v):
                 return 10
 
         q = IqueryOrm.query.eq_foo("foo")
@@ -762,12 +762,12 @@ class FieldTest(EnvironTestCase):
                 pout.v(f"fdel {v}")
                 return v
 
-            def iquery(self, query, v):
-                pout.v(f"iquery {v}")
+            def qset(self, query, v):
+                pout.v(f"qset {v}")
                 return v
 
-            def jsonable(self, orm, field_name, v):
-                pout.v(f"jsonable {v}")
+            def jset(self, orm, field_name, v):
+                pout.v(f"jset {v}")
                 return field_name, v
 
         orm_class = self.get_orm_class(

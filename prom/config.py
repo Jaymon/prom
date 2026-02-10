@@ -733,7 +733,8 @@ class Field(object):
         iget: Callable[[object, Any], Any] = None,
         iset: Callable[[object, Any], Any] = None,
 #         idel: Callable[[object, Any], Any] = None,
-        jget: Callable[[object, str, Any], tuple[str, Any]]|None = None,
+        jset: Callable[[object, str, Any], tuple[str, Any]]|None = None,
+        qset: Callable[[object, Any], Any] = None,
         field_options=None,
         **field_options_kwargs,
     ):
@@ -791,8 +792,8 @@ class Field(object):
         field_options.setdefault("jsonable_field", jsonable)
         if jsonable_name:
             field_options["jsonable_name"] = jsonable_name
-        if jget:
-            self.jget = jget
+        if jset:
+            self.jset = jset
 
         if autopk := field_options.pop("autopk", False):
             field_options["pk"] = autopk
@@ -830,8 +831,8 @@ class Field(object):
         if iset:
             self.iset = iset
 
-#         if idel:
-#             self.idel = idel
+        if qset:
+            self.qset = qset
 
         self.set_type(field_type)
 
@@ -1175,13 +1176,6 @@ class Field(object):
             val = self.fset(orm, val)
 
             if val is not None:
-#                 if fvalues := self.options.get("fvalue", None):
-#                     if callable(fvalues):
-#                         fvalues = [fvalues]
-# 
-#                     for fvalue in fvalues:
-#                         val = fvalue(val)
-
                 if self.choices and val not in self.choices:
                     raise ValueError(
                         "Value {} not in {} value choices".format(
@@ -1237,14 +1231,6 @@ class Field(object):
         logger.debug(f"{orm_class.__name__}.{self.name}.to_interface")
 
         val = self.iset(orm, val)
-
-#         if val is not None:
-#             if ivalues := self.options.get("ivalue", None):
-#                 if callable(ivalues):
-#                     ivalues = [ivalues]
-# 
-#                 for ivalue in ivalues:
-#                     val = ivalue(val)
 
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
@@ -1323,12 +1309,12 @@ class Field(object):
 
         return ret
 
-    def iquery(self, query_field, val):
+    def to_query(self, query_field, val):
         """This will be called when setting the field onto a query instance
 
         :example:
             o = Orm(foo=1)
-            o.query.eq_foo(1) # iquery called here
+            o.query.eq_foo(1) # to_query called here
 
         :param query_field: QueryField
         :param val: mixed, the fields value
@@ -1338,9 +1324,11 @@ class Field(object):
             val = self._iquery_enum(query_field, val)
 
         else:
+            val = self.qset(query_field, val)
+
             if self.is_ref():
                 # Foreign Keys get passed through their Field methods
-                val = self.schema.pk.iquery(query_field, val)
+                val = self.schema.pk.qset(query_field, val)
 
         return val
 
@@ -1352,10 +1340,13 @@ class Field(object):
 
         return val
 
-    def iquerier(self, v):
+    def qset(self, query_field, val):
+        return val
+
+    def qsetter(self, v):
         """decorator for the method called when this field is used in a SELECT
         query"""
-        self.iquery = v
+        self.qset = v
         return self
 
     def jsonable(self, orm, name, val):
@@ -1383,7 +1374,7 @@ class Field(object):
 
             else:
                 name = self.options.get("jsonable_name", name)
-                name, val = self.jget(orm, name, val)
+                name, val = self.jset(orm, name, val)
 
                 if val is not None:
                     format_str = ""
@@ -1401,16 +1392,16 @@ class Field(object):
             )
             return "", None
 
-    def jget(self, orm, name, val):
+    def jset(self, orm, name, val):
         if val is None:
             val = self.get_default(orm, val)
 
         return name, val
 
-    def jgetter(self, v):
+    def jsetter(self, v):
         """Decorator for the method called for a field when an Orm's .jsonable
         method is called"""
-        self.jget = v
+        self.jset = v
         return self
 
     def modified(self, orm, val):
