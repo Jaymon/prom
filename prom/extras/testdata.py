@@ -34,15 +34,11 @@ class ModelData(TestData):
     I usually import this in a common test module that gets imported by all the
     actual tests so this is always loaded.
 
-    This uses a lot of magic and I'm not sure the best way to describe it,
-    basically, this will create get_*, create_*, and get_*_fields methods for
-    any Orm subclass you have loaded into memory. The * will correspond to
-    Orm.model_name and Orm.models_name (get_*_fields only ever corresponds to
-    Orm.model_name).
-
-    .. note:: Because this class only creates those methods for Orm classes
-    loaded into memory you need to import the modules for the classes you want
-    to test
+    This uses a lot of magic and I'm not sure the best way to describe it.,
+    Basically, this will create `get_*`, `create_*`, and `get_*_fields` methods
+    for any Orm subclass you have loaded into memory. The * will correspond to
+    `Orm.model_name` and `Orm.models_name` (`get_*_fields` only ever
+    corresponds to `Orm.model_name`).
 
     Maybe the best way to understand what this does is by example.
 
@@ -72,16 +68,16 @@ class ModelData(TestData):
 
 
     To customize a method, you can extend this class and define the method. The
-    signature for any overridden methods is (self, orm_class, **kwargs),
-    and you will usually just want to override the get_<MODELS-NAME>_fields
-    class since that is the one the get_* and create_* methods use to populate
-    the orms
+    signature for any overridden methods is `(self, orm_class, **kwargs)`,
+    and you will usually just want to override the `get_<MODELS-NAME>_fields`
+    class since that is the one the `get_*` and `create_*` methods use to
+    populate the orms
 
     All the signatures of all the methods need to be the same because they are
     mixed and matched, so if you have a `Foobar` Orm class and override the
-    get_foobar_fields testdata method, then get_foobar() would call
-    get_foobar_fields and get_orm(Foobar, **kwargs) would also call
-    get_foobar_fields. So all of these methods can be mixed and matched
+    `get_foobar_fields` testdata method, then `get_foobar()` would call
+    `get_foobar_fields` and `get_orm(Foobar, **kwargs)` would also call
+    `get_foobar_fields`. So all of these methods can be mixed and matched
 
     :example:
         from prom.extras.testdata import ModelData
@@ -91,7 +87,7 @@ class ModelData(TestData):
                 return await super().get_orm_fields(orm_class, **kwargs)
 
     If you'd like to customize the testdata method names, you can set the
-    Orm.model_name or the Orm.models_name class properties
+    `Orm.model_name` or the `Orm.models_name` class properties
 
     :example:
         from prom import Orm
@@ -114,8 +110,8 @@ class ModelData(TestData):
                 * .create_orm_instance
 
     Any kwargs you pass in any of the methods will be passed to the methods
-    below, so if you pass in a value to .create_orm it will be available in
-    .get_fields
+    below, so if you pass in a value to `.create_orm` it will be available in
+    `.get_orm_fields`
     """
     def _gets_count(self, orm_class, **kwargs):
         """Find how many orm_class should be created
@@ -998,6 +994,25 @@ class ModelData(ModelData):
     """This contains additional functionality to create/generate Orm classes
     if they're not passed into the `*_orm*` methods
     """
+#     _cleanups_added = False
+# 
+#     def __init__(self):
+#         super().__init__()
+#         self._add_cleanups()
+# 
+#     def get_cleanups(self):
+#         if not self._cleanups_added:
+#             self.addAsyncSetup(self.unsafe_delete_orm_tables)
+#             self.addAsyncCleanup(self.unsafe_delete_orm_tables)
+#             self.addAsyncCleanup(self.close_orm_interfaces)
+#             type(self)._cleanups_added = True
+
+    def get_async_cleanups(self):
+        return [
+            (self.unsafe_delete_orm_tables, [], {}),
+            (self.close_orm_interfaces, [], {}),
+        ]
+
     def get_table_name(self, *args, **kwargs):
         """return a random table name
 
