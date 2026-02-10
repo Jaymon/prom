@@ -289,7 +289,7 @@ class OrmTest(EnvironTestCase):
     def test_hydrate_2(self):
         orm_class = self.get_orm_class(
             foo=Field(int, True),
-            bar=Field(str, default=lambda *_, **__: "lambda bar"),
+            bar=Field(str, default_factory=lambda: "lambda bar"),
         )
 
         o = orm_class.hydrate(foo=1)
@@ -813,8 +813,8 @@ class OrmTest(EnvironTestCase):
     async def test_modify_2(self):
         orm_class = self.get_orm_class(
             foo=Field(str, False),
-            bar=Field(dict, False, default=dict),
-            che=Field(dict, False, default=dict),
+            bar=Field(dict, False, default_factory=dict),
+            che=Field(dict, False, default_factory=dict),
         )
 
         t = orm_class()

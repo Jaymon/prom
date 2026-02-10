@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import decimal
 import datetime
 import inspect
@@ -7,6 +6,8 @@ import json
 import logging
 import uuid
 import enum
+from typing import Any
+from dataclasses import MISSING, _MISSING_TYPE
 
 import dsnparse
 from datatypes import (
@@ -583,8 +584,10 @@ class Field(object):
     """In the instance, this will be a dict of key/val pairs containing extra
     information about the field"""
 
-    default = None
+    default: Any = None
     """Default value for this field"""
+
+    default_factory: Callable[[], Any]|None = None
 
     help = ""
     """The description/help message for this field"""
@@ -720,8 +723,10 @@ class Field(object):
         self,
         field_type,
         field_required=False,
+        default: Any = None,
+        default_factory: Callable[[], Any]|None = None,
         field_options=None,
-        **field_options_kwargs
+        **field_options_kwargs,
     ):
         """
         create a field
@@ -797,6 +802,16 @@ class Field(object):
         for k in list(field_options.keys()):
             if hasattr(self, k):
                 setattr(self, k, field_options.pop(k))
+
+        if default is not None and default_factory is not None:
+            raise ValueError("Cannot specify both default and default_factory")
+
+        elif default_factory is not None:
+            if not callable(default_factory):
+                raise ValueError("Uncallable default_factory")
+
+        self.default = default
+        self.default_factory = default_factory
 
         self.options = field_options
         self.required = field_required or self.is_pk()
@@ -1261,7 +1276,7 @@ class Field(object):
         self.idel = v
         return self
 
-    def fdefault(self, orm, val):
+    def get_default(self, orm, val):
         """On a new Orm instantiation, this will be called for each field and
         if val equals None then this will decide how to use self.default to set
         the default value of the field
@@ -1274,29 +1289,24 @@ class Field(object):
         :param val: mixed, the current value of the field (usually None)
         :returns: mixed
         """
-        #pout.v("fdefault {}".format(self.name))
-        ret = val
         if val is None:
-            if callable(self.default):
-                ret = self.default()
-
-            elif self.default is None:
-                ret = self.default
-
-            elif isinstance(self.default, (dict, list, set)):
-                ret = type(self.default)()
+            if self.default_factory is not None:
+                ret = self.default_factory()
 
             else:
                 ret = self.default
 
+        else:
+            ret = val
+
         return ret
 
-    def fdefaulter(self, v):
-        """decorator for returning the field's default value
-
-        decorator for setting field's fdefault function"""
-        self.fdefault = v
-        return self
+#     def fdefaulter(self, v):
+#         """decorator for returning the field's default value
+# 
+#         decorator for setting field's fdefault function"""
+#         self.fdefault = v
+#         return self
 
     def iquery(self, query_field, val):
         """This will be called when setting the field onto a query instance
@@ -1358,7 +1368,7 @@ class Field(object):
 
             else:
                 if val is None:
-                    val = self.fdefault(orm, val)
+                    val = self.get_default(orm, val)
 
                 if val is not None:
                     format_str = ""

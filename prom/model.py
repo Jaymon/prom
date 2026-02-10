@@ -646,7 +646,7 @@ class Orm(object):
 
         # set defaults
         for field_name, field in schema.fields.items():
-            fields[field_name] = field.fdefault(
+            fields[field_name] = field.get_default(
                 self,
                 fields.get(field_name, None)
             )

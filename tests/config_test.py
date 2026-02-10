@@ -437,18 +437,18 @@ class FieldTest(EnvironTestCase):
         r = o.jsonable()
         self.assertTrue("foo" in r)
 
-    def test_default(self):
+    def test_get_default(self):
         class FDefaultOrm(Orm):
             foo = Field(int, default=0)
             bar = Field(int)
 
         o = FDefaultOrm()
         foo = o.schema.foo
-        self.assertEqual(0, foo.fdefault(o, None))
+        self.assertEqual(0, foo.get_default(o, None))
         self.assertEqual(0, o.foo)
 
         bar = o.schema.bar
-        self.assertEqual(None, bar.fdefault(o, None))
+        self.assertEqual(None, bar.get_default(o, None))
         self.assertEqual(None, o.bar)
 
     async def test_fcrud(self):
@@ -792,14 +792,18 @@ class FieldTest(EnvironTestCase):
 
 
 class SerializedFieldTest(EnvironTestCase):
-    def get_orm(self, field_type=dict, default=None):
+    def get_orm(self, field_type=dict, default=None, default_factory=None):
         orm_class = self.get_orm_class(
-            body=Field(field_type, default=default)
+            body=Field(
+                field_type,
+                default=default,
+                default_factory=default_factory,
+            )
         )
         return orm_class()
 
     def test_default(self):
-        o = self.get_orm(default=dict)
+        o = self.get_orm(default_factory=dict)
         o.body["foo"] = 1
         self.assertEqual(1, o.body["foo"])
 
