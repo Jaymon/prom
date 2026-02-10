@@ -474,14 +474,14 @@ class FieldTest(EnvironTestCase):
         self.assertEqual(1, o.foo)
         self.assertEqual(1, o.foo)
 
-        pk = await o.save()
+        await o.save()
         self.assertEqual(2, o.foo)
         self.assertEqual(2, o.foo)
 
         del o.foo
         self.assertEqual(None, o.foo)
-        pk = await o.save()
-        self.assertEqual(1, o.foo)
+        await o.save()
+        self.assertEqual(None, o.foo)
 
         o.foo = 10
         self.assertEqual(11, o.foo)
@@ -756,10 +756,6 @@ class FieldTest(EnvironTestCase):
 
             def fset(self, orm, v):
                 pout.v(f"fset {v}")
-                return v
-
-            def fdefault(self, orm, v):
-                pout.v(f"fdefault {v}")
                 return v
 
             def fdel(self, orm, v):

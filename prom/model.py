@@ -881,7 +881,7 @@ class Orm(object):
                 setattr(
                     self,
                     field_name,
-                    field.idel(self, getattr(self, field_name))
+                    field.del_interface(self, getattr(self, field_name))
                 )
 
             self._interface_pk = None

@@ -1093,10 +1093,6 @@ class Field(object):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
-        logger.debug(f"fget {orm.__class__.__name__}.{self.name}")
-        if self.is_ref():
-            # Foreign Keys get passed through their Field methods
-            val = self.schema.pk.fget(orm, val)
         return val
 
     def fgetter(self, v):
@@ -1144,7 +1140,7 @@ class Field(object):
     def iget(self, orm, val):
         return val
 
-    def fset(self, orm, val):
+    def to_value(self, orm, val):
         """This is called on Orm instantiation and any time field is set (eg
         Orm.foo = ...)
 
@@ -1156,13 +1152,14 @@ class Field(object):
         :returns: mixed
         """
         orm_class = orm.__class__ if orm else self.orm_class
-        logger.debug(f"fset {orm_class.__name__}.{self.name}")
+        logger.debug(f"{orm_class.__name__}.{self.name}.to_value")
 
         if self.is_enum():
-            pout.v(val)
             val = self._fset_enum(orm, val)
 
         else:
+            val = self.fset(orm, val)
+
             if val is not None:
                 if fvalues := self.options.get("fvalue", None):
                     if callable(fvalues):
@@ -1190,8 +1187,11 @@ class Field(object):
 
             if self.is_ref():
                 # Foreign Keys get passed through their Field methods
-                val = self.schema.pk.fset(orm, val)
+                val = self.schema.pk.to_value(None, val)
 
+        return val
+
+    def fset(self, orm, val):
         return val
 
     def _fset_enum(self, orm, val):
@@ -1250,9 +1250,19 @@ class Field(object):
     def iset(self, orm, val):
         return val
 
-    def fdel(self, orm, val):
-        logger.debug(f"fdel {orm.__class__.__name__}.{self.name}")
+    def del_value(self, orm, val):
+        orm_class = orm.__class__ if orm else self.orm_class
+        logger.debug(f"{orm_class.__name__}.{self.name}.del_value")
+
+        val = self.fdel(orm, val)
+
+#         if val is None:
+#             val = self.get_default(orm, val)
+
         orm.__dict__.pop(self.orm_interface_hash, None)
+        return val
+
+    def fdel(self, orm, val):
         return None
 
     def fdeleter(self, v):
@@ -1260,21 +1270,27 @@ class Field(object):
         self.fdel = v
         return self
 
-    def idel(self, orm, val):
+    def del_interface(self, orm, val):
         """Called when the field is being deleted from the db
+
+        When you delete an orm instance from the db then it resorts to how it
+        would look if a new orm instance was created and it has never been
+        saved. This method helps the orm instance that was just deleted get
+        back to that pre-saved state
 
         :param orm: Orm
         :param val: mixed, the current value of the field
         :returns: mixed
         """
-        logger.debug(f"idel {orm.__class__.__name__}.{self.name}")
+        orm_class = orm.__class__ if orm else self.orm_class
+        logger.debug(f"{orm_class.__name__}.{self.name}.del_interface")
         orm.__dict__.pop(self.orm_interface_hash, None)
         return None if self.is_pk() else val
 
-    def ideleter(self, v):
-        """decorator for setting field's idel function"""
-        self.idel = v
-        return self
+#     def ideleter(self, v):
+#         """decorator for setting field's idel function"""
+#         self.idel = v
+#         return self
 
     def get_default(self, orm, val):
         """On a new Orm instantiation, this will be called for each field and
@@ -1300,13 +1316,6 @@ class Field(object):
             ret = val
 
         return ret
-
-#     def fdefaulter(self, v):
-#         """decorator for returning the field's default value
-# 
-#         decorator for setting field's fdefault function"""
-#         self.fdefault = v
-#         return self
 
     def iquery(self, query_field, val):
         """This will be called when setting the field onto a query instance
@@ -1458,17 +1467,28 @@ class Field(object):
 
         return val
 
-    def __get__(self, orm, orm_class=None):
+    def from_value(self, orm, val):
         """This is the wrapper that will actually be called when the field is
         fetched from the instance, this is a little different than Python's
         built-in @property fget method because it will pull the value from a
         shadow variable in the instance and then call fget"""
+        logger.debug(f"{orm.__class__.__name__}.{self.name}.from_value")
+
+        val = self.fget(orm, val)
+
+        if self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.from_value(orm, val)
+
+        return val
+
+    def __get__(self, orm, orm_class=None):
         if orm is None:
             # class is requesting this property, so return it
             return self
 
         raw_val = self.fval(orm)
-        ret = self.fget(orm, raw_val)
+        ret = self.from_value(orm, raw_val)
 
         # we want to compensate for default values right here, so if the raw
         # val is None but the new val is not then we save the returned value,
@@ -1485,7 +1505,7 @@ class Field(object):
         set, this is different than Python's built-in @property setter because
         the fset method *NEEDS* to return something
         """
-        val = self.fset(orm, val)
+        val = self.to_value(orm, val)
         orm.__dict__[self.orm_field_name] = val
 
     def __delete__(self, orm):
@@ -1493,7 +1513,10 @@ class Field(object):
         default fdel will almost never be messed with, this is different than
         Python's built-in @property deleter because the fdel method *NEEDS* to
         return something and it accepts the current value as an argument"""
-        val = self.fdel(orm, self.fval(orm))
+        val = self.del_value(orm, self.fval(orm))
+#         self.__set__(orm, val)
+
+#         val = self.fdel(orm, self.fval(orm))
         orm.__dict__[self.orm_field_name] = val
 
 

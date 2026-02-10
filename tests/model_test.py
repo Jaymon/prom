@@ -456,6 +456,7 @@ class OrmTest(EnvironTestCase):
         await o.save()
         o2 = await o.query.eq_pk(o.pk).one()
         self.assertEqual(2, o.foo)
+        self.assertFalse("foo" in o.modified_fields)
 
         del o.foo
         self.assertEqual(None, o.foo)
