@@ -631,7 +631,7 @@ class Orm(object):
         might also need to override .hydrate (but don't change .hydrate's
         signature) since .hydrate creates an instance using no arguments
 
-        NOTE -- Honestly, I've tried it multiple times and it's almost never
+        .. note:: Honestly, I've tried it multiple times and it's almost never
             worth overriding this method nor .hydrate. If you ever get tempted
             just say no!
 
@@ -727,8 +727,8 @@ class Orm(object):
         """
         schema = self.schema
         for field_name, v in fields.items():
-            if field_name in schema.fields:
-                fields[field_name] = schema.fields[field_name].iget(self, v)
+            if field := schema.fields.get(field_name, None):
+                fields[field_name] = field.from_interface(self, v)
 
         self.modify(fields)
 
@@ -744,7 +744,7 @@ class Orm(object):
         fields = {}
         schema = self.schema
         for k, field in schema.fields.items():
-            v = field.iset(self, getattr(self, k))
+            v = field.to_interface(self, getattr(self, k))
 
             is_modified = field.modified(self, v)
             if is_modified:
@@ -1273,7 +1273,7 @@ class Orm(object):
         except AttributeError:
             field_name = k
 
-        return super(Orm, self).__delattr__(field_name)
+        return super().__delattr__(field_name)
 
     def __int__(self):
         """Syntactic sugar to get the primary key as an int"""

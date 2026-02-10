@@ -994,19 +994,6 @@ class ModelData(ModelData):
     """This contains additional functionality to create/generate Orm classes
     if they're not passed into the `*_orm*` methods
     """
-#     _cleanups_added = False
-# 
-#     def __init__(self):
-#         super().__init__()
-#         self._add_cleanups()
-# 
-#     def get_cleanups(self):
-#         if not self._cleanups_added:
-#             self.addAsyncSetup(self.unsafe_delete_orm_tables)
-#             self.addAsyncCleanup(self.unsafe_delete_orm_tables)
-#             self.addAsyncCleanup(self.close_orm_interfaces)
-#             type(self)._cleanups_added = True
-
     def get_async_cleanups(self):
         return [
             (self.unsafe_delete_orm_tables, [], {}),

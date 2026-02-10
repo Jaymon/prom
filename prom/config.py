@@ -814,6 +814,9 @@ class Field(object):
         elif name:
             self.__set_name__(orm_class, name)
 
+#         self.iset = None
+#         self.iget = None
+
     def __set_name__(self, orm_class, name):
         """This is called right after __init__
 
@@ -997,8 +1000,6 @@ class Field(object):
                 dict,
             )
 
-#             json_types = ()
-
             pickle_types = (
                 set,
                 list,
@@ -1012,16 +1013,6 @@ class Field(object):
                 for enum_property in field_type:
                     self._interface_type = type(enum_property.value)
                     break
-
-                # only enum values are allowed
-#                 if not self.choices:
-#                     self.choices = set()
-#                     for ep in field_type:
-#                         self.choices.add(ep.value)
-
-#             elif issubclass(field_type, json_types):
-#                 self.serializer = self.options.pop("serializer", "json")
-#                 self._interface_type = str
 
             elif issubclass(field_type, pickle_types):
                 self.serializer = self.options.pop("serializer", "pickle")
@@ -1074,7 +1065,7 @@ class Field(object):
 
     def is_enum(self):
         """Return True if this field represents an enum value"""
-        return issubclass(self.original_type, enum.EnumType)
+        return issubclass(self.original_type, enum.Enum)
 
     def is_jsonable(self):
         """Returns True if this field should be in .jsonable output"""
@@ -1098,7 +1089,7 @@ class Field(object):
         self.fget = v
         return self
 
-    def iget(self, orm, val):
+    def from_interface(self, orm, val):
         """Called anytime the field is being returned from the interface to the
         orm
 
@@ -1111,11 +1102,14 @@ class Field(object):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
-        logger.debug(f"iget {orm.__class__.__name__}.{self.name}")
+        orm_class = orm.__class__ if orm else self.orm_class
+        logger.debug(f"{orm_class.__name__}.{self.name}.from_interface")
+
+        val = self.iget(orm, val)
 
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
-            val = self.schema.pk.iget(orm, val)
+            val = self.schema.pk.from_interface(None, val)
 
         else:
             if self.is_serialized():
@@ -1132,6 +1126,9 @@ class Field(object):
         self.iget = v
         return self
 
+    def iget(self, orm, val):
+        return val
+
     def fset(self, orm, val):
         """This is called on Orm instantiation and any time field is set (eg
         Orm.foo = ...)
@@ -1143,9 +1140,11 @@ class Field(object):
         :param val: mixed, the current value of the field
         :returns: mixed
         """
-        logger.debug(f"fset {orm.__class__.__name__}.{self.name}")
+        orm_class = orm.__class__ if orm else self.orm_class
+        logger.debug(f"fset {orm_class.__name__}.{self.name}")
 
         if self.is_enum():
+            pout.v(val)
             val = self._fset_enum(orm, val)
 
         else:
@@ -1193,7 +1192,7 @@ class Field(object):
         self.fset = v
         return self
 
-    def iset(self, orm, val):
+    def to_interface(self, orm, val):
         """Called anytime the field is being fetched to send to the interface
 
         think of this as when the interface is going to get the field value or
@@ -1205,7 +1204,10 @@ class Field(object):
         :param val: Any, the current value of the field
         :returns: Any
         """
-        logger.debug(f"iset {orm.__class__.__name__}.{self.name}")
+        orm_class = orm.__class__ if orm else self.orm_class
+        logger.debug(f"{orm_class.__name__}.{self.name}.to_interface")
+
+        val = self.iset(orm, val)
 
         if val is not None:
             if ivalues := self.options.get("ivalue", None):
@@ -1217,7 +1219,7 @@ class Field(object):
 
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
-            val = self.schema.pk.iset(orm, val)
+            val = self.schema.pk.to_interface(None, val)
 
         else:
             if self.is_serialized():
@@ -1229,6 +1231,9 @@ class Field(object):
         """decorator for setting field's fset function"""
         self.iset = v
         return self
+
+    def iset(self, orm, val):
+        return val
 
     def fdel(self, orm, val):
         logger.debug(f"fdel {orm.__class__.__name__}.{self.name}")
@@ -1513,7 +1518,7 @@ class AutoIncrement(Field):
 class AutoDatetime(Field):
     """A special field that will create a datetime according to triggers
 
-    :Example:
+    :example:
         # datetime will be auto-populated on creation
         created = AutoDatetime(created=True)
 

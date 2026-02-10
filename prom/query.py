@@ -212,8 +212,8 @@ class Iterator(ListIterator, AsyncIterable):
     def filter(self, o):
         """run o through the filter, if True then orm o should be included
 
-        NOTE -- The filter callback needs to account for non Orm instance
-            values of o
+        .. note:: The filter callback needs to account for non Orm instance
+            values of `o`
 
         :param o: Orm|tuple[Any]|Any, usually an Orm instance but can also be
             a tuple or single value
@@ -226,8 +226,8 @@ class Iterator(ListIterator, AsyncIterable):
         returned by higher level objects, this will usually mean hydrating an
         Orm instance or stuff like that
 
-        NOTE -- this will call Orm.hydrate and should be the only place that
-            will call that method
+        .. note:: This will call `Orm.hydrate` and should be the only place
+            that will call that method
 
         :param d: dict, the raw dict cursor result returned from the interface
         :returns: Orm|tuple[Any]|Any, usually an Orm instance populated with d
@@ -242,7 +242,8 @@ class Iterator(ListIterator, AsyncIterable):
             for field_name in self.field_names:
                 fv = d[field_name]
                 if orm_class:
-                    fv = orm_class.schema.fields[field_name].iget(None, fv)
+                    field = orm_class.schema.fields[field_name]
+                    fv = field.from_interface(None, fv)
                 field_vals.append(fv)
             r = field_vals if len(self.field_names) > 1 else field_vals[0]
 
