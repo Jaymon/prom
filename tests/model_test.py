@@ -261,7 +261,7 @@ class OrmTest(EnvironTestCase):
         o3 = await o.query.eq_pk(o.pk).one()
         self.assertEqual(_updated2, o3._updated)
 
-    async def test_hydrate_1(self):
+    async def test_from_query_1(self):
         """make sure you can add/update and change the primary key and all of
         that works as expected"""
         orm_class = self.get_orm_class()
@@ -276,7 +276,7 @@ class OrmTest(EnvironTestCase):
             await o2.save()
 
         o3 = await o.query.eq_pk(o.pk).one()
-        self.assertTrue(o3.is_hydrated())
+        self.assertTrue(o3.is_from_query())
 
         o3._id = o.pk + 1
         self.assertNotEqual(o.pk, o3.pk)
@@ -286,13 +286,13 @@ class OrmTest(EnvironTestCase):
         self.assertEqual(o3.pk, o4.pk)
         self.assertNotEqual(o.pk, o3.pk)
 
-    def test_hydrate_2(self):
+    def test_from_query_2(self):
         orm_class = self.get_orm_class(
             foo=Field(int, True),
             bar=Field(str, default_factory=lambda: "lambda bar"),
         )
 
-        o = orm_class.hydrate(foo=1)
+        o = orm_class.from_query(dict(foo=1))
         self.assertEqual("lambda bar", o.bar)
 
     async def test_no_pk(self):
@@ -755,13 +755,17 @@ class OrmTest(EnvironTestCase):
     def test_jsonable_1(self):
         orm_class = self.get_orm_class()
         orm_class.dt = Field(datetime.datetime)
-        t = orm_class.hydrate(foo=1, bar="blah", dt=datetime.datetime.utcnow())
+        t = orm_class.from_query(dict(
+            foo=1,
+            bar="blah",
+            dt=datetime.datetime.utcnow(),
+        ))
         d = t.jsonable()
         self.assertEqual(1, d['foo'])
         self.assertEqual("blah", d['bar'])
         self.assertTrue("dt" in d)
 
-        t = orm_class.hydrate(foo=1)
+        t = orm_class.from_query(dict(foo=1))
         d = t.jsonable()
         self.assertEqual(1, d['foo'])
         self.assertFalse("bar" in d)

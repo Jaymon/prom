@@ -113,7 +113,7 @@ class Iterator(ListIterator, AsyncIterable):
                 if cursor_limit > 0 and cursor_i >= cursor_limit:
                     break
 
-                o = self.hydrate(row)
+                o = self.from_query(row)
                 if self.filter(o):
                     yield o
 
@@ -221,12 +221,12 @@ class Iterator(ListIterator, AsyncIterable):
         """
         return True
 
-    def hydrate(self, d):
+    def from_query(self, d):
         """Prepare the raw dict d returned from the interface cursor to be
         returned by higher level objects, this will usually mean hydrating an
         Orm instance or stuff like that
 
-        .. note:: This will call `Orm.hydrate` and should be the only place
+        .. note:: This will call `Orm.from_query` and should be the only place
             that will call that method
 
         :param d: dict, the raw dict cursor result returned from the interface
@@ -249,7 +249,7 @@ class Iterator(ListIterator, AsyncIterable):
 
         else:
             if orm_class:
-                r = orm_class.hydrate(d)
+                r = orm_class.from_query(d)
 
             else:
                 r = d

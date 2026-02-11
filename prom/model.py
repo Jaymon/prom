@@ -509,8 +509,6 @@ class Orm(object):
         :param **kwargs: passed directly to .__init__
         :returns: Orm instance that has been saved into the db
         """
-        # NOTE -- you cannot use hydrate/populate here because populate alters
-        # modified fields
         connection = kwargs.pop("connection", None)
 
         instance = cls(*args, **kwargs)
@@ -524,11 +522,11 @@ class Orm(object):
         return instance
 
     @classmethod
-    def hydrate(cls, fields=None, **fields_kwargs):
+    def from_query(cls, fields):
         """return a populated instance with the present fields
 
-        NOTE -- you probably shouldn't override this method since
-        Iterator.hydrate relies on this method signature to create each
+        .. note:: you probably shouldn't override this method since
+        `Iterator.from_query` relies on this method signature to create each
         instance
 
         :param fields: dict, the fields to populate in this instance
@@ -537,7 +535,6 @@ class Orm(object):
         :returns: an instance of this class with populated fields
         """
         instance = cls()
-        fields = cls.make_dict(fields, fields_kwargs)
         instance.from_interface(fields)
         instance._interface_hydrate = True
         return instance
@@ -627,13 +624,8 @@ class Orm(object):
     def __init__(self, fields=None, **fields_kwargs):
         """Create an Orm instance
 
-        While you can override this method to customize the signature, you
-        might also need to override .hydrate (but don't change .hydrate's
-        signature) since .hydrate creates an instance using no arguments
-
         .. note:: Honestly, I've tried it multiple times and it's almost never
-            worth overriding this method nor .hydrate. If you ever get tempted
-            just say no!
+            worth overriding this method. If you ever get tempted just say no!
 
         :param fields: dict, the fields in a dict
         :param **fields_kwargs: if you would like to pass the fields as key=val
@@ -707,7 +699,7 @@ class Orm(object):
         attributes"""
         return self.ref(orm_classpath)
 
-    def is_hydrated(self):
+    def is_from_query(self):
         """return True if this orm was populated from the interface/db"""
         return self._interface_hydrate
 
@@ -725,12 +717,16 @@ class Orm(object):
 
         :param fields: dict, only the fields you want to populate
         """
+        schema_fields = {}
         schema = self.schema
-        for field_name, v in fields.items():
+        for field_name in fields.keys():
             if field := schema.fields.get(field_name, None):
-                fields[field_name] = field.from_interface(self, v)
+                schema_fields[field_name] = field.from_interface(
+                    self,
+                    fields[field_name],
+                )
 
-        self.modify(fields)
+        self.modify(schema_fields)
 
         # this marks that this was repopulated from the interface (database)
         self._interface_pk = self.pk
@@ -797,7 +793,7 @@ class Orm(object):
             q.eq_field(self.schema.pk.name, pk)
 
         else:
-            raise ValueError("Cannot update an unhydrated orm instance")
+            raise ValueError("Cannot update an unpersisted orm instance")
 
         if rows := await q.update(**kwargs):
             self.from_interface(self.make_dict(rows[0]))
