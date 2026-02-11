@@ -1169,45 +1169,36 @@ class Field(object):
         orm_class = orm.__class__ if orm else self.orm_class
         logger.debug(f"{orm_class.__name__}.{self.name}.to_value")
 
-        if self.is_enum():
-            val = self._fset_enum(orm, val)
+        val = self.fset(orm, val)
 
-        else:
-            val = self.fset(orm, val)
+        if val is not None:
+            if self.choices and val not in self.choices:
+                raise ValueError(
+                    "Value {} not in {} value choices".format(
+                        val,
+                        self.name
+                    )
+                )
 
-            if val is not None:
-                if self.choices and val not in self.choices:
+            if regex := self.options.get("regex", ""):
+                if not re.search(regex, val):
                     raise ValueError(
-                        "Value {} not in {} value choices".format(
-                            val,
+                        "regex failed for {}.{}".format(
+                            orm.__class__.__name__,
                             self.name
                         )
                     )
 
-                if regex := self.options.get("regex", ""):
-                    if not re.search(regex, val):
-                        raise ValueError(
-                            "regex failed for {}.{}".format(
-                                orm.__class__.__name__,
-                                self.name
-                            )
-                        )
+            if self.is_enum():
+                val = find_value(self.original_type, val)
 
-            if self.is_ref():
-                # Foreign Keys get passed through their Field methods
-                val = self.schema.pk.to_value(None, val)
+        if self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.to_value(None, val)
 
         return val
 
     def fset(self, orm, val):
-        return val
-
-    def _fset_enum(self, orm, val):
-        """This is set using .fsetter in .set_type when an Enum is identified
-        """
-        if val is not None:
-            val = find_value(self.original_type, val)
-
         return val
 
     def fsetter(self, v):
@@ -1320,23 +1311,15 @@ class Field(object):
         :param val: mixed, the fields value
         :returns: mixed
         """
+        val = self.qset(query_field, val)
+
         if self.is_enum():
-            val = self._iquery_enum(query_field, val)
+            if val is not None:
+                val = find_value(self.original_type, val)
 
-        else:
-            val = self.qset(query_field, val)
-
-            if self.is_ref():
-                # Foreign Keys get passed through their Field methods
-                val = self.schema.pk.qset(query_field, val)
-
-        return val
-
-    def _iquery_enum(self, query_field, val):
-        """This is set using .iquerier in .set_type when an Enum is identified
-        """
-        if val is not None:
-            val = find_value(self.original_type, val)
+        elif self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.qset(query_field, val)
 
         return val
 
