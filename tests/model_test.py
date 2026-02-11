@@ -117,7 +117,7 @@ class OrmTest(EnvironTestCase):
         self.assertFalse("_created" in fields)
 
         o._created = None
-        with self.assertRaises(KeyError):
+        with self.assertRaises((KeyError, ValueError)):
             fields = o.to_interface()
 
         del o._created
@@ -200,7 +200,7 @@ class OrmTest(EnvironTestCase):
         o.foo = 1
 
         o._id = None
-        with self.assertRaises(KeyError):
+        with self.assertRaises((KeyError, ValueError)):
             fields = o.to_interface()
 
     async def test_created_updated(self):

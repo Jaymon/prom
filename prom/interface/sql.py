@@ -1142,15 +1142,18 @@ class SQLInterface(SQLInterfaceABC):
             field_type = self.render_datatype_uuid_sql(field_name, field)
 
         else:
-            raise ValueError('Unknown python type: {} for field: {}'.format(
+            raise ValueError("Unknown python type: {} for field: {}".format(
                 interface_type.__name__,
                 field_name,
             ))
 
-        field_type += ' ' + self.render_datatype_required_sql(field_name, field)
+        field_type += " " + self.render_datatype_required_sql(
+            field_name,
+            field,
+        )
 
         if field.is_pk():
-            field_type += ' PRIMARY KEY'
+            field_type += " PRIMARY KEY"
 
         else:
             if field.is_ref():
@@ -1159,7 +1162,7 @@ class SQLInterface(SQLInterfaceABC):
                     field
                 )
 
-        return '{} {}'.format(
+        return "{} {}".format(
             self.render_field_name_sql(field_name),
             field_type
         )

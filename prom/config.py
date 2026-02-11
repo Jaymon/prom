@@ -22,6 +22,9 @@ from .compat import *
 from . import utils
 
 
+Type = type
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -711,8 +714,10 @@ class Field(object):
         method to make sure it has all the options it needs to use the field
         """
         if self.is_ref():
-            options = self.schema.pk.options
-            options.update(self.options)
+            # this needs to be a new dict so we don't accidently change
+            # something important
+            options = {**self.schema.pk.options, **self.options}
+            #options.update(self.options)
 
         else:
             options = self.options
@@ -721,87 +726,116 @@ class Field(object):
 
     def __init__(
         self,
-        field_type: type,
-        field_required: bool = False,
+        field_type: Type,
+        required: bool = False,
+        *,
+
+        name: str = "",
+        orm_class: Type|None = None,
+
         default: Any = None,
         default_factory: Callable[[], Any]|None = None,
+
         jsonable: bool = True,
         jsonable_name: str = "",
-        fget: Callable[[object, Any], Any] = None,
-        fset: Callable[[object, Any], Any] = None,
-        fdel: Callable[[object, Any], Any] = None,
-        iget: Callable[[object, Any], Any] = None,
-        iset: Callable[[object, Any], Any] = None,
-#         idel: Callable[[object, Any], Any] = None,
+
+        fget: Callable[[object, Any], Any]|None = None,
+        fset: Callable[[object, Any], Any]|None = None,
+        fdel: Callable[[object, Any], Any]|None = None,
+        iget: Callable[[object, Any], Any]|None = None,
+        iset: Callable[[object, Any], Any]|None = None,
         jset: Callable[[object, str, Any], tuple[str, Any]]|None = None,
-        qset: Callable[[object, Any], Any] = None,
-        field_options=None,
-        **field_options_kwargs,
+        qset: Callable[[object, Any], Any]|None = None,
+
+        size: int = -1,
+        min_size: int = -1,
+        max_size: int = -1,
+
+        pk: bool = False,
+        auto: bool = False,
+
+        unique: bool = False,
+        index: bool = False,
+        ignore_case: bool = False,
+        empty: bool = True,
+        choices: Collection|None = None,
+        regex: str = "",
+
+        **options,
     ):
-        """
-        create a field
+        """Create a field
 
-        :param field_type: type, the python type of the field, so for a string
+        :param field_type: the python type of the field, so for a string
             you would pass str, integer: int, boolean: bool, float: float
-        :param field_required: boolean, true if this field has to be there to
-            insert
-        :param field_options: Current options:
-            * size: int -- the size you want the string to be, or the int to be
-            * min_size: int -- the minimum size
-            * max_size: int -- if you want a varchar, set this
-            * unique: bool -- True to set a unique index on this field, this is
-                just for convenience and is equal to self.set_index(field_name,
-                [field_name], unique=True). this is a convenience option to set
-                a unique index on the field without having to add a separate
-                index statement
-            * ignore_case: bool -- True to ignore case if this field is used in
-                indexes
-            * default: mixed -- defaults to None, can be anything the db can
-                support
-            * jsonable_name: str, the name of the field when Orm.jsonable() is
-                called
-            * jsonable_field: bool, if False then this field won't be part of
-                Orm.jsonable() output
-            * jsonable: str|callable|bool,
-                - str, will be set to jsonable_name
-                - callable, will be used as self.jsonable
-                - bool, will set jsonable_field to False
-            * empty: bool, (default is True), set to False if the value cannot
-                be empty when being sent to the db (empty is None, "", 0,
-                or False)
-            * pk: bool, True to make this field the primary key
-            * auto: bool, True to tag this field as an auto-generated field.
-                Used with an int to set it to an auto-increment, use it with
-                UUID to have uuids auto generated
-            * autopk: bool, shortcut for setting pk=True, auto=True
-        :param **field_options_kwargs: dict, will be combined with
-            field_options
+        :param required: True if this field has to be there to insert
+        :keyword size: the size you want the string to be, or the int to be
+        :keyword min_size: the minimum size
+        :keyword max_size: if you want a varchar, set this
+        :keyword unique: True to set a unique index on this field, this is
+            just for convenience and is equal to `Schema.set_index(field_name,
+            [field_name], unique=True)`. this is a convenience option to set
+            a unique index on the field without having to add a separate
+            index statement
+        :keyword index: True if this field is indexed
+        :keyword ignore_case: True to ignore case if this field is used in
+            indexes
+        :keyword default: defaults to None, can be anything the db can support
+        :keyword default_factory: a zero-argument callable that will be called
+            to create the default value, this is only used if `default=None`
+        :keyword jsonable_name: str, the name of the field when `Orm.jsonable`
+            is called
+        :keyword jsonable: If False then this field will not be part of the
+            `Orm.jsonable` return value
+        :keyword empty: (default is True), set to False if the value cannot
+            be empty when being sent to the db (empty is None, "", 0,
+            or False)
+        :keyword pk: True to make this field the primary key
+        :keyword auto: True to tag this field as an auto-generated field.
+            Used with an int to set it to an auto-increment, use it with
+            UUID to have uuids auto generated
+        :keyword choices: a set of values that field value has to be in in
+            order to be considered valid before persisting
+        :keyword regex: a string that the value has to match in order to
+            be persisted
+        :keyword **options: anything else
         """
-        field_options = utils.make_dict(field_options, field_options_kwargs)
+        #field_options = utils.make_dict(field_options, field_options_kwargs)
 
-        d = self.get_size(field_options)
-        field_options.update(d)
+        d = self.get_size(
+            size=size,
+            min_size=min_size,
+            max_size=max_size,
+        )
+        options.update(d)
 
-        name = field_options.pop("name", "")
-        orm_class = field_options.pop("orm_class", None)
+        for k in list(options.keys()):
+            if hasattr(self, k):
+                setattr(self, k, options.pop(k))
 
-        choices = field_options.pop("choices", set())
+        self.options = options
+
+        #name = field_options.pop("name", "")
+        #orm_class = field_options.pop("orm_class", None)
+
+        #choices = field_options.pop("choices", set())
         if choices or not self.choices:
             self.choices = choices
 
-        field_options.setdefault("jsonable_field", jsonable)
+        options.setdefault("jsonable_field", jsonable)
         if jsonable_name:
-            field_options["jsonable_name"] = jsonable_name
-        if jset:
-            self.jset = jset
+            options["jsonable_name"] = jsonable_name
 
-        if autopk := field_options.pop("autopk", False):
-            field_options["pk"] = autopk
-            field_options["auto"] = autopk
+        options["pk"] = pk
+        options["auto"] = auto
 
-        for k in list(field_options.keys()):
-            if hasattr(self, k):
-                setattr(self, k, field_options.pop(k))
+        options["empty"] = empty and not pk and not auto
+        options["ignore_case"] = ignore_case
+        options["regex"] = regex
+
+
+#         if autopk := field_options.pop("autopk", False):
+#             field_options["pk"] = autopk
+#             field_options["auto"] = autopk
 
         if default is not None and default_factory is not None:
             raise ValueError("Cannot specify both default and default_factory")
@@ -813,8 +847,9 @@ class Field(object):
         self.default = default
         self.default_factory = default_factory
 
-        self.options = field_options
-        self.required = field_required or self.is_pk()
+        self.required = required or self.is_pk()
+        self.unique = unique
+        self.index = index
 
         if fget:
             self.fget = fget
@@ -830,6 +865,9 @@ class Field(object):
 
         if iset:
             self.iset = iset
+
+        if jset:
+            self.jset = jset
 
         if qset:
             self.qset = qset
@@ -875,19 +913,15 @@ class Field(object):
                 "Field descriptor {}.{} created with internal name {}".format(
                     orm_class.__name__,
                     name,
-                    self.orm_field_name
+                    self.orm_field_name,
                 )
             )
 
-    def get_size(self, field_options):
+    def get_size(self, size, min_size, max_size):
         """Figure out if this field has any size information"""
         d = {}
 
-        min_size = field_options.pop("min_size", -1)
-        max_size = field_options.pop("max_size", -1)
-        size = field_options.pop("size", None)
-
-        if size is not None:
+        if size >= 0:
             d['size'] = size
 
         else:
@@ -1072,32 +1106,32 @@ class Field(object):
             else:
                 raise ValueError("Unknown field type {}".format(field_type))
 
-    def is_pk(self):
+    def is_pk(self) -> bool:
         """return True if this field is a primary key"""
         return self.options.get("pk", False)
 
-    def is_auto(self):
+    def is_auto(self) -> bool:
         """Return True if this field auto-generates its value somehow"""
         return self.options.get("auto", False)
 
-    def is_ref(self):
+    def is_ref(self) -> bool:
         """return true if this field foreign key references the primary key of
         another orm"""
         return bool(self.schema)
 
-    def is_required(self):
+    def is_required(self) -> bool:
         """Return True if this field is required to save into the interface"""
         return self.required
 
-    def is_serialized(self):
+    def is_serialized(self) -> bool:
         """Return True if this field should be serialized"""
         return True if self.serializer else False
 
-    def is_enum(self):
+    def is_enum(self) -> bool:
         """Return True if this field represents an enum value"""
         return issubclass(self.original_type, enum.Enum)
 
-    def is_jsonable(self):
+    def is_jsonable(self) -> bool:
         """Returns True if this field should be in .jsonable output"""
         return self.options.get("jsonable_field", True)
 
@@ -1357,6 +1391,7 @@ class Field(object):
 
             else:
                 name = self.options.get("jsonable_name", name)
+
                 name, val = self.jset(orm, name, val)
 
                 if val is not None:
@@ -1510,11 +1545,7 @@ class AutoUUID(Field):
         kwargs.setdefault("pk", True)
         kwargs.setdefault("auto", True)
         kwargs.setdefault("size", 36)
-        super().__init__(
-            field_type=uuid.UUID,
-            field_required=True,
-            **kwargs
-        )
+        super().__init__(uuid.UUID, True, **kwargs)
 
 
 class AutoIncrement(Field):
@@ -1524,11 +1555,7 @@ class AutoIncrement(Field):
         kwargs.setdefault("pk", True)
         kwargs.setdefault("auto", True)
         kwargs.setdefault("max_size", 9223372036854775807)
-        super().__init__(
-            field_type=int,
-            field_required=True,
-            **kwargs
-        )
+        super().__init__(int, True, **kwargs)
 
 
 class AutoDatetime(Field):
@@ -1554,11 +1581,7 @@ class AutoDatetime(Field):
         if kwargs["updated"]:
             kwargs["created"] = False
 
-        super().__init__(
-            field_type=datetime.datetime,
-            field_required=True,
-            **kwargs,
-        )
+        super().__init__(datetime.datetime, True, **kwargs)
 
     def iset(self, orm, val):
         if self.options.get("updated", False):

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from contextlib import asynccontextmanager, AbstractAsyncContextManager
 import inspect
+from typing import Any
 
 from datatypes import (
     EnglishWord,
@@ -570,10 +571,10 @@ class Orm(object):
         parent classes, this is only called once and then cached in the
         instance's .schema property
 
-        NOTE -- This is a class method and works on the class schema, that
-        means if you set a value (like in a Field's options) then it will be
-        set for all classes that use this schema and if the value is dynamic
-        in some way you might end up with unexpected results
+        .. note:: This is a class method and works on the class schema, that
+            means if you set a value (like in a Field's options) then it will
+            be set for all classes that use this schema and if the value is
+            dynamic in some way you might end up with unexpected results
 
         :returns: Schema
         """
@@ -595,8 +596,8 @@ class Orm(object):
                 elif isinstance(v, type) and issubclass(v, Field):
                     # We've defined a Field class inline of the Orm, so we
                     # want to instantiate it and set it in all the places
-                    #field = v.get_instance()
-                    field = v(v.type, v.required, v.options)
+                    options = v.options or {}
+                    field = v(v.type, v.required, **options)
                     field.__set_name__(cls, k)
                     setattr(cls, k, field)
 
@@ -699,19 +700,19 @@ class Orm(object):
         attributes"""
         return self.ref(orm_classpath)
 
-    def is_from_query(self):
+    def is_from_query(self) -> bool:
         """return True if this orm was populated from the interface/db"""
         return self._interface_hydrate
 
-    def is_update(self):
+    def is_update(self) -> bool:
         """Return True if .save() will perform an interface update"""
         return self._interface_pk is not None
 
-    def is_insert(self):
+    def is_insert(self) -> bool:
         """Return True if .save() will perform an interface insert"""
         return not self.is_update()
 
-    def from_interface(self, fields):
+    def from_interface(self, fields: Mapping) -> None:
         """this runs all the fields through their iget methods to mimic them
         freshly coming out of the db, then resets modified
 
@@ -731,7 +732,7 @@ class Orm(object):
         # this marks that this was repopulated from the interface (database)
         self._interface_pk = self.pk
 
-    def to_interface(self):
+    def to_interface(self) -> Mapping[str, Any]:
         """Get all the fields that need to be persisted into the db
 
         :returns: dict[str, Any], key is field_name and val is the field value

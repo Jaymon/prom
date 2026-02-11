@@ -80,7 +80,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         s_ref_id = await self.insert(i, s_ref, 1)
 
         s = self.get_schema(
-            _id=Field(int, autopk=True),
+            _id=Field(int, auto=True, pk=True),
             one=Field(bool, True),
             two=Field(int, True, size=50),
             three=Field(decimal.Decimal),
@@ -197,7 +197,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
     async def test_custom_pk_int(self):
         i, s = await self.create_table(
-            _id=Field(int, autopk=True),
+            _id=Field(int, auto=True, pk=True),
             bar=Field(str)
         )
 
@@ -643,11 +643,11 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
     async def test_ref_strong(self):
         i = self.get_interface()
         s_1 = self.get_schema(
-            _id=Field(int, autopk=True),
+            _id=Field(int, auto=True, pk=True),
             foo=Field(int, True)
         )
         s_2 = self.get_schema(
-            _id=Field(int, autopk=True),
+            _id=Field(int, auto=True, pk=True),
             s_pk=Field(s_1, True),
         )
 
@@ -671,11 +671,11 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
     async def test_ref_weak(self):
         i = self.get_interface()
         s_1 = self.get_schema(
-            _id=Field(int, autopk=True),
+            _id=Field(int, auto=True, pk=True),
             foo=Field(int, True)
         )
         s_2 = self.get_schema(
-            _id=Field(int, autopk=True),
+            _id=Field(int, auto=True, pk=True),
             s_pk=Field(s_1, False),
         )
 
@@ -700,11 +700,11 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
     async def test_handle_error_ref(self):
         i = self.get_interface()
         s_1 = self.get_schema(
-            _id=Field(int, autopk=True),
+            _id=Field(int, auto=True, pk=True),
             foo=Field(int, True)
         )
         s_2 = self.get_schema(
-            _id=Field(int, autopk=True),
+            _id=Field(int, auto=True, pk=True),
             bar=Field(int, True),
             s_pk=Field(s_1),
         )

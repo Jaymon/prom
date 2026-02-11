@@ -144,7 +144,7 @@ class InterfaceTest(_BaseTestInterface):
         """test some postgres specific things"""
         i = self.get_interface()
         s = self.get_schema(
-            _id=Field(int, autopk=True),
+            _id=Field(int, auto=True, pk=True),
             four=Field(float, True, size=10),
             five=Field(float, True),
             six=Field(int, True, max_size=9000000000),
@@ -220,7 +220,7 @@ class InterfaceTest(_BaseTestInterface):
 
     async def test_uuid_pk(self):
         i, s = self.get_table(
-            _id=Field(UUID, True, autopk=True),
+            _id=Field(UUID, True, auto=True, pk=True),
             foo=Field(int, True),
         )
 
@@ -234,7 +234,7 @@ class InterfaceTest(_BaseTestInterface):
     async def test_invalid_text_repr(self):
         i = self.get_interface()
         s1 = self.get_schema(
-            _id=Field(UUID, True, autopk=True),
+            _id=Field(UUID, True, auto=True, pk=True),
             foo=Field(int),
         )
         s2 = self.get_schema(
