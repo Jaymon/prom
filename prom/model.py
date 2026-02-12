@@ -717,7 +717,8 @@ class Orm(object):
                         f"{self.__class__.__name__}.{k} cannot be empty"
                     )
 
-                fields[k] = v
+                if field.is_persisted():
+                    fields[k] = v
 
             if v is None and field.is_required():
                 if field.is_pk():
@@ -752,13 +753,6 @@ class Orm(object):
                     fields[field_name],
                 )
                 setattr(self, field_name, value)
-
-#                 schema_fields[field_name] = field.from_interface(
-#                     self,
-#                     fields[field_name],
-#                 )
-# 
-#         self.modify(**schema_fields)
 
         # this marks that this was repopulated from the interface (database)
         self._interface_pk = self.pk

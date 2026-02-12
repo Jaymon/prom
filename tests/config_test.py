@@ -148,6 +148,18 @@ class SchemaTest(IsolatedAsyncioTestCase):
         field_name = o2_class.schema.field_model_name(o1_class.model_name)
         self.assertEqual("o1_id", field_name)
 
+    def test_persisted_fields(self):
+        s = self.get_schema(
+            foo=Field(str, persist=False),
+            bar=Field(str),
+            che=Field(int, persist=False),
+        )
+
+        pfields = s.persisted_fields
+        self.assertTrue("bar" in pfields)
+        for fn in ["foo", "che"]:
+            self.assertFalse(fn in pfields)
+
 
 class DsnConnectionTest(IsolatedAsyncioTestCase):
     """Any general tests should go here and always use sqlite because that's
@@ -739,6 +751,15 @@ class FieldTest(EnvironTestCase):
 
         o = orm_class(foo="aaaabbbbbddddd")
         self.assertTrue(o.foo)
+
+    async def test_persist(self):
+        orm_class = self.get_orm_class(
+            foo=Field(str, True, persist=False),
+        )
+
+        o = orm_class(foo="foo value")
+        fields = o.to_interface()
+        self.assertFalse("foo" in fields)
 
 #     async def test_lifecycle_methods(self):
 #         class FooField(Field):

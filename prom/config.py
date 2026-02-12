@@ -213,14 +213,19 @@ class Schema(object):
     @property
     def normal_fields(self):
         """fields that aren't magic (eg, don't start with an underscore)"""
-        return {f:v for f, v in self.fields.items() if not f.startswith('_')}
+        return {f:v for f, v in self.fields.items() if not f.startswith("_")}
 
     @property
     def required_fields(self):
         """The normal required fields (eg, no magic fields like _id are
         included)
         """
-        return {f:v for f, v in self.normal_fields.items() if v.required}
+        return {f:v for f, v in self.normal_fields.items() if v.is_required()}
+
+    @property
+    def persisted_fields(self):
+        """The fields that should be saved in the db"""
+        return {f:v for f, v in self.fields.items() if v.is_persisted()}
 
     @property
     def ref_fields(self):
@@ -232,7 +237,7 @@ class Schema(object):
         """the magic fields for the schema, magic fields start with an
         underscore
         """
-        return {f:v for f, v in self.fields.items() if f.startswith('_')}
+        return {f:v for f, v in self.fields.items() if f.startswith("_")}
 
     @property
     def pk_fields(self):
@@ -771,6 +776,7 @@ class Field(object):
         index: bool = False,
         ignore_case: bool = False,
         empty: bool = True,
+        persist: bool = True,
         choices: Collection|None = None,
         regex: str = "",
 
@@ -804,6 +810,10 @@ class Field(object):
         :keyword empty: (default is True), set to False if the value cannot
             be empty when being sent to the db (empty is None, "", 0,
             or False)
+        :keyword persist: True then the field will be persisted into the db,
+            if False, then the field will only be on the instance it was
+            set on, this is handy to hook into lifecycle methods using the
+            value but not save the value in the db (like passwords)
         :keyword pk: True to make this field the primary key
         :keyword auto: True to tag this field as an auto-generated field.
             Used with an int to set it to an auto-increment, use it with
@@ -856,6 +866,8 @@ class Field(object):
         self.unique = unique
         self.index = index
         self.doc = doc
+
+        options.setdefault("persist", persist)
 
         if fget:
             self.fget = fget
@@ -1128,7 +1140,11 @@ class Field(object):
 
     def is_required(self) -> bool:
         """Return True if this field is required to save into the interface"""
-        return self.required
+        return self.required and self.is_persisted()
+
+    def is_persisted(self) -> bool:
+        """Return True if field should be persisted in the db"""
+        return self.options.get("persist", True)
 
     def is_serialized(self) -> bool:
         """Return True if this field should be serialized"""

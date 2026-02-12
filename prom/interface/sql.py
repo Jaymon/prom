@@ -124,7 +124,7 @@ class SQLInterface(SQLInterfaceABC):
         ]
 
         query_fields = []
-        for field_name, field in schema.fields.items():
+        for field_name, field in schema.persisted_fields.items():
             query_fields.append("  {}".format(
                 self.render_datatype_sql(field_name, field)
             ))
