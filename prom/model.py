@@ -696,43 +696,8 @@ class Orm(object):
 
         for field_name, field, value in items(schema, fields_kwargs):
             if field:
-                value = field.get_default(self, value)
+                #value = field.get_default(self, value)
                 setattr(self, field_name, value)
-
-#     def from_init_arguments(self, **fields_kwargs):
-#         schema = self.schema
-#         field_names = set(schema.fields.keys())
-# 
-#         def items(schema, fields_kwargs):
-#             for field_name, value in fields_kwargs.items():
-#                 # normalize the passed in names to the canonical name
-#                 if fn := schema.field_name(field_name, ""):
-#                     field = schema.fields[fn]
-#                     yield fn, field, value
-# 
-#                 else:
-#                     yield field_name, None, value
-# 
-#         modify_fields = {}
-#         for field_name, field, value in items(schema, fields_kwargs):
-#             if field:
-#                 field_names.discard(field_name)
-#                 value = field.get_default(self, value)
-# 
-#             modify_fields[field_name] = value
-# 
-#         missing_fields = {}
-#         for fn in field_names:
-#             field = schema.fields[fn]
-#             missing_fields[fn] = field.get_default(self, None)
-# #             modify_fields[fn] = field.get_default(self, None)
-# #             modify_fields[fn] = field.get_missing(self)
-# 
-#         # we pass missing fields first and then modify fields because field
-#         # lifecycle methods could trigger side effects when the passed in
-#         # fields are set and stuff and so we rely on python's ordering of the
-#         # dict insertion key order
-#         self.modify(**missing_fields, **modify_fields)
 
     def to_interface(self) -> Mapping[str, Any]:
         """Get all the fields that need to be persisted into the db
@@ -782,12 +747,18 @@ class Orm(object):
         schema = self.schema
         for field_name in fields.keys():
             if field := schema.fields.get(field_name, None):
-                schema_fields[field_name] = field.from_interface(
+                value = field.from_interface(
                     self,
                     fields[field_name],
                 )
+                setattr(self, field_name, value)
 
-        self.modify(**schema_fields)
+#                 schema_fields[field_name] = field.from_interface(
+#                     self,
+#                     fields[field_name],
+#                 )
+# 
+#         self.modify(**schema_fields)
 
         # this marks that this was repopulated from the interface (database)
         self._interface_pk = self.pk
