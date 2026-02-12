@@ -397,27 +397,6 @@ class Schema(object):
     def get_field(self, field_name):
         return self.lookup["field_names"][field_name]
 
-#     def field_items(
-#         self,
-#         orm,
-#         fields: Mapping[str, Any],
-#         *,
-#         members: bool = False,
-#         missing: bool = False,
-#     ) -> Generator[str, object]:
-#         """Interface method. This will iterate through the fields and
-#         normalize the keys with their values
-#         """
-# 
-#         for field_name, field in fields_kwargs.items():
-#             if fn := schema.field_name(field_name, ""):
-#                 yield fn, fields_kwargs[field_name]
-# 
-#             else:
-#                 yield field_name, field
-# 
-#     
-
     def set_index(self, index_name, index):
         """Add an index to the schema
 
@@ -1229,6 +1208,13 @@ class Field(object):
 
         return ret
 
+#     def get_missing(self, orm):
+#         val = self._get_orm_value(orm)
+#         if val is None:
+#             val = self.get_default(orm, val)
+# 
+#         return val
+
     ###########################################################################
     # File set/get methods
     ###########################################################################
@@ -1501,6 +1487,10 @@ class Field(object):
         self.jset = v
         return self
 
+#     def osetter(self, v):
+#         self.oset = v
+#         return self
+
     def qset(self, query_field, val):
         return val
 
@@ -1509,6 +1499,9 @@ class Field(object):
             val = self.get_default(orm, val)
 
         return name, val
+
+#     def oset(self, orm_class, schema, name):
+#         pass
 
     def to_query(self, query_field, val):
         """This will be called when setting the field onto a query instance
@@ -1576,6 +1569,16 @@ class Field(object):
                 f"jsonable ignored for {orm.__class__.__name__}.{self.name}"
             )
             return "", None
+
+    def configure(self, orm_class: type, schema: Schema, name: str) -> None:
+        """Called once from `Orm.create_schema` when the schema is created
+        and is a hook to let fields customize themselves
+
+        :param orm_class: type[Orm]
+        :param schema: the schema belonging to `orm_class`
+        :param name: the field's name in `orm_class` and `schema.fields`
+        """
+        return
 
 
 class AutoUUID(Field):

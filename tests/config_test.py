@@ -740,51 +740,51 @@ class FieldTest(EnvironTestCase):
         o = orm_class(foo="aaaabbbbbddddd")
         self.assertTrue(o.foo)
 
-    async def test_lifecycle_methods(self):
-        class FooField(Field):
-            def fget(self, orm, v):
-                pout.v(f"fget {v}")
-                return v
-
-            def iget(self, orm, v):
-                pout.v(f"iget {v}")
-                return v
-
-            def iset(self, orm, v):
-                pout.v(f"iset {v}")
-                return v
-
-            def fset(self, orm, v):
-                pout.v(f"fset {v}")
-                return v
-
-            def fdel(self, orm, v):
-                pout.v(f"fdel {v}")
-                return v
-
-            def qset(self, query, v):
-                pout.v(f"qset {v}")
-                return v
-
-            def jset(self, orm, field_name, v):
-                pout.v(f"jset {v}")
-                return field_name, v
-
-        orm_class = self.get_orm_class(
-            foo=FooField(int, True)
-        )
-
-        o = orm_class(foo=1)
-
-        pout.b("save")
-        pout.v(o.modified_field_names, o.modified_fields)
-        await o.save()
-        pout.v(o.modified_field_names)
-        return
-
-        pout.b("query")
-        o2 = await orm_class.query.eq_foo(1).one()
-        pout.v(o2.modified_field_names, o.modified_fields)
+#     async def test_lifecycle_methods(self):
+#         class FooField(Field):
+#             def fget(self, orm, v):
+#                 pout.v(f"fget {v}")
+#                 return v
+# 
+#             def iget(self, orm, v):
+#                 pout.v(f"iget {v}")
+#                 return v
+# 
+#             def iset(self, orm, v):
+#                 pout.v(f"iset {v}")
+#                 return v
+# 
+#             def fset(self, orm, v):
+#                 pout.v(f"fset {v}")
+#                 return v
+# 
+#             def fdel(self, orm, v):
+#                 pout.v(f"fdel {v}")
+#                 return v
+# 
+#             def qset(self, query, v):
+#                 pout.v(f"qset {v}")
+#                 return v
+# 
+#             def jset(self, orm, field_name, v):
+#                 pout.v(f"jset {v}")
+#                 return field_name, v
+# 
+#         orm_class = self.get_orm_class(
+#             foo=FooField(int, True)
+#         )
+# 
+#         o = orm_class(foo=1)
+# 
+#         pout.b("save")
+#         pout.v(o.modified_field_names, o.modified_fields)
+#         await o.save()
+#         pout.v(o.modified_field_names)
+#         return
+# 
+#         pout.b("query")
+#         o2 = await orm_class.query.eq_foo(1).one()
+#         pout.v(o2.modified_field_names, o.modified_fields)
 
 
 class SerializedFieldTest(EnvironTestCase):
