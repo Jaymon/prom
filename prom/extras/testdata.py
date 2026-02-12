@@ -673,7 +673,7 @@ class ModelData(TestData):
             other methods
         :returns: Orm, the actual instance populated with fields 
         """
-        instance = orm_class(kwargs["fields"])
+        instance = orm_class(**kwargs["fields"])
 
         if properties := kwargs.get("properties", {}):
             for name, value in properties.items():

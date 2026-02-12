@@ -540,28 +540,28 @@ class Orm(object):
         instance._interface_hydrate = True
         return instance
 
-    @classmethod
-    def make_dict(cls, *fields, schema=None):
-        """Lots of methods take a dict and key=val for fields, this combines
-        fields and fields_kwargs into one master dict, turns out we want to do
-        this more than I would've thought to keep api compatibility with prom
-        proper
-
-        :param *fields: dict, usually a fields dict passed in directly and the
-            second index are the kwargs passed in
-        :schema: Schema, if passed in then this will normalize field names and
-            resolve any aliases
-        :returns: dict, the combined fields
-        """
-        fields = utils.make_dict(*fields)
-
-        if schema:
-            # since schema is passed in resolve any aliases
-            for field_name in list(fields.keys()):
-                if fn := schema.field_name(field_name, ""):
-                    fields[fn] = fields.pop(field_name)
-
-        return fields
+#     @classmethod
+#     def make_dict(cls, *fields, schema=None):
+#         """Lots of methods take a dict and key=val for fields, this combines
+#         fields and fields_kwargs into one master dict, turns out we want to do
+#         this more than I would've thought to keep api compatibility with prom
+#         proper
+# 
+#         :param *fields: dict, usually a fields dict passed in directly and the
+#             second index are the kwargs passed in
+#         :schema: Schema, if passed in then this will normalize field names and
+#             resolve any aliases
+#         :returns: dict, the combined fields
+#         """
+#         fields = utils.make_dict(*fields)
+# 
+#         if schema:
+#             # since schema is passed in resolve any aliases
+#             for field_name in list(fields.keys()):
+#                 if fn := schema.field_name(field_name, ""):
+#                     fields[fn] = fields.pop(field_name)
+# 
+#         return fields
 
     @classmethod
     def create_schema(cls):
@@ -622,7 +622,8 @@ class Orm(object):
         """install the Orm's table using the Orm's schema"""
         return await cls.interface.set_table(cls.schema, **kwargs)
 
-    def __init__(self, fields=None, **fields_kwargs):
+    def __init__(self, **fields_kwargs):
+#     def __init__(self, fields=None, **fields_kwargs):
         """Create an Orm instance
 
         .. note:: Honestly, I've tried it multiple times and it's almost never
@@ -634,17 +635,19 @@ class Orm(object):
         self._interface_pk = None
         self._interface_hydrate = False
 
-        schema = self.schema
-        fields = self.make_dict(fields, fields_kwargs, schema=schema)
+        self.from_init_arguments(**fields_kwargs)
 
-        # set defaults
-        for field_name, field in schema.fields.items():
-            fields[field_name] = field.get_default(
-                self,
-                fields.get(field_name, None)
-            )
-
-        self.modify(fields)
+#         schema = self.schema
+#         fields = self.make_dict(fields, fields_kwargs, schema=schema)
+# 
+#         # set defaults
+#         for field_name, field in schema.fields.items():
+#             fields[field_name] = field.get_default(
+#                 self,
+#                 fields.get(field_name, None)
+#             )
+# 
+#         self.modify(fields)
 
     def __init_subclass__(cls):
         """When a child class is loaded into memory it will be saved into
@@ -712,6 +715,54 @@ class Orm(object):
         """Return True if .save() will perform an interface insert"""
         return not self.is_update()
 
+    def from_init_arguments(self, **fields_kwargs):
+        schema = self.schema
+        field_names = set(schema.fields.keys())
+
+        def items(schema, fields_kwargs):
+            for field_name, value in fields_kwargs.items():
+                # normalize the passed in names to the canonical name
+                if fn := schema.field_name(field_name, ""):
+                    field = schema.fields[fn]
+                    yield fn, field, value
+
+                else:
+                    yield field_name, None, value
+
+        modify_fields = {}
+
+        for field_name, field, value in items(schema, fields_kwargs):
+            if field:
+                field_names.discard(field_name)
+                value = field.get_default(self, value)
+
+            modify_fields[field_name] = value
+
+        # add all the missing default values
+        for fn in field_names:
+            field = schema.fields[fn]
+            modify_fields[fn] = field.get_default(self, None)
+
+        self.modify(**modify_fields)
+
+        # normalize the passed in names to the canonical name
+#         for field_name, field in fields_kwargs.items():
+#             if fn := schema.field_name(field_name, ""):
+#                 field = schema.fields[fn]
+#                 fields_kwargs[fn] = field.get_default(
+#                     self,
+#                     fields_kwargs.pop(field_name, None)
+#                 )
+# 
+#                 field_names.discard(fn)
+# 
+#         # add all the missing default values
+#         for fn in field_names:
+#             field = schema.fields[fn]
+#             fields_kwargs[fn] = field.get_default(self, None)
+# 
+#         self.modify(**fields_kwargs)
+
     def to_interface(self) -> Mapping[str, Any]:
         """Get all the fields that need to be persisted into the db
 
@@ -765,7 +816,7 @@ class Orm(object):
                     fields[field_name],
                 )
 
-        self.modify(schema_fields)
+        self.modify(**schema_fields)
 
         # this marks that this was repopulated from the interface (database)
         self._interface_pk = self.pk
@@ -777,7 +828,7 @@ class Orm(object):
         q = self.query.set(self.to_interface())
 
         if fields := await q.insert(**kwargs):
-            self.from_interface(self.make_dict(fields))
+            self.from_interface(fields)
 
         else:
             ret = False
@@ -797,7 +848,7 @@ class Orm(object):
             raise ValueError("Cannot update an unpersisted orm instance")
 
         if rows := await q.update(**kwargs):
-            self.from_interface(self.make_dict(rows[0]))
+            self.from_interface(rows[0])
 
         else:
             ret = False
@@ -994,7 +1045,7 @@ class Orm(object):
 
         return ret
 
-    def modify(self, fields=None, **fields_kwargs):
+    def modify(self, **fields_kwargs):
         """update the fields of this instance with the passed in values
 
         this should rarely be messed with, if you would like to manipulate the
@@ -1004,23 +1055,39 @@ class Orm(object):
         :param **fields_kwargs: dict, if you would like to pass the fields as
             key=val this picks those up and combines them with fields
         """
-        fields = self.make_dict(fields, fields_kwargs)
-        fields = self.modify_fields(fields)
         schema = self.schema
 
-        for field_name, field_val in fields.items():
-            if fn := schema.field_name(field_name, None):
+        for field_name, field_val in fields_kwargs.items():
+            if fn := schema.field_name(field_name, ""):
                 setattr(self, fn, field_val)
 
-    def modify_fields(self, fields):
-        """In child classes you should override this method to do any default
-        customizations on the fields, so if you want to set defaults or
-        anything you should do that here
+#     def modify(self, fields=None, **fields_kwargs):
+#         """update the fields of this instance with the passed in values
+# 
+#         this should rarely be messed with, if you would like to manipulate the
+#         fields you should override .modify_fields
+# 
+#         :param fields: dict, the fields in a dict
+#         :param **fields_kwargs: dict, if you would like to pass the fields as
+#             key=val this picks those up and combines them with fields
+#         """
+#         fields = self.make_dict(fields, fields_kwargs)
+#         fields = self.modify_fields(fields)
+#         schema = self.schema
+# 
+#         for field_name, field_val in fields.items():
+#             if fn := schema.field_name(field_name, None):
+#                 setattr(self, fn, field_val)
 
-        :param fields: dict, the fields you might want to be modified
-        :returns: dict, the fields you want to actually be modified
-        """
-        return fields
+#     def modify_fields(self, fields):
+#         """In child classes you should override this method to do any default
+#         customizations on the fields, so if you want to set defaults or
+#         anything you should do that here
+# 
+#         :param fields: dict, the fields you might want to be modified
+#         :returns: dict, the fields you want to actually be modified
+#         """
+#         return fields
 
     def get_ref_value(self, k):
         """Internal method called in .__getattr__. If k is a model_name for a

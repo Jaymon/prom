@@ -1301,13 +1301,13 @@ class OrmTest(EnvironTestCase):
             foo_bar_che=Index("foo", "bar", "che", unique=True),
         )
 
-        o = orm_class({"foo": "1", "bar": "1", "che": "1", "baz": 1})
+        o = orm_class(**{"foo": "1", "bar": "1", "che": "1", "baz": 1})
         await o.upsert()
         o2 = await orm_class.query.eq_pk(o.pk).one()
         self.assertEqual(o.baz, o2.baz)
         self.assertEqual(o.pk, o2.pk)
 
-        o3 = orm_class({"foo": "1", "bar": "1", "che": "1", "baz": 2})
+        o3 = orm_class(**{"foo": "1", "bar": "1", "che": "1", "baz": 2})
         await o3.upsert()
         self.assertEqual(o.pk, o3.pk)
         o4 = await orm_class.query.eq_pk(o3.pk).one()
