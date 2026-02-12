@@ -319,7 +319,6 @@ class Orm(object):
     """This will hold all other orm classes that have been loaded into memory
     the class path is the key and the class object is the value"""
 
-#     _id = AutoIncrement(aliases=["id"])
     _id = AutoIncrement()
     """The primary key is an auto-increment integer by default
 
@@ -332,7 +331,6 @@ class Orm(object):
         updated=False,
         aliases=["created"],
         private=True,
-        #jsonable_field=False, # don't include in .jsonable by default
     )
     """Anytime a new row is created this will be populated
 
@@ -345,7 +343,6 @@ class Orm(object):
         updated=True,
         aliases=["updated"],
         private=True,
-        #jsonable_field=False, # don't include in .jsonable by default
     )
     """Anytime a row is written to this will be updated, that means it will
     have roughly the same value as ._created when the row is first inserted,
@@ -362,10 +359,13 @@ class Orm(object):
         To be more explicit it is nice to override this attribute in your child
         classes, but it's nice to have a default value when rapidly prototyping
         """
-        return NamingConvention("{}_{}".format(
+        table_name = NamingConvention("{}_{}".format(
             cls.__module__.replace(".", "_"),
             cls.__name__
         )).snakecase()
+
+        cls.table_name = table_name
+        return table_name
 
     @classproperty
     def model_name(cls):

@@ -1335,7 +1335,6 @@ class Field(object):
 
         val = self.fdel(orm, val)
 
-#         orm.__dict__.pop(self.orm_interface_hash, None)
         return val
 
     def __get__(self, orm, orm_class=None):
@@ -1352,8 +1351,6 @@ class Field(object):
 
         else:
             ret = self.from_value(orm, raw_val)
-
-#         ret = self.from_value(orm, raw_val)
 
         # we want to compensate for default values right here, so if the raw
         # val is None but the new val is not then we save the returned value,
@@ -1575,8 +1572,6 @@ class Field(object):
         logger.debug(f"{orm_class.__name__}.{self.name}.jsonable")
 
         if self.is_jsonable():
-        #if self.options.get("jsonable_field", True) and not self.is_private():
-        #if self.options.get("jsonable_field", True):
             if self.is_ref():
                 # Foreign Keys get passed through their Field methods
                 _, val = self.schema.pk.jsonable(None, name, val)

@@ -28,7 +28,7 @@ from .exception import (
 from . import utils
 
 
-__version__ = "5.4.1"
+__version__ = "6.0.0"
 
 
 @asynccontextmanager

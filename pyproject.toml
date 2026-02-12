@@ -1,5 +1,5 @@
 [project]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 description = "A sensible orm for PostgreSQL or SQLite"
 authors = [
   { name = "Jay Marcyes", email = "jay@marcyes.com" }
@@ -26,8 +26,8 @@ classifiers = [
   "Programming Language :: Python :: 3"
 ]
 dependencies = [
-  "dsnparse",
-  "datatypes",
+  "dsnparse~=0.4.0",
+  "datatypes~=0.33.0",
 ]
 name = "prom"
 dynamic = [
