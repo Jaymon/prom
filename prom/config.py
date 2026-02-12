@@ -707,10 +707,12 @@ class Field(object):
 
         if self.is_pk():
             names.add("pk")
-            if self.orm_class:
-                model_name = self.orm_class.model_name
-                names.add(f"{model_name}_id")
-                names.add(f"{model_name}_pk")
+            if "_id" in names or self.name == "_id":
+                names.add("id")
+                if self.orm_class:
+                    model_name = self.orm_class.model_name
+                    names.add(f"{model_name}_id")
+                    names.add(f"{model_name}_pk")
 
         return names
 
@@ -754,7 +756,10 @@ class Field(object):
         default: Any = None,
         default_factory: Callable[[], Any]|None = None,
 
-        jsonable: bool = True,
+        private: bool = False,
+        persist: bool = True,
+
+        jsonable: bool = True, # deprecated in favor of `private`
         jsonable_name: str = "",
 
         fget: Callable[[object, Any], Any]|None = None,
@@ -776,7 +781,6 @@ class Field(object):
         index: bool = False,
         ignore_case: bool = False,
         empty: bool = True,
-        persist: bool = True,
         choices: Collection|None = None,
         regex: str = "",
 
@@ -814,6 +818,8 @@ class Field(object):
             if False, then the field will only be on the instance it was
             set on, this is handy to hook into lifecycle methods using the
             value but not save the value in the db (like passwords)
+        :keyword private: True to mark this field as private, meaning it won't
+            show up in jsonable
         :keyword pk: True to make this field the primary key
         :keyword auto: True to tag this field as an auto-generated field.
             Used with an int to set it to an auto-increment, use it with
@@ -868,6 +874,7 @@ class Field(object):
         self.doc = doc
 
         options.setdefault("persist", persist)
+        options.setdefault("private", private)
 
         if fget:
             self.fget = fget
@@ -1146,6 +1153,10 @@ class Field(object):
         """Return True if field should be persisted in the db"""
         return self.options.get("persist", True)
 
+    def is_private(self) -> bool:
+        """Return True if field should be considered private/internal"""
+        return self.options.get("private", True)
+
     def is_serialized(self) -> bool:
         """Return True if this field should be serialized"""
         return True if self.serializer else False
@@ -1156,7 +1167,11 @@ class Field(object):
 
     def is_jsonable(self) -> bool:
         """Returns True if this field should be in .jsonable output"""
-        return self.options.get("jsonable_field", True)
+        return (
+            self.options.get("jsonable_field", True)
+            and not self.is_private()
+        )
+#         return self.options.get("jsonable_field", True)
 
     def _get_orm_value(self, orm):
         """Internal method. Get the raw value that this property is holding
@@ -1166,15 +1181,6 @@ class Field(object):
 
         except KeyError as e:
             raise AttributeError(self.orm_field_name) from e
-
-#         try:
-#             val = orm.__dict__[self.orm_field_name]
-# 
-#         except KeyError as e:
-#             #raise AttributeError(str(e))
-#             val = None
-# 
-#         return val
 
     def modified(self, orm, val):
         """Returns True if val has been modified in orm
@@ -1229,13 +1235,6 @@ class Field(object):
             ret = val
 
         return ret
-
-#     def get_missing(self, orm):
-#         val = self._get_orm_value(orm)
-#         if val is None:
-#             val = self.get_default(orm, val)
-# 
-#         return val
 
     ###########################################################################
     # File set/get methods
@@ -1522,10 +1521,6 @@ class Field(object):
         self.jset = v
         return self
 
-#     def osetter(self, v):
-#         self.oset = v
-#         return self
-
     def qset(self, query_field, val):
         return val
 
@@ -1534,9 +1529,6 @@ class Field(object):
             val = self.get_default(orm, val)
 
         return name, val
-
-#     def oset(self, orm_class, schema, name):
-#         pass
 
     def to_query(self, query_field, val):
         """This will be called when setting the field onto a query instance
@@ -1571,22 +1563,18 @@ class Field(object):
         :returns: tuple[str, Any], (name, val) where the name will be the
             jsonable field name and the value will be the jsonable value
         """
-        if self.options.get("jsonable_field", True):
-            logger.debug(
-                f"jsonable {orm.__class__.__name__}.{self.name} -> {name}"
-            )
+        orm_class = orm.__class__ if orm else self.orm_class
+        logger.debug(f"{orm_class.__name__}.{self.name}.jsonable")
 
+        if self.is_jsonable():
+        #if self.options.get("jsonable_field", True) and not self.is_private():
+        #if self.options.get("jsonable_field", True):
             if self.is_ref():
                 # Foreign Keys get passed through their Field methods
-                _, val = self.schema.pk.jsonable(
-                    orm,
-                    name,
-                    val
-                )
+                _, val = self.schema.pk.jsonable(None, name, val)
 
             else:
                 name = self.options.get("jsonable_name", name)
-
                 name, val = self.jset(orm, name, val)
 
                 if val is not None:
@@ -1600,9 +1588,6 @@ class Field(object):
             return name, val
 
         else:
-            logger.debug(
-                f"jsonable ignored for {orm.__class__.__name__}.{self.name}"
-            )
             return "", None
 
     def configure(self, orm_class: type, schema: Schema, name: str) -> None:

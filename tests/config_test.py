@@ -761,6 +761,23 @@ class FieldTest(EnvironTestCase):
         fields = o.to_interface()
         self.assertFalse("foo" in fields)
 
+    async def test_private(self):
+        f = Field(str, private=True)
+        self.assertTrue(f.is_private())
+        self.assertFalse(f.is_jsonable())
+
+        f = Field(str, private=False)
+        self.assertFalse(f.is_private())
+        self.assertTrue(f.is_jsonable())
+
+    async def test_jsonable(self):
+        orm_class = self.get_orm_class(
+            foo=Field(int, private=True),
+        )
+        o = orm_class(pk=1234, foo="foo value")
+        fields = o.jsonable()
+        self.assertFalse("foo" in fields)
+
 #     async def test_lifecycle_methods(self):
 #         class FooField(Field):
 #             def fget(self, orm, v):

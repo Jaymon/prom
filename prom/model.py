@@ -319,7 +319,8 @@ class Orm(object):
     """This will hold all other orm classes that have been loaded into memory
     the class path is the key and the class object is the value"""
 
-    _id = AutoIncrement(aliases=["id"])
+#     _id = AutoIncrement(aliases=["id"])
+    _id = AutoIncrement()
     """The primary key is an auto-increment integer by default
 
     You can override this in your child class if you want a different primary
@@ -330,7 +331,8 @@ class Orm(object):
         created=True,
         updated=False,
         aliases=["created"],
-        jsonable_field=False, # don't include in .jsonable by default
+        private=True,
+        #jsonable_field=False, # don't include in .jsonable by default
     )
     """Anytime a new row is created this will be populated
 
@@ -342,7 +344,8 @@ class Orm(object):
         created=False,
         updated=True,
         aliases=["updated"],
-        jsonable_field=False, # don't include in .jsonable by default
+        private=True,
+        #jsonable_field=False, # don't include in .jsonable by default
     )
     """Anytime a row is written to this will be updated, that means it will
     have roughly the same value as ._created when the row is first inserted,
@@ -1257,19 +1260,7 @@ class Orm(object):
         return bytes(self.pk)
 
     def jsonable(self, *args, **options):
-        """
-        return a public version of this instance that can be jsonified
-
-        Note that this does not return _id, _created, _updated, the reason why
-        is because lots of times you have a different name for _id (like if it
-        is a user object, then you might want to call it user_id instead of
-        _id) and I didn't want to make assumptions
-
-        note 2, I'm not crazy about the name, but I didn't like to_dict() and
-        pretty much any time I need to convert the object to a dict is for
-        json, I kind of like dictify() though, but I've already used this
-        method in so many places. Another name I don't mind is .tojson
-        """
+        """Return a public version of this instance that can be jsonified"""
         d = {}
         for field_name, field in self.schema.fields.items():
             field_name, field_val = field.jsonable(

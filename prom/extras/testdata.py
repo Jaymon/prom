@@ -776,6 +776,10 @@ class ModelData(TestData):
                 # foreign keys are handled in .assure_orm_refs
                 pass
 
+            elif field.is_private():
+                # private fields are ignored for generation
+                pass
+
             elif not self.get_orm_field_required(field_name, field, **kwargs):
                 pass
 
