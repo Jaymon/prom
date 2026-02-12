@@ -248,14 +248,14 @@ class FieldTest(EnvironTestCase):
         im = f.modified(o, o.pk)
         self.assertFalse(im)
 
-    def test_help(self):
+    def test_doc(self):
         help_str = "this is the foo field"
         orm_class = self.get_orm_class(
-            foo=Field(int, help=help_str)
+            foo=Field(int, doc=help_str)
         )
 
         f = orm_class.schema.foo
-        self.assertEqual(help_str, f.help)
+        self.assertEqual(help_str, f.doc)
 
     def test_type_std(self):
         std_types = (

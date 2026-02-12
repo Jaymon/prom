@@ -712,26 +712,6 @@ class Orm(object):
         """Return True if .save() will perform an interface insert"""
         return not self.is_update()
 
-    def from_interface(self, fields: Mapping) -> None:
-        """this runs all the fields through their iget methods to mimic them
-        freshly coming out of the db, then resets modified
-
-        :param fields: dict, only the fields you want to populate
-        """
-        schema_fields = {}
-        schema = self.schema
-        for field_name in fields.keys():
-            if field := schema.fields.get(field_name, None):
-                schema_fields[field_name] = field.from_interface(
-                    self,
-                    fields[field_name],
-                )
-
-        self.modify(schema_fields)
-
-        # this marks that this was repopulated from the interface (database)
-        self._interface_pk = self.pk
-
     def to_interface(self) -> Mapping[str, Any]:
         """Get all the fields that need to be persisted into the db
 
@@ -769,6 +749,26 @@ class Orm(object):
                         )
 
         return fields
+
+    def from_interface(self, fields: Mapping) -> None:
+        """this runs all the fields through their iget methods to mimic them
+        freshly coming out of the db, then resets modified
+
+        :param fields: dict, only the fields you want to populate
+        """
+        schema_fields = {}
+        schema = self.schema
+        for field_name in fields.keys():
+            if field := schema.fields.get(field_name, None):
+                schema_fields[field_name] = field.from_interface(
+                    self,
+                    fields[field_name],
+                )
+
+        self.modify(schema_fields)
+
+        # this marks that this was repopulated from the interface (database)
+        self._interface_pk = self.pk
 
     async def insert(self, **kwargs):
         """persist the field values of this orm"""

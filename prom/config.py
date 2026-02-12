@@ -491,7 +491,13 @@ class Index(object):
 
 
 class Field(object):
-    """Each column in the database is configured using this class
+    """Each column in the database is configured using this descriptor class
+
+    This implements the descriptor protocol:
+        https://docs.python.org/3/howto/descriptor.html
+
+    This implements a subscet of a dataclass field arguments:
+        https://docs.python.org/3/library/dataclasses.html#dataclasses.field
 
     You can set some getters and setters on this object in order to fine tune
     control over how a field in the db is set and fetched from the instance and
@@ -500,51 +506,55 @@ class Field(object):
     to customize the field on set and get from the db, you can use the
     decorators, which are classmethods:
 
-    :Example:
-        foo = Field(str, True)
-
-        @foo.igetter
-        def foo(self, val):
-            # do custom things when pulling foo from the database
-            return val
-
-        @foo.isetter
-        def foo(self, val):
-            # do custom things when putting foo into the database
-            return val
-
-    There are also fget/fset/fdel methods that can be set to customize behavior
-    on when a value is set on a particular orm instance, so if you wanted to
-    make sure that bar was always an int when it is set, you could:
-
-    :Example:
+    :example:
         bar = Field(int, True)
 
         @bar.fsetter
         def bar(self, val):
-            # do custom things
+            # Orm.bar = ...
             return int(val)
 
         @bar.fgetter
         def bar(self, val):
+            # Orm.bar
             return int(val)
 
-        @bar.jsonabler
-        def bar(self, name, val):
-            # convert val to something json safe, you can also change the name
+        @bar.fdeleter
+        def bar(self, val):
+            # del Orm.bar
+            return None
+
+        @bar.isetter
+        def bar(self, val):
+            # insert/update Orm.bar in the db
+            return int(val)
+
+        @bar.igetter
+        def bar(self, val):
+            # get bar column from the db and set into Orm.bar
+            return int(val)
+
+        @bar.qset
+        def bar(self, query_field, val):
+            # Query field is set (different signature)
+            return val
+
+        @bar.jset
+        def bar(self, orm, name, val):
+            # Orm.jsonable (different signature
             return name, val
 
-    NOTE -- all these get/set/delete methods are different than traditional
+    .. note:: All these get/set/delete methods are different than traditional
     python getters and setters because they always need to return a value and
     they always take in the object instance manipulating them and the value.
 
-    NOTE -- Foreign key Field instances can be passed orm instances from other
-    classes because those classes will call the FK's field methods when
+    .. note:: Foreign key Field instances can be passed orm instances from
+    other classes because those classes will call the FK's field methods when
     getting/setting the field
 
     You can also configure the Field using a class:
 
-    :Example:
+    :example:
         class bar(Field):
             type = int
             required = True
@@ -558,10 +568,6 @@ class Field(object):
                 print("fget")
                 return v
 
-            def iget(self, orm, v):
-                print("iget")
-                return v
-
             def fset(self, orm, v):
                 print("fset")
                 return v
@@ -570,15 +576,23 @@ class Field(object):
                 print("fdel")
                 return v
 
-            def iquery(self, query, v):
-                print("iquery")
+            def iget(self, orm, v):
+                print("iget")
                 return v
 
-            def jsonable(self, orm, field_name, v):
-                print("jsonable")
-                return field_name, v
+            def iset(self, orm, v):
+                print("iset")
+                return v
 
-    https://docs.python.org/2/howto/descriptor.html
+            def qset(self, query, v):
+                print("qset")
+                return v
+
+            def jset(self, orm, field_name, v):
+                # notice the signature and return val are different than the
+                # other methods
+                print("jset")
+                return field_name, v
     """
     required = False
     """True if this field is required"""
@@ -592,7 +606,7 @@ class Field(object):
 
     default_factory: Callable[[], Any]|None = None
 
-    help = ""
+    doc = ""
     """The description/help message for this field"""
 
     name = ""
@@ -717,7 +731,6 @@ class Field(object):
             # this needs to be a new dict so we don't accidently change
             # something important
             options = {**self.schema.pk.options, **self.options}
-            #options.update(self.options)
 
         else:
             options = self.options
@@ -761,6 +774,8 @@ class Field(object):
         choices: Collection|None = None,
         regex: str = "",
 
+        doc: str = "",
+
         **options,
     ):
         """Create a field
@@ -797,10 +812,9 @@ class Field(object):
             order to be considered valid before persisting
         :keyword regex: a string that the value has to match in order to
             be persisted
+        :keyword doc: The description of this field
         :keyword **options: anything else
         """
-        #field_options = utils.make_dict(field_options, field_options_kwargs)
-
         d = self.get_size(
             size=size,
             min_size=min_size,
@@ -814,10 +828,6 @@ class Field(object):
 
         self.options = options
 
-        #name = field_options.pop("name", "")
-        #orm_class = field_options.pop("orm_class", None)
-
-        #choices = field_options.pop("choices", set())
         if choices or not self.choices:
             self.choices = choices
 
@@ -832,11 +842,6 @@ class Field(object):
         options["ignore_case"] = ignore_case
         options["regex"] = regex
 
-
-#         if autopk := field_options.pop("autopk", False):
-#             field_options["pk"] = autopk
-#             field_options["auto"] = autopk
-
         if default is not None and default_factory is not None:
             raise ValueError("Cannot specify both default and default_factory")
 
@@ -850,6 +855,7 @@ class Field(object):
         self.required = required or self.is_pk()
         self.unique = unique
         self.index = index
+        self.doc = doc
 
         if fget:
             self.fget = fget
@@ -918,7 +924,8 @@ class Field(object):
             )
 
     def get_size(self, size, min_size, max_size):
-        """Figure out if this field has any size information"""
+        """Internal method. Figure out if this field has any size information
+        """
         d = {}
 
         if size >= 0:
@@ -1135,6 +1142,91 @@ class Field(object):
         """Returns True if this field should be in .jsonable output"""
         return self.options.get("jsonable_field", True)
 
+    def _get_orm_value(self, orm):
+        """Internal method. Get the raw value that this property is holding
+        internally for the orm instance"""
+        try:
+            val = orm.__dict__[self.orm_field_name]
+
+        except KeyError as e:
+            #raise AttributeError(str(e))
+            val = None
+
+        return val
+
+    def modified(self, orm, val):
+        """Returns True if val has been modified in orm
+
+        :param orm: Orm
+        :param val: mixed, the current value of the field
+        :returns: bool, True if val is different than the interface val
+        """
+        if self.is_serialized():
+            return True
+
+        ret = True
+        ihash = orm.__dict__.get(self.orm_interface_hash, None)
+        if ihash:
+            ret = self.hash(orm, val) != ihash
+
+        else:
+            ret = val is not None
+
+        return ret
+
+    def hash(self, orm, val):
+        if self.is_serialized():
+            return None
+
+        elif isinstance(val, dict):
+            return None
+
+        return hash(val)
+
+    def get_default(self, orm, val):
+        """On a new Orm instantiation, this will be called for each field and
+        if val equals None then this will decide how to use self.default to set
+        the default value of the field
+
+        If you just want to set a default value you won't need to override this
+        method because you can just pass default into the field instantiation
+        and it will get automatically used in this method
+
+        :param orm: Orm, the Orm instance being created
+        :param val: mixed, the current value of the field (usually None)
+        :returns: mixed
+        """
+        if val is None:
+            if self.default_factory is not None:
+                ret = self.default_factory()
+
+            else:
+                ret = self.default
+
+        else:
+            ret = val
+
+        return ret
+
+    ###########################################################################
+    # File set/get methods
+    ###########################################################################
+
+    def fgetter(self, v):
+        """decorator for setting field's fget function"""
+        self.fget = v
+        return self
+
+    def fsetter(self, v):
+        """decorator for setting field's fset function"""
+        self.fset = v
+        return self
+
+    def fdeleter(self, v):
+        """decorator for setting field's fdel function"""
+        self.fdel = v
+        return self
+
     def fget(self, orm, val):
         """Called anytime the field is accessed through the Orm (eg, Orm.foo)
 
@@ -1144,50 +1236,11 @@ class Field(object):
         """
         return val
 
-    def fgetter(self, v):
-        """decorator for setting field's fget function"""
-        self.fget = v
-        return self
-
-    def from_interface(self, orm, val):
-        """Called anytime the field is being returned from the interface to the
-        orm
-
-        think of this as when the orm receives the field value from the
-        interface
-
-        :param orm: Orm, the Orm instance the field is being set on. This can
-            be None if the select query had selected fields so a full orm
-            instance isn't being returned but rather just the selected values
-        :param val: mixed, the current value of the field
-        :returns: mixed
-        """
-        orm_class = orm.__class__ if orm else self.orm_class
-        logger.debug(f"{orm_class.__name__}.{self.name}.from_interface")
-
-        val = self.iget(orm, val)
-
-        if self.is_ref():
-            # Foreign Keys get passed through their Field methods
-            val = self.schema.pk.from_interface(None, val)
-
-        else:
-            if self.is_serialized():
-                val = self.decode(val)
-
-            if orm:
-                orm.__dict__[self.orm_interface_hash] = self.hash(orm, val)
-
+    def fset(self, orm, val):
         return val
 
-    def igetter(self, v):
-        """decorator for the method called when a field is pulled from the
-        database"""
-        self.iget = v
-        return self
-
-    def iget(self, orm, val):
-        return val
+    def fdel(self, orm, val):
+        return None
 
     def to_value(self, orm, val):
         """This is called on Orm instantiation and any time field is set (eg
@@ -1232,13 +1285,84 @@ class Field(object):
 
         return val
 
-    def fset(self, orm, val):
+    def from_value(self, orm, val):
+        """This is the wrapper that will actually be called when the field is
+        fetched from the instance, this is a little different than Python's
+        built-in @property fget method because it will pull the value from a
+        shadow variable in the instance and then call fget"""
+        logger.debug(f"{orm.__class__.__name__}.{self.name}.from_value")
+
+        val = self.fget(orm, val)
+
+        if self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.from_value(orm, val)
+
         return val
 
-    def fsetter(self, v):
-        """decorator for setting field's fset function"""
-        self.fset = v
+    def del_value(self, orm, val):
+        orm_class = orm.__class__ if orm else self.orm_class
+        logger.debug(f"{orm_class.__name__}.{self.name}.del_value")
+
+        val = self.fdel(orm, val)
+
+        orm.__dict__.pop(self.orm_interface_hash, None)
+        return val
+
+    def __get__(self, orm, orm_class=None):
+        if orm is None:
+            # class is requesting this property, so return it
+            return self
+
+        raw_val = self._get_orm_value(orm)
+        ret = self.from_value(orm, raw_val)
+
+        # we want to compensate for default values right here, so if the raw
+        # val is None but the new val is not then we save the returned value,
+        # this allows us to handle things like dict with no surprises
+        if raw_val is None:
+            if ret is not None:
+                orm.__dict__[self.orm_field_name] = ret
+
+        return ret
+
+    def __set__(self, orm, val):
+        """this is the wrapper that will actually be called when the field is
+        set on the instance, your fset method must return the value you want
+        set, this is different than Python's built-in @property setter because
+        the fset method *NEEDS* to return something
+        """
+        val = self.to_value(orm, val)
+        orm.__dict__[self.orm_field_name] = val
+
+    def __delete__(self, orm):
+        """the wrapper for when the field is deleted, for the most part the
+        default fdel will almost never be messed with, this is different than
+        Python's built-in @property deleter because the fdel method *NEEDS* to
+        return something and it accepts the current value as an argument"""
+        val = self.del_value(orm, self._get_orm_value(orm))
+        orm.__dict__[self.orm_field_name] = val
+
+    ###########################################################################
+    # Interface persist set/get methods
+    ###########################################################################
+
+    def igetter(self, v):
+        """decorator for the method called when a field is pulled from the
+        database"""
+        self.iget = v
         return self
+
+    def isetter(self, v):
+        """decorator for setting field's fset function"""
+        self.iset = v
+        return self
+
+    def iget(self, orm, val):
+        return val
+
+    def iset(self, orm, val):
+        return val
 
     def to_interface(self, orm, val):
         """Called anytime the field is being fetched to send to the interface
@@ -1267,30 +1391,36 @@ class Field(object):
 
         return val
 
-    def isetter(self, v):
-        """decorator for setting field's fset function"""
-        self.iset = v
-        return self
+    def from_interface(self, orm, val):
+        """Called anytime the field is being returned from the interface to the
+        orm
 
-    def iset(self, orm, val):
-        return val
+        think of this as when the orm receives the field value from the
+        interface
 
-    def del_value(self, orm, val):
+        :param orm: Orm, the Orm instance the field is being set on. This can
+            be None if the select query had selected fields so a full orm
+            instance isn't being returned but rather just the selected values
+        :param val: mixed, the current value of the field
+        :returns: mixed
+        """
         orm_class = orm.__class__ if orm else self.orm_class
-        logger.debug(f"{orm_class.__name__}.{self.name}.del_value")
+        logger.debug(f"{orm_class.__name__}.{self.name}.from_interface")
 
-        val = self.fdel(orm, val)
+        val = self.iget(orm, val)
 
-        orm.__dict__.pop(self.orm_interface_hash, None)
+        if self.is_ref():
+            # Foreign Keys get passed through their Field methods
+            val = self.schema.pk.from_interface(None, val)
+
+        else:
+            if self.is_serialized():
+                val = self.decode(val)
+
+            if orm:
+                orm.__dict__[self.orm_interface_hash] = self.hash(orm, val)
+
         return val
-
-    def fdel(self, orm, val):
-        return None
-
-    def fdeleter(self, v):
-        """decorator for setting field's fdel function"""
-        self.fdel = v
-        return self
 
     def del_interface(self, orm, val):
         """Called when the field is being deleted from the db
@@ -1309,30 +1439,55 @@ class Field(object):
         orm.__dict__.pop(self.orm_interface_hash, None)
         return None if self.is_pk() else val
 
-    def get_default(self, orm, val):
-        """On a new Orm instantiation, this will be called for each field and
-        if val equals None then this will decide how to use self.default to set
-        the default value of the field
+    def encode(self, val):
+        if val is None: return val
 
-        If you just want to set a default value you won't need to override this
-        method because you can just pass default into the field instantiation
-        and it will get automatically used in this method
+        if self.serializer == "pickle":
+            return pickle.dumps(val, pickle.HIGHEST_PROTOCOL)
 
-        :param orm: Orm, the Orm instance being created
-        :param val: mixed, the current value of the field (usually None)
-        :returns: mixed
-        """
-        if val is None:
-            if self.default_factory is not None:
-                ret = self.default_factory()
-
-            else:
-                ret = self.default
+        elif self.serializer == "json":
+            return json.dumps(val)
 
         else:
-            ret = val
+            raise ValueError("Unknown serializer {}".format(self.serializer))
 
-        return ret
+    def decode(self, val):
+        if val is None: return val
+
+        if self.serializer == "pickle":
+            #return pickle.loads(base64.b64decode(val))
+            return pickle.loads(val)
+
+        elif self.serializer == "json":
+            return json.loads(val)
+
+        else:
+            raise ValueError("Unknown serializer {}".format(self.serializer))
+
+    ###########################################################################
+    # Query and json set methods
+    ###########################################################################
+
+    def qsetter(self, v):
+        """decorator for the method called when this field is used in a SELECT
+        query"""
+        self.qset = v
+        return self
+
+    def jsetter(self, v):
+        """Decorator for the method called for a field when an Orm's .jsonable
+        method is called"""
+        self.jset = v
+        return self
+
+    def qset(self, query_field, val):
+        return val
+
+    def jset(self, orm, name, val):
+        if val is None:
+            val = self.get_default(orm, val)
+
+        return name, val
 
     def to_query(self, query_field, val):
         """This will be called when setting the field onto a query instance
@@ -1356,15 +1511,6 @@ class Field(object):
             val = self.schema.pk.qset(query_field, val)
 
         return val
-
-    def qset(self, query_field, val):
-        return val
-
-    def qsetter(self, v):
-        """decorator for the method called when this field is used in a SELECT
-        query"""
-        self.qset = v
-        return self
 
     def jsonable(self, orm, name, val):
         """This is called in Orm.jsonable() to set the field name and value
@@ -1409,133 +1555,6 @@ class Field(object):
                 f"jsonable ignored for {orm.__class__.__name__}.{self.name}"
             )
             return "", None
-
-    def jset(self, orm, name, val):
-        if val is None:
-            val = self.get_default(orm, val)
-
-        return name, val
-
-    def jsetter(self, v):
-        """Decorator for the method called for a field when an Orm's .jsonable
-        method is called"""
-        self.jset = v
-        return self
-
-    def modified(self, orm, val):
-        """Returns True if val has been modified in orm
-
-        :param orm: Orm
-        :param val: mixed, the current value of the field
-        :returns: bool, True if val is different than the interface val
-        """
-        if self.is_serialized():
-            return True
-
-        ret = True
-        ihash = orm.__dict__.get(self.orm_interface_hash, None)
-        if ihash:
-            ret = self.hash(orm, val) != ihash
-
-        else:
-            ret = val is not None
-
-        return ret
-
-    def hash(self, orm, val):
-        if self.is_serialized():
-            return None
-
-        elif isinstance(val, dict):
-            return None
-
-        return hash(val)
-
-    def encode(self, val):
-        if val is None: return val
-
-        if self.serializer == "pickle":
-            return pickle.dumps(val, pickle.HIGHEST_PROTOCOL)
-
-        elif self.serializer == "json":
-            return json.dumps(val)
-
-        else:
-            raise ValueError("Unknown serializer {}".format(self.serializer))
-
-    def decode(self, val):
-        if val is None: return val
-
-        if self.serializer == "pickle":
-            #return pickle.loads(base64.b64decode(val))
-            return pickle.loads(val)
-
-        elif self.serializer == "json":
-            return json.loads(val)
-
-        else:
-            raise ValueError("Unknown serializer {}".format(self.serializer))
-
-    def fval(self, orm):
-        """return the raw value that this property is holding internally for
-        the orm instance"""
-        try:
-            val = orm.__dict__[self.orm_field_name]
-
-        except KeyError as e:
-            #raise AttributeError(str(e))
-            val = None
-
-        return val
-
-    def from_value(self, orm, val):
-        """This is the wrapper that will actually be called when the field is
-        fetched from the instance, this is a little different than Python's
-        built-in @property fget method because it will pull the value from a
-        shadow variable in the instance and then call fget"""
-        logger.debug(f"{orm.__class__.__name__}.{self.name}.from_value")
-
-        val = self.fget(orm, val)
-
-        if self.is_ref():
-            # Foreign Keys get passed through their Field methods
-            val = self.schema.pk.from_value(orm, val)
-
-        return val
-
-    def __get__(self, orm, orm_class=None):
-        if orm is None:
-            # class is requesting this property, so return it
-            return self
-
-        raw_val = self.fval(orm)
-        ret = self.from_value(orm, raw_val)
-
-        # we want to compensate for default values right here, so if the raw
-        # val is None but the new val is not then we save the returned value,
-        # this allows us to handle things like dict with no surprises
-        if raw_val is None:
-            if ret is not None:
-                orm.__dict__[self.orm_field_name] = ret
-
-        return ret
-
-    def __set__(self, orm, val):
-        """this is the wrapper that will actually be called when the field is
-        set on the instance, your fset method must return the value you want
-        set, this is different than Python's built-in @property setter because
-        the fset method *NEEDS* to return something
-        """
-        val = self.to_value(orm, val)
-        orm.__dict__[self.orm_field_name] = val
-
-    def __delete__(self, orm):
-        """the wrapper for when the field is deleted, for the most part the
-        default fdel will almost never be messed with, this is different than
-        Python's built-in @property deleter because the fdel method *NEEDS* to
-        return something and it accepts the current value as an argument"""
-        val = self.del_value(orm, self.fval(orm))
-        orm.__dict__[self.orm_field_name] = val
 
 
 class AutoUUID(Field):
