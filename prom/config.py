@@ -1146,13 +1146,19 @@ class Field(object):
         """Internal method. Get the raw value that this property is holding
         internally for the orm instance"""
         try:
-            val = orm.__dict__[self.orm_field_name]
+            return orm.__dict__[self.orm_field_name]
 
         except KeyError as e:
-            #raise AttributeError(str(e))
-            val = None
+            raise AttributeError(self.orm_field_name) from e
 
-        return val
+#         try:
+#             val = orm.__dict__[self.orm_field_name]
+# 
+#         except KeyError as e:
+#             #raise AttributeError(str(e))
+#             val = None
+# 
+#         return val
 
     def modified(self, orm, val):
         """Returns True if val has been modified in orm
@@ -1321,8 +1327,17 @@ class Field(object):
             # class is requesting this property, so return it
             return self
 
-        raw_val = self._get_orm_value(orm)
-        ret = self.from_value(orm, raw_val)
+        try:
+            raw_val = self._get_orm_value(orm)
+
+        except AttributeError:
+            raw_val = None
+            ret = self.get_default(orm, raw_val)
+
+        else:
+            ret = self.from_value(orm, raw_val)
+
+#         ret = self.from_value(orm, raw_val)
 
         # we want to compensate for default values right here, so if the raw
         # val is None but the new val is not then we save the returned value,
@@ -1347,8 +1362,12 @@ class Field(object):
         default fdel will almost never be messed with, this is different than
         Python's built-in @property deleter because the fdel method *NEEDS* to
         return something and it accepts the current value as an argument"""
-        val = self.del_value(orm, self._get_orm_value(orm))
-        orm.__dict__[self.orm_field_name] = val
+        try:
+            val = self.del_value(orm, self._get_orm_value(orm))
+            orm.__dict__[self.orm_field_name] = val
+
+        except AttributeError:
+            pass
 
     ###########################################################################
     # Interface persist set/get methods
