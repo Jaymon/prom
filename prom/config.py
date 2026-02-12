@@ -1329,12 +1329,13 @@ class Field(object):
         return val
 
     def del_value(self, orm, val):
+        """Internal wrapper method for `.fdel`"""
         orm_class = orm.__class__ if orm else self.orm_class
         logger.debug(f"{orm_class.__name__}.{self.name}.del_value")
 
         val = self.fdel(orm, val)
 
-        orm.__dict__.pop(self.orm_interface_hash, None)
+#         orm.__dict__.pop(self.orm_interface_hash, None)
         return val
 
     def __get__(self, orm, orm_class=None):
@@ -1373,13 +1374,20 @@ class Field(object):
         orm.__dict__[self.orm_field_name] = val
 
     def __delete__(self, orm):
-        """the wrapper for when the field is deleted, for the most part the
-        default fdel will almost never be messed with, this is different than
-        Python's built-in @property deleter because the fdel method *NEEDS* to
-        return something and it accepts the current value as an argument"""
+        """Descriptor `del` method. This will call `.del_value` and if
+        the returned value is None then it will delete the field from `orm`
+        so the `orm` will be in a state like it had never had a value for
+        field. If value is anything other than None then `orm` will have
+        that value set and this acts more like a setter"""
         try:
             val = self.del_value(orm, self._get_orm_value(orm))
-            orm.__dict__[self.orm_field_name] = val
+
+            if val is None:
+                orm.__dict__.pop(self.orm_field_name, None)
+                orm.__dict__.pop(self.orm_interface_hash, None)
+
+            else:
+                orm.__dict__[self.orm_field_name] = val
 
         except AttributeError:
             pass
