@@ -279,6 +279,7 @@ class SQLite(SQLInterface):
         )
 
         # starts thread and connects by running `self._connector`
+        self._connection._thread.daemon = True
         await self._connection
 
         self._connection.closed = 0
