@@ -274,12 +274,42 @@ class SQLite(SQLInterface):
 
     async def _connect(self, config):
         #self._connection = AsyncSQLiteConnection(
+#         self._connection = aiosqlite.connect(
+#             config.path,
+#             iter_chunk_size=config.options.get("iter_chunk_size", 64),
+#         )
+
+#         self._connection = aiosqlite.Connection(
+#             self._connector,
+#             iter_chunk_size=config.options.get("iter_chunk_size", 64),
+#         )
+# 
+#         if self._connection._connection is None:
+#             import asyncio
+#             try:
+#                 future = asyncio.get_running_loop().create_future()
+#                 pout.v(future)
+#                 self._connection._tx.put_nowait((future, self._connector))
+#                 self._connection._connection = await future
+# 
+#             except BaseException:
+#                 pout.h()
+#                 self._connection.stop()
+#                 self._connection = None
+#                 raise
+
+
+
         self._connection = aiosqlite.Connection(
             self._connector,
-            iter_chunk_size=config.options.get("iter_chunk_size", 64)
+            iter_chunk_size=config.options.get("iter_chunk_size", 64),
         )
-        self._connection.start()
-        await self._connection._connect()
+        await self._connection
+        #self._connection._thread.start()
+        #self._connection.start()
+        #pout.v(self._connection._connector)
+        #pout.v(self._connection._connection)
+#         await self._connection._connect()
         self._connection.closed = 0
         await self.configure_connection(connection=self._connection)
 

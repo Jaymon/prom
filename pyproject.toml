@@ -48,7 +48,7 @@ tests = [
   "testdata"
 ]
 sqlite = [
-  "aiosqlite"
+  "aiosqlite~=0.22.1"
 ]
 postgres = [
   "psycopg" # psycopg[binary]
