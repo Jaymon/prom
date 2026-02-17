@@ -6,7 +6,7 @@ import json
 import logging
 import uuid
 import enum
-from typing import Any
+from typing import Any, Self
 from dataclasses import MISSING, _MISSING_TYPE
 
 import dsnparse
@@ -639,7 +639,13 @@ class Field(object):
         until now
         """
         field_type = self.original_type
-        module, klass = utils.get_objects(field_type)
+
+        if field_type is Self:
+            klass = self.orm_class
+
+        else:
+            module, klass = utils.get_objects(field_type)
+
         schema = klass.schema
         if not schema:
             raise ValueError(
@@ -1128,6 +1134,14 @@ class Field(object):
                 # no .schema property will make .schema treat .original_type
                 # as a classpath
                 del self.schema
+
+            elif field_type is Self:
+                # no .schema property will make .schema treat .original_type
+                # as `.orm_class`
+                del self.schema
+
+                if self.required == True:
+                    raise ValueError("Self fields cannot be required")
 
             else:
                 raise ValueError("Unknown field type {}".format(field_type))

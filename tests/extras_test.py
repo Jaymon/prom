@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+from typing import Self
 
 from prom.config import Field
 from prom.extras.testdata import ModelData
@@ -301,6 +301,19 @@ class ModelDataTest(TestCase):
 
         self.assertTrue("foo_prop" in orm_fields["properties"])
         self.assertTrue("foo_field" in orm_fields)
+
+    async def test_create_orm_self_reference(self):
+        """Orm's can have FK references to themselves, this makes sure
+        creation still works as expected"""
+        testdata = self.InterfaceData
+        modeldata = self.ModelData
+
+        orm_class = testdata.get_orm_class(
+            foo_id=Field(Self, False),
+        )
+
+        o = await modeldata.create_orm(orm_class=orm_class)
+        self.assertEqual(None, o.foo_id)
 
 
 class MockModelDataTest(TestCase):

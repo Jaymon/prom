@@ -410,14 +410,14 @@ class ModelData(TestData):
         key if it wasn't included.
 
         This is a recursive method, when it finds a ref_class it will assure
-        that ref's foreign keys before handling ref, this way all references all
-        the way down the stack can be generated for the top level so the same
-        refs can propogate all the way down the dependency chain
+        that ref's foreign keys before handling ref, this way all references
+        all the way down the stack can be generated for the top level so the
+        same refs can propogate all the way down the dependency chain
 
         :param orm_class: Orm
         :param assure_orm_class: Orm|None, the orm that is getting its
-            references assured. If this is None then orm_class is considered the
-            orm that is being checked
+            references assured. If this is None then orm_class is considered
+            the orm that is being checked
         :keyword ignore_refs: bool, default False, if True then refs will not
             be checked, passed in refs will still be set
         :keyword require_fields: bool, default True, if True then create
@@ -433,9 +433,9 @@ class ModelData(TestData):
         logger.debug(f"Assuring orm refs for orm_class {orm_class.__name__}")
         kwargs = self.assure_orm_field_names(orm_class, **kwargs)
 
-        # if assure class isn't passed in then we assume the passed in orm_class
-        # is the class to be assured and all recursive calls will now have it
-        # set
+        # if assure class isn't passed in then we assume the passed in
+        # orm_class is the class to be assured and all recursive calls will
+        # now have it set
         if assure_orm_class is None:
             assure_orm_class = orm_class
 
@@ -444,14 +444,29 @@ class ModelData(TestData):
         ignore_field_names = set(kwargs.get("ignore_field_names", []))
 
         for field_name, field in orm_class.schema.fields.items():
-            if ref_class := field.ref:
+            if ref_class := field.ref_class:
                 ref_field_name = ref_class.model_name
 
-                if field_name in kwargs:
+                if ref_field_name == orm_class.model_name:
+                    # this is an FK reference to itself so we can't actually
+                    # set it without getting into infinite recursion as we keep
+                    # trying to resolve a dependency to itself, so we're just
+                    # going to ignore the field
+                    continue
+
+                elif field_name in kwargs:
+#                     if ref_field_name == orm_class.model_name:
+#                         # we only query it if the ref isn't to itself
+#                         # because if it is to itself then this would
+#                         # potentially overwrite the passed in orm instance
+#                         # we are trying to create
+#                         continue
+
                     if ref_field_name not in kwargs:
-                        kwargs[ref_field_name] = await ref_class.query.eq_pk(
-                            kwargs[field_name]
+                        ref_orm = await ref_class.query.eq_pk(
+                            kwargs[field_name],
                         ).one()
+                        kwargs[ref_field_name] = ref_orm
 
                 elif field_name in ignore_field_names:
                     # we were explicitely told to ignore this field
@@ -463,6 +478,14 @@ class ModelData(TestData):
 
                     else:
                         if not ignore_refs:
+#                             if orm_class.model_name == ref_field_name:
+#                                 # this is an FK reference to itself so we can't
+#                                 # actually set it without getting into
+#                                 # infinite recursion as we keep trying to
+#                                 # resolve a dependency to itself, so we're
+#                                 # just going to ignore the field
+#                                 continue
+
                             if (
                                 require_fields
                                 or field.is_required()
@@ -476,7 +499,7 @@ class ModelData(TestData):
                                     **kwargs
                                 ))
 
-                                fields = await self._dispatch_method(
+                                ref_orm = await self._dispatch_method(
                                     ref_class,
                                     self.create_orm,
                                     **self.assure_ref_field_names(
@@ -486,8 +509,8 @@ class ModelData(TestData):
                                     )
                                 )
 
-                                kwargs[ref_field_name] = fields
-                                kwargs[field_name] = kwargs[ref_field_name].pk
+                                kwargs[ref_field_name] = ref_orm
+                                kwargs[field_name] = ref_orm.pk
 
         return kwargs
 

@@ -3,6 +3,7 @@ import os
 import datetime
 import decimal
 import math
+from typing import Self
 
 from datatypes import Enum
 
@@ -777,6 +778,22 @@ class FieldTest(EnvironTestCase):
         o = orm_class(pk=1234, foo="foo value")
         fields = o.jsonable()
         self.assertFalse("foo" in fields)
+
+    async def test_self_type(self):
+        """Fields can use `typing.Self` to create a foreign key to the
+        same model"""
+        orm_class = self.get_orm_class(
+            foo_id=Field(Self, False),
+        )
+
+        field = orm_class.schema.foo_id
+        self.assertTrue(issubclass(field.type, int))
+        self.assertEqual(field.schema, orm_class.schema)
+
+        with self.assertRaises(ValueError):
+            self.get_orm_class(
+                foo_id=Field(Self, True),
+            )
 
 #     async def test_lifecycle_methods(self):
 #         class FooField(Field):
