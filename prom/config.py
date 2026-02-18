@@ -16,6 +16,7 @@ from datatypes import (
 )
 from datatypes.enum import (
     find_value,
+    find_enum,
 )
 
 from .compat import *
@@ -1177,7 +1178,11 @@ class Field(object):
 
     def is_enum(self) -> bool:
         """Return True if this field represents an enum value"""
-        return issubclass(self.original_type, enum.Enum)
+        try:
+            return issubclass(self.original_type, enum.Enum)
+
+        except TypeError:
+            return False
 
     def is_jsonable(self) -> bool:
         """Returns True if this field should be in .jsonable output"""
@@ -1319,7 +1324,8 @@ class Field(object):
                     )
 
             if self.is_enum():
-                val = find_value(self.original_type, val)
+                val = find_enum(self.original_type, val)
+                #val = find_value(self.original_type, val)
 
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
@@ -1445,9 +1451,11 @@ class Field(object):
             # Foreign Keys get passed through their Field methods
             val = self.schema.pk.to_interface(None, val)
 
-        else:
-            if self.is_serialized():
-                val = self.encode(val)
+        elif self.is_enum():
+            val = find_value(self.original_type, val)
+
+        elif self.is_serialized():
+            val = self.encode(val)
 
         return val
 
@@ -1472,6 +1480,9 @@ class Field(object):
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
             val = self.schema.pk.from_interface(None, val)
+
+        elif self.is_enum():
+            val = find_enum(self.original_type, val)
 
         else:
             if self.is_serialized():
@@ -1589,9 +1600,14 @@ class Field(object):
             if self.is_ref():
                 # Foreign Keys get passed through their Field methods
                 _, val = self.schema.pk.jsonable(None, name, val)
+                name = self.options.get("jsonable_name", name)
 
             else:
                 name = self.options.get("jsonable_name", name)
+
+                if self.is_enum():
+                    val = find_value(self.original_type, val)
+
                 name, val = self.jset(orm, name, val)
 
                 if val is not None:

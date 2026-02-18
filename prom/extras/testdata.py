@@ -447,7 +447,19 @@ class ModelData(TestData):
             if ref_class := field.ref_class:
                 ref_field_name = ref_class.model_name
 
-                if ref_field_name == orm_class.model_name:
+                # if we have a `foo_id` fk field, check for `foo`
+                ref_field_name_2 = ""
+                if field_name.endswith("_id") or field_name.endswith("_pk"):
+                    ref_field_name_2 = field_name[:-3]
+
+                if (
+                    ref_field_name_2 != ref_field_name
+                    and ref_field_name_2 in kwargs
+                ):
+                    if field_name not in kwargs:
+                        kwargs[field_name] = kwargs[ref_field_name_2].pk
+
+                elif ref_field_name == orm_class.model_name:
                     # this is an FK reference to itself so we can't actually
                     # set it without getting into infinite recursion as we keep
                     # trying to resolve a dependency to itself, so we're just
@@ -455,13 +467,6 @@ class ModelData(TestData):
                     continue
 
                 elif field_name in kwargs:
-#                     if ref_field_name == orm_class.model_name:
-#                         # we only query it if the ref isn't to itself
-#                         # because if it is to itself then this would
-#                         # potentially overwrite the passed in orm instance
-#                         # we are trying to create
-#                         continue
-
                     if ref_field_name not in kwargs:
                         ref_orm = await ref_class.query.eq_pk(
                             kwargs[field_name],
@@ -478,14 +483,6 @@ class ModelData(TestData):
 
                     else:
                         if not ignore_refs:
-#                             if orm_class.model_name == ref_field_name:
-#                                 # this is an FK reference to itself so we can't
-#                                 # actually set it without getting into
-#                                 # infinite recursion as we keep trying to
-#                                 # resolve a dependency to itself, so we're
-#                                 # just going to ignore the field
-#                                 continue
-
                             if (
                                 require_fields
                                 or field.is_required()

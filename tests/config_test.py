@@ -929,3 +929,36 @@ class EnumFieldTest(EnvironTestCase):
         self.assertFalse(f.is_serialized())
         self.assertTrue(issubclass(f.interface_type, int))
 
+    async def test_lifecycle_value(self):
+        """An enum field is sometimes an enum (Orm instance) but it sends
+        the value to the interface and jsonable"""
+        class FooEnum(Enum):
+            FOO = 1
+
+        orm = self.mock(__name__="test_value")
+        f = Field(FooEnum)
+
+        r = f.to_interface(orm, FooEnum.FOO)
+        self.assertEqual(FooEnum.FOO.value, r)
+
+        r = f.from_interface(orm, 1)
+        self.assertEqual(FooEnum.FOO, r)
+
+        r = f.to_query(None, "FOO")
+        self.assertEqual(FooEnum.FOO.value, r)
+
+        r = f.to_query(None, FooEnum.FOO)
+        self.assertEqual(FooEnum.FOO.value, r)
+
+        r = f.to_query(None, 1)
+        self.assertEqual(FooEnum.FOO.value, r)
+
+        r = f.jsonable(orm, f.name, FooEnum.FOO)
+        self.assertEqual(FooEnum.FOO.value, r[1])
+
+        r = f.to_value(orm, "FOO")
+        self.assertEqual(FooEnum.FOO, r)
+
+        r = f.to_value(orm, 1)
+        self.assertEqual(FooEnum.FOO, r)
+
