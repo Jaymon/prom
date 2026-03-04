@@ -29,9 +29,10 @@ import re
 import sqlite3
 import json
 import uuid
+from collections.abc import AsyncIterator
 
 from datatypes import Datetime
-import aiosqlite
+#import aiosqlite
 
 # first party
 from ..exception import (
@@ -49,7 +50,7 @@ from .sql import SQLInterface
 
 
 class BooleanType(object):
-    FIELD_TYPE = 'BOOL'
+    FIELD_TYPE = "BOOL"
 
     @classmethod
     def adapt(cls, val):
@@ -58,14 +59,14 @@ class BooleanType(object):
 
     @classmethod
     def convert(cls, val):
-        """from the db you get values like b'0' and b'1', convert those to
+        """from the db you get values like b"0" and b"1", convert those to
         True/False"""
         return bool(int(val))
 
 
 class StringType(object):
     """this just makes sure 8-bit bytestrings get converted ok"""
-    FIELD_TYPE = 'TEXT'
+    FIELD_TYPE = "TEXT"
 
     @classmethod
     def adapt(cls, val):
@@ -85,7 +86,7 @@ class DatetimeType(StringType):
 
     uses the name TIMESTAMP over DATETIME to be consistent with Postgres
     """
-    FIELD_TYPE = 'TIMESTAMP'
+    FIELD_TYPE = "TIMESTAMP"
 
     @classmethod
     def adapt(cls, val):
@@ -102,7 +103,7 @@ class NumericType(object):
     This is named to be as consistent with Postgres's NUMERIC(<precision>, 0)
     type
 
-    This has TEXT in the name so it is treated as text according to SQLite's
+    This has TEXT in the name so it is treated as text according to SQLite"s
     order of affinity rule 2:
 
         If the declared type of the column contains any of the strings "CHAR",
@@ -110,7 +111,7 @@ class NumericType(object):
 
         https://www.sqlite.org/datatype3.html
     """
-    FIELD_TYPE = 'NUMERICTEXT'
+    FIELD_TYPE = "NUMERICTEXT"
 
     @classmethod
     def adapt(cls, val):
@@ -128,7 +129,7 @@ class NumericType(object):
 
 
 class DecimalType(object):
-    FIELD_TYPE = 'DECIMALTEXT'
+    FIELD_TYPE = "DECIMALTEXT"
 
     @staticmethod
     def adapt(val):
@@ -143,10 +144,10 @@ class DecimalType(object):
 class DictType(object):
     """Converts a dict to json text and back again
 
-    Uses JSONBTEXT to be as close to Postgres while still triggering SQLite's
+    Uses JSONBTEXT to be as close to Postgres while still triggering SQLite"s
     affinity rule 2
     """
-    FIELD_TYPE = 'JSONBTEXT'
+    FIELD_TYPE = "JSONBTEXT"
 
     @classmethod
     def adapt(cls, val):
@@ -157,6 +158,77 @@ class DictType(object):
         """This should only be called when the column type is actually
         FIELD_TYPE"""
         return json.loads(val)
+
+
+class AsyncCursor(sqlite3.Cursor):
+    """Async wrapper around the default Cursor
+
+    .. note:: this doesn't necessarily wrap all methods but does wrap all
+        the methods used
+
+    https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor
+    """
+    async def execute(self, *args, **kwargs):
+        return super().execute(*args, **kwargs)
+
+    async def executemany(self, *args, **kwargs):
+        return super().executemany(*args, **kwargs)
+
+    async def executescript(self, *args, **kwargs):
+        return super().executescript(*args, **kwargs)
+
+    async def fetchone(self, *args, **kwargs):
+        return super().fetchone(*args, **kwargs)
+
+    async def fetchmany(self, *args, **kwargs):
+        return super().fetchmany(*args, **kwargs)
+
+    async def fetchall(self, *args, **kwargs):
+        return super().fetchall(*args, **kwargs)
+
+    async def close(self, *args, **kwargs):
+        return super().close(*args, **kwargs)
+
+    async def __aiter__(self) -> AsyncIterator[sqlite3.Row]:
+        """The cursor proxy is also an async iterator."""
+        for row in self.__iter__():
+            yield row
+        #yield from self.__iter__()
+        #return self._fetch_chunked()
+
+
+class AsyncConnection(sqlite3.Connection):
+    """Async wrapper around the default Connection
+
+    .. note:: this doesn't necessarily wrap all methods but does wrap all
+        the methods used
+
+    https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection
+    """
+    def cursor(self, factory: sqlite3.Cursor = AsyncCursor) -> sqlite3.Cursor:
+        """This is not async for compatibility with postgres"""
+        return super().cursor(factory)
+
+    async def commit(self):
+        return super().commit()
+
+    async def rollback(self):
+        return super().rollback()
+
+    async def close(self):
+        return super().close()
+
+    async def execute(self, *args, **kwargs):
+        return super().execute(*args, **kwargs)
+
+    async def executemany(self, *args, **kwargs):
+        return super().executemany(*args, **kwargs)
+
+    async def executescript(self, *args, **kwargs):
+        return super().executescript(*args, **kwargs)
+
+    async def interrupt(self):
+        return super().interrupt()
 
 
 class SQLite(SQLInterface):
@@ -199,24 +271,93 @@ class SQLite(SQLInterface):
         """
         return sqlite3.paramstyle
 
-    def _connector(self):
-        """
-        https://docs.python.org/3.11/library/sqlite3.html#sqlite3.connect
-        """
-        config = self.config
+#     def _connector(self):
+#         """
+#         https://docs.python.org/3.11/library/sqlite3.html#sqlite3.connect
+#         """
+#         config = self.config
+#         path = config.path
+# 
+#         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
+#         options = {
+#             "isolation_level": None,
+#             #"isolation_level": "IMMEDIATE",
+#             #"isolation_level": "EXCLUSIVE",
+#             "detect_types": sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
+#             "factory": AsyncConnection,
+#             "check_same_thread": True, # https://stackoverflow.com/a/2578401
+#             #"timeout": 100,
+#         }
+#         option_keys = list(options.keys()) + ["timeout", "cached_statements"]
+#         for k in option_keys:
+#             if k in config.options:
+#                 options[k] = config.options[k]
+# 
+#         try:
+#             connection = sqlite3.connect(path, **options)
+# 
+#         except sqlite3.DatabaseError as e:
+#             path_d = os.path.dirname(path)
+#             if os.path.isdir(path_d):
+#                 raise
+# 
+#             else:
+#                 # let's try and make the directory path and connect again
+#                 os.makedirs(path_d, exist_ok=True)
+#                 connection = sqlite3.connect(path, **options)
+# 
+#         # https://docs.python.org/2/library/sqlite3.html#row-objects
+#         connection.row_factory = sqlite3.Row
+#         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
+#         connection.text_factory = StringType.adapt
+# 
+#         # NOTE -- it's bad encapsulation that these are saved on the module,
+#         # Psycopg3 allows these adapters to be placed on the connection instead
+#         # of the moduel and I like that a lot better since once prom is
+#         # connected the first time then raw sqlite3 is basically borked for the
+#         # life of the script
+# 
+#         # for some reason this is needed in python 3.6 in order for saved bytes
+#         # to be ran through the converter, not sure why
+#         sqlite3.register_converter(StringType.FIELD_TYPE, StringType.adapt)
+# 
+#         sqlite3.register_adapter(bool, BooleanType.adapt)
+#         sqlite3.register_converter(BooleanType.FIELD_TYPE, BooleanType.convert)
+# 
+#         # sadly, it doesn't look like these work for child classes so each class
+#         # has to be adapted even if its parent is already registered
+#         sqlite3.register_adapter(datetime.datetime, DatetimeType.adapt)
+#         sqlite3.register_adapter(Datetime, DatetimeType.adapt)
+#         sqlite3.register_converter(
+#             DatetimeType.FIELD_TYPE,
+#             DatetimeType.convert
+#         )
+# 
+#         sqlite3.register_adapter(int, NumericType.adapt)
+#         sqlite3.register_converter(NumericType.FIELD_TYPE, NumericType.convert)
+# 
+#         sqlite3.register_adapter(decimal.Decimal, DecimalType.adapt)
+#         sqlite3.register_converter(DecimalType.FIELD_TYPE, DecimalType.convert)
+# 
+#         sqlite3.register_adapter(dict, DictType.adapt)
+#         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
+# 
+#         return connection
+
+    async def _connect(self, config):
         path = config.path
 
         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
         options = {
-            'isolation_level': None,
-            #'isolation_level': "IMMEDIATE",
-            #'isolation_level': "EXCLUSIVE",
-            'detect_types': sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
-            #'factory': SQLiteConnection,
-            'check_same_thread': True, # https://stackoverflow.com/a/2578401
-            #'timeout': 100,
+            "isolation_level": None,
+            #"isolation_level": "IMMEDIATE",
+            #"isolation_level": "EXCLUSIVE",
+            "detect_types": sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
+            "factory": AsyncConnection,
+            "check_same_thread": True, # https://stackoverflow.com/a/2578401
+            #"timeout": 100,
         }
-        option_keys = list(options.keys()) + ['timeout', 'cached_statements']
+        option_keys = list(options.keys()) + ["timeout", "cached_statements"]
         for k in option_keys:
             if k in config.options:
                 options[k] = config.options[k]
@@ -234,6 +375,12 @@ class SQLite(SQLInterface):
                 os.makedirs(path_d, exist_ok=True)
                 connection = sqlite3.connect(path, **options)
 
+        connection.closed = 0
+
+        self._connection = connection
+
+        # https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.row_factory
+        connection.cursor_factory = AsyncCursor
         # https://docs.python.org/2/library/sqlite3.html#row-objects
         connection.row_factory = sqlite3.Row
         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
@@ -270,20 +417,20 @@ class SQLite(SQLInterface):
         sqlite3.register_adapter(dict, DictType.adapt)
         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
 
-        return connection
+        await self.configure_connection(connection=connection)
 
-    async def _connect(self, config):
-        self._connection = aiosqlite.Connection(
-            self._connector,
-            iter_chunk_size=config.options.get("iter_chunk_size", 64),
-        )
-
-        # starts thread and connects by running `self._connector`
-        self._connection._thread.daemon = True
-        await self._connection
-
-        self._connection.closed = 0
-        await self.configure_connection(connection=self._connection)
+#     async def _connect(self, config):
+#         self._connection = aiosqlite.Connection(
+#             self._connector,
+#             iter_chunk_size=config.options.get("iter_chunk_size", 64),
+#         )
+# 
+#         # starts thread and connects by running `self._connector`
+#         self._connection._thread.daemon = True
+#         await self._connection
+# 
+#         self._connection.closed = 0
+#         await self.configure_connection(connection=self._connection)
 
     async def _configure_connection(self, **kwargs):
         # turn on foreign keys

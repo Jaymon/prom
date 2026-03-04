@@ -305,11 +305,14 @@ class SQLInterface(SQLInterfaceABC):
         # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
         #connection = kwargs.get('connection', None)
         async with self.connection(**kwargs) as connection:
+#             cur = await self._get_cursor(connection)
             cur = connection.cursor()
+
             # depending on the api, cursor() could either return a coroutine
             # or something different like a cursor class instance
-            if inspect.isawaitable(cur):
-                cur = await cur
+#             if inspect.isawaitable(cur):
+#                 cur = await cur
+
 
             ignore_result = kwargs.get("ignore_result", False)
             count_result = kwargs.get("count_result", False)
@@ -404,6 +407,17 @@ class SQLInterface(SQLInterfaceABC):
             ret = 0
 
         return ret
+
+#     async def _get_cursor(self, connection):
+#         """Internal method to return a cursor"""
+#         cur = connection.cursor()
+# 
+#         # depending on the api, cursor() could either return a coroutine
+#         # or something different like a cursor class instance
+#         if inspect.isawaitable(cur):
+#             cur = await cur
+# 
+#         return cur
 
     async def _handle_field_error(self, schema, e, **kwargs):
         """This will add fields that don't exist in the table if they can be

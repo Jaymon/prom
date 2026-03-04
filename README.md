@@ -7,7 +7,7 @@ An opinionated asynchronous lightweight orm for PostgreSQL or SQLite.
 
 First, install prom:
 
-    $ pip install prom[sqlite]
+    $ pip install prom
 
 Set an environment variable:
 
@@ -15,7 +15,7 @@ Set an environment variable:
 
 Start python:
 
-    $ python
+    $ python -m asyncio
 
 Create a prom Orm:
 
@@ -158,9 +158,12 @@ If you want to use Prom with Postgres:
 
 ### Prom
 
-Prom installs using pip:
+Prom installs using pip with just sqlite support:
 
-    $ pip install prom[sqlite]
+    $ pip install prom
+    
+Or with PostgreSQL support also:
+
     $ pip install prom[postgres]
 
 and to install the latest and greatest:
