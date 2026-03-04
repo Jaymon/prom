@@ -1339,3 +1339,10 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
             # we want to make sure we aren't wrapping errors again and again
             self.assertFalse(isinstance(e.e, InterfaceError))
 
+    async def test_persist_select(self):
+        """Make sure select works when a field that doesn't persist exists"""
+        i, s = await self.create_table(foo=Field(int, True, persist=False))
+
+        # Success if `FieldError` doesn't get raised
+        await i.get(s, Query())
+

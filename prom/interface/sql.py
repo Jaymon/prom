@@ -579,10 +579,10 @@ class SQLInterface(SQLInterfaceABC):
         query_str = []
         query_args = []
 
-        only_where_clause = kwargs.get('only_where_clause', False)
+        only_where_clause = kwargs.get("only_where_clause", False)
         if not only_where_clause:
-            query_str.append('SELECT')
-            is_count_query = kwargs.get('count_query', False)
+            query_str.append("SELECT")
+            is_count_query = kwargs.get("count_query", False)
 
             if query.compounds:
                 select_fields_str = "*"
@@ -607,22 +607,21 @@ class SQLInterface(SQLInterfaceABC):
                         select_fields_str = ", ".join(
                             (
                                 self.render_field_name_sql(fname)
-                                for fname in schema.fields.keys()
+                                for fname, f in schema.fields.items()
+                                if f.is_persisted()
                             )
                         )
 
             if is_count_query:
-                query_str.append('  count({}) as ct'.format(select_fields_str))
+                query_str.append(f"  count({select_fields_str}) as ct")
 
             else:
-                query_str.append('  {}'.format(select_fields_str))
+                query_str.append(f"  {select_fields_str}")
 
-            query_str.append('FROM')
+            query_str.append("FROM")
 
             if not query.compounds:
-                query_str.append("  {}".format(
-                    self.render_table_name_sql(schema)
-                ))
+                query_str.append(f"  {self.render_table_name_sql(schema)}")
 
         return query_str, query_args
 
@@ -659,31 +658,31 @@ class SQLInterface(SQLInterfaceABC):
         return field.name, field.value
 
     def render_where_field_sql(self, schema, field):
-        format_str = ''
+        format_str = ""
         format_args = []
         is_list = field.is_list
         field_name = field.name
         field_val = field.value
 
         symbol_map = {
-            'in': {'symbol': 'IN', 'list': True},
-            'nin': {'symbol': 'NOT IN', 'list': True},
+            "in": {"symbol": "IN", "list": True},
+            "nin": {"symbol": "NOT IN", "list": True},
             # Previously we used "IS" and "IS NOT" but psycopg3 changed behavior
             # https://stackoverflow.com/a/76396765
             # https://www.psycopg.org/psycopg3/docs/basic/from_pg2.html#you-cannot-use-is-s
-            'eq': {'symbol': '=', 'none_symbol': 'IS NOT DISTINCT FROM'},
-            'ne': {'symbol': '!=', 'none_symbol': 'IS DISTINCT FROM'},
-            'gt': {'symbol': '>'},
-            'gte': {'symbol': '>='},
-            'lt': {'symbol': '<'},
-            'lte': {'symbol': '<='},
+            "eq": {"symbol": "=", "none_symbol": "IS NOT DISTINCT FROM"},
+            "ne": {"symbol": "!=", "none_symbol": "IS DISTINCT FROM"},
+            "gt": {"symbol": ">"},
+            "gte": {"symbol": ">="},
+            "lt": {"symbol": "<"},
+            "lte": {"symbol": "<="},
             # https://www.tutorialspoint.com/postgresql/postgresql_like_clause.htm
             # https://www.tutorialspoint.com/sqlite/sqlite_like_clause.htm
-            'like': {'symbol': 'LIKE'},
-            'nlike': {'symbol': 'NOT LIKE'},
+            "like": {"symbol": "LIKE"},
+            "nlike": {"symbol": "NOT LIKE"},
         }
         sd = symbol_map[field.operator]
-        symbol = sd['symbol']
+        symbol = sd["symbol"]
 
         field_kwargs = field.kwargs
         if field_kwargs:
@@ -697,7 +696,7 @@ class SQLInterface(SQLInterfaceABC):
                 )
                 for fname, fvstr, farg in format_strs:
                     if format_str:
-                        format_str += ' AND '
+                        format_str += " AND "
 
                     if is_list:
                         # you can pass in things like day=..., month=... to
@@ -706,20 +705,20 @@ class SQLInterface(SQLInterfaceABC):
                         # and in_foo(day=[1, 2, 3]) the same way
                         farg = make_list(farg)
 
-                        format_str += '{} {} ({})'.format(
+                        format_str += "{} {} ({})".format(
                             fname,
                             symbol,
-                            ', '.join([fvstr] * len(farg))
+                            ", ".join([fvstr] * len(farg))
                         )
                         format_args.extend(farg)
 
                     else:
-                        format_str += '{} {} {}'.format(fname, symbol, fvstr)
+                        format_str += "{} {} {}".format(fname, symbol, fvstr)
                         format_args.append(farg)
 
             else:
                 raise ValueError(
-                    'Field {} does not support extended kwarg values'.format(
+                    "Field {} does not support extended kwarg values".format(
                         field_name
                     )
                 )
@@ -731,23 +730,23 @@ class SQLInterface(SQLInterfaceABC):
                 format_val_str = self.PLACEHOLDER
 
                 if field_val:
-                    format_str = '{} {} ({})'.format(
+                    format_str = "{} {} ({})".format(
                         field_name,
                         symbol,
-                        ', '.join([format_val_str] * len(field_val))
+                        ", ".join([format_val_str] * len(field_val))
                     )
                     format_args.extend(field_val)
 
                 else:
                     # field value is empty, so we need to customize the SQL to
-                    # compensate for the empty set since SQL doesn't like empty
+                    # compensate for the empty set since SQL doesn"t like empty
                     # sets
                     #
                     # the idea here is this is a condition that will
                     # automatically cause the query to fail but not necessarily 
                     # be an error, the best example is the IN (...) queries, if
                     # you do self.in_foo([]).get() that will fail because the
-                    # list was empty, but a value error shouldn't be raised
+                    # list was empty, but a value error shouldn"t be raised
                     # because a common case is:
                     #   self.if_foo(Bar.query.is_che(True).pks).get()
                     # which should result in an empty set if there are no rows
@@ -755,10 +754,10 @@ class SQLInterface(SQLInterfaceABC):
                     #
                     # https://stackoverflow.com/a/58078468/5006
                     if symbol == "IN":
-                        format_str = '{} <> {}'.format(field_name, field_name)
+                        format_str = "{} <> {}".format(field_name, field_name)
 
                     elif symbol == "NOT IN":
-                        format_str = '{} = {}'.format(field_name, field_name)
+                        format_str = "{} = {}".format(field_name, field_name)
 
                     else:
                         raise ValueError("Unsure what to do here")
@@ -769,7 +768,7 @@ class SQLInterface(SQLInterfaceABC):
 
                 # special handling for NULL
                 if field_val is None:
-                    symbol = sd['none_symbol']
+                    symbol = sd["none_symbol"]
 
                 if isinstance(field_val, Query):
                     subquery_schema = field_val.schema
@@ -783,7 +782,7 @@ class SQLInterface(SQLInterfaceABC):
                         field_val
                     )
 
-                    format_str = '{} {} ({})'.format(
+                    format_str = "{} {} ({})".format(
                         field_name,
                         symbol,
                         subquery_sql
@@ -791,7 +790,7 @@ class SQLInterface(SQLInterfaceABC):
                     format_args.extend(subquery_args)
 
                 else:
-                    format_str = '{} {} {}'.format(
+                    format_str = "{} {} {}".format(
                         field_name,
                         symbol,
                         format_val_str,
@@ -805,14 +804,14 @@ class SQLInterface(SQLInterfaceABC):
         query_args = []
 
         if query.fields_where:
-            query_str.append('WHERE')
+            query_str.append("WHERE")
             or_clause = False
 
             for i, field in enumerate(query.fields_where):
                 if i > 0:
-                    query_str.append('OR' if or_clause else 'AND')
+                    query_str.append("OR" if or_clause else "AND")
 
-                field_str = ''
+                field_str = ""
                 field_args = []
 
                 if field.raw:
@@ -832,7 +831,7 @@ class SQLInterface(SQLInterfaceABC):
                         query_str.append("(")
                         or_clause = True
 
-                query_str.append('  {}'.format(field_str))
+                query_str.append("  {}".format(field_str))
                 query_args.extend(field_args)
 
                 if or_clause:
@@ -847,11 +846,11 @@ class SQLInterface(SQLInterfaceABC):
         query_args = []
 
         if query.fields_sort:
-            query_str.append('ORDER BY')
+            query_str.append("ORDER BY")
 
             query_sort_str = []
             for field in query.fields_sort:
-                sort_dir_str = 'ASC' if field.direction > 0 else 'DESC'
+                sort_dir_str = "ASC" if field.direction > 0 else "DESC"
                 if field.value:
                     field_sort_str, field_sort_args = self.render_sort_field_sql(
                         field.name,
@@ -862,12 +861,12 @@ class SQLInterface(SQLInterfaceABC):
                     query_args.extend(field_sort_args)
 
                 else:
-                    query_sort_str.append('  {} {}'.format(
+                    query_sort_str.append("  {} {}".format(
                         field.name,
                         sort_dir_str
                     ))
 
-            query_str.append(',\n'.join(query_sort_str))
+            query_str.append(",\n".join(query_sort_str))
 
         return query_str, query_args
 
@@ -894,7 +893,7 @@ class SQLInterface(SQLInterfaceABC):
                     limit = self.LIMIT_NONE
                     offset = bounds.offset
 
-            query_str.append(f'LIMIT {limit} OFFSET {offset}')
+            query_str.append(f"LIMIT {limit} OFFSET {offset}")
 
         return query_str, query_args
 
@@ -1067,7 +1066,7 @@ class SQLInterface(SQLInterfaceABC):
         https://www.sqlite.org/lang_update.html
         https://www.postgresql.org/docs/current/sql-update.html
         """
-        query_str = ''
+        query_str = ""
         query_args = []
         returning_names = []
 

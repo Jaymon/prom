@@ -590,7 +590,7 @@ class Field(object):
                 print("iset")
                 return v
 
-            def qset(self, query, v):
+            def qset(self, query_field, v):
                 print("qset")
                 return v
 
