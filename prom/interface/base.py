@@ -19,7 +19,7 @@ from ..exception import (
 logger = logging.getLogger(__name__)
 
 
-class InterfaceABC(object):
+class InterfaceABC[ConnectionT]:
     """This is just a convenience abstract base class so child interfaces can
     easily see what methods they might need to implement. They should extend
     Interface and then implement the methods in this class
@@ -31,9 +31,13 @@ class InterfaceABC(object):
         """
         return config
 
-    async def _connect(self, config):
+    async def _connect(self, config) -> ConnectionT:
         """See the docblock for Interface.connect to understand how the
-        connection interface is used by Interface to make and manage connections
+        connection interface is used by Interface to make and manage
+        connections
+
+        :returns: the connection that was just created, this is then passed to
+            `.configure_connection(connection=connection)`
         """
         raise NotImplementedError()
 
@@ -43,12 +47,12 @@ class InterfaceABC(object):
         to decide when a connection is ready and to call this method"""
         pass
 
-    async def _free_connection(self, connection):
+    async def _free_connection(self, connection: ConnectionT):
         """The wrapper method for this method is called at the end of the
         Interface.connection context manager"""
         pass
 
-    async def _get_connection(self):
+    async def _get_connection(self) -> ConnectionT:
         """The wrapper method for this method is called at the beginning of the
         Interface.connection context manager"""
         raise NotImplementedError()
@@ -153,7 +157,7 @@ class InterfaceABC(object):
         pass
 
 
-class Interface(InterfaceABC):
+class Interface[ConnectionT](InterfaceABC[ConnectionT]):
 
     connected = False
     """true if a connection has been established, false otherwise"""
@@ -242,15 +246,20 @@ class Interface(InterfaceABC):
 
         await self.configure(self.config)
 
+        connection = None
+
         try:
-            await self._connect(self.config)
+            connection = await self._connect(self.config)
             self.connected = True
 
         except Exception as e:
             self.connected = False
             await self.raise_error(e)
 
-        logger.debug("Connected %s", self.config.interface_name)
+        else:
+            logger.debug("Connected %s", self.config.interface_name)
+            await self.configure_connection(connection=connection)
+
         return self.connected
 
     async def configure_connection(self, **kwargs):
@@ -261,22 +270,16 @@ class Interface(InterfaceABC):
         :param **kwargs:
             - connection: Any, the connection to configure
         """
-        await self.execute(
-            self._configure_connection,
-            **kwargs
-        )
+        await self.execute(self._configure_connection, **kwargs)
 
         self.config.readonly = kwargs.get("readonly", self.config.readonly)
 
         # by default we can read/write, so only bother to run this if we
         # need to actually make the connection readonly
         if self.config.readonly:
-            await self.readonly(
-                self.config.readonly,
-                **kwargs
-            )
+            await self.readonly(self.config.readonly, **kwargs)
 
-    async def get_connection(self):
+    async def get_connection(self) -> ConnectionT:
         """Any time you need a connection it should be retrieved through
         .connection, and that method uses this method
 
@@ -287,17 +290,16 @@ class Interface(InterfaceABC):
 
         return await self._get_connection()
 
-    async def free_connection(self, connection):
+    async def free_connection(self, connection: ConnectionT):
         """When .connection is done with a connection it calls this method"""
         if self.is_connected():
             await self._free_connection(connection)
 
-    def is_connected(self, connection=None):
+    def is_connected(self, connection: ConnectionT|None = None):
         """Returns True if this Interface has been connected
 
-        :param connection: Optional[object], an interface connection, if it
-            is passed in then it will check that connection instead of the
-            interface
+        :param connection: an interface connection, if it is passed in then it
+            will check that connection instead of the interface
         """
         if connection is None:
             connected = self.connected
@@ -340,9 +342,9 @@ class Interface(InterfaceABC):
     async def connection(
         self,
         prefix: str = "",
-        connection = None,
+        connection: ConnectionT|None = None,
         **kwargs,
-    ) -> AbstractAsyncContextManager:
+    ) -> AbstractAsyncContextManager[ConnectionT]:
         """Any time you need a connection you should use this context manager,
         this is the only place that wraps exceptions in InterfaceError, so all
         connections should go through this method or .transaction if you need
@@ -415,9 +417,9 @@ class Interface(InterfaceABC):
     async def transaction(
         self,
         prefix: str = "",
-        connection = None,
+        connection: ConnectionT|None = None,
         **kwargs,
-    ) -> AbstractAsyncContextManager:
+    ) -> AbstractAsyncContextManager[ConnectionT]:
         """A simple context manager useful for when you want to wrap a bunch of
         db calls in a transaction, this is used internally for any write
         statements
@@ -451,7 +453,7 @@ class Interface(InterfaceABC):
             else:
                 await self.stop_transaction(**kwargs)
 
-    def transaction_names(self, connection):
+    def transaction_names(self, connection: ConnectionT):
         """Get all the transaction names for logging
 
         :param tx: dict, sometimes you pop the transaction before you get the
@@ -463,12 +465,12 @@ class Interface(InterfaceABC):
         names = " > ".join((r["name"] for r in transactions))
         return names
 
-    def in_transaction(self, connection):
+    def in_transaction(self, connection: ConnectionT):
         """return true if currently in a transaction"""
         transactions = self._transactions.get(connection, [])
         return len(transactions) > 0
 
-    async def start_transaction(self, connection, name, **kwargs):
+    async def start_transaction(self, connection: ConnectionT, name, **kwargs):
         """Create a new transaction dict that will be placed on the
         .transactions stack
 
@@ -523,7 +525,7 @@ class Interface(InterfaceABC):
             )
             await self._start_transaction(connection, tx, **kwargs)
 
-    async def stop_transaction(self, connection, **kwargs):
+    async def stop_transaction(self, connection: ConnectionT, **kwargs):
         """stop/commit a transaction if ready"""
         transactions = self._transactions.get(connection, [])
         if transactions:
@@ -537,7 +539,7 @@ class Interface(InterfaceABC):
                 )
                 await self._stop_transaction(connection, tx, **kwargs)
 
-    async def fail_transaction(self, connection, **kwargs):
+    async def fail_transaction(self, connection: ConnectionT, **kwargs):
         """rollback a transaction if currently in one"""
         transactions = self._transactions.get(connection, [])
         if transactions:

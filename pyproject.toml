@@ -47,9 +47,6 @@ Repository = "https://github.com/Jaymon/prom"
 tests = [
   "testdata"
 ]
-# sqlite = [
-#   "aiosqlite~=0.22.1"
-# ]
 postgres = [
   "psycopg" # psycopg[binary]
 ]

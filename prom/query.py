@@ -745,9 +745,7 @@ class Query(AsyncIterable):
         else:
             if not name:
                 raise AttributeError(
-                    'Could not resolve methods from {}"'.format(
-                        method_name
-                    )
+                    f"Could not resolve methods from {method_name}",
                 )
 
             else:
@@ -761,10 +759,8 @@ class Query(AsyncIterable):
 
                 if not field_method:
                     raise AttributeError(
-                        'No field method derived from {}'.format(
-                            method_name
-                            )
-                        )
+                        f"No field method derived from {method_name}",
+                    )
 
         return field_method, field_name
 

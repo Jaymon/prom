@@ -50,7 +50,7 @@ class DictDumper(Dumper):
         return ByteString(json.dumps(val))
 
 
-class PostgreSQL(SQLInterface):
+class PostgreSQL(SQLInterface[psycopg.AsyncConnection]):
     """
     https://www.psycopg.org/psycopg3/docs/advanced/async.html
     https://www.psycopg.org/psycopg3/docs/basic/from_pg2.html
@@ -61,7 +61,7 @@ class PostgreSQL(SQLInterface):
     """
     LIMIT_NONE = "ALL"
 
-    _connection = None
+    _connection: psycopg.AsyncConnection|None = None
 
     @classmethod
     async def configure(cls, config):
@@ -76,7 +76,7 @@ class PostgreSQL(SQLInterface):
         """
         return psycopg.paramstyle
 
-    async def _connect(self, config):
+    async def _connect(self, config) -> psycopg.AsyncConnection:
         """
         https://www.psycopg.org/psycopg3/docs/api/connections.html
         https://www.psycopg.org/docs/connection.html
@@ -94,14 +94,15 @@ class PostgreSQL(SQLInterface):
             autocommit=True, # if False there will be random hangs
         )
 
-        await self.configure_connection(connection=self._connection)
+        return self._connection
+#         await self.configure_connection(connection=self._connection)
 
     async def _configure_connection(self, **kwargs):
         kwargs["prefix"] = "_configure_connection"
         async with self.connection(**kwargs) as connection:
             connection.adapters.register_dumper(DictDumper.TYPE, DictDumper)
 
-    async def _get_connection(self):
+    async def _get_connection(self) -> psycopg.AsyncConnection:
         return self._connection
 
     async def _close(self):

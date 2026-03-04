@@ -3,7 +3,6 @@
 Bindings for SQLite
 
 https://docs.python.org/3/library/sqlite3.html
-https://github.com/omnilib/aiosqlite
 
 Notes, certain SQLite versions might have a problem with long integers
 http://jakegoulding.com/blog/2011/02/06/sqlite-64-bit-integers/
@@ -32,7 +31,6 @@ import uuid
 from collections.abc import AsyncIterator
 
 from datatypes import Datetime
-#import aiosqlite
 
 # first party
 from ..exception import (
@@ -231,13 +229,13 @@ class AsyncConnection(sqlite3.Connection):
         return super().interrupt()
 
 
-class SQLite(SQLInterface):
+class SQLite(SQLInterface[AsyncConnection]):
     """
     https://docs.python.org/3/library/sqlite3.html
     """
     LIMIT_NONE = -1
 
-    _connection = None
+    _connection: AsyncConnection|None = None
 
     @classmethod
     async def configure(cls, config):
@@ -271,80 +269,7 @@ class SQLite(SQLInterface):
         """
         return sqlite3.paramstyle
 
-#     def _connector(self):
-#         """
-#         https://docs.python.org/3.11/library/sqlite3.html#sqlite3.connect
-#         """
-#         config = self.config
-#         path = config.path
-# 
-#         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
-#         options = {
-#             "isolation_level": None,
-#             #"isolation_level": "IMMEDIATE",
-#             #"isolation_level": "EXCLUSIVE",
-#             "detect_types": sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES,
-#             "factory": AsyncConnection,
-#             "check_same_thread": True, # https://stackoverflow.com/a/2578401
-#             #"timeout": 100,
-#         }
-#         option_keys = list(options.keys()) + ["timeout", "cached_statements"]
-#         for k in option_keys:
-#             if k in config.options:
-#                 options[k] = config.options[k]
-# 
-#         try:
-#             connection = sqlite3.connect(path, **options)
-# 
-#         except sqlite3.DatabaseError as e:
-#             path_d = os.path.dirname(path)
-#             if os.path.isdir(path_d):
-#                 raise
-# 
-#             else:
-#                 # let's try and make the directory path and connect again
-#                 os.makedirs(path_d, exist_ok=True)
-#                 connection = sqlite3.connect(path, **options)
-# 
-#         # https://docs.python.org/2/library/sqlite3.html#row-objects
-#         connection.row_factory = sqlite3.Row
-#         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
-#         connection.text_factory = StringType.adapt
-# 
-#         # NOTE -- it's bad encapsulation that these are saved on the module,
-#         # Psycopg3 allows these adapters to be placed on the connection instead
-#         # of the moduel and I like that a lot better since once prom is
-#         # connected the first time then raw sqlite3 is basically borked for the
-#         # life of the script
-# 
-#         # for some reason this is needed in python 3.6 in order for saved bytes
-#         # to be ran through the converter, not sure why
-#         sqlite3.register_converter(StringType.FIELD_TYPE, StringType.adapt)
-# 
-#         sqlite3.register_adapter(bool, BooleanType.adapt)
-#         sqlite3.register_converter(BooleanType.FIELD_TYPE, BooleanType.convert)
-# 
-#         # sadly, it doesn't look like these work for child classes so each class
-#         # has to be adapted even if its parent is already registered
-#         sqlite3.register_adapter(datetime.datetime, DatetimeType.adapt)
-#         sqlite3.register_adapter(Datetime, DatetimeType.adapt)
-#         sqlite3.register_converter(
-#             DatetimeType.FIELD_TYPE,
-#             DatetimeType.convert
-#         )
-# 
-#         sqlite3.register_adapter(int, NumericType.adapt)
-#         sqlite3.register_converter(NumericType.FIELD_TYPE, NumericType.convert)
-# 
-#         sqlite3.register_adapter(decimal.Decimal, DecimalType.adapt)
-#         sqlite3.register_converter(DecimalType.FIELD_TYPE, DecimalType.convert)
-# 
-#         sqlite3.register_adapter(dict, DictType.adapt)
-#         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
-# 
-#         return connection
-
-    async def _connect(self, config):
+    async def _connect(self, config) -> AsyncConnection:
         path = config.path
 
         # https://docs.python.org/2/library/sqlite3.html#default-adapters-and-converters
@@ -363,7 +288,7 @@ class SQLite(SQLInterface):
                 options[k] = config.options[k]
 
         try:
-            connection = sqlite3.connect(path, **options)
+            self._connection = sqlite3.connect(path, **options)
 
         except sqlite3.DatabaseError as e:
             path_d = os.path.dirname(path)
@@ -373,18 +298,16 @@ class SQLite(SQLInterface):
             else:
                 # let's try and make the directory path and connect again
                 os.makedirs(path_d, exist_ok=True)
-                connection = sqlite3.connect(path, **options)
+                self._connection = sqlite3.connect(path, **options)
 
-        connection.closed = 0
-
-        self._connection = connection
+        self._connection.closed = 0
 
         # https://docs.python.org/3/library/sqlite3.html#sqlite3.Cursor.row_factory
-        connection.cursor_factory = AsyncCursor
+        self._connection.cursor_factory = AsyncCursor
         # https://docs.python.org/2/library/sqlite3.html#row-objects
-        connection.row_factory = sqlite3.Row
+        self._connection.row_factory = sqlite3.Row
         # https://docs.python.org/2/library/sqlite3.html#sqlite3.Connection.text_factory
-        connection.text_factory = StringType.adapt
+        self._connection.text_factory = StringType.adapt
 
         # NOTE -- it's bad encapsulation that these are saved on the module,
         # Psycopg3 allows these adapters to be placed on the connection instead
@@ -417,20 +340,8 @@ class SQLite(SQLInterface):
         sqlite3.register_adapter(dict, DictType.adapt)
         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
 
-        await self.configure_connection(connection=connection)
-
-#     async def _connect(self, config):
-#         self._connection = aiosqlite.Connection(
-#             self._connector,
-#             iter_chunk_size=config.options.get("iter_chunk_size", 64),
-#         )
-# 
-#         # starts thread and connects by running `self._connector`
-#         self._connection._thread.daemon = True
-#         await self._connection
-# 
-#         self._connection.closed = 0
-#         await self.configure_connection(connection=self._connection)
+        return self._connection
+#         await self.configure_connection(connection=connection)
 
     async def _configure_connection(self, **kwargs):
         # turn on foreign keys
@@ -438,10 +349,10 @@ class SQLite(SQLInterface):
         await self._raw(
             "PRAGMA foreign_keys = ON",
             ignore_result=True,
-            **kwargs
+            **kwargs,
         )
 
-    async def _get_connection(self):
+    async def _get_connection(self) -> AsyncConnection:
         return self._connection
 
     async def _close(self):
@@ -560,14 +471,6 @@ class SQLite(SQLInterface):
 
                 else:
                     e = PlaceholderError(e)
-
-            else:
-                e = super().create_error(e, **kwargs)
-
-        elif isinstance(e, ValueError):
-            e_msg = str(e)
-            if "no active connection" in e_msg: # aiosqlite specific
-                e = CloseError(e)
 
             else:
                 e = super().create_error(e, **kwargs)

@@ -24,13 +24,13 @@ from .base import Interface
 logger = logging.getLogger(__name__)
 
 
-class SQLInterfaceABC(Interface):
+class SQLInterfaceABC[ConnectionT](Interface[ConnectionT]):
     """SQL database interfaces should extend SQLInterface and implement all
     these methods in this class and all the methods in InterfaceABC"""
     @property
     def LIMIT_NONE(self):
-        """When an offset is set but not a limit, this is the value that will be
-        put into the LIMIT part of the query
+        """When an offset is set but not a limit, this is the value that will
+        be put into the LIMIT part of the query
 
         :returns: str|int|None
         """
@@ -74,7 +74,7 @@ class SQLInterfaceABC(Interface):
         raise NotImplementedError()
 
 
-class SQLInterface(SQLInterfaceABC):
+class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
     """Generic base class for all SQL derived interfaces"""
     @cached_property
     def PLACEHOLDER(self):
@@ -302,17 +302,8 @@ class SQLInterface(SQLInterfaceABC):
                 cursor.execute
         """
         ret = True
-        # http://stackoverflow.com/questions/6739355/dictcursor-doesnt-seem-to-work-under-psycopg2
-        #connection = kwargs.get('connection', None)
         async with self.connection(**kwargs) as connection:
-#             cur = await self._get_cursor(connection)
             cur = connection.cursor()
-
-            # depending on the api, cursor() could either return a coroutine
-            # or something different like a cursor class instance
-#             if inspect.isawaitable(cur):
-#                 cur = await cur
-
 
             ignore_result = kwargs.get("ignore_result", False)
             count_result = kwargs.get("count_result", False)
@@ -407,17 +398,6 @@ class SQLInterface(SQLInterfaceABC):
             ret = 0
 
         return ret
-
-#     async def _get_cursor(self, connection):
-#         """Internal method to return a cursor"""
-#         cur = connection.cursor()
-# 
-#         # depending on the api, cursor() could either return a coroutine
-#         # or something different like a cursor class instance
-#         if inspect.isawaitable(cur):
-#             cur = await cur
-# 
-#         return cur
 
     async def _handle_field_error(self, schema, e, **kwargs):
         """This will add fields that don't exist in the table if they can be
