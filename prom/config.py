@@ -1190,7 +1190,6 @@ class Field(object):
             self.options.get("jsonable_field", True)
             and not self.is_private()
         )
-#         return self.options.get("jsonable_field", True)
 
     def _get_orm_value(self, orm):
         """Internal method. Get the raw value that this property is holding

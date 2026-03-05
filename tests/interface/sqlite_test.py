@@ -294,7 +294,6 @@ class InterfaceTest(_BaseTestInterface):
                 connection.attempt = False
 
             await connection.execute("SELECT true")
-#             await (await connection.cursor()).execute("SELECT true")
 
         async with i.connection() as connection:
             connection.attempt = True

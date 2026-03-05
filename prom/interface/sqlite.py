@@ -341,14 +341,14 @@ class SQLite(SQLInterface[AsyncConnection]):
         sqlite3.register_converter(DictType.FIELD_TYPE, DictType.convert)
 
         return self._connection
-#         await self.configure_connection(connection=connection)
 
-    async def _configure_connection(self, **kwargs):
+    async def _configure_connection(self, connection: AsyncConnection, **kwargs):
         # turn on foreign keys
         # http://www.sqlite.org/foreignkeys.html
         await self._raw(
             "PRAGMA foreign_keys = ON",
             ignore_result=True,
+            connection=connection,
             **kwargs,
         )
 

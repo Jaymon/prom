@@ -95,10 +95,14 @@ class PostgreSQL(SQLInterface[psycopg.AsyncConnection]):
         )
 
         return self._connection
-#         await self.configure_connection(connection=self._connection)
 
-    async def _configure_connection(self, **kwargs):
+    async def _configure_connection(
+        self,
+        connection: psycopg.AsyncConnection,
+        **kwargs,
+    ):
         kwargs["prefix"] = "_configure_connection"
+        kwargs["connection"] = connection
         async with self.connection(**kwargs) as connection:
             connection.adapters.register_dumper(DictDumper.TYPE, DictDumper)
 

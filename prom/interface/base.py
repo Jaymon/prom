@@ -41,7 +41,7 @@ class InterfaceABC[ConnectionT]:
         """
         raise NotImplementedError()
 
-    async def _configure_connection(self, **kwargs):
+    async def _configure_connection(self, cnnection: ConnectionT, **kwargs):
         """The wrapper method for this (Interface.configure_connection) is
         never called directly by Interface. It is up to the child interfaces
         to decide when a connection is ready and to call this method"""

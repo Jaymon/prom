@@ -1374,9 +1374,10 @@ class OrmTest(EnvironTestCase):
         """Makes sure a new field added to the orm is seemlessly handled on a
         select query
 
-        SQLite actually won't raise an error when a field doesn't exist, it will
-        return the field (ie, SELECT "foo" ... would return {'"foo"': 'foo'} as
-        a raw value), but prom should still handle it correctly
+        SQLite actually won't raise an error when a field doesn't exist, it
+        will return the field (ie, `SELECT "foo" ...` would return 
+        `{'"foo"': 'foo'}` as a raw value), but prom should still handle it
+        correctly
         """
         orm_class = self.get_orm_class()
         pk = await self.insert(orm_class, 1)
