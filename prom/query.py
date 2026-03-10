@@ -411,6 +411,12 @@ class QueryField(object):
     def schema(self):
         return self.query.schema if self.query else None
 
+    @property
+    def schema_field(self):
+        schema = self.schema
+        if schema:
+            return getattr(schema, self.name, None)
+
     def __init__(self, query, field_name, field_val=None, **kwargs):
         self.query = query
         self.operator = kwargs.pop("operator", None)
@@ -451,24 +457,37 @@ class QueryField(object):
             if field_val:
                 field_val = make_list(field_val)
                 for i in range(len(field_val)):
-                    field_val[i] = self.to_query(field_val[i])
+                    field_val[i] = self.to_query_value(field_val[i])
 
         else:
-            field_val = self.to_query(field_val)
+            field_val = self.to_query_value(field_val)
 
         self.value = field_val
 
-    def to_query(self, field_val):
-        schema = self.schema
-        if schema:
-            schema_field = getattr(schema, self.name)
-            if ref_class := schema_field.ref_class:
-                if isinstance(field_val, ref_class):
-                    field_val = field_val.pk
+    def to_query_value(self, field_val):
+        if sf := self.schema_field:
+            field_val = self.schema_field.to_query_value(self, field_val)
 
-            field_val = schema_field.to_query(self, field_val)
+        else:
+            if self.schema:
+                raise KeyError(
+                    f"Schema {self.schema} had no field {self.name}",
+                )
 
+#         schema = self.schema
+#         if schema:
+#             schema_field = getattr(schema, self.name)
+# #             if ref_class := schema_field.ref_class:
+# #                 if isinstance(field_val, ref_class):
+# #                     field_val = field_val.pk
+# 
+#             field_val = schema_field.to_query(self, field_val)
+# 
         return field_val
+
+    def modify_query(self):
+        if sf := self.schema_field:
+            sf.modify_query(self)
 
     def parse(self, field_name, schema):
         function_name = ""
@@ -541,6 +560,7 @@ class QueryFields(list):
         index = len(self)
         super().append(field)
         self.field_names[field.name].append(index)
+        field.modify_query()
 
     def get_field(self, field_name):
         """Return the last field information for field_name

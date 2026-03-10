@@ -579,9 +579,10 @@ class Orm(object):
                 elif isinstance(v, type) and issubclass(v, Field):
                     # We've defined a Field class inline of the Orm, so we
                     # want to instantiate it and set it in all the places
-                    options = v.options or {}
-                    field = v(v.type, v.required, **options)
-                    setattr(cls, k, field)
+                    if not v.__name__.startswith("_"):
+                        options = v.options or {}
+                        field = v(v.type, v.required, **options)
+                        setattr(cls, k, field)
 
                 else:
                     if v is None:

@@ -944,13 +944,13 @@ class EnumFieldTest(EnvironTestCase):
         r = f.from_interface(orm, 1)
         self.assertEqual(FooEnum.FOO, r)
 
-        r = f.to_query(None, "FOO")
+        r = f.to_query_value(None, "FOO")
         self.assertEqual(FooEnum.FOO.value, r)
 
-        r = f.to_query(None, FooEnum.FOO)
+        r = f.to_query_value(None, FooEnum.FOO)
         self.assertEqual(FooEnum.FOO.value, r)
 
-        r = f.to_query(None, 1)
+        r = f.to_query_value(None, 1)
         self.assertEqual(FooEnum.FOO.value, r)
 
         r = f.jsonable(orm, f.name, FooEnum.FOO)

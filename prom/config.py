@@ -1288,6 +1288,24 @@ class Field(object):
     def fdel(self, orm, val):
         return None
 
+    def check_value(self, orm, val):
+        if self.choices and val not in self.choices:
+            raise ValueError(
+                "Value {} not in {} value choices".format(
+                    val,
+                    self.name,
+                ),
+            )
+
+        if regex := self.options.get("regex", ""):
+            if not re.search(regex, val):
+                raise ValueError(
+                    "regex failed for {}.{}".format(
+                        orm.__class__.__name__,
+                        self.name,
+                    ),
+                )
+
     def to_value(self, orm, val):
         """This is called on Orm instantiation and any time field is set (eg
         Orm.foo = ...)
@@ -1305,22 +1323,7 @@ class Field(object):
         val = self.fset(orm, val)
 
         if val is not None:
-            if self.choices and val not in self.choices:
-                raise ValueError(
-                    "Value {} not in {} value choices".format(
-                        val,
-                        self.name
-                    )
-                )
-
-            if regex := self.options.get("regex", ""):
-                if not re.search(regex, val):
-                    raise ValueError(
-                        "regex failed for {}.{}".format(
-                            orm.__class__.__name__,
-                            self.name
-                        )
-                    )
+            self.check_value(orm, val)
 
             if self.is_enum():
                 val = find_enum(self.original_type, val)
@@ -1559,7 +1562,7 @@ class Field(object):
 
         return name, val
 
-    def to_query(self, query_field, val):
+    def to_query_value(self, query_field, val):
         """This will be called when setting the field onto a query instance
 
         :example:
@@ -1577,10 +1580,16 @@ class Field(object):
                 val = find_value(self.original_type, val)
 
         elif self.is_ref():
+            if isinstance(val, self.ref_class):
+                val = val.pk
+
             # Foreign Keys get passed through their Field methods
             val = self.schema.pk.qset(query_field, val)
 
         return val
+
+    def modify_query(self, query_field):
+        return
 
     def jsonable(self, orm, name, val):
         """This is called in Orm.jsonable() to set the field name and value
