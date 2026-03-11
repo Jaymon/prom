@@ -1588,7 +1588,13 @@ class Field(object):
 
         return val
 
-    def modify_query(self, query_field):
+    def modify_query(self, query_field) -> None:
+        """called after the field is set on the query as opposed to
+        `.to_query_value`, which is called before the field is set on the
+        query
+
+        :param query_field: QueryField
+        """
         return
 
     def jsonable(self, orm, name, val):

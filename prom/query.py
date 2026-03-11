@@ -474,15 +474,6 @@ class QueryField(object):
                     f"Schema {self.schema} had no field {self.name}",
                 )
 
-#         schema = self.schema
-#         if schema:
-#             schema_field = getattr(schema, self.name)
-# #             if ref_class := schema_field.ref_class:
-# #                 if isinstance(field_val, ref_class):
-# #                     field_val = field_val.pk
-# 
-#             field_val = schema_field.to_query(self, field_val)
-# 
         return field_val
 
     def modify_query(self):
