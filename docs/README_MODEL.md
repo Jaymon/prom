@@ -1,6 +1,38 @@
 # Defining Model Schemas
 
-### The Field class
+To create a custom Orm, you extend `prom.model.Orm` and add `prom.config.Field` and `prom.config.Index` properties to your child class.
+
+
+## Preset fields on the Orm
+
+By default, Every `prom.model.Orm` child class includes these three fields and aliases:
+
+* `_id` (with aliases `id`, `pk`, `<MODEL_NAME>_id`, and `<MODEL_NAME>_pk`) - An auto-increment primary key
+* `_created` (with alias `created`) - A datetime of when the row was first added to the database
+* `_updated` (with alias `updated`) - A datetime of the last time the row was touched in the database
+
+
+You can override any of these fields in a child class. For example, if you would like to switch the primary key to be a UUID:
+
+```python
+from prom.model import Orm
+from prom.config import AutoUUID
+
+class Foo(Orm):
+    _id = AutoUUID()
+```
+
+You can also `None` out the fields if you don't want them:
+
+```python
+from prom.model import Orm
+
+class MyBaseOrm(Orm):
+    _id = _created = _updated = None
+```
+
+
+## The Field class
 
 You can create fields in your schema using the `prom.config.Field` class, the field has a signature like this:
 
@@ -78,87 +110,30 @@ class Child(Orm):
         def fget(self, orm, v):
             """Ran whenever the orm.field is accessed"""
             return v
-        
-        def iget(self, orm, v):
-            """Ran whenever the orm.field is pulled from db"""
-            return v
             
         def fset(self, orm, v):
             """Ran whenever the orm.field is set"""
+            return v
+        
+        def fdel(self, orm, v):
+            """Ran whenever del orm.field is called"""
+            return v
+            
+        def iget(self, orm, v):
+            """Ran whenever the orm.field is pulled from db"""
             return v
             
         def iset(self, orm, v):
             """Ran whenever the orm.field is inserted/updated in the db"""
             return v
-            
-        def fdel(self, orm, v):
-            """Ran whenever del orm.field is called"""
-            return v
-            
-        def fdefault(self, orm, v):
-            """Ran whenever the field has no value"""
-            return v
         
-        def iquery(self, query, v):
+        def qset(self, query_field, v):
             """Ran whenever the field is used in the Query class"""
             return v
             
-        def jsonable(self, orm, v):
+        def jset(self, orm, v):
             """Ran whenever orm.jsonable() is called"""
             return v   
 ```
 
 So, the `Child` class has 2 fields: `foo` and `bar`.
-
-Another example:
-
-```python
-from prom import Orm, Field, Index
-
-# create a simple class using standard fields
-class Foo(Orm):
-    table_name = "<TABLE NAME>"
-
-    bar = Field(int, True, max_size=512, default=0, unique=True)
-    che = Field(str, True)
-
-    index_barche = Index('bar', 'che')
-
-
-# create a more complex class using a field override
-class Foo2(Orm):
-    table_name = "<TABLE NAME>"
-
-    class bar(Field):
-        type = int
-        required = True
-        options = {
-            "default": 0,
-            "unique": True,
-            "max_size": 512,
-        }
-
-        def fget(self, orm, v):
-            print("fget")
-            return v
-
-        def iget(self, orm, v):
-            print("iget")
-            return v
-
-        def fset(self, orm, v):
-            print("fset")
-            return v
-
-        def fdel(self, orm, v):
-            print("fdel")
-            return v
-
-        def iquery(self, query, v):
-            print("iquery")
-            return v
-
-        def jsonable(self, orm, v):
-            print("jsonable")
-            return v
-```
