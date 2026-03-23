@@ -856,6 +856,13 @@ class ModelData(TestData):
                 **kwargs,
             )
 
+        elif field.is_serialized():
+            ret = self.get_orm_field_serialized(
+                field_name,
+                field,
+                **kwargs,
+            )
+
         else:
             field_callbacks = kwargs.get("field_callbacks", {})
             field_type = field.interface_type
@@ -951,6 +958,20 @@ class ModelData(TestData):
             choices.append(ep.value)
 
         return random.choice(choices)
+
+    def get_orm_field_serialized(self, field_name, field, **kwargs):
+        """Tries its best to handle a serialized value"""
+        if callable(field.default_factory):
+            value = field.default_factory()
+
+        elif field.is_required():
+            value = field.original_type()
+
+        else:
+            # no idea what to do with a serialized value
+            value = None
+
+        return value
 
     def get_orm_field_required(self, field_name, field, **kwargs):
         """Returns True if field is required"""
