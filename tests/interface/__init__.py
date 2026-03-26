@@ -1346,3 +1346,21 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         # Success if `FieldError` doesn't get raised
         await i.get(s, Query())
 
+    async def test_get_connection_name_same_name(self):
+        """Just make sure tx names don't stomp on each other
+
+        This is interesting because it works, but this might not be intended
+        behavior since the second transaction just creates a savepoint
+        """
+        i, s = await self.create_table()
+
+        connection = await i.get_connection()
+
+        # this creates a BEGIN transaction
+        await i.start_transaction(connection, "foo")
+
+        # this creates a SAVEPOINT in the above transaction
+        await i.start_transaction(connection, "foo")
+
+        await i.get(s, Query())
+

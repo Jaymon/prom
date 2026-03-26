@@ -326,10 +326,7 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
         return True
 
     def get_connection_name(self, prefix: str, **kwargs) -> str:
-        """get the currention connection name at `prefix`
-
-        If you need a new connection name use `.create_connection_name`
-        """
+        """get the currention connection name at `prefix`"""
         suffix = len(self._connections) + 1
         name = f"{prefix}_{suffix}"
         return name
