@@ -875,8 +875,12 @@ class ModelData(TestData):
                     field_callbacks.get(field_name, None),
                 )
             )
+
             if cb:
                 ret = cb(self)
+
+            elif method := getattr(self, f"get_{field_name}", None):
+                ret = method()
 
             else:
                 if issubclass(field_type, bool):
@@ -992,15 +996,42 @@ class ModelData(TestData):
         )
 
     def get_orm_field_str(self, field_name, field, **kwargs):
-        size_info = field.size_info()
-        if "bounds" in size_info:
-            ret = self.get_words(
-                min_size=size_info["bounds"][0],
-                max_size=size_info["bounds"][1],
-            )
+        if "email" in field_name:
+            ret = self.get_email_address()
+
+        elif "name" in field_name:
+            if "first" in field_name:
+                ret = self.get_first_name()
+
+            elif "last" in field_name:
+                ret = self.get_last_name()
+
+            elif "user" in field_name:
+                ret = self.get_username()
+
+            else:
+                ret = self.get_name()
+
+        elif "password" in field_name:
+            ret = self.get_password()
+
+        elif "url" in field_name:
+            ret = self.get_url()
 
         else:
-            ret = self.get_words()
+            size_info = field.size_info()
+            if "bounds" in size_info:
+                if "token" in field_name or "hash" in field_name:
+                    retr = self.get_hash(size_info["bounds"][1])
+
+                else:
+                    ret = self.get_words(
+                        min_size=size_info["bounds"][0],
+                        max_size=size_info["bounds"][1],
+                    )
+
+            else:
+                ret = self.get_words()
 
         return ret
 

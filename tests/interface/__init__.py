@@ -1364,3 +1364,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
         await i.get(s, Query())
 
+        # stop the transactions so the connection doesn't hang
+        await i.stop_transaction(connection)
+        await i.stop_transaction(connection)
+
