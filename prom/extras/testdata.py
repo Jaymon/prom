@@ -446,6 +446,24 @@ class ModelData(TestData):
         for field_name, field in orm_class.schema.fields.items():
             if ref_class := field.ref_class:
                 ref_field_name = ref_class.model_name
+                refs_field_name = ref_class.models_name
+
+                # if a whole bunch of models are passed in we want to select
+                # one to use
+                if field_name not in kwargs and ref_field_name not in kwargs:
+                    # if `foos` is passed in, randomly choose one for `foo`
+                    if refs_field_name in kwargs:
+                        kwargs[ref_field_name] = random.choice(
+                            kwargs[refs_field_name],
+                        )
+
+                    # if `foo_ids` is passed in, randomly choose one for
+                    # `field_name`
+                    for suffix in ["_ids", "_pks"]:
+                        rfn = ref_field_name + suffix
+                        if rfn in kwargs:
+                            kwargs[field_name] = random.choice(kwargs[rfn])
+                            break
 
                 # if we have a `foo_id` fk field, check for `foo`
                 ref_field_name_2 = ""
@@ -646,11 +664,10 @@ class ModelData(TestData):
         """get instances of the orm
 
         :param orm_class: Orm
-        :param **kwargs:
-            * count: int, how many instances you want
-            * <MODEL_NAME>_count: int, alias for count
-            * related_refs: bool, default True, all the orms will have the
-                same foreign key references
+        :keyword count: int, how many instances you want
+        :keyword <MODEL_NAME>_count: int, alias for count
+        :keyword related_refs: bool, default True, all the orms will have the
+            same foreign key references
         :returns: list, a list of Orm instances
         """
         ret = []
