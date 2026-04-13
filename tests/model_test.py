@@ -710,6 +710,21 @@ class OrmTest(EnvironTestCase):
         with self.assertRaises(ValueError):
             o.foo
 
+    async def test___getattr___custom_name(self):
+        """`Bar.to_foo_id` is the FK to `Foo.id`, and so `Bar.to_foo` should
+        work to get the `Foo` instance"""
+        foo_class = self.get_orm_class(model_name="foo")
+        bar_class = self.get_orm_class(to_foo_id=Field(foo_class, True))
+
+        foo_id = await self.insert_fields(foo_class)
+        bar = bar_class(to_foo_id=foo_id)
+
+        foo = await bar.to_foo
+        self.assertEqual(foo_id, foo.pk)
+
+        foo = await bar.to_foo
+        self.assertEqual(foo_id, foo.pk)
+
     def test_creation(self):
         orm_class = self.get_orm_class(
             foo = Field(int),

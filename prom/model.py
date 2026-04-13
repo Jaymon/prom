@@ -1021,7 +1021,7 @@ class Orm(object):
         """
         for ref_field_name, ref_field in self.schema.ref_fields.items():
             ref_class = ref_field.ref_class
-            if k == ref_class.model_name:
+            if k == ref_class.model_name or ref_field_name.startswith(k):
                 ref_field_value = getattr(self, ref_field_name, None)
 
                 if ref_field_value:
