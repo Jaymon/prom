@@ -417,7 +417,11 @@ class ModelData(TestData):
         :param orm_class: Orm
         :param assure_orm_class: Orm|None, the orm that is getting its
             references assured. If this is None then orm_class is considered
-            the orm that is being checked
+            the orm that is being checked. So this is the top level orm class
+            and is passed in subsequent calls for `.assure_ref_field_names`
+            to make sure everything gets created successfully. This should
+            pretty much never be set externally, it's for the recursive calls
+            this method does
         :keyword ignore_refs: bool, default False, if True then refs will not
             be checked, passed in refs will still be set
         :keyword require_fields: bool, default True, if True then create
@@ -791,42 +795,88 @@ class ModelData(TestData):
         ignore_field_names = set(kwargs.get("ignore_field_names", []))
 
         for field_name, field in schema.fields.items():
-            if field_name in kwargs:
-                # this value was passed in so we don't need to do anything
-                fields[field_name] = kwargs[field_name]
-
-            elif field_name in ignore_field_names:
+            if field_name in ignore_field_names:
                 # we were explicitely told to ignore this field
                 pass
 
-            elif field.is_auto():
-                # db will handle any auto-generating fields
-                pass
-
-            elif field.is_pk():
-                # primary key isn't auto-generating and wasn't passed in, so
-                # we'll cross our fingers and hope it will be taken care of
-                # somewhere else
-                pass
-
-            elif field.is_ref():
-                # foreign keys are handled in .assure_orm_refs
-                pass
-
-            elif field.is_private():
-                # private fields are ignored for generation
-                pass
-
-            elif not self.get_orm_field_required(field_name, field, **kwargs):
-                pass
-
             else:
-                fields[field_name] = self.get_orm_field_value(
-                    field_name,
-                    field,
-                    fields=fields,
-                    **kwargs
-                )
+                evaluated = False
+
+                if field_name not in kwargs:
+                    if field.is_auto():
+                        # db will handle any auto-generating fields
+                        evaluated = True
+                        pass
+
+                    elif field.is_pk():
+                        # primary key isn't auto-generating and wasn't passed
+                        # in, so we'll cross our fingers and hope it will be
+                        # taken care of somewhere else
+                        evaluated = True
+                        pass
+
+                    elif field.is_ref():
+                        # foreign keys are handled in .assure_orm_refs
+                        evaluated = True
+                        pass
+
+                    elif field.is_private():
+                        # private fields are ignored for generation
+                        evaluated = True
+                        pass
+
+                    elif not self.get_orm_field_required(
+                        field_name,
+                        field,
+                        **kwargs,
+                    ):
+                        evaluated = True
+                        pass
+
+                if not evaluated:
+                    fields[field_name] = self.get_orm_field_value(
+                        field_name,
+                        field,
+                        fields=fields,
+                        **kwargs,
+                    )
+
+#             if field_name in kwargs:
+#                 # this value was passed in so we don't need to do anything
+#                 fields[field_name] = kwargs[field_name]
+# 
+#             elif field_name in ignore_field_names:
+#                 # we were explicitely told to ignore this field
+#                 pass
+# 
+#             elif field.is_auto():
+#                 # db will handle any auto-generating fields
+#                 pass
+# 
+#             elif field.is_pk():
+#                 # primary key isn't auto-generating and wasn't passed in, so
+#                 # we'll cross our fingers and hope it will be taken care of
+#                 # somewhere else
+#                 pass
+# 
+#             elif field.is_ref():
+#                 # foreign keys are handled in .assure_orm_refs
+#                 pass
+# 
+#             elif field.is_private():
+#                 # private fields are ignored for generation
+#                 pass
+# 
+#             elif not self.get_orm_field_required(field_name, field, **kwargs):
+#                 pass
+# 
+#             else:
+#                 fields[field_name] = self.get_orm_field_value(
+#                     field_name,
+#                     field,
+#                     fields=fields,
+#                     **kwargs
+#                 )
 
         return fields
 
@@ -859,7 +909,11 @@ class ModelData(TestData):
         :param **kwargs: see .get_orm_fields for values this can have
         :returns: Any, the generated value
         """
-        if field.choices:
+        if field_name in kwargs:
+            # this value was passed in so we don't need to infer anything
+            ret = kwargs[field_name]
+
+        elif field.choices:
             ret = self.get_orm_field_choice(
                 field_name,
                 field,
@@ -892,12 +946,15 @@ class ModelData(TestData):
                     field_callbacks.get(field_name, None),
                 )
             )
+            if cb is None:
+                cb = getattr(self, f"get_orm_field_name_{field_name}", None)
 
-            if cb:
-                ret = cb(self)
-
-            elif method := getattr(self, f"get_{field_name}", None):
-                ret = method()
+            if cb is not None:
+                ret = cb(
+                    field_name,
+                    field,
+                    **kwargs,
+                )
 
             else:
                 if issubclass(field_type, bool):
