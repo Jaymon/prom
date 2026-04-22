@@ -446,90 +446,103 @@ class ModelData(TestData):
         ignore_refs = kwargs.get("ignore_refs", False)
         require_fields = kwargs.get("require_fields", True)
         ignore_field_names = set(kwargs.get("ignore_field_names", []))
+        models_suffixes = kwargs.get("field_models_suffixes", ["_ids", "_pks"])
+        model_suffixes = kwargs.get("field_model_suffixes", ["_id", "_pk"])
 
         for field_name, field in orm_class.schema.fields.items():
+            if field_name in ignore_field_names:
+                # we were explicitely told to ignore this field
+                continue
+
             if ref_class := field.ref_class:
                 ref_field_name = ref_class.model_name
                 refs_field_name = ref_class.models_name
 
+                # if we have a model `foo` and a `some_foo_id` fk field
+                # we want to check for `some_foo` to match the `some_foo_id`
+                # field of `orm_class` before checking the model name `foo`
+                # for a `foo` instance
+                ref_field_name_2 = ref_field_name
+                for suffix in model_suffixes:
+                    if field_name.endswith(suffix):
+                        ref_field_name_2 = field_name[:-len(suffix)]
+
                 # if a whole bunch of models are passed in we want to select
                 # one to use
-                if field_name not in kwargs and ref_field_name not in kwargs:
+                if (
+                    field_name not in kwargs
+                    and ref_field_name not in kwargs
+                    and ref_field_name_2 not in kwargs
+                ):
                     # if `foos` is passed in, randomly choose one for `foo`
                     if refs_field_name in kwargs:
-                        kwargs[ref_field_name] = random.choice(
+                        kwargs[ref_field_name_2] = random.choice(
                             kwargs[refs_field_name],
                         )
 
-                    # if `foo_ids` is passed in, randomly choose one for
-                    # `field_name`
-                    for suffix in ["_ids", "_pks"]:
-                        rfn = ref_field_name + suffix
-                        if rfn in kwargs:
-                            kwargs[field_name] = random.choice(kwargs[rfn])
-                            break
+                    else:
+                        # if `foo_ids` is passed in, randomly choose one for
+                        # `field_name`
+                        for suffix in models_suffixes:
+                            for fn in [ref_field_name_2, ref_field_name]:
+                                rfn = fn + suffix
+                                if rfn in kwargs:
+                                    kwargs[field_name] = random.choice(
+                                        kwargs[rfn],
+                                    )
+                                    break
 
-                # if we have a `foo_id` fk field, check for `foo`
-                ref_field_name_2 = ""
-                if field_name.endswith("_id") or field_name.endswith("_pk"):
-                    ref_field_name_2 = field_name[:-3]
+                            if field_name in kwargs:
+                                break
 
-                if (
-                    ref_field_name_2 != ref_field_name
-                    and ref_field_name_2 in kwargs
-                ):
-                    if field_name not in kwargs:
-                        kwargs[field_name] = kwargs[ref_field_name_2].pk
-
-                elif ref_field_name == orm_class.model_name:
-                    # this is an FK reference to itself so we can't actually
-                    # set it without getting into infinite recursion as we keep
-                    # trying to resolve a dependency to itself, so we're just
-                    # going to ignore the field
-                    continue
-
-                elif field_name in kwargs:
-                    if ref_field_name not in kwargs:
+                if field_name in kwargs:
+                    if ref_field_name_2 not in kwargs:
                         ref_orm = await ref_class.query.eq_pk(
                             kwargs[field_name],
                         ).one()
-                        kwargs[ref_field_name] = ref_orm
+                        kwargs[ref_field_name_2] = ref_orm
 
-                elif field_name in ignore_field_names:
-                    # we were explicitely told to ignore this field
+                elif ref_field_name_2 in kwargs:
+                    kwargs[field_name] = kwargs[ref_field_name_2].pk
+
+                elif ref_field_name in kwargs:
+                    kwargs[field_name] = kwargs[ref_field_name].pk
+
+                elif ref_class is orm_class:
+                    # this is an FK reference to itself so we can't actually
+                    # infer it without getting into infinite recursion as we
+                    # would keep just trying to resolve a dependency to itself,
+                    # so we're just going to ignore the field after checking to
+                    # see if there is a passed in value because it can be set
+                    # manually no problem
                     continue
 
-                else:
-                    if ref_field_name in kwargs:
-                        kwargs[field_name] = kwargs[ref_field_name].pk
+                elif not ignore_refs:
+                    if (
+                        require_fields
+                        or field.is_required()
+                        or self.yes()
+                    ):
+                        # handle all ref_class's refs before we handle
+                        # ref_class
+                        kwargs.update(await self.assure_orm_refs(
+                            ref_class,
+                            assure_orm_class,
+                            **kwargs,
+                        ))
 
-                    else:
-                        if not ignore_refs:
-                            if (
-                                require_fields
-                                or field.is_required()
-                                or self.yes()
-                            ):
-                                # handle all ref_class's refs before we handle
-                                # ref_class
-                                kwargs.update(await self.assure_orm_refs(
-                                    ref_class,
-                                    assure_orm_class,
-                                    **kwargs
-                                ))
+                        ref_orm = await self._dispatch_method(
+                            ref_class,
+                            self.create_orm,
+                            **self.assure_ref_field_names(
+                                assure_orm_class,
+                                ref_class,
+                                **kwargs,
+                            ),
+                        )
 
-                                ref_orm = await self._dispatch_method(
-                                    ref_class,
-                                    self.create_orm,
-                                    **self.assure_ref_field_names(
-                                        assure_orm_class,
-                                        ref_class,
-                                        **kwargs
-                                    )
-                                )
-
-                                kwargs[ref_field_name] = ref_orm
-                                kwargs[field_name] = ref_orm.pk
+                        kwargs[ref_field_name_2] = ref_orm
+                        kwargs[field_name] = ref_orm.pk
 
         return kwargs
 
@@ -841,43 +854,6 @@ class ModelData(TestData):
                         **kwargs,
                     )
 
-#             if field_name in kwargs:
-#                 # this value was passed in so we don't need to do anything
-#                 fields[field_name] = kwargs[field_name]
-# 
-#             elif field_name in ignore_field_names:
-#                 # we were explicitely told to ignore this field
-#                 pass
-# 
-#             elif field.is_auto():
-#                 # db will handle any auto-generating fields
-#                 pass
-# 
-#             elif field.is_pk():
-#                 # primary key isn't auto-generating and wasn't passed in, so
-#                 # we'll cross our fingers and hope it will be taken care of
-#                 # somewhere else
-#                 pass
-# 
-#             elif field.is_ref():
-#                 # foreign keys are handled in .assure_orm_refs
-#                 pass
-# 
-#             elif field.is_private():
-#                 # private fields are ignored for generation
-#                 pass
-# 
-#             elif not self.get_orm_field_required(field_name, field, **kwargs):
-#                 pass
-# 
-#             else:
-#                 fields[field_name] = self.get_orm_field_value(
-#                     field_name,
-#                     field,
-#                     fields=fields,
-#                     **kwargs
-#                 )
-
         return fields
 
     def get_orm_field(self, field_name: str, **kwargs):
@@ -902,11 +878,20 @@ class ModelData(TestData):
         """Returns the generated value for the specific field
 
         This is a wrapper around all the specific field type generators, see
-        the other get_orm_field_* methods
+        the other `get_orm_field_*` methods
+
+        This will check for a `field.testdata` method and call that if it
+        exists with the same signature as this method
+
+        This will check for `.get_orm_field_name_<field_name>` and call that
+        if it exists with the same signature as this method
 
         :param field_name: str
         :param field: Field, the orm's field property
-        :param **kwargs: see .get_orm_fields for values this can have
+        :keyword field_callbacks: dict[str, Callable[[str, Field], Any]],
+            if `field_name` is a key in this dict then the value will be
+            called with the same signature as this method
+        :keyword **kwargs: see `.get_orm_fields` for values this can have
         :returns: Any, the generated value
         """
         if field_name in kwargs:

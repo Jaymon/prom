@@ -55,6 +55,18 @@ class ModelDataTest(TestCase):
             bcount += 1
         self.assertEqual(2, bcount)
 
+    async def test_references_3(self):
+        testdata = self.InterfaceData
+        foo_class = testdata.get_orm_class(model_name="foo")
+        bar_class = testdata.get_orm_class(
+            to_foo_id=Field(foo_class),
+            from_foo_id=Field(foo_class),
+        )
+
+        md = self.ModelData
+        bar = await md.create_orm(bar_class)
+        self.assertNotEqual(bar.to_foo_id, bar.from_foo_id)
+
     async def test_internal_call(self):
         """
         https://github.com/Jaymon/prom/issues/166
