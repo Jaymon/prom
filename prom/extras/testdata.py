@@ -575,22 +575,22 @@ class ModelData(TestData):
             ]))
             instance = await instance.requery()
 
-        for k in list(kwargs.keys()):
-            # We want to create any orms with FK references to orm_class if
-            # counts were passed in
-            if k.endswith("_count"):
-                k_model_name = k[0:-6]
-                k_orm_class = self.get_orm_class(k_model_name)
-                if k_orm_class:
-                    logger.debug(
-                        "Creating {} {} instances tied to {} instance".format(
-                            kwargs[k],
-                            k_orm_class.__name__,
-                            orm_class.__name__,
-                        )
-                    )
-                    kwargs.setdefault(instance.model_name, instance)
-                    await self.create_orms(k_orm_class, **kwargs)
+#         for k in list(kwargs.keys()):
+#             # We want to create any orms with FK references to orm_class if
+#             # counts were passed in
+#             if k.endswith("_count"):
+#                 k_model_name = k[0:-6]
+#                 k_orm_class = self.get_orm_class(k_model_name)
+#                 if k_orm_class:
+#                     logger.debug(
+#                         "Creating {} {} instances tied to {} instance".format(
+#                             kwargs[k],
+#                             k_orm_class.__name__,
+#                             orm_class.__name__,
+#                         )
+#                     )
+#                     kwargs.setdefault(instance.model_name, instance)
+#                     await self.create_orms(k_orm_class, **kwargs)
 
         return instance
 
