@@ -748,9 +748,6 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
 
         https://github.com/Jaymon/prom/issues/75
         """
-        # we don't wrap this in a transaction because there isn't
-        # anything to recover from if it fails
-        #kwargs.setdefault("execute_in_transaction", False)
         kwargs.setdefault("nest", False)
         await self.execute_write(self._delete_tables, **kwargs)
 
@@ -759,20 +756,6 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
         implement better way"""
         for table_name in await self.get_tables(**kwargs):
             await self._delete_table(table_name, **kwargs)
-
-#     async def unsafe_delete_tables(self, **kwargs):
-#         """Removes all the tables from the db
-# 
-#         https://github.com/Jaymon/prom/issues/75
-#         """
-#         kwargs["prefix"] = "unsafe_delete_tables"
-#         async with self.transaction(**kwargs) as connection:
-#             kwargs['connection'] = connection
-#             kwargs.setdefault('nest', False)
-#             for table_name in await self.get_tables(**kwargs):
-#                 # we don't wrap this in an .execute_write because there isn't
-#                 # anything to recover from if it fails
-#                 await self._delete_table(table_name, **kwargs)
 
     async def unsafe_clear_table(self, schema, **kwargs):
         """Empty a table
@@ -934,19 +917,6 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
                 "Aborting delete because there is no where clause"
             )
 
-        return await self.unsafe_delete(schema, query, **kwargs)
-
-    async def unsafe_delete(self, schema, query, **kwargs):
-        """delete matching rows
-
-        WARNING -- this can clear the whole table, you should mainly use
-            .delete and always include filtering criteria in the query
-
-        :param schema: Schema instance, the table the query will run against
-        :param query: Query instance, the filter criteria, this will fail if
-            empty
-        :returns: int, how many rows were deleted ... I think
-        """
         return await self.execute_write(
             self._delete,
             schema=schema,
