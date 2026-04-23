@@ -183,6 +183,14 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         self.assertFalse(await i.has_table(s1))
         self.assertFalse(await i.has_table(s2))
 
+    async def test_unsafe_clear_table(self):
+        i, s = await self.create_table()
+        _ids = await self.insert(i, s, 5)
+
+        self.assertLess(0, await i.count(s, Query()))
+        await i.unsafe_clear_table(s)
+        self.assertEqual(0, await i.count(s, Query()))
+
     async def test_readonly(self):
         i, s = self.get_table()
         await i.readonly(True)

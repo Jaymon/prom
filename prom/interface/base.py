@@ -41,7 +41,7 @@ class InterfaceABC[ConnectionT]:
         """
         raise NotImplementedError()
 
-    async def _configure_connection(self, cnnection: ConnectionT, **kwargs):
+    async def _configure_connection(self, connection: ConnectionT, **kwargs):
         """The wrapper method for this (Interface.configure_connection) is
         never called directly by Interface. It is up to the child interfaces
         to decide when a connection is ready and to call this method"""
@@ -72,7 +72,13 @@ class InterfaceABC[ConnectionT]:
     async def _get_tables(self, table_name, **kwargs):
         raise NotImplementedError()
 
-    async def _delete_table(self, schema):
+    async def _delete_table(self, schema, **kwargs):
+        raise NotImplementedError()
+
+    async def _delete_tables(self, **kwargs):
+        raise NotImplementedError()
+
+    async def _clear_table(self, schema, **kwargs):
         raise NotImplementedError()
 
     async def _get_fields(self, table_name, **kwargs):
@@ -736,22 +742,48 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
             schema=schema,
             **kwargs,
         )
-        return True
 
     async def unsafe_delete_tables(self, **kwargs):
         """Removes all the tables from the db
 
         https://github.com/Jaymon/prom/issues/75
         """
-        kwargs["prefix"] = "unsafe_delete_tables"
-        async with self.transaction(**kwargs) as connection:
-            kwargs['connection'] = connection
-            kwargs.setdefault('nest', False)
-            for table_name in await self.get_tables(**kwargs):
-                # we don't wrap this in an .execute_write because there isn't
-                # anything to recover from if it fails
-                await self._delete_table(table_name, **kwargs)
-        return True
+        # we don't wrap this in a transaction because there isn't
+        # anything to recover from if it fails
+        #kwargs.setdefault("execute_in_transaction", False)
+        kwargs.setdefault("nest", False)
+        await self.execute_write(self._delete_tables, **kwargs)
+
+    async def _delete_tables(self, **kwargs):
+        """This is the generic way to delete all tables, child interfaces can
+        implement better way"""
+        for table_name in await self.get_tables(**kwargs):
+            await self._delete_table(table_name, **kwargs)
+
+#     async def unsafe_delete_tables(self, **kwargs):
+#         """Removes all the tables from the db
+# 
+#         https://github.com/Jaymon/prom/issues/75
+#         """
+#         kwargs["prefix"] = "unsafe_delete_tables"
+#         async with self.transaction(**kwargs) as connection:
+#             kwargs['connection'] = connection
+#             kwargs.setdefault('nest', False)
+#             for table_name in await self.get_tables(**kwargs):
+#                 # we don't wrap this in an .execute_write because there isn't
+#                 # anything to recover from if it fails
+#                 await self._delete_table(table_name, **kwargs)
+
+    async def unsafe_clear_table(self, schema, **kwargs):
+        """Empty a table
+
+        :param schema: Schema instance, the table to delete
+        """
+        await self.execute_write(
+            self._clear_table,
+            schema=schema,
+            **kwargs,
+        )
 
     async def get_indexes(self, schema, **kwargs):
         """

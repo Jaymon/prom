@@ -134,6 +134,14 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         query_str = "\n".join(query_str)
         await self._raw(query_str, ignore_result=True, **kwargs)
 
+    async def _clear_table(self, schema, **kwargs):
+        """This is the generic way to clear a table, child interfaces can
+        implement better ways to clear tables"""
+        query_str = "DELETE FROM {}".format(
+            self.render_table_name_sql(schema)
+        )
+        await self._raw(query_str, ignore_result=True, **kwargs)
+
     def _set_index(self, schema, name, field_names, **kwargs):
         """
         NOTE -- we set the index name using <table_name>_<name> format since

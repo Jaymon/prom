@@ -183,6 +183,33 @@ class PostgreSQL(SQLInterface[psycopg.AsyncConnection]):
         )
         await self._raw(query_str, ignore_result=True, **kwargs)
 
+    async def _delete_tables(self, **kwargs):
+        """
+        https://www.postgresql.org/docs/current/sql-droptable.html
+        """
+        table_names = map(
+            self.render_table_name_sql,
+            await self.get_tables(**kwargs),
+        )
+        query_str = "DROP TABLE IF EXISTS {} CASCADE".format(
+            ", ".join(table_names),
+        )
+        await self._raw(query_str, ignore_result=True, **kwargs)
+
+    async def _clear_table(self, schema, **kwargs):
+        """
+        https://www.postgresql.org/docs/current/sql-truncate.html
+
+        we don't reset the auto-increment to match the generic
+        `Sql._clear_table` and also because it could create problems if used
+        outside of testing
+        """
+        #query_str = "TRUNCATE TABLE {} RESTART IDENTITY CASCADE".format(
+        query_str = "TRUNCATE TABLE {} CASCADE".format(
+            self.render_table_name_sql(schema)
+        )
+        await self._raw(query_str, ignore_result=True, **kwargs)
+
     async def _get_indexes(self, schema, **kwargs):
         """return all the indexes for the given schema"""
         ret = {}
