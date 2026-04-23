@@ -194,42 +194,6 @@ class ModelDataTest(TestCase):
         self.assertIsNone(r[0])
         self.assertIsNone(r[1])
 
-#     async def test_children_create(self):
-#         """
-#         https://github.com/Jaymon/prom/issues/166
-#         """
-#         modpath = self.create_module([
-#             "from prom import Orm, Field",
-#             "",
-#             "class Foo(Orm):",
-#             "    one = Field(str)",
-#             "",
-#             "class Bar(Orm):",
-#             "    foo_id = Field(Foo, True)",
-#             "    two = Field(str)",
-#         ])
-#         m = modpath.module()
-#         m.Foo.interface = self.get_interface()
-#         m.Bar.interface = m.Foo.interface
-# 
-#         count = 2
-# 
-#         foo = await self.create_foo(bar_count=count)
-#         bar_count = 0
-#         async for b in await foo.bars:
-#             bar_count += 1
-#             self.assertIsInstance(b, m.Bar)
-#             self.assertEqual(foo.pk, b.foo_id)
-#         self.assertEqual(count, bar_count)
-# 
-#         foo = await self.create_foo(bars_count=count)
-#         bar_count = 0
-#         async for b in await foo.bars:
-#             bar_count += 1
-#             self.assertIsInstance(b, m.Bar)
-#             self.assertEqual(foo.pk, b.foo_id)
-#         self.assertEqual(count, bar_count)
-
     def test__gets_count(self):
         testdata = self.InterfaceData
         orm_class = testdata.get_orm_class()
