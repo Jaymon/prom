@@ -291,6 +291,19 @@ class ModelDataTest(TestCase):
         o = await modeldata.create_orm(orm_class=orm_class)
         self.assertEqual(None, o.foo_id)
 
+    async def test_assure_orm_ref_1(self):
+        testdata = self.InterfaceData
+        modeldata = self.ModelData
+
+        ref_class = testdata.get_orm_class()
+        orm_class = testdata.get_orm_class(
+            ref_foo_id=Field(ref_class),
+        )
+
+        kwargs = await modeldata.assure_orm_ref("ref_foo", orm_class)
+        self.assertTrue(isinstance(kwargs["ref_foo"], ref_class))
+        self.assertEqual(kwargs["ref_foo"].id, kwargs["ref_foo_id"])
+
 
 class MockModelDataTest(TestCase):
     """Holds the tests specifically for the ModelData methods that add 
