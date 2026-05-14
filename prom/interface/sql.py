@@ -84,9 +84,9 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
 
         https://www.psycopg.org/docs/usage.html#passing-parameters-to-sql-queries
 
-        NOTE -- It looks like both SQLite and Postgres support "named" so if
-        you want to use .raw() queries that will work in both interface I would
-        use named parameters
+        .. note:: It looks like both SQLite and Postgres support "named" so if
+            you want to use .raw() queries that will work in both interface I
+            would use named parameters
 
         :returns: str, usually something like "?" or "%s"
         """

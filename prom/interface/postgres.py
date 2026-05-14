@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import re
 import os
 import sys
@@ -481,14 +480,17 @@ class PostgreSQL(SQLInterface[psycopg.AsyncConnection]):
             or BINARY LARGE OBJECT. The input format is different from bytea,
             but the provided functions and operators are mostly the same.
         """
-        return 'BYTEA'
+        return "BYTEA"
 
     def render_datatype_uuid_sql(self, field_name, field, **kwargs):
         # https://www.postgresql.org/docs/current/datatype-uuid.html
         # https://www.postgresql.org/docs/current/functions-uuid.html
-        field_type = 'UUID'
+        field_type = "UUID"
         if field.is_auto():
-            field_type += ' DEFAULT gen_random_uuid()'
+            # default `uuidv7` is postgres 18+ only
+            method_name = field.options.get("uuid_method", "uuidv7")
+            field_type += f" DEFAULT {method_name}()"
+            #field_type += " DEFAULT gen_random_uuid()"
 
         return field_type
 
