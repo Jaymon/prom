@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from typing import Type, Any
 
 from testdata.base import TestData
+from datatypes.enum import find_enum
 
 from ..model import Orm
 from ..config import Schema, Field, Index, AutoIncrement
@@ -937,6 +938,10 @@ class ModelData(TestData):
         if field_name in kwargs:
             # this value was passed in so we don't need to infer anything
             ret = kwargs[field_name]
+
+            if field.is_enum():
+                # make sure the return value is an enum instance
+                ret = find_enum(field.original_type, ret)
 
         elif field.choices:
             ret = self.get_orm_field_choice(
