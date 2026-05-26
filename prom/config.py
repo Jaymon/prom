@@ -1330,7 +1330,6 @@ class Field(object):
 
             if self.is_enum():
                 val = find_enum(self.original_type, val)
-                #val = find_value(self.original_type, val)
 
         if self.is_ref():
             # Foreign Keys get passed through their Field methods
@@ -1373,16 +1372,10 @@ class Field(object):
         except AttributeError as e:
             raw_val = None
             ret = self.get_default(orm, raw_val)
+            orm.__dict__[self.orm_field_name] = ret
 
         else:
             ret = self.from_value(orm, raw_val)
-
-        # we want to compensate for default values right here, so if the raw
-        # val is None but the new val is not then we save the returned value,
-        # this allows us to handle things like dict with no surprises
-        if raw_val is None:
-            if ret is not None:
-                orm.__dict__[self.orm_field_name] = ret
 
         return ret
 
