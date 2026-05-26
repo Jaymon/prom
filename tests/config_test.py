@@ -537,6 +537,20 @@ class FieldTest(EnvironTestCase):
         o2 = await o.query.eq_pk(o.pk).one()
         self.assertEqual(400, o2.foo)
 
+    async def test_fget_default(self):
+        """fget should proc even when there is no set value and default is
+        called inside the Field instance"""
+        class FgetProp(Field):
+            def fget(self, orm, value) -> int|None:
+                return 15
+
+        orm_class = self.get_orm_class(
+            foo=FgetProp(int, private=True, persist=False),
+        )
+
+        o = orm_class()
+        self.assertEqual(15, o.foo)
+
     def test_fdel(self):
         orm_class = self.get_orm_class()
 

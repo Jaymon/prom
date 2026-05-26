@@ -1246,8 +1246,11 @@ class Field(object):
             if self.default_factory is not None:
                 ret = self.default_factory()
 
-            else:
+            elif self.default is not None:
                 ret = self.default
+
+            else:
+                ret = self.fget(orm, val)
 
         else:
             ret = val
@@ -1367,7 +1370,7 @@ class Field(object):
         try:
             raw_val = self._get_orm_value(orm)
 
-        except AttributeError:
+        except AttributeError as e:
             raw_val = None
             ret = self.get_default(orm, raw_val)
 
