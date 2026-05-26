@@ -402,22 +402,6 @@ class Orm(object):
         """
         return EnglishWord(cls.model_name).plural()
 
-#     @classproperty
-#     def schema(cls):
-#         """the Schema instance that this class will derive all its db info from
-# 
-#         Unless you really know what you are doing you should never have to set
-#         this value, it will be automatically created using the Field instances
-#         you define on your child class
-#         """
-#         s = cls.create_schema()
-#         cls.schema = s # cache the schema so we don't need to create it again
-# 
-#         for field_name, field in list(s.fields.items()):
-#             field.configure(cls, s, field_name)
-# 
-#         return s
-
     @classproperty
     def interface(cls):
         """
@@ -1143,11 +1127,6 @@ class Orm(object):
 
     def get_method_value(self, k):
         """Adds some magic methods to check the value of field
-
-        Adds support for:
-            * .is_fieldname() = if fieldname is a boolean then returns
-                True/False, if fieldname is another value then you can do
-                .is_fieldname(val) to compare val to the fieldname's value
 
         The magic method is of the form `<COMPARE>_<FIELD_NAME>`, so if you
         had a field `foo`, you could do:

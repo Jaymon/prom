@@ -30,10 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class Connection(object):
-    """set the paramaters you want to use to connect to an interface
-
-    https://github.com/Jaymon/Mingo/blob/master/Mingo/MingoConfig.php
-    """
+    """set the paramaters you want to use to connect to an interface"""
     name = ""
     """string -- the name of this connection (eg, Postgres, or SQLite)"""
 
@@ -1253,21 +1250,6 @@ class Field(object):
                 val = self.fget(orm, val)
 
         return val
-
-#         if val is None:
-#             if self.default_factory is not None:
-#                 ret = self.default_factory()
-# 
-#             elif self.default is not None:
-#                 ret = self.default
-# 
-#             else:
-#                 ret = self.fget(orm, val)
-# 
-#         else:
-#             ret = val
-# 
-#         return ret
 
     ###########################################################################
     # File set/get methods
