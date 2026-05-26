@@ -1403,6 +1403,28 @@ class OrmTest(EnvironTestCase):
         o = await orm_class.query.eq_pk(pk).one()
         self.assertIsNone(o.che)
 
+    async def test_schema_bad_cache_issue_216(self):
+        """
+        https://github.com/Jaymon/prom/issues/216
+        """
+        class Foo(Orm):
+            one = Field(int)
+            two = Field(str)
+
+        class Bar(Foo):
+            three = Field(int)
+            four = Field(str)
+
+        # have parent create a schema first
+        Foo.schema
+
+        # now make sure child creates a different schema
+        self.assertTrue(Bar.schema is not Foo.schema)
+
+        # make sure it is cached
+        s = Bar.schema
+        self.assertTrue(Bar.schema is s)
+
 
 class OrmsTest(EnvironTestCase):
     def test_get_orm_class(self):

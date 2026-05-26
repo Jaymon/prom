@@ -1244,18 +1244,30 @@ class Field(object):
         """
         if val is None:
             if self.default_factory is not None:
-                ret = self.default_factory()
+                val = self.default_factory()
 
             elif self.default is not None:
-                ret = self.default
+                val = self.default
 
             else:
-                ret = self.fget(orm, val)
+                val = self.fget(orm, val)
 
-        else:
-            ret = val
+        return val
 
-        return ret
+#         if val is None:
+#             if self.default_factory is not None:
+#                 ret = self.default_factory()
+# 
+#             elif self.default is not None:
+#                 ret = self.default
+# 
+#             else:
+#                 ret = self.fget(orm, val)
+# 
+#         else:
+#             ret = val
+# 
+#         return ret
 
     ###########################################################################
     # File set/get methods

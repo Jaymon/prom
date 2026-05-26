@@ -285,7 +285,7 @@ class Orm(object):
             bar = Field(int, True, max_size=512, default=0, unique=True)
             che = Field(str, True)
 
-            index_barche = Index('bar', 'che')
+            index_barche = Index("bar", "che")
     """
     connection_name = ""
     """the name of the connection to use to retrieve the interface
@@ -313,6 +313,17 @@ class Orm(object):
     """The class the orm will use for its schema
 
     This is created in .create_schema and cached/returned in .schema
+    """
+
+    schema: Schema|None = None
+    """the Schema instance that this class will derive all its db info from
+
+    Unless you really know what you are doing you should never have to set
+    this value, it will be automatically created using the Field instances
+    you define on your child class
+
+    This is set in `.__init_subclass__` to be a property that will cache
+    the schema after generating it with `.create_schema`
     """
 
     orm_classes = Orms()
@@ -391,21 +402,21 @@ class Orm(object):
         """
         return EnglishWord(cls.model_name).plural()
 
-    @classproperty
-    def schema(cls):
-        """the Schema instance that this class will derive all its db info from
-
-        Unless you really know what you are doing you should never have to set
-        this value, it will be automatically created using the Field instances
-        you define on your child class
-        """
-        s = cls.create_schema()
-        cls.schema = s # cache the schema so we don't need to create it again
-
-        for field_name, field in list(s.fields.items()):
-            field.configure(cls, s, field_name)
-
-        return s
+#     @classproperty
+#     def schema(cls):
+#         """the Schema instance that this class will derive all its db info from
+# 
+#         Unless you really know what you are doing you should never have to set
+#         this value, it will be automatically created using the Field instances
+#         you define on your child class
+#         """
+#         s = cls.create_schema()
+#         cls.schema = s # cache the schema so we don't need to create it again
+# 
+#         for field_name, field in list(s.fields.items()):
+#             field.configure(cls, s, field_name)
+# 
+#         return s
 
     @classproperty
     def interface(cls):
@@ -598,6 +609,12 @@ class Orm(object):
                         s.set_field(k, field)
                         seen_properties[k] = field
 
+        # configure all the fields now that they've all been set, we do this
+        # after setting them all because configuration could mess with other
+        # fields
+        for field_name, field in list(s.fields.items()):
+            field.configure(cls, s, field_name)
+
         return s
 
     @classmethod
@@ -626,6 +643,14 @@ class Orm(object):
 
         https://peps.python.org/pep-0487/
         """
+        if cls.schema is None:
+            def cache_schema(cls):
+                # cache the value so we don't need to generate it again
+                cls.schema = cls.create_schema()
+                return cls.schema
+
+            cls.schema = classproperty(cache_schema)
+
         cls.orm_classes.add_class(cls)
 
     def fk(self, orm_class):
@@ -700,7 +725,6 @@ class Orm(object):
 
         for field_name, field, value in items(schema, fields_kwargs):
             if field:
-                #value = field.get_default(self, value)
                 setattr(self, field_name, value)
 
     def to_interface(self) -> Mapping[str, Any]:
