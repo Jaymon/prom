@@ -1254,3 +1254,15 @@ class IteratorTest(EnvironTestCase):
         rpks = await q.select_pk().limit(limit).asc_pk().tolist()
         self.assertEqual(pks[:limit], rpks)
 
+    async def test___bool__(self):
+        q = self.get_query()
+
+        it = await q.get()
+        with self.assertRaises(NotImplementedError):
+            bool(it)
+
+#         pks = await self.insert(q, 1)
+#         it = await q.get()
+#         with self.assertRaises(NotImplementedError):
+#             bool(it)
+
