@@ -1299,11 +1299,10 @@ class Query(AsyncIterable):
         v = await self.one(**kwargs)
         return True if v else False
 
-    async def insert(self, **kwargs):
+    async def insert(self, **kwargs) -> Mapping:
         """persist the .fields that were set with .set_field and .set
 
-        :returns: int|str|None, the primary key of the inserted row if it
-            exists
+        :returns: The newly inserted row as stored in the db
         """
         return await self.interface.insert(
             self.schema,

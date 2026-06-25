@@ -389,8 +389,8 @@ class OrmTest(EnvironTestCase):
 
         # if foo isn't modified it doesn't trigger the empty check
         o = orm_class(bar=2)
-        pk = await o.insert()
-        self.assertLess(0, pk)
+        await o.insert()
+        self.assertLess(0, o.pk)
 
     async def test_field_iget(self):
         """make sure a field with an iget method will be called at the correct

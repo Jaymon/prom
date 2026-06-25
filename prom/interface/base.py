@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager, AbstractAsyncContextManager
 import uuid
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 
 from datatypes import Stack
 from datatypes import logging
@@ -798,13 +799,13 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
         )
         return True
 
-    async def insert(self, schema, fields, **kwargs):
+    async def insert(self, schema, fields, **kwargs) -> Mapping:
         """Persist fields into the db
 
         :param schema: Schema instance, the table the query will run against
         :param fields: dict, the fields {field_name: field_value} to persist
         :param **kwargs: passed through
-        :returns: mixed, will return the primary key values
+        :returns: all the fields of the inserted row from the db
         """
         return await self.execute_write(
             self._insert,

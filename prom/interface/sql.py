@@ -223,8 +223,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         insert_sql, insert_args = self.render_insert_sql(
             schema,
             insert_fields,
-            ignore_return_clause=True,
-            **kwargs,
+            ignore_result=True,
         )
 
         update_sql, update_args = self.render_update_sql(
@@ -991,10 +990,6 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         query_vals = []
 
         ignore_result = kwargs.get("ignore_result", False)
-        ignore_return_clause = kwargs.get(
-            "ignore_return_clause",
-            ignore_result
-        )
 
         for field_name, field_val in fields.items():
             field_names.append(self.render_field_name_sql(field_name))
@@ -1011,13 +1006,18 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             ", ".join(field_values),
         )
 
-        if not ignore_return_clause:
+        if not ignore_result:
             # https://www.sqlite.org/lang_returning.html
             if pk_name := schema.pk_name:
                 field_names.append(self.render_field_name_sql(pk_name))
 
             query_str += " RETURNING {}".format(
-                ", ".join(field_names)
+                ", ".join(
+                    map(
+                        self.render_field_name_sql,
+                        schema.persisted_fields.keys(),
+                    ),
+                ),
             )
 
         return query_str, query_vals

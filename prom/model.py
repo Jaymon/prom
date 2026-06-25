@@ -769,19 +769,13 @@ class Orm(object):
         # this marks that this was repopulated from the interface (database)
         self._interface_pk = self.pk
 
-    async def insert(self, **kwargs):
+    async def insert(self, **kwargs) -> None:
         """persist the field values of this orm"""
-        ret = True
         schema = self.schema
         q = self.query.set(self.to_interface())
 
         if fields := await q.insert(**kwargs):
             self.from_interface(fields)
-
-        else:
-            ret = False
-
-        return ret
 
     async def update(self, **kwargs):
         """re-persist the updated field values of this orm that has a primary
