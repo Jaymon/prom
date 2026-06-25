@@ -170,31 +170,6 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         r = await self._raw(query_str, *query_args, **kwargs)
         return r[0] if r else {}
 
-    async def _inserts(self, schema, field_names, field_values, **kwargs):
-        """Do a mutli insert
-
-        The query this will run is roughly:
-
-            INSERT INTO
-                (<field_names>)
-            VALUES
-                (tuple for tuple in <field_values>)
-
-        :param schema: Schema, the table
-        :param field_names: list[str], the field names
-        :param field_values: Iterable[Iterable[Any]], each row in the iterable
-            is a tuple of values that correspond to field_names
-        :param **kwargs: passed through
-        """
-        query_str = self.render_inserts_sql(schema, field_names, **kwargs)
-        await self._raw(
-            query_str,
-            *field_values,
-            ignore_result=True,
-            execute_many=True,
-            **kwargs
-        )
-
     async def _update(self, schema, fields, query, **kwargs):
         query_str, query_args = self.render_update_sql(
             schema,
@@ -1046,22 +1021,6 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             )
 
         return query_str, query_vals
-
-    def render_inserts_sql(self, schema, field_names, **kwargs):
-        """
-        https://www.sqlite.org/lang_insert.html
-        """
-        sql_names = []
-        sql_formats = []
-        for field_name in field_names:
-            sql_names.append(self.render_field_name_sql(field_name))
-            sql_formats.append(self.PLACEHOLDER)
-
-        return "INSERT INTO {} ({}) VALUES ({})".format(
-            self.render_table_name_sql(schema),
-            ", ".join(sql_names),
-            ", ".join(sql_formats),
-        )
 
     def render_update_sql(self, schema, fields, query, **kwargs):
         """

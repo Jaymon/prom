@@ -411,23 +411,6 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         pk = (await i.insert(s, d))["_id"]
         self.assertGreater(pk, 0)
 
-    async def test_inserts(self):
-        i, s = await self.create_table()
-        count = 1000
-
-        self.assertEqual(0, await i.count(s, Query()))
-        def rows():
-            for x in range(count):
-                yield (x, f"s{x}")
-
-        await i.inserts(
-            s,
-            ["foo", "bar"],
-            rows(),
-        )
-
-        self.assertEqual(count, await i.count(s, Query()))
-
     async def test_render_sql_1(self):
         i, s = self.get_table()
         q = Query()
