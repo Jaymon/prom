@@ -168,7 +168,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         )
 
         r = await self._raw(query_str, *query_args, **kwargs)
-        return r[0] if r else {}
+        return r[0] if r else None
 
     async def _update(self, schema, fields, query, **kwargs):
         query_str, query_args = self.render_update_sql(
@@ -231,7 +231,6 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             update_fields,
             query=None,
             only_set_clause=True,
-            **kwargs,
         )
 
         query_str = '{} ON CONFLICT({}) DO UPDATE {}'.format(
@@ -240,21 +239,11 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             update_sql,
         )
 
-        returning_field_names = schema.pk_names
-        if returning_field_names:
-            # https://www.sqlite.org/lang_returning.html
-            query_str += ' RETURNING {}'.format(', '.join(
-                map(self.render_field_name_sql, returning_field_names))
-            )
-            query_args = insert_args + update_args
+        if not kwargs.get("ignore_result", False):
+            query_str += " " + self.render_returning_sql(schema)
 
-        r = await self._raw(query_str, *query_args, **kwargs)
-        if r and returning_field_names:
-            if len(returning_field_names) > 1:
-                r = r[0]
-            else:
-                r = r[0][returning_field_names[0]]
-        return r
+        r = await self._raw(query_str, *insert_args, *update_args, **kwargs)
+        return r[0] if r else None
 
     async def _delete(self, schema, query, **kwargs):
         where_query_str, query_args = self.render_sql(
@@ -1007,7 +996,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         )
 
         if not ignore_result:
-            query_str += " " + self.render_returning_sql(schema, fields)
+            query_str += " " + self.render_returning_sql(schema)
 
         return query_str, query_vals
 
@@ -1054,11 +1043,11 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             query_args.extend(where_query_args)
 
         if not ignore_result:
-            query_str += " " + self.render_returning_sql(schema, fields)
+            query_str += " " + self.render_returning_sql(schema)
 
         return query_str, query_args
 
-    def render_returning_sql(self, schema, fields, **kwargs) -> str:
+    def render_returning_sql(self, schema, **kwargs) -> str:
         """
         https://www.sqlite.org/lang_returning.html
         """

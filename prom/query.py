@@ -1320,7 +1320,7 @@ class Query(AsyncIterable):
             **kwargs,
         )
 
-    async def upsert(self, conflict_field_names=None, **kwargs):
+    async def upsert(self, conflict_field_names=None, **kwargs) -> Mapping|None:
         """persist the .fields set with .set and .set_field
 
         The insert fields are all the fields set in .fields.
@@ -1332,7 +1332,7 @@ class Query(AsyncIterable):
             checked for conflicts and will insert if these field values don't
             already exist in the db or update if they do
         :param **kwargs: passed through to the interface upsert method
-        :returns: str|int|None, the primary key of the inserted/updated row
+        :returns: The newly inserted/updated row as stored in the db
         """
         insert_fields = self.fields_set.todict()
         update_fields = dict(insert_fields)

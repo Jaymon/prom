@@ -792,7 +792,7 @@ class Orm(object):
             if not isinstance(rows, int):
                 self.from_interface(rows[0])
 
-    async def upsert(self, **kwargs):
+    async def upsert(self, **kwargs) -> None:
         """Perform an UPSERT query where we insert the fields if they don't
         already exist on the db or we UPDATE if they do
 
@@ -808,10 +808,8 @@ class Orm(object):
 
         :param **kwargs: passed through to the interface
         """
-        ret = True
-
         if pk := self._interface_pk:
-            ret = await self.update(**kwargs)
+            await self.update(**kwargs)
 
         else:
             fields = self.to_interface()
@@ -822,22 +820,13 @@ class Orm(object):
             if not conflict_fields:
                 raise ValueError(
                     "Failed to find conflict field names from: {}".format(
-                        q.fields_set.names()
-                    )
+                        q.fields_set.names(),
+                    ),
                 )
 
-            pk = await q.upsert([t[0] for t in conflict_fields], **kwargs)
-            if pk:
-                fields = q.fields_set.fields
-                pk_name = schema.pk_name
-                if pk_name:
-                    fields[pk_name] = pk
+            fields = await q.upsert([t[0] for t in conflict_fields], **kwargs)
+            if fields:
                 self.from_interface(fields)
-
-            else:
-                ret = False
-
-        return ret
 
     async def save(self, **kwargs):
         """persist the fields in this object into the db, this will update if

@@ -1279,7 +1279,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         # makes sure conflict update works as expected
         di = {"_id": pk, "foo": 2, "bar": "bar 2"}
         du = {"foo": 3}
-        pk2 = await i.upsert(s, di, du, ["_id"])
+        pk2 = (await i.upsert(s, di, du, ["_id"]))["_id"]
         self.assertEqual(pk, pk2)
         d = await i.one(s, Query().eq__id(pk))
         self.assertEqual(du["foo"], d["foo"])
@@ -1288,7 +1288,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         # makes sure insert works as expected
         di = {"foo": 3, "bar": "bar 3"}
         du = {"che": "che 3"}
-        pk3 = await i.upsert(s, di, du, ["foo", "bar"])
+        pk3 = (await i.upsert(s, di, du, ["foo", "bar"]))["_id"]
         self.assertNotEqual(pk, pk3)
         d = await i.one(s, Query().eq__id(pk3))
         self.assertEqual(di["foo"], d["foo"])
@@ -1306,16 +1306,16 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         di = {"foo": "1", "bar": "1", "che": "1", "baz": 1}
 
         du = {"baz": 1}
-        pk = await i.upsert(s, di, du, ["foo", "bar", "che"])
-        d = await i.one(s, Query().eq__id(pk))
+        r = await i.upsert(s, di, du, ["foo", "bar", "che"])
+        d = await i.one(s, Query().eq__id(r["_id"]))
         self.assertEqual(1, d["baz"])
-        self.assertEqual(pk, d["_id"])
+        self.assertEqual(r["_id"], d["_id"])
 
         du = {"baz": 2}
-        pk = await i.upsert(s, di, du, ["foo", "bar", "che"])
-        d = await i.one(s, Query().eq__id(pk))
+        r = await i.upsert(s, di, du, ["foo", "bar", "che"])
+        d = await i.one(s, Query().eq__id(r["_id"]))
         self.assertEqual(2, d["baz"])
-        self.assertEqual(pk, d["_id"])
+        self.assertEqual(r["_id"], d["_id"])
 
     async def test_stacktraces(self):
         i, s = await self.create_table(

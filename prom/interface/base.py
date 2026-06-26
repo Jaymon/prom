@@ -849,7 +849,7 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
         update_fields,
         conflict_field_names,
         **kwargs
-    ):
+    ) -> Mapping|None:
         """Perform an upsert (insert or update) on the table
 
         :param schema: Schema instance, the table the query will run against
@@ -859,7 +859,7 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
         :param conflict_field_names: list, the field names that will decide if
             an insert or update is performed
         :param **kwargs: anything else
-        :returns: str|int|None, the primary key
+        :returns: all the fields of the upserted row from the db
         """
         return await self.execute_write(
             self._upsert,
