@@ -1383,17 +1383,29 @@ class Field(object):
         orm.__dict__[self.orm_field_name] = val
 
     def __delete__(self, orm):
-        """Descriptor `del` method. This will call `.del_value` and if
-        the returned value is None then it will delete the field from `orm`
-        so the `orm` will be in a state like it had never had a value for
-        field. If value is anything other than None then `orm` will have
-        that value set and this acts more like a setter"""
+        """Descriptor `del` method. This will set the field value to
+        whatever is returned from`.del_value`.
+
+        There is one exception, if the Orm is new, then deleting a field will
+        cause that field to act like it was never set ever, so the default
+        stuff can work. So basically, if the field has been pulled from the
+        db and you delete the field (using `del orm.<fieldname>`) then that
+        field's value will be changed and it will be considered modified.
+
+        If the orm is brand new and has never been persisted then deleting
+        the field will cause the orm to act like the field has never been
+        seen before
+        """
         try:
             val = self.del_value(orm, self._get_orm_value(orm))
 
             if val is None:
-                orm.__dict__.pop(self.orm_field_name, None)
-                orm.__dict__.pop(self.orm_interface_hash, None)
+                if self.orm_interface_hash in orm.__dict__:
+                    orm.__dict__[self.orm_field_name] = val
+
+                else:
+                    orm.__dict__.pop(self.orm_field_name, None)
+                    orm.__dict__.pop(self.orm_interface_hash, None)
 
             else:
                 orm.__dict__[self.orm_field_name] = val

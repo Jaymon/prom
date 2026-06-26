@@ -1299,7 +1299,7 @@ class Query(AsyncIterable):
         v = await self.one(**kwargs)
         return True if v else False
 
-    async def insert(self, **kwargs) -> Mapping:
+    async def insert(self, **kwargs) -> Mapping|None:
         """persist the .fields that were set with .set_field and .set
 
         :returns: The newly inserted row as stored in the db
@@ -1307,17 +1307,17 @@ class Query(AsyncIterable):
         return await self.interface.insert(
             self.schema,
             self.fields_set.todict(),
-            **kwargs
+            **kwargs,
         )
 
-    async def update(self, **kwargs):
+    async def update(self, **kwargs) -> list[Mapping]|int|None:
         """persist the .fields set in .set and .set_field using .fields_where
         """
         return await self.interface.update(
             self.schema,
             self.fields_set.todict(),
             self,
-            **kwargs
+            **kwargs,
         )
 
     async def upsert(self, conflict_field_names=None, **kwargs):

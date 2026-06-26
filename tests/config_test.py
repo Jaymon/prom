@@ -494,7 +494,10 @@ class FieldTest(EnvironTestCase):
         del o.foo
         self.assertEqual(None, o.foo)
         await o.save()
-        self.assertEqual(None, o.foo)
+        # foo is set to None, then the fields run back through `from_interface`
+        # and `foo.fsetter` is called and then `foo.fgetter` is called with
+        # a value of zero
+        self.assertEqual(1, o.foo)
 
         o.foo = 10
         self.assertEqual(11, o.foo)

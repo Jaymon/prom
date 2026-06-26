@@ -283,7 +283,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             - execute_many: bool, True to call cursor.executemany instead of
                 cursor.execute
         """
-        ret = True
+        ret = None
         async with self.connection(**kwargs) as connection:
             cur = connection.cursor()
 
@@ -981,7 +981,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
 
         return query_str, query_vals
 
-    def render_insert_sql(self, schema, fields, **kwargs):
+    def render_insert_sql(self, schema, fields, **kwargs) -> str:
         """
         https://www.sqlite.org/lang_insert.html
         """
@@ -1007,36 +1007,24 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         )
 
         if not ignore_result:
-            # https://www.sqlite.org/lang_returning.html
-            if pk_name := schema.pk_name:
-                field_names.append(self.render_field_name_sql(pk_name))
-
-            query_str += " RETURNING {}".format(
-                ", ".join(
-                    map(
-                        self.render_field_name_sql,
-                        schema.persisted_fields.keys(),
-                    ),
-                ),
-            )
+            query_str += " " + self.render_returning_sql(schema, fields)
 
         return query_str, query_vals
 
-    def render_update_sql(self, schema, fields, query, **kwargs):
+    def render_update_sql(self, schema, fields, query, **kwargs) -> str:
         """
         https://www.sqlite.org/lang_update.html
         https://www.postgresql.org/docs/current/sql-update.html
         """
         query_str = ""
         query_args = []
-        returning_names = []
 
         count_result = kwargs.get("count_result", False)
-        ignore_result = kwargs.get("ignore_result", False)
         only_set_clause = kwargs.get("only_set_clause", False)
-        ignore_return_clause = kwargs.get(
-            "ignore_return_clause",
-            only_set_clause or ignore_result or count_result
+        ignore_result = (
+            kwargs.get("ignore_result", False)
+            or only_set_clause
+            or count_result
         )
 
         if not only_set_clause:
@@ -1053,7 +1041,6 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
                 field_query_str,
             ))
             query_args.extend(field_query_vals)
-            returning_names.append(field_name_query_str)
 
         query_str += "SET {}".format(",\n".join(field_str))
 
@@ -1066,13 +1053,23 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             query_str += " {}".format(where_query_str)
             query_args.extend(where_query_args)
 
-        if not ignore_return_clause:
-            if returning_names:
-                query_str += " RETURNING {}".format(
-                    ",\n".join(returning_names)
-                )
+        if not ignore_result:
+            query_str += " " + self.render_returning_sql(schema, fields)
 
         return query_str, query_args
+
+    def render_returning_sql(self, schema, fields, **kwargs) -> str:
+        """
+        https://www.sqlite.org/lang_returning.html
+        """
+        return "RETURNING {}".format(
+            ", ".join(
+                map(
+                    self.render_field_name_sql,
+                    schema.persisted_fields.keys(),
+                ),
+            ),
+        )
 
     def render_datatype_sql(self, field_name, field):
         """Returns the SQL for a given field with full type information

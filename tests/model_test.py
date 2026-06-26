@@ -120,10 +120,6 @@ class OrmTest(EnvironTestCase):
         with self.assertRaises((KeyError, ValueError)):
             fields = o.to_interface()
 
-        del o._created
-        fields = o.to_interface()
-        self.assertFalse("_created" in fields)
-
     def test_f_class_definition(self):
         class FCD(Orm):
             _id = _created = _updated = None
@@ -460,7 +456,7 @@ class OrmTest(EnvironTestCase):
 
         del o.foo
         self.assertEqual(None, o.foo)
-        self.assertFalse("foo" in o.modified_fields)
+        self.assertTrue("foo" in o.modified_fields)
 
     def test___delattr__(self):
         orm_class = self.get_orm_class(
@@ -1057,8 +1053,7 @@ class OrmTest(EnvironTestCase):
         # set should only update timestamps and stuff without changing
         # unmodified values
         self.assertFalse(t.is_modified())
-        r = await t.save()
-        self.assertTrue(r)
+        await t.save()
 
         # make sure it persisted
         await t.interface.close()
@@ -1333,10 +1328,8 @@ class OrmTest(EnvironTestCase):
         )
 
         o = orm_class(foo=1, bar=1)
-        r1 = await o.upsert()
-        self.assertTrue(r1)
-        r2 = await o.upsert()
-        self.assertTrue(r2)
+        await o.upsert()
+        await o.upsert()
 
     async def test_upsert_with_pk(self):
         orm_class = self.get_orm_class(

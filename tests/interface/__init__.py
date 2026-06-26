@@ -624,12 +624,12 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         self.assertEqual(len(pks), len(rds))
 
         q = Query().set_foo(3).in__id(pks)
-        count = await i.update(s, d, q, count_result=True)
-        self.assertEqual(len(pks), count)
+        rows = await i.update(s, d, q)
+        self.assertEqual(len(pks), len(rows))
 
         q = Query().set_foo(4).in__id(pks)
         r = await i.update(s, d, q, ignore_result=True)
-        self.assertTrue(r)
+        self.assertIsNone(r)
 
     async def test_ref_strong(self):
         i = self.get_interface()

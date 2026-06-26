@@ -777,10 +777,9 @@ class Orm(object):
         if fields := await q.insert(**kwargs):
             self.from_interface(fields)
 
-    async def update(self, **kwargs):
+    async def update(self, **kwargs) -> None:
         """re-persist the updated field values of this orm that has a primary
         key"""
-        ret = True
         q = self.query.set(self.to_interface())
 
         if pk := self._interface_pk:
@@ -790,12 +789,8 @@ class Orm(object):
             raise ValueError("Cannot update an unpersisted orm instance")
 
         if rows := await q.update(**kwargs):
-            self.from_interface(rows[0])
-
-        else:
-            ret = False
-
-        return ret
+            if not isinstance(rows, int):
+                self.from_interface(rows[0])
 
     async def upsert(self, **kwargs):
         """Perform an UPSERT query where we insert the fields if they don't

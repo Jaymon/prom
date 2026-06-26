@@ -799,38 +799,40 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
         )
         return True
 
-    async def insert(self, schema, fields, **kwargs) -> Mapping:
+    async def insert(self, schema, fields, **kwargs) -> Mapping|None:
         """Persist fields into the db
 
         :param schema: Schema instance, the table the query will run against
         :param fields: dict, the fields {field_name: field_value} to persist
-        :param **kwargs: passed through
+        :keyword ignore_result: bool, True if you don't care about returning
+            any result
+        :keyword **kwargs: passed through
         :returns: all the fields of the inserted row from the db
         """
         return await self.execute_write(
             self._insert,
             schema=schema,
             fields=fields,
-            **kwargs
+            **kwargs,
         )
 
-    async def update(self, schema, fields, query, **kwargs):
+    async def update(
+        self,
+        schema,
+        fields,
+        query,
+        **kwargs,
+    ) -> list[Mapping]|None|int:
         """Persist the query.fields into the db that match query.fields_where
 
         :param schema: Schema instance, the table the query will run against
         :param fields: dict, the fields {field_name: field_value} to persist
         :param query: Query instance, will be used to create the where clause
-        :param **kwargs:
-            * count_result: bool, True if you want to return how many rows
-                where touched by the update query
-            * ignore_result: bool, True if you don't care about returning
-                any result
-            * ignore_return_clause: bool, True if you don't want to return
-                the updated values of the rows that were touched by the query
-        :returns: list[dict]|int|bool, by default this will return the touched
-            rows that were updated by the query. If return value is an int then
-            it will be how many rows were updated. If return value is a boolean
-            then it will be True showing that the query succeeded
+        :keyword count_result: bool, True if you want to return how many rows
+            where touched by the update query
+        :keyword ignore_result: bool, True if you don't care about returning
+            any result
+        :returns: all the fields of the inserted rows from the db
         """
         return await self.execute_write(
             self._update,
