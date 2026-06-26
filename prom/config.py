@@ -1382,36 +1382,60 @@ class Field(object):
         val = self.to_value(orm, val)
         orm.__dict__[self.orm_field_name] = val
 
+
     def __delete__(self, orm):
         """Descriptor `del` method. This will set the field value to
         whatever is returned from`.del_value`.
 
-        There is one exception, if the Orm is new, then deleting a field will
-        cause that field to act like it was never set ever, so the default
-        stuff can work. So basically, if the field has been pulled from the
-        db and you delete the field (using `del orm.<fieldname>`) then that
-        field's value will be changed and it will be considered modified.
-
-        If the orm is brand new and has never been persisted then deleting
-        the field will cause the orm to act like the field has never been
-        seen before
+        If the returned `.del_value` is None it will only be set on the field
+        if the field already exists on the orm, otherwise it will be ignored
         """
         try:
             val = self.del_value(orm, self._get_orm_value(orm))
 
             if val is None:
-                if self.orm_interface_hash in orm.__dict__:
+                # we only change the deleted value to None if it already
+                # exists on the orm, otherwise we ignore it
+                if self.orm_field_name in orm.__dict__:
                     orm.__dict__[self.orm_field_name] = val
-
-                else:
-                    orm.__dict__.pop(self.orm_field_name, None)
-                    orm.__dict__.pop(self.orm_interface_hash, None)
 
             else:
                 orm.__dict__[self.orm_field_name] = val
 
         except AttributeError:
             pass
+
+
+#     def __delete__(self, orm):
+#         """Descriptor `del` method. This will set the field value to
+#         whatever is returned from`.del_value`.
+# 
+#         There is one exception, if the Orm is new, then deleting a field will
+#         cause that field to act like it was never set ever, so the default
+#         stuff can work. So basically, if the field has been pulled from the
+#         db and you delete the field (using `del orm.<fieldname>`) then that
+#         field's value will be changed and it will be considered modified.
+# 
+#         If the orm is brand new and has never been persisted then deleting
+#         the field will cause the orm to act like the field has never been
+#         seen before
+#         """
+#         try:
+#             val = self.del_value(orm, self._get_orm_value(orm))
+# 
+#             if val is None:
+#                 if self.orm_interface_hash in orm.__dict__:
+#                     orm.__dict__[self.orm_field_name] = val
+# 
+#                 else:
+#                     orm.__dict__.pop(self.orm_field_name, None)
+#                     orm.__dict__.pop(self.orm_interface_hash, None)
+# 
+#             else:
+#                 orm.__dict__[self.orm_field_name] = val
+# 
+#         except AttributeError:
+#             pass
 
     ###########################################################################
     # Interface persist set/get methods
