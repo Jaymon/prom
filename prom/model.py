@@ -756,7 +756,6 @@ class Orm(object):
 
         :param fields: dict, only the fields you want to populate
         """
-        schema_fields = {}
         schema = self.schema
         for field_name in fields.keys():
             if field := schema.fields.get(field_name, None):
@@ -769,13 +768,23 @@ class Orm(object):
         # this marks that this was repopulated from the interface (database)
         self._interface_pk = self.pk
 
+#     def del_interface(self, fields: Mapping) -> None:
+#         schema = self.schema
+#         for field_name in fields.keys():
+#             if field := schema.fields.get(field_name, None):
+#                 value = field.del_interface(
+#                     self,
+#                     fields[field_name],
+#                 )
+#                 setattr(self, field_name, value)
+
     async def insert(self, **kwargs) -> None:
         """persist the field values of this orm"""
         schema = self.schema
         q = self.query.set(self.to_interface())
 
-        if fields := await q.insert(**kwargs):
-            self.from_interface(fields)
+        fields = await q.insert(**kwargs)
+        self.from_interface(fields or {})
 
     async def update(self, **kwargs) -> None:
         """re-persist the updated field values of this orm that has a primary
@@ -788,9 +797,12 @@ class Orm(object):
         else:
             raise ValueError("Cannot update an unpersisted orm instance")
 
+        fields = {}
         if rows := await q.update(**kwargs):
             if not isinstance(rows, int):
-                self.from_interface(rows[0])
+                fields = rows[0]
+
+        self.from_interface(fields)
 
     async def upsert(self, **kwargs) -> None:
         """Perform an UPSERT query where we insert the fields if they don't
@@ -825,10 +837,9 @@ class Orm(object):
                 )
 
             fields = await q.upsert([t[0] for t in conflict_fields], **kwargs)
-            if fields:
-                self.from_interface(fields)
+            self.from_interface(fields)
 
-    async def save(self, **kwargs):
+    async def save(self, **kwargs) -> None:
         """persist the fields in this object into the db, this will update if
         _id is set, otherwise it will insert
 
@@ -842,28 +853,25 @@ class Orm(object):
         else:
             return await self.insert(**kwargs)
 
-    async def delete(self, **kwargs):
+    async def delete(self, **kwargs) -> None:
         """delete the object from the db if pk is set"""
-        ret = False
         q = self.query
         pk = self._interface_pk
         if pk:
-            pk_name = self.schema.pk.name
-            await self.query.eq_field(pk_name, pk).delete(**kwargs)
+            schema = self.schema
+            pk_name = schema.pk.name
+            rows = await self.query.eq_field(pk_name, pk).delete(**kwargs)
+            if not isinstance(rows, int):
+                for field_name in rows[0].keys():
+                    if field := schema.fields.get(field_name, None):
+                        value = field.del_interface(
+                            self,
+                            rows[0][field_name],
+                        )
+                        setattr(self, field_name, value)
 
-            for field_name, field in self.schema.fields.items():
-                setattr(
-                    self,
-                    field_name,
-                    field.del_interface(self, getattr(self, field_name))
-                )
-
-            self._interface_pk = None
-            self._interface_hydrate = False
-
-            ret = True
-
-        return ret
+        self._interface_pk = None
+        self._interface_hydrate = False
 
     def conflict_fields(self, fields):
         """Internal method. This will find fields that can be used for

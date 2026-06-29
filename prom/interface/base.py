@@ -822,7 +822,7 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
         fields,
         query,
         **kwargs,
-    ) -> list[Mapping]|None|int:
+    ) -> list[Mapping]|int|None:
         """Persist the query.fields into the db that match query.fields_where
 
         :param schema: Schema instance, the table the query will run against
@@ -870,7 +870,7 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
             **kwargs,
         )
 
-    async def delete(self, schema, query, **kwargs):
+    async def delete(self, schema, query, **kwargs) -> list[Mapping]|int|None:
         """delete matching rows according to query filter criteria
 
         :param schema: Schema instance, the table the query will run against

@@ -566,7 +566,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
         # try deleting with no values in the table
         r = await i.delete(s, Query().eq_foo(1))
-        self.assertEqual(0, r)
+        self.assertEqual([], r)
 
         _ids = await self.insert(i, s, 5)
         q = Query().in__id(_ids)
@@ -576,7 +576,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
         # delete all the inserted values
         r = await i.delete(s, q)
-        self.assertEqual(5, r)
+        self.assertEqual(5, len(r))
 
         # verify rows are deleted
         l = await i.get(s, q)

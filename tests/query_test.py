@@ -335,13 +335,13 @@ class QueryTest(EnvironTestCase):
         pk = await self.insert(orm_class, 1)
 
         with self.assertRaises(ValueError):
-            r = await orm_class.query.delete()
+            await orm_class.query.delete()
 
         r = await orm_class.query.eq_pk(pk).delete()
-        self.assertEqual(1, r)
+        self.assertEqual(1, r[0]["_id"])
 
         r = await orm_class.query.eq_pk(pk).delete()
-        self.assertEqual(0, r)
+        self.assertEqual([], r)
 
     async def test___aiter__(self):
         count = 5
@@ -1260,9 +1260,4 @@ class IteratorTest(EnvironTestCase):
         it = await q.get()
         with self.assertRaises(NotImplementedError):
             bool(it)
-
-#         pks = await self.insert(q, 1)
-#         it = await q.get()
-#         with self.assertRaises(NotImplementedError):
-#             bool(it)
 

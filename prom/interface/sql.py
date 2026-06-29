@@ -246,21 +246,31 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         return r[0] if r else None
 
     async def _delete(self, schema, query, **kwargs):
+        """
+        https://sqlite.org/lang_delete.html
+        https://www.postgresql.org/docs/current/sql-delete.html
+        """
         where_query_str, query_args = self.render_sql(
             schema,
             query,
-            only_where_clause=True
+            only_where_clause=True,
         )
-        query_str = []
-        query_str.append('DELETE FROM')
-        query_str.append('  {}'.format(self.render_table_name_sql(schema)))
-        query_str.append(where_query_str)
-        query_str = "\n".join(query_str)
+
+        query_str = "DELETE FROM {} {}".format(
+            self.render_table_name_sql(schema),
+            where_query_str,
+        )
+
+        count_result = kwargs.get("count_result", False)
+        ignore_result = kwargs.get("ignore_result", count_result)
+
+        if not ignore_result:
+            query_str += " " + self.render_returning_sql(schema)
+
         return await self._raw(
             query_str,
             *query_args,
-            count_result=True,
-            **kwargs
+            **kwargs,
         )
 
     async def _raw(self, query_str, *query_args, **kwargs):

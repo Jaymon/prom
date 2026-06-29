@@ -1351,7 +1351,7 @@ class Query(AsyncIterable):
             **kwargs
         )
 
-    async def delete(self, **kwargs):
+    async def delete(self, **kwargs) -> list[Mapping]|int|None:
         """remove fields matching the where criteria"""
         return await self.interface.delete(
             self.schema,
