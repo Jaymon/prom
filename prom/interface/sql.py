@@ -374,11 +374,21 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         )
         ret = await self._raw(query_str, *query_args, **kwargs)
         if ret:
-            ret = int(ret[0]['ct'])
+            ret = int(ret[0]["ct"])
         else:
             ret = 0
 
         return ret
+
+    async def _has(self, schema, query, **kwargs):
+        """
+        https://www.sqlite.org/lang_expr.html#the_exists_operator
+        https://www.postgresql.org/docs/current/functions-subquery.html#FUNCTIONS-SUBQUERY-EXISTS
+        """
+        query_str, query_args = self.render_sql(schema, query)
+        query_str = f"SELECT EXISTS ({query_str}) as h"
+        ret = await self._raw(query_str, *query_args, **kwargs)
+        return bool(ret[0]["h"]) if ret else False
 
     async def _handle_field_error(self, schema, e, **kwargs):
         """This will add fields that don't exist in the table if they can be

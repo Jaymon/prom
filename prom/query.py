@@ -1290,14 +1290,13 @@ class Query(AsyncIterable):
 
         return ret
 
-    async def has(self, **kwargs):
+    async def has(self, **kwargs) -> bool:
         """returns true if there is atleast one row in the db matching the
         query, False otherwise
 
         :returns: bool
         """
-        v = await self.one(**kwargs)
-        return True if v else False
+        return await self.interface.has(self.schema, self, **kwargs)
 
     async def insert(self, **kwargs) -> Mapping|None:
         """persist the .fields that were set with .set_field and .set

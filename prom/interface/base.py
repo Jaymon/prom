@@ -116,6 +116,9 @@ class InterfaceABC[ConnectionT]:
     async def _count(self, schema, query, **kwargs):
         raise NotImplementedError()
 
+    async def _has(self, schema, query, **kwargs):
+        raise NotImplementedError()
+
     async def _handle_unique_error(self, e, **kwargs):
         return False
 
@@ -945,13 +948,26 @@ class Interface[ConnectionT](InterfaceABC[ConnectionT]):
         :param query: Query instance, the filter criteria
         :returns: list, a list of matching dicts
         """
-        ret = await self.execute_read(
+        return await self.execute_read(
             self._count,
             schema=schema,
             query=query,
             **kwargs
         )
-        return int(ret) if ret else 0
+
+    async def has(self, schema, query, **kwargs) -> bool:
+        """Return True if `query` would return at least 1 row, False otherwise
+
+        :param schema: Schema instance, the table the query will run against
+        :param query: Query instance, the filter criteria
+        :returns: True if 1+ rows matching `query` exist in `schema`
+        """
+        return await self.execute_read(
+            self._has,
+            schema=schema,
+            query=query,
+            **kwargs,
+        )
 
     async def handle_error(self, e, **kwargs):
         """Try and handle the error, return False if the error can't be handled

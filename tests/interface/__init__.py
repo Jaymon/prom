@@ -555,9 +555,21 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         self.assertEqual(0, r)
 
         # now try it with rows
-        _ids = await self.insert(i, s, 5)
+        _ids = await self.insert(i, s, 2)
         r = await i.count(s, Query())
-        self.assertEqual(5, r)
+        self.assertEqual(2, r)
+
+    async def test_has(self):
+        i, s = await self.create_table()
+
+        # first try it with no rows
+        r = await i.has(s, Query())
+        self.assertFalse(r)
+
+        # now try it with rows
+        _ids = await self.insert(i, s, 2)
+        r = await i.has(s, Query())
+        self.assertTrue(r)
 
     async def test_delete(self):
         # try deleting with no table
@@ -568,15 +580,15 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         r = await i.delete(s, Query().eq_foo(1))
         self.assertEqual([], r)
 
-        _ids = await self.insert(i, s, 5)
+        _ids = await self.insert(i, s, 2)
         q = Query().in__id(_ids)
 
         l = await i.get(s, q)
-        self.assertEqual(5, len(l))
+        self.assertEqual(2, len(l))
 
         # delete all the inserted values
         r = await i.delete(s, q)
-        self.assertEqual(5, len(r))
+        self.assertEqual(2, len(r))
 
         # verify rows are deleted
         l = await i.get(s, q)

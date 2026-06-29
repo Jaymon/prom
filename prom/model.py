@@ -768,16 +768,6 @@ class Orm(object):
         # this marks that this was repopulated from the interface (database)
         self._interface_pk = self.pk
 
-#     def del_interface(self, fields: Mapping) -> None:
-#         schema = self.schema
-#         for field_name in fields.keys():
-#             if field := schema.fields.get(field_name, None):
-#                 value = field.del_interface(
-#                     self,
-#                     fields[field_name],
-#                 )
-#                 setattr(self, field_name, value)
-
     async def insert(self, **kwargs) -> None:
         """persist the field values of this orm"""
         schema = self.schema
