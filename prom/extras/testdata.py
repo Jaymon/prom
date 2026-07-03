@@ -1365,6 +1365,10 @@ class ModelData(ModelData):
             be the parent class of the randomly generated Orm subclass
         :keyword interface: only used if `model_name` is empty, this will
             be the interface the generated Orm class uses
+        :keyword query_class: the query class the orm should use when creating
+            queries using `orm_class.query`
+        :keyword iterator_class: the iterator class the query class will use
+            when returning results
         :returns: Orm, the orm_class.model_name that matches model_name
         """
         if model_name:
@@ -1391,6 +1395,11 @@ class ModelData(ModelData):
                     "schema": schema,
                     "table_name": schema.table_name,
                 }
+
+                for k in ["query_class", "iterator_class"]:
+                    if k in kwargs:
+                        orm_class_properties[k] = kwargs[k]
+
                 if interface is not None:
                     orm_class_properties["interface"] = interface
 
