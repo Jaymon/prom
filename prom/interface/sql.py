@@ -391,17 +391,26 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         return bool(ret[0]["h"]) if ret else False
 
     async def _handle_field_error(self, schema, e, **kwargs) -> bool:
-        """This will add fields that don't exist in the table if they can be
-        set to NULL, the reason they have to be NULL is adding fields to
-        Postgres that can be NULL is really light, but if they have a default
-        value, then it can be costly
+        """This will add fields that don't exist in the table
+
+        The safest way is to not make new fields required, the reason they
+        should be NULL is adding fields to Postgres that can be NULL is really
+        light, but if they have a default value, then it can be costly since
+        this will have to update all the existing rows after adding the field
+
+        If you have to worry about race conditions or something, you should
+        alter the table using migrations separately before using your updated
+        code
+
+        https://www.postgresql.org/docs/current/sql-altertable.html
+        https://www.sqlite.org/lang_altertable.html
         """
         current_fields = await self._get_fields(schema, **kwargs)
         for field_name, field in schema.fields.items():
             if field_name not in current_fields:
                 if field.required and field.default is None:
                     logger.error(
-                        "Required field %s cannot be safely added on the fly",
+                        "Required field %s cannot safely be added on the fly",
                         field_name,
                     )
                     return False
@@ -423,52 +432,21 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
                             **kwargs,
                             "fields": {field_name: field.default},
                             "query": None,
+                            "ignore_result": True,
                         },
-#                         {field_name: field.default},
-#                         None,
-#                         **kwargs,
                     )
 
+                # this only works in SQLite >=3.53.0 (2026-04-09)
+#                 if field.required:
 #                     await self._raw(
-#                         "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {}".format(
-#                             self.render_table_name_sql(schema),
-#                             self.render_datatype_sql(field_name, field),
-#                             self.PLACEHOLDER,
-#                         ),
-#                         [field.default],
-#                         ignore_result=True,
-#                         **kwargs,
-#                     )
-# 
-#                 elif field.required:
-#                     await self._raw(
+#                         q,
 #                         "ALTER TABLE {} ALTER COLUMN {} SET NOT NULL".format(
 #                             self.render_table_name_sql(schema),
-#                             self.render_datatype_sql(field_name, field),
+#                             self.render_field_name_sql(field_name),
 #                         ),
 #                         ignore_result=True,
 #                         **kwargs,
 #                     )
-
-#                 if field.required:
-#                     logger.error(
-#                         "Required field %s cannot be safely add on the fly",
-#                         field_name,
-#                     )
-#                     return False
-# 
-#                 else:
-#                     query_str = []
-#                     query_str.append('ALTER TABLE')
-#                     query_str.append('  {}'.format(
-#                         self.render_table_name_sql(schema)
-#                     ))
-#                     query_str.append('ADD COLUMN')
-#                     query_str.append('  {}'.format(
-#                         self.render_datatype_sql(field_name, field)
-#                     ))
-#                     query_str = "\n".join(query_str)
-#                     await self._raw(query_str, ignore_result=True, **kwargs)
 
         return True
 
