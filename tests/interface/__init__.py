@@ -752,7 +752,7 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         s.set_field("che", Field(str, False))
         self.assertTrue(await i._handle_field_error(s, e=None))
 
-    async def test_handle_error_column(self):
+    async def test_handle_error_column_not_required(self):
         i, s = await self.create_table()
         s.set_field("che", Field(str, True)) # it's required
         fields = {
@@ -768,6 +768,31 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         s.set_field("che", Field(str, False)) # not required
         pk = (await i.insert(s, fields))["_id"]
         self.assertLess(0, pk)
+
+    async def test_handle_error_column_default(self):
+        i, s = await self.create_table()
+        pks = await self.insert(i, s, 10)
+
+        # add a required field with a default value
+        s.set_field("che", Field(int, True, default=5))
+
+        fields = {
+            'foo': 1,
+            'bar': 'v1',
+            'che': 6,
+        }
+
+        rd = await i.insert(s, fields)
+        self.assertEqual(6, rd["che"])
+
+        ches = set([
+            r["che"] for r in
+            await i.get(
+                s,
+                Query().select_che().in__id(pks),
+            )
+        ])
+        self.assertEqual(set([5]), ches)
 
     async def test_handle_error_subquery(self):
         Foo = self.get_orm_class()

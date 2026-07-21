@@ -181,7 +181,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         return await self._raw(
             query_str,
             *query_args,
-            **kwargs
+            **kwargs,
         )
 
     async def _upsert(
@@ -380,7 +380,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
 
         return ret
 
-    async def _has(self, schema, query, **kwargs):
+    async def _has(self, schema, query, **kwargs) -> bool:
         """
         https://www.sqlite.org/lang_expr.html#the_exists_operator
         https://www.postgresql.org/docs/current/functions-subquery.html#FUNCTIONS-SUBQUERY-EXISTS
@@ -390,7 +390,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         ret = await self._raw(query_str, *query_args, **kwargs)
         return bool(ret[0]["h"]) if ret else False
 
-    async def _handle_field_error(self, schema, e, **kwargs):
+    async def _handle_field_error(self, schema, e, **kwargs) -> bool:
         """This will add fields that don't exist in the table if they can be
         set to NULL, the reason they have to be NULL is adding fields to
         Postgres that can be NULL is really light, but if they have a default
@@ -399,25 +399,76 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         current_fields = await self._get_fields(schema, **kwargs)
         for field_name, field in schema.fields.items():
             if field_name not in current_fields:
-                if field.required:
+                if field.required and field.default is None:
                     logger.error(
-                        "Required field %s cannot be safely add on the fly",
+                        "Required field %s cannot be safely added on the fly",
                         field_name,
                     )
                     return False
 
-                else:
-                    query_str = []
-                    query_str.append('ALTER TABLE')
-                    query_str.append('  {}'.format(
-                        self.render_table_name_sql(schema)
-                    ))
-                    query_str.append('ADD COLUMN')
-                    query_str.append('  {}'.format(
-                        self.render_datatype_sql(field_name, field)
-                    ))
-                    query_str = "\n".join(query_str)
-                    await self._raw(query_str, ignore_result=True, **kwargs)
+                query_str = "ALTER TABLE {} ADD COLUMN {} {}".format(
+                    self.render_table_name_sql(schema),
+                    self.render_field_name_sql(field_name),
+                    self.render_datatype_type_sql(field_name, field),
+                )
+
+                await self._raw(query_str, ignore_result=True, **kwargs)
+
+                if field.default is not None:
+                    await self._update(
+                        schema,
+                        # we over-write passed in fields and query with new
+                        # values
+                        **{
+                            **kwargs,
+                            "fields": {field_name: field.default},
+                            "query": None,
+                        },
+#                         {field_name: field.default},
+#                         None,
+#                         **kwargs,
+                    )
+
+#                     await self._raw(
+#                         "ALTER TABLE {} ALTER COLUMN {} SET DEFAULT {}".format(
+#                             self.render_table_name_sql(schema),
+#                             self.render_datatype_sql(field_name, field),
+#                             self.PLACEHOLDER,
+#                         ),
+#                         [field.default],
+#                         ignore_result=True,
+#                         **kwargs,
+#                     )
+# 
+#                 elif field.required:
+#                     await self._raw(
+#                         "ALTER TABLE {} ALTER COLUMN {} SET NOT NULL".format(
+#                             self.render_table_name_sql(schema),
+#                             self.render_datatype_sql(field_name, field),
+#                         ),
+#                         ignore_result=True,
+#                         **kwargs,
+#                     )
+
+#                 if field.required:
+#                     logger.error(
+#                         "Required field %s cannot be safely add on the fly",
+#                         field_name,
+#                     )
+#                     return False
+# 
+#                 else:
+#                     query_str = []
+#                     query_str.append('ALTER TABLE')
+#                     query_str.append('  {}'.format(
+#                         self.render_table_name_sql(schema)
+#                     ))
+#                     query_str.append('ADD COLUMN')
+#                     query_str.append('  {}'.format(
+#                         self.render_datatype_sql(field_name, field)
+#                     ))
+#                     query_str = "\n".join(query_str)
+#                     await self._raw(query_str, ignore_result=True, **kwargs)
 
         return True
 
@@ -1057,7 +1108,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             where_query_str, where_query_args = self.render_sql(
                 schema,
                 query,
-                only_where_clause=True
+                only_where_clause=True,
             )
             query_str += " {}".format(where_query_str)
             query_args.extend(where_query_args)
@@ -1080,16 +1131,8 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             ),
         )
 
-    def render_datatype_sql(self, field_name, field):
-        """Returns the SQL for a given field with full type information
-
-        http://www.sqlite.org/datatype3.html
-        https://www.postgresql.org/docs/current/datatype.html
-
-        :param field_name: str, the field's name
-        :param field: Field instance, the configuration for the field
-        :returns: str, the complete field datatype SQL (eg, foo BOOL NOT NULL)
-        """
+    def render_datatype_type_sql(self, field_name, field, **kwargs) -> str:
+        """Render just the type information for `field`"""
         field_type = ""
         interface_type = field.interface_type
 
@@ -1125,6 +1168,20 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
                 interface_type.__name__,
                 field_name,
             ))
+
+        return field_type
+
+    def render_datatype_sql(self, field_name, field):
+        """Returns the SQL for a given field with full type information
+
+        http://www.sqlite.org/datatype3.html
+        https://www.postgresql.org/docs/current/datatype.html
+
+        :param field_name: str, the field's name
+        :param field: Field instance, the configuration for the field
+        :returns: str, the complete field datatype SQL (eg, foo BOOL NOT NULL)
+        """
+        field_type = self.render_datatype_type_sql(field_name, field)
 
         field_type += " " + self.render_datatype_required_sql(
             field_name,
