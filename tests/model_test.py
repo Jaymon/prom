@@ -1418,6 +1418,33 @@ class OrmTest(EnvironTestCase):
         s = Bar.schema
         self.assertTrue(Bar.schema is s)
 
+    async def test_fk_primary_key(self):
+        Primary = self.get_orm_class(
+            one=Field(int),
+        )
+
+        Secondary = self.get_orm_class(
+            _id=Field(Primary, pk=True),
+            two=Field(int),
+            three=Field(int),
+        )
+
+        await Primary.install()
+        await Secondary.install()
+
+        p = await Primary.create(one=1)
+        self.assertIsNotNone(p.id)
+
+        s = await Secondary.create(_id=p.id, two=2, three=3)
+        self.assertIsNotNone(s.id)
+
+        # delete primary
+        await p.delete()
+
+        # secondary should no longer exist
+        s2 = await s.query.eq_id(s.id).one()
+        self.assertIsNone(s2)
+
 
 class OrmsTest(EnvironTestCase):
     def test_get_orm_class(self):

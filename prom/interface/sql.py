@@ -1149,7 +1149,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
 
         return field_type
 
-    def render_datatype_sql(self, field_name, field):
+    def render_datatype_sql(self, field_name, field) -> str:
         """Returns the SQL for a given field with full type information
 
         http://www.sqlite.org/datatype3.html
@@ -1159,19 +1159,22 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         :param field: Field instance, the configuration for the field
         :returns: str, the complete field datatype SQL (eg, foo BOOL NOT NULL)
         """
-        field_type = self.render_datatype_type_sql(field_name, field)
-
-        field_type += " " + self.render_datatype_required_sql(
-            field_name,
-            field,
-        )
-
-        if field.is_pk():
-            field_type += " PRIMARY KEY"
+        if cb := getattr(field, "render_datatype_sql", None):
+            field_type = cb()
 
         else:
+            field_type = self.render_datatype_type_sql(field_name, field)
+
+            field_type += " " + self.render_datatype_required_sql(
+                field_name,
+                field,
+            )
+
+            if field.is_pk():
+                field_type += " PRIMARY KEY"
+
             if field.is_ref():
-                field_type += ' ' + self.render_datatype_ref_sql(
+                field_type += " " + self.render_datatype_ref_sql(
                     field_name,
                     field
                 )
