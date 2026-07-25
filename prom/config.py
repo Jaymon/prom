@@ -639,12 +639,12 @@ class Field(object):
         field_type = self.original_type
 
         if field_type is Self:
-            klass = self.orm_class
+            orm_class = self.orm_class
 
         else:
-            module, klass = utils.get_objects(field_type)
+            module, orm_class = utils.get_objects(field_type)
 
-        schema = klass.schema
+        schema = orm_class.schema
         if not schema:
             raise ValueError(
                 "Field type {} is not an Orm class".format(field_type)
@@ -681,14 +681,14 @@ class Field(object):
         return self._interface_type
 
     @property
-    def ref(self):
-        """Returns the FK reference orm class"""
-        schema = self.schema
-        return schema.orm_class if schema else None
+    def ref(self): # DEPRECATED 2026-07-24
+        return self.ref_class
 
     @property
     def ref_class(self):
-        return self.ref
+        """Returns the FK reference orm class"""
+        schema = self.schema
+        return schema.orm_class if schema else None
 
     @property
     def names(self):

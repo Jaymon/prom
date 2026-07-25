@@ -1225,7 +1225,7 @@ class OrmTest(EnvironTestCase):
         o2 = await o.query.one()
         # we succeeded if no error was raised
 
-    def test_fk(self):
+    def test_fk_1(self):
         mpath = self.create_module([
             "from prom import Field, Orm",
             "",
@@ -1249,6 +1249,7 @@ class OrmTest(EnvironTestCase):
         Boo = mpath.module().Boo
 
         b = Bar(foo_id=5)
+        pout.b(5)
         self.assertEqual(5, b.fk(Foo))
 
         c = Che(foo_id=10, bar_id=20)

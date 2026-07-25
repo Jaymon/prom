@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from contextlib import asynccontextmanager, AbstractAsyncContextManager
 import inspect
-from typing import Any
+from typing import Any, ForwardRef
 
 from datatypes import (
     EnglishWord,
@@ -55,6 +55,9 @@ class Orms(ClassKeyFinder):
         # holds any loaded model prefixes
         #self.model_prefixes = set()
         self.modules = []
+
+        # holds the cached schemas
+        self.schemas = {}
 
         self._clear_lookups()
 
@@ -269,6 +272,15 @@ class Orms(ClassKeyFinder):
 
         return self.lookup_rel_table[key_name]
 
+    def get_schema(self, orm_class: ForwardRef("Orm")) -> Schema:
+        """Return the schema for `orm_class`"""
+        key_name = f"{orm_class.__module__}:{orm_class.__qualname__}"
+
+        if key_name not in self.schemas:
+            self.schemas[key_name] = orm_class.create_schema()
+
+        return self.schemas[key_name]
+
 
 class Orm(object):
     """
@@ -315,17 +327,6 @@ class Orm(object):
     This is created in .create_schema and cached/returned in .schema
     """
 
-    schema: Schema|None = None
-    """the Schema instance that this class will derive all its db info from
-
-    Unless you really know what you are doing you should never have to set
-    this value, it will be automatically created using the Field instances
-    you define on your child class
-
-    This is set in `.__init_subclass__` to be a property that will cache
-    the schema after generating it with `.create_schema`
-    """
-
     orm_classes = Orms()
     """This will hold all other orm classes that have been loaded into memory
     the class path is the key and the class object is the value"""
@@ -362,6 +363,16 @@ class Orm(object):
     If you don't want this functionality just do `_updated = None` in your
     child class
     """
+
+    @classproperty
+    def schema(cls) -> Schema:
+        """the Schema instance that this class will derive all its db info from
+
+        Unless you really know what you are doing you should never have to set
+        this value, it will be automatically created using the Field instances
+        you define on your child class
+        """
+        return cls.orm_classes.get_schema(cls)
 
     @classproperty
     def table_name(cls):
@@ -627,14 +638,6 @@ class Orm(object):
 
         https://peps.python.org/pep-0487/
         """
-        if cls.schema is None:
-            def cache_schema(cls):
-                # cache the value so we don't need to generate it again
-                cls.schema = cls.create_schema()
-                return cls.schema
-
-            cls.schema = classproperty(cache_schema)
-
         cls.orm_classes.add_class(cls)
 
     def fk(self, orm_class):
@@ -658,6 +661,14 @@ class Orm(object):
             orm_class
         """
         for field_name, field in self.schema.ref_fields.items():
+            pout.v(
+                field.schema.table_name,
+                id(field.schema),
+                id(field.ref_class.schema),
+                orm_class.schema.table_name,
+                id(orm_class.schema),
+                id(orm_class.schema),
+            )
             if field.schema is orm_class.schema:
                 return getattr(self, field_name)
 
