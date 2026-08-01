@@ -16,7 +16,7 @@ from .testdata import (
 basic_logging(
     levels={
         "prom": "DEBUG",
-        "prom.config": "WARNING",
+        #"prom.config": "WARNING",
         #"prom": "ERROR",
         #"prom": "INFO",
         #"prom.extras.testdata": "DEBUG",
