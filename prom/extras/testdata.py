@@ -1122,6 +1122,9 @@ class ModelData(TestData):
         elif "url" in field_name:
             ret = self.get_url()
 
+        elif field_name.endswith("_id"):
+            ret = self.get_hash()
+
         else:
             size_info = field.size_info()
             if "bounds" in size_info:

@@ -352,6 +352,13 @@ class FieldTest(EnvironTestCase):
         foo_pk = await bar_class.query.select_foo_id().eq_pk(b.pk).one()
         self.assertTrue(isinstance(foo_pk, int))
 
+    async def test_fk_primary_key(self):
+        foo_class = self.get_orm_class()
+        bar_class = self.get_orm_class(_id=Field(foo_class, pk=True))
+
+        field = bar_class._id
+        self.assertEqual(field.ref_class.model_name, foo_class.model_name)
+
     async def test_serialize_lifecycle(self):
         orm_class = self.get_orm_class(
             foo=Field(dict, False)
