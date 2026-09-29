@@ -320,6 +320,85 @@ class ModelDataTest(TestCase):
         self.assertTrue(isinstance(id, int))
         self.assertLess(0, id)
 
+    async def test_find_orm(self):
+        testdata = self.InterfaceData
+        modeldata = self.ModelData
+
+        orm_class = modeldata.get_orm_class(
+            interface=self.get_interface(),
+        )
+
+        ref_class = modeldata.get_orm_class(
+            interface=self.get_interface(),
+            refs=[orm_class],
+        )
+
+        ro = await modeldata.create_orm(ref_class)
+        self.assertIsNotNone(ro.id)
+
+        # check passing in the model_name as the field name
+        ro2 = await modeldata.find_orm(
+            ref_class.model_name,
+            **{
+                ref_class.model_name: ro,
+            },
+        )
+        self.assertEqual(ro.id, ro2.id)
+
+        # check passing in the field name with a value
+        ro3 = await modeldata.find_orm(
+            ref_class.model_name,
+            **{
+                f"{ref_class.model_name}_id": ro.id,
+            },
+        )
+        self.assertEqual(ro.id, ro3.id)
+
+        # Create a new ref clas with the ref field having an entirely
+        # different name as the ref class's model_name
+
+        ref_class = modeldata.get_orm_class(
+            interface=self.get_interface(),
+            fields={
+                "foochebarbaz_id": orm_class,
+            },
+        )
+
+        ro = await modeldata.create_orm(orm_class)
+        self.assertIsNotNone(ro.id)
+
+        # check when the ref has a different name
+        ro2 = await modeldata.find_orm(
+            orm_class.model_name,
+            **{
+                "foochebarbaz": ro,
+                "orm_class": ref_class,
+            },
+        )
+        self.assertEqual(ro.id, ro2.id)
+
+        # check when the ref has a different name
+        ro3 = await modeldata.find_orm(
+            orm_class.model_name,
+            **{
+                "foochebarbaz_id": ro.id,
+                "orm_class": ref_class,
+            },
+        )
+        self.assertEqual(ro.id, ro3.id)
+
+        return
+
+
+
+
+
+
+
+
+        pout.v(orm_class.schema, ref_class.schema)
+
+
 
 class MockModelDataTest(TestCase):
     """Holds the tests specifically for the ModelData methods that add 

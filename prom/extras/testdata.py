@@ -642,6 +642,52 @@ class ModelData(TestData):
         """
         return Orm.orm_classes.find_class(model_name, *default)
 
+    async def find_orm(
+        self,
+        model_name: str,
+        orm_class: type[Orm]|None = None,
+        **kwargs,
+    ) -> Orm|None:
+        """This does its best to find an orm instance from the given
+        `model_name` in the passed in keyword arguments. If it can't find
+        an orm instance, it will return None.
+
+        This would primarily be used in testdata methods to grab an orm
+        if it is there so the code can do something with it.
+        """
+        if model_name in kwargs:
+            return kwargs[model_name]
+
+        model_orm_class = self.get_orm_class(model_name)
+        model_suffixes = kwargs.get("field_model_suffixes", ["_id", "_pk"])
+
+        for model_suffix in model_suffixes:
+            field_name = model_name + model_suffix
+            if field_name in kwargs:
+                return await (
+                    model_orm_class.query
+                    .eq_pk(kwargs[field_name])
+                    .one()
+                )
+
+        if orm_class is not None:
+            for field_name, field in orm_class.schema.fields.items():
+                ref_class = field.ref_class
+                if ref_class is not None and ref_class is model_orm_class:
+                    if field_name in kwargs:
+                        return await (
+                            model_orm_class.query
+                            .eq_pk(kwargs[field_name])
+                            .one()
+                        )
+
+                    else:
+                        for model_suffix in model_suffixes:
+                            if field_name.endswith(model_suffix):
+                                fname = field_name[0:-len(model_suffix)]
+                                if fname in kwargs:
+                                    return kwargs[fname]
+
     async def get_orm(self, orm_class, **kwargs):
         """get an instance of the orm but don't save it into the db
 
