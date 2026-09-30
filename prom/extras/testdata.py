@@ -432,7 +432,11 @@ class ModelData(TestData):
         ignore_field_names = set(kwargs.get("ignore_field_names", []))
 
         for field_name, field in orm_class.schema.fields.items():
-            if field_name not in ignore_field_names and field.is_ref():
+            if (
+                (field_name not in ignore_field_names)
+                and field.is_ref()
+                and not field.is_pk()
+            ):
                 kwargs.update(
                     await self.assure_orm_ref(
                         field_name,
@@ -740,7 +744,7 @@ class ModelData(TestData):
 
         return instance
 
-    async def get_orms(self, orm_class, **kwargs):
+    async def get_orms(self, orm_class: Orm, **kwargs) -> list[Orm]:
         """get instances of the orm
 
         :param orm_class: Orm
@@ -757,13 +761,23 @@ class ModelData(TestData):
             kwargs.setdefault("ignore_refs", False)
             kwargs = await self.assure_orm_refs(orm_class, **kwargs)
 
+        # we want a unique fields dict for each iteration
+        fields = kwargs.pop("fields", {})
+
         count = self._gets_count(orm_class, **kwargs)
+
         for _ in range(count):
             ret.append(await self._dispatch_method(
                 orm_class,
                 self.get_orm,
-                **kwargs
+                fields=dict(fields),
+                **kwargs,
             ))
+
+            # we need to remove pk fields otherwise unique errors will raise
+            # on the next iteration
+            for pk_name in orm_class.schema.pk_names:
+                kwargs.pop(pk_name, None)
 
         return ret
 
