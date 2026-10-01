@@ -7,7 +7,6 @@ import uuid
 import re
 from collections.abc import Sequence
 from typing import Type, Any
-#import copy
 
 from testdata.base import TestData
 from datatypes.enum import find_enum
@@ -136,6 +135,16 @@ class ModelData(TestData):
                 )
             )
         )
+
+    def _get_field_model_suffixes(self, **kwargs) -> list[str]:
+        """Internal method used to get the field suffixes that are used
+        in foreign key fields for one model primary key"""
+        return kwargs.get("field_model_suffixes", ["_id", "_pk"])
+
+    def _get_field_models_suffixes(self, **kwargs) -> list[str]:
+        """Internal method used to get the field suffixes that are used
+        in foreign key fields for many model primary keys"""
+        return kwargs.get("field_models_suffixes", ["_ids", "_pks"])
 
     async def _dispatch_method(self, orm_class, method, **kwargs):
         """Internal dispatch method. This uses the orm_class to first try and
@@ -390,13 +399,7 @@ class ModelData(TestData):
                 if canonical_field_name not in kwargs:
                     ret[canonical_field_name] = kwargs[field_name]
 
-#                 kwargs.setdefault(
-#                     schema.field_name(field_name),
-#                     kwargs.pop(field_name)
-#                 )
-
         return ret
-#         return kwargs
 
     def assure_ref_field_names(
         self,
@@ -526,8 +529,8 @@ class ModelData(TestData):
         ignore_refs = kwargs.get("ignore_refs", False)
         require_fields = kwargs.get("require_fields", True)
 
-        models_suffixes = kwargs.get("field_models_suffixes", ["_ids", "_pks"])
-        model_suffixes = kwargs.get("field_model_suffixes", ["_id", "_pk"])
+        model_suffixes = self._get_field_model_suffixes(**kwargs)
+        models_suffixes = self._get_field_models_suffixes(**kwargs)
 
         ref_class = field.ref_class
         ref_field_name = ref_class.model_name
@@ -697,7 +700,7 @@ class ModelData(TestData):
             return kwargs[model_name]
 
         model_orm_class = self.get_orm_class(model_name)
-        model_suffixes = kwargs.get("field_model_suffixes", ["_id", "_pk"])
+        model_suffixes = self._get_field_model_suffixes(**kwargs)
 
         for model_suffix in model_suffixes:
             field_name = model_name + model_suffix
@@ -1407,9 +1410,6 @@ class ModelData(ModelData):
 
         else:
             fields["_id"] = AutoIncrement()
-
-#         if "_id" not in fields:
-#             fields["_id"] = AutoIncrement()
 
         if field_count > 0:
             for i in range(field_count):
