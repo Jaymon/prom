@@ -8,6 +8,7 @@ import uuid
 import re
 from collections.abc import Sequence
 from typing import Type, Any
+import copy
 
 from testdata.base import TestData
 from datatypes.enum import find_enum
@@ -423,6 +424,8 @@ class ModelData(TestData):
         :param original_orm_class: passed through to `.assure_orm_ref`
         :keyword ignore_field_names: set[str]|list[str], a set of field names
             that should be ignored when creating refs
+        :keyword ignore_pk_refs: bool, True if foreign key primary keys should
+            be ignored, False otherwise
         :param **kwargs: passed through to `.assure_orm_ref`
         :returns: dict, the kwargs with ref keys populated
         """
@@ -430,12 +433,13 @@ class ModelData(TestData):
         kwargs = self.assure_orm_field_names(orm_class, **kwargs)
 
         ignore_field_names = set(kwargs.get("ignore_field_names", []))
+        ignore_pk_refs = kwargs.get("ignore_pk_refs", False)
 
         for field_name, field in orm_class.schema.fields.items():
             if (
                 (field_name not in ignore_field_names)
                 and field.is_ref()
-                and not field.is_pk()
+                and (not ignore_pk_refs or not field.is_pk())
             ):
                 kwargs.update(
                     await self.assure_orm_ref(
@@ -759,10 +763,9 @@ class ModelData(TestData):
             # because we need related refs, we will need to create refs if
             # they don't exist
             kwargs.setdefault("ignore_refs", False)
+            kwargs.setdefault("ignore_pk_refs", True)
             kwargs = await self.assure_orm_refs(orm_class, **kwargs)
-
-        # we want a unique fields dict for each iteration
-        fields = kwargs.pop("fields", {})
+            kwargs.pop("ignore_pk_refs")
 
         count = self._gets_count(orm_class, **kwargs)
 
@@ -770,14 +773,8 @@ class ModelData(TestData):
             ret.append(await self._dispatch_method(
                 orm_class,
                 self.get_orm,
-                fields=dict(fields),
-                **kwargs,
+                **copy.deepcopy(kwargs),
             ))
-
-            # we need to remove pk fields otherwise unique errors will raise
-            # on the next iteration
-            for pk_name in orm_class.schema.pk_names:
-                kwargs.pop(pk_name, None)
 
         return ret
 
@@ -861,6 +858,7 @@ class ModelData(TestData):
             fields["**"] = keywords
 
         kwargs.setdefault("ignore_refs", True)
+        kwargs.setdefault("ignore_pk_refs", False)
         kwargs = await self.assure_orm_refs(orm_class, **kwargs)
 
         return self.get_schema_fields(
@@ -899,11 +897,10 @@ class ModelData(TestData):
                         pass
 
                     elif field.is_pk():
-                        # primary key isn't auto-generating and wasn't passed
-                        # in, so we'll cross our fingers and hope it will be
-                        # taken care of somewhere else
+                        # primary key isn't auto-generating and wasn't
+                        # passed in, so we'll cross our fingers and hope it
+                        # will be taken care of somewhere else
                         evaluated = True
-                        pass
 
                     elif field.is_ref():
                         # foreign keys are handled in .assure_orm_refs
@@ -1019,6 +1016,13 @@ class ModelData(TestData):
 
         elif field.is_serialized():
             ret = self.get_orm_field_serialized(
+                field_name,
+                field,
+                **kwargs,
+            )
+
+        elif field.is_ref():
+            ret = self.get_orm_field_ref(
                 field_name,
                 field,
                 **kwargs,
@@ -1357,8 +1361,15 @@ class ModelData(ModelData):
         else:
             field_count -= len(fields)
 
-        if "_id" not in fields:
+        if "_id" in fields:
+            if not isinstance(fields["_id"], Field):
+                fields["_id"] = Field(fields["_id"], pk=True)
+
+        else:
             fields["_id"] = AutoIncrement()
+
+#         if "_id" not in fields:
+#             fields["_id"] = AutoIncrement()
 
         if field_count > 0:
             for i in range(field_count):

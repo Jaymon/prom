@@ -390,24 +390,24 @@ class ModelDataTest(TestCase):
     async def test_create_orms_1(self):
         testdata = self.InterfaceData
         modeldata = self.ModelData
+        interface = testdata.get_interface()
 
         orm_class = modeldata.get_orm_class(
-            interface=self.get_interface(),
+            interface=interface,
+        )
+
+        ref_class = modeldata.get_orm_class(
+            interface=interface,
+            fields={"_id": orm_class},
         )
 
         count = 2
-        o = await modeldata.create_orm(orm_class=orm_class)
-        _id = o.id
-        await o.delete()
-
         os = await modeldata.create_orms(
-            orm_class=orm_class,
-            _id=_id,
+            orm_class=ref_class,
             count=count,
         )
         self.assertEqual(count, len(os))
-        self.assertEqual(_id, os[0]._id)
-        self.assertNotEqual(_id, os[1]._id)
+        self.assertNotEqual(os[0]._id, os[1]._id)
 
 
 class MockModelDataTest(TestCase):

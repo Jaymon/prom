@@ -333,7 +333,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
                         query_str,
                         query_args,
                         self.PLACEHOLDER,
-                    ]
+                    ],
                 )
 
             if cursor_result:
@@ -1176,7 +1176,7 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             if field.is_ref():
                 field_type += " " + self.render_datatype_ref_sql(
                     field_name,
-                    field
+                    field,
                 )
 
         return "{} {}".format(
@@ -1225,10 +1225,10 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
     def render_datatype_ref_sql(self, field_name, field, **kwargs):
         ref_s = field.schema
         if field.required: # strong ref, it deletes on fk row removal
-            format_str = 'REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE'
+            format_str = "REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE CASCADE"
 
         else: # weak ref, it sets column to null on fk row removal
-            format_str = 'REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL'
+            format_str = "REFERENCES {} ({}) ON UPDATE CASCADE ON DELETE SET NULL"
 
         ret = format_str.format(
             self.render_table_name_sql(ref_s),
