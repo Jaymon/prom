@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import string
 import random
 import datetime
@@ -8,7 +7,7 @@ import uuid
 import re
 from collections.abc import Sequence
 from typing import Type, Any
-import copy
+#import copy
 
 from testdata.base import TestData
 from datatypes.enum import find_enum
@@ -51,6 +50,8 @@ class ModelData(TestData):
             pass
 
         import testdata
+
+        # loading ModelData into memory registers it with `testdata`
         from prom.extras.testdata import ModelData
 
         o = await testdata.get_foobar()
@@ -60,12 +61,14 @@ class ModelData(TestData):
         print(o.pk) # pk will be set because .save() was called
 
         fields = await testdata.get_foobar_fields()
-        print(fields) # dict that can be used create a Foobar(fields) instance
+        print(fields) # dict can be used to create a Foobar(**fields) instance
 
-        # will return a list of 2 Foobar instances
+        # will return a list of 2 Foobar instances that have not been
+        # persisted in the db
         os = await testdata.get_foobars(foobar_count=2)
 
-        # will return a list of 2 created Foobar instances
+        # will return a list of 2 created Foobar instances that have been
+        # persisted in the db
         os = await testdata.create_foobars(foobar_count=2)
 
 
@@ -98,17 +101,17 @@ class ModelData(TestData):
             model_name = "foo_bar"
             models_name = "foo_bars"
 
-    So this is the order of calls:
+    This is the order of calls:
 
         * .create_orms
             * .get_orms
                 * .get_orm
-                    * .get_fields
+                    * .get_orm_fields
                     * .create_orm_instance
 
         * .create_orm
             * .get_orm
-                * .get_fields
+                * .get_orm_fields
                 * .create_orm_instance
 
     Any kwargs you pass in any of the methods will be passed to the methods
@@ -354,7 +357,11 @@ class ModelData(TestData):
         await self.unsafe_delete_orm_tables()
         await self.unsafe_install_orms(modpaths=modpaths)
 
-    def assure_orm_field_names(self, orm_class, **kwargs):
+    def assure_orm_field_names(
+        self,
+        orm_class: type[Orm],
+        **kwargs,
+    ) -> dict[str, Any]:
         """Field instances can have aliases, in order to allow you to pass in
         aliases, this will go through kwargs and normalize the field names
 
@@ -368,21 +375,35 @@ class ModelData(TestData):
         :param orm_class: Orm
         :param **kwargs: the fields where keys will be normalized to field
             names in orm_class.schema
-        :returns: dict, the normalized kwargs
+        :returns: dict, the normalized names that weren't already in
+            the kwargs
         """
+        ret = {}
+
         schema = orm_class.schema
+
         # normalize passed in field names to make sure we correctly find the
         # field's value if it exists
-        for field_name in list(kwargs.keys()):
+        for field_name in kwargs.keys():
             if schema.has_field(field_name):
-                kwargs.setdefault(
-                    schema.field_name(field_name),
-                    kwargs.pop(field_name)
-                )
+                canonical_field_name = schema.field_name(field_name)
+                if canonical_field_name not in kwargs:
+                    ret[canonical_field_name] = kwargs[field_name]
 
-        return kwargs
+#                 kwargs.setdefault(
+#                     schema.field_name(field_name),
+#                     kwargs.pop(field_name)
+#                 )
 
-    def assure_ref_field_names(self, orm_class, ref_class, **kwargs):
+        return ret
+#         return kwargs
+
+    def assure_ref_field_names(
+        self,
+        orm_class: type[Orm],
+        ref_class: type[Orm],
+        **kwargs,
+    ) -> dict[str, Any]:
         """Make sure the kwargs destined for orm_class don't impact the kwargs
         that will be used to create a ref_class instance
 
@@ -398,6 +419,7 @@ class ModelData(TestData):
             ref_class
         """
         ref_kwargs = {}
+
         orm_fields = orm_class.schema.fields
         ref_fields = ref_class.schema.fields
         for field_name, field_value in kwargs.items():
@@ -411,7 +433,7 @@ class ModelData(TestData):
         orm_class: type[Orm],
         original_orm_class: type[Orm]|None = None,
         **kwargs,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """When creating an orm, they will often need foreign key values, this
         will go through any of the foreign key ref fields and create a foreign
         key if it wasn't included.
@@ -427,13 +449,16 @@ class ModelData(TestData):
         :keyword ignore_pk_refs: bool, True if foreign key primary keys should
             be ignored, False otherwise
         :param **kwargs: passed through to `.assure_orm_ref`
-        :returns: dict, the kwargs with ref keys populated
+        :returns: dict, the additional ref keys that can be added to `kwargs`
+            to resolve the references. Another way to put it: the new keys
+            that can be added to kwargs to assure the refs are resolved
         """
         logger.debug(f"Assuring orm refs for orm_class {orm_class.__name__}")
-        kwargs = self.assure_orm_field_names(orm_class, **kwargs)
+
+        ret = self.assure_orm_field_names(orm_class, **kwargs)
 
         ignore_field_names = set(kwargs.get("ignore_field_names", []))
-        ignore_pk_refs = kwargs.get("ignore_pk_refs", False)
+        ignore_pk_refs = kwargs.pop("ignore_pk_refs", False)
 
         for field_name, field in orm_class.schema.fields.items():
             if (
@@ -441,16 +466,17 @@ class ModelData(TestData):
                 and field.is_ref()
                 and (not ignore_pk_refs or not field.is_pk())
             ):
-                kwargs.update(
+                ret.update(
                     await self.assure_orm_ref(
                         field_name,
                         orm_class,
                         original_orm_class,
                         **kwargs,
+                        **ret,
                     ),
                 )
 
-        return kwargs
+        return ret
 
     async def assure_orm_ref(
         self,
@@ -458,7 +484,7 @@ class ModelData(TestData):
         orm_class: type[Orm],
         original_orm_class: type[Orm]|None = None,
         **kwargs,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Assure the ref at `field_name` is present and accounted for
 
         This was broken out from `.assure_orm_refs` to make it easier for
@@ -480,8 +506,12 @@ class ModelData(TestData):
         :keyword require_fields: bool, default True, if True then create
             missing refs, if False, then refs won't be created and so if they
             are missing their fields will not be populated
-        :returns: dict, the kwargs with ref keys populated
+        :returns: dict, the additional ref keys that can be added to `kwargs`
+            to resolve the references. Another way to put it: the new keys
+            that can be added to kwargs to assure the refs are resolved
         """
+        ret = {}
+
         field = orm_class.schema.fields[field_name]
 
         if not field.is_ref():
@@ -521,9 +551,7 @@ class ModelData(TestData):
         ):
             # if `foos` is passed in, randomly choose one for `foo`
             if refs_field_name in kwargs:
-                kwargs[ref_field_name_2] = random.choice(
-                    kwargs[refs_field_name],
-                )
+                ret[ref_field_name_2] = random.choice(kwargs[refs_field_name])
 
             else:
                 # if `foo_ids` is passed in, randomly choose one for
@@ -532,7 +560,7 @@ class ModelData(TestData):
                     for fn in [ref_field_name_2, ref_field_name]:
                         rfn = fn + suffix
                         if rfn in kwargs:
-                            kwargs[field_name] = random.choice(kwargs[rfn])
+                            ret[field_name] = random.choice(kwargs[rfn])
                             break
 
                     if field_name in kwargs:
@@ -543,13 +571,13 @@ class ModelData(TestData):
                 ref_orm = await ref_class.query.eq_pk(
                     kwargs[field_name],
                 ).one()
-                kwargs[ref_field_name_2] = ref_orm
+                ret[ref_field_name_2] = ref_orm
 
         elif ref_field_name_2 in kwargs:
-            kwargs[field_name] = kwargs[ref_field_name_2].pk
+            ret[field_name] = kwargs[ref_field_name_2].pk
 
         elif ref_field_name in kwargs:
-            kwargs[field_name] = kwargs[ref_field_name].pk
+            ret[field_name] = kwargs[ref_field_name].pk
 
         elif ref_class is orm_class:
             # this is an FK reference to itself so we can't actually
@@ -568,10 +596,11 @@ class ModelData(TestData):
             ):
                 # handle all ref_class's refs before we handle
                 # ref_class
-                kwargs.update(await self.assure_orm_refs(
+                ret.update(await self.assure_orm_refs(
                     ref_class,
                     original_orm_class,
                     **kwargs,
+                    **ret,
                 ))
 
                 ref_orm = await self._dispatch_method(
@@ -581,13 +610,14 @@ class ModelData(TestData):
                         original_orm_class,
                         ref_class,
                         **kwargs,
+                        **ret,
                     ),
                 )
 
-                kwargs[ref_field_name_2] = ref_orm
-                kwargs[field_name] = ref_orm.pk
+                ret[ref_field_name_2] = ref_orm
+                ret[field_name] = ref_orm.pk
 
-        return kwargs
+        return ret
 
     async def create_orm(self, orm_class, **kwargs):
         """create an instance of the orm and save it into the db
@@ -763,9 +793,13 @@ class ModelData(TestData):
             # because we need related refs, we will need to create refs if
             # they don't exist
             kwargs.setdefault("ignore_refs", False)
-            kwargs.setdefault("ignore_pk_refs", True)
-            kwargs = await self.assure_orm_refs(orm_class, **kwargs)
-            kwargs.pop("ignore_pk_refs")
+            kwargs.update(
+                await self.assure_orm_refs(
+                    orm_class,
+                    ignore_pk_refs=True,
+                    **kwargs,
+                ),
+            )
 
         count = self._gets_count(orm_class, **kwargs)
 
@@ -773,7 +807,8 @@ class ModelData(TestData):
             ret.append(await self._dispatch_method(
                 orm_class,
                 self.get_orm,
-                **copy.deepcopy(kwargs),
+                #**copy.deepcopy(kwargs),
+                **kwargs,
             ))
 
         return ret
@@ -858,13 +893,18 @@ class ModelData(TestData):
             fields["**"] = keywords
 
         kwargs.setdefault("ignore_refs", True)
-        kwargs.setdefault("ignore_pk_refs", False)
-        kwargs = await self.assure_orm_refs(orm_class, **kwargs)
+        kwargs.update(
+            await self.assure_orm_refs(
+                orm_class,
+                ignore_pk_refs=False,
+                **kwargs,
+            ),
+        )
 
         return self.get_schema_fields(
             orm_class.schema,
             fields=fields,
-            **kwargs
+            **kwargs,
         )
 
     def get_schema_fields(self, schema: Schema, **kwargs) -> dict:
