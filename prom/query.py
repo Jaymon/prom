@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Classes and stuff that handle querying the interface for a passed in Orm class
 """
@@ -6,11 +5,15 @@ import copy
 from collections import defaultdict
 from collections.abc import AsyncIterable
 import re
+from typing import Self, ForwardRef, Any
 
 from datatypes import ListIterator
 
 from .compat import *
 from .utils import make_list, get_objects, make_dict
+
+
+type OrmType = ForwardRef(".model.Orm")
 
 
 class Iterator(ListIterator, AsyncIterable):
@@ -401,7 +404,6 @@ class QueryBounds(object):
         return offset
 
     def find_more_index(self):
-        #return self.offset + self.limit_paginate
         return self.offset + self.limit
 
 
@@ -464,7 +466,7 @@ class QueryField(object):
 
         self.value = field_val
 
-    def to_query_value(self, field_val):
+    def to_query_value(self, field_val: Any) -> Any:
         if sf := self.schema_field:
             field_val = self.schema_field.to_query_value(self, field_val)
 
@@ -472,18 +474,11 @@ class QueryField(object):
                 if sub_schema := field_val.schema:
                     orm_class = self.query.orm_class
 
-                    # Find the ref value in subquery for query
-                    for field_name, ref_field in sub_schema.ref_fields.items():
-                        if ref_field.ref_class is orm_class:
-                            field_val.select_field(field_name)
-                            break
+                    field_val.select_ref(orm_class)
 
-                    # find the dep value in subquery for query
                     if not field_val.fields_select:
-                        if sub_orm_class := field_val.orm_class:
-                            if sf.ref_class is sub_orm_class:
-                                for field_name in sub_schema.pk_names:
-                                    field_val.select_field(field_name)
+                        if ref_class := sf.ref_class:
+                            field_val.select_dep(ref_class)
 
                 if not field_val.fields_select:
                     raise ValueError(
@@ -887,7 +882,7 @@ class Query(AsyncIterable):
         self.fields_select.options["distinct"] = True
         return self.select(*field_names, **kwargs)
 
-    def select_field(self, field_name, **kwargs):
+    def select_field(self, field_name: str, **kwargs) -> Self:
         """set a field to be selected, this is automatically called when you do
         select_FIELDNAME(...)"""
         if field_name == "*":
@@ -900,7 +895,30 @@ class Query(AsyncIterable):
 
         return self
 
-    def select(self, *field_names, **kwargs):
+    def select_ref(self, orm_class: type[OrmType]) -> Self:
+        """Find the field in this query's schema that matches `orm_class`
+        and select that field name
+        """
+        schema = self.schema
+
+        for field_name, ref_field in schema.ref_fields.items():
+            if ref_field.ref_class is orm_class:
+                self.select_field(field_name)
+                break
+
+        return self
+
+    def select_dep(self, orm_class: type[OrmType]) -> Self:
+        """Select the primary key of `self` if `orm_class` matches this
+        query's orm class
+        """
+        if dep_class := self.orm_class:
+            if orm_class is dep_class:
+                self.select_pk()
+
+        return self
+
+    def select(self, *field_names: str, **kwargs) -> Self:
         """set multiple fields to be selected, this is the many version of 
         .select_field"""
         for field_name in make_list(field_names):
