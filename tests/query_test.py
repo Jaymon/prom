@@ -1077,6 +1077,30 @@ class QueryTest(EnvironTestCase):
         foo2 = await q.copy().select("MAX(foo)").one()
         self.assertEqual(foo1, foo2)
 
+    async def test_subquery_auto_select_fields(self):
+        foo_class = self.get_orm_class(model_name="foo")
+        bar_class = self.get_orm_class(
+            foo_id=Field(foo_class),
+            baz=Field(int),
+            model_name="bar",
+        )
+
+        fo = await self.insert_orm(foo_class)
+        bo = await self.insert_orm(bar_class, foo_id=fo.pk, baz=1)
+
+        # test ref auto select value
+        fo2 = await foo_class.query.eq_id(bar_class.query.eq_baz(1)).one()
+        self.assertEqual(fo.pk, fo2.pk)
+
+        # test dep auto select value
+        bo2 = await bar_class.query.eq_foo_id(
+            foo_class.query.eq_pk(fo.pk),
+        ).one()
+        self.assertEqual(bo.pk, bo2.pk)
+
+        with self.assertRaises(ValueError):
+            await bar_class.query.eq_baz(foo_class.query.eq_pk(fo.pk)).one()
+
 
 class IteratorTest(EnvironTestCase):
     async def get_iterator(self, count=5, limit=5, page=0):

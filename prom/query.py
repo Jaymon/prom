@@ -468,6 +468,28 @@ class QueryField(object):
         if sf := self.schema_field:
             field_val = self.schema_field.to_query_value(self, field_val)
 
+            if self.is_subquery() and not field_val.fields_select:
+                if sub_schema := field_val.schema:
+                    orm_class = self.query.orm_class
+
+                    # Find the ref value in subquery for query
+                    for field_name, ref_field in sub_schema.ref_fields.items():
+                        if ref_field.ref_class is orm_class:
+                            field_val.select_field(field_name)
+                            break
+
+                    # find the dep value in subquery for query
+                    if not field_val.fields_select:
+                        if sub_orm_class := field_val.orm_class:
+                            if sf.ref_class is sub_orm_class:
+                                for field_name in sub_schema.pk_names:
+                                    field_val.select_field(field_name)
+
+                if not field_val.fields_select:
+                    raise ValueError(
+                        "Subquery select fields could not be inferred",
+                    )
+
         else:
             if self.schema:
                 raise KeyError(
