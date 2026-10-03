@@ -130,10 +130,11 @@ class Iterator(ListIterator, AsyncIterable):
         raise NotImplementedError()
 
     async def count(self):
-        """Get the number of rows this iterator represents
+        """Internal method. Get the number of rows this iterator represents
 
         Honestly, you probably shouldn't use this and instead do a count query
-        instead since that gives you way more control
+        instead since that gives you way more control but this is used in
+        `.__getitem__`
 
         :returns: int, the rows this iterator represents
         """
