@@ -31,10 +31,6 @@ class Iterator(ListIterator, AsyncIterable):
         async for pk in SomeOrm.select_pk().query.get():
             print pk
     """
-    @property
-    def orm_class(self):
-        return self.query.orm_class
-
     def __init__(self, cursor, query):
         """create an iterator for a query
 
@@ -50,7 +46,7 @@ class Iterator(ListIterator, AsyncIterable):
         self._cursor_exhausted = False
         self.field_names = self.query.fields_select.names()
 
-    async def has_more(self):
+    async def has_more(self) -> bool:
         """Return true if there are more results for this query
 
         :returns: boolean, True if this query could've returned more results
@@ -78,7 +74,7 @@ class Iterator(ListIterator, AsyncIterable):
         await self._cursor.close()
         self._cursor_exhausted = True
 
-    async def tolist(self):
+    async def tolist(self) -> list[OrmType|tuple|Any]:
         """Returns this iterator as a list
 
         This is just syntactic sugar around having to do:
@@ -95,11 +91,15 @@ class Iterator(ListIterator, AsyncIterable):
         """
         return [r async for r in self]
 
+    def __len__(self):
+        """Make sure no one thinks we can get count syncronously"""
+        raise NotImplementedError()
+
     def __iter__(self):
         """Make sure no one thinks we can iterate through this syncronously"""
         raise NotImplementedError()
 
-    async def __aiter__(self):
+    async def __aiter__(self) -> AsyncIterable[OrmType|tuple|Any]:
         """
         https://docs.python.org/3/reference/datamodel.html#object.__aiter__
         """
@@ -125,39 +125,6 @@ class Iterator(ListIterator, AsyncIterable):
         finally:
             await self.close()
 
-    def __len__(self):
-        """Make sure no one thinks we can get count syncronously"""
-        raise NotImplementedError()
-
-    async def count(self):
-        """Internal method. Get the number of rows this iterator represents
-
-        Honestly, you probably shouldn't use this and instead do a count query
-        instead since that gives you way more control but this is used in
-        `.__getitem__`
-
-        :returns: int, the rows this iterator represents
-        """
-        cursor = self._cursor
-        count = cursor.rowcount
-
-        if count >= 0:
-            bounds = self.query.bounds
-            if bounds.has_more() and bounds.limit_paginate == count:
-                # compensate for having pulled one extra row
-                count -= 1
-
-        else:
-            # we couldn't get the rowcount from the cursor for some reason, so
-            # we will need to query for it
-
-            # SQLite cursor's will always have rowcount=-1 until the cursor is
-            # exhausted or a fetch*() method has been called, ugh.
-            # https://stackoverflow.com/a/839419/5006
-            count = await self.query.copy().count()
-
-        return count
-
     async def __getitem__(self, i):
         """Get a specific row or a slice of the rows represented by this
         iterator
@@ -171,32 +138,26 @@ class Iterator(ListIterator, AsyncIterable):
         """
         q = self.query.copy()
         b = q.bounds
-        limit = b.limit if b.has_limit() else await self.count()
-        b = q.bounds_class(limit=limit, offset=q.bounds.offset)
 
         if isinstance(i, slice):
             if i.step:
-                raise ValueError("slice stepping is not supported")
+                raise IndexError("slice stepping is not supported")
 
             if i.start:
-                start = b.find_offset(i.start)
-
-            else:
-                start = b.offset
+                b.offset = b.find_offset(i.start)
 
             if i.stop:
-                stop = b.find_offset(i.stop)
+                b.limit = b.find_limit(i.stop)
 
-            else:
-                stop = b.limit
-
-            q.limit(stop - start).offset(start)
             return type(self)(await q.cursor(), q)
 
         else:
-            offset = b.find_offset(i)
+            if i < 0:
+                raise IndexError("Indexes cannot be negative")
 
-            o = await q.offset(offset).one()
+            b.offset = b.find_offset(i)
+
+            o = await q.one()
             if o is None:
                 raise IndexError("Iterator index {} out of range".format(i))
 
@@ -206,14 +167,14 @@ class Iterator(ListIterator, AsyncIterable):
         format_str = "[ ... {} ... ]"
         format_args = [self.__class__.__name__]
 
-        orm_class = self.orm_class
+        orm_class = self.query.orm_class
         if orm_class:
             format_str = "[ ... {} on {} ... ]"
             format_args.append(orm_class.__name__)
 
         return format_str.format(*format_args)
 
-    def filter(self, o):
+    def filter(self, o: OrmType) -> bool:
         """run o through the filter, if True then orm o should be included
 
         .. note:: The filter callback needs to account for non Orm instance
@@ -225,7 +186,7 @@ class Iterator(ListIterator, AsyncIterable):
         """
         return True
 
-    def from_query(self, d):
+    def from_query(self, d: dict) -> OrmType|tuple|Any:
         """Prepare the raw dict d returned from the interface cursor to be
         returned by higher level objects, this will usually mean hydrating an
         Orm instance or stuff like that
@@ -240,7 +201,7 @@ class Iterator(ListIterator, AsyncIterable):
             returned
         """
         r = None
-        orm_class = self.orm_class
+        orm_class = self.query.orm_class
         if self.field_names:
             field_vals = []
             for field_name in self.field_names:
@@ -379,7 +340,7 @@ class QueryBounds(object):
     def __str__(self):
         return "limit: {}, offset: {}".format(self.limit, self.offset)
 
-    def find_offset(self, i):
+    def find_offset(self, i: int) -> int:
         """Given an index i, use the current offset and limit to find the
         correct offset i would be
 
@@ -392,7 +353,8 @@ class QueryBounds(object):
                 maximum_offset = self.limit + self.offset
                 if offset > maximum_offset:
                     raise IndexError(
-                        "Iterator index {} out of range".format(i)
+                        f"Offset {offset} larger than"
+                        " maximum offset {maximum_offset}",
                     )
 
         else:
@@ -400,11 +362,27 @@ class QueryBounds(object):
             offset = limit + i
 
             if offset < 0:
-                raise IndexError("Iterator index {} out of range".format(i))
+                raise IndexError("Negative offset")
 
         return offset
 
-    def find_more_index(self):
+    def find_limit(self, i: int) -> int:
+        """Given an index i, use the current offset and limit to find the
+        correct limit i would be"""
+        if i >= 0:
+            limit = i - self.offset
+
+        else:
+            limit = self.limit + i
+
+            if limit < 0:
+                raise IndexError("Negative Limit")
+
+        return limit
+
+    def find_more_index(self) -> int:
+        """Find the index that can be used to decide if there are more
+        results for these bounds"""
         return self.offset + self.limit
 
 
