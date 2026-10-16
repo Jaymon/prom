@@ -43,6 +43,11 @@ class Iterator(ListIterator, AsyncIterable):
         self._cursor_exhausted = False
 
     async def load(self, **kwargs):
+        """Load this instance with a cursor retrieved from `.query`
+
+        :keyword **kwargs: Same as all the query methods, you can pass in
+            keywords like `connection` to fine tune the connection
+        """
         self._cursor = await self.query.cursor(**kwargs)
         self._cursor_exhausted = False
         self._field_names = self.query.fields_select.names()
@@ -108,6 +113,18 @@ class Iterator(ListIterator, AsyncIterable):
     def __iter__(self):
         """Make sure no one thinks we can iterate through this syncronously"""
         raise NotImplementedError()
+
+    def __await__(self) -> Self:
+        """Turns this iterator into a coroutine so it can be awaited without
+        it actually doing anything"""
+        if False: yield # turn method into generator
+        return self # return value of awaited coroutine
+
+#         async def _return_self():
+#             return self
+# 
+#         return _return_self().__await__()
+#         return self
 
     async def __aiter__(self) -> AsyncIterable[OrmType|tuple|Any]:
         """
@@ -1243,9 +1260,6 @@ class Query(AsyncIterable):
         :returns: object, a cursor instance that can retrieve results from the
             interface's backend
         """
-        # merge any set cursor kwargs
-#         kwargs = {**getattr(self, "_cursor_kwargs", {}), **kwargs}
-
         return await self.interface.get(
             self.schema,
             self,
@@ -1254,6 +1268,7 @@ class Query(AsyncIterable):
         )
 
     def iterator(self, **kwargs) -> Iterator:
+        """Return an iterator instance that can pull rows using this query"""
         self.bounds.paginate = kwargs.pop("paginate", True)
 
         if self.orm_class:
@@ -1270,7 +1285,6 @@ class Query(AsyncIterable):
 
         :returns: Iterator
         """
-#         self._cursor_kwargs = kwargs
         iterator = self.iterator(**kwargs)
         await iterator.load(**kwargs)
         return iterator

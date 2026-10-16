@@ -1267,3 +1267,7 @@ class IteratorTest(EnvironTestCase):
         with self.assertRaises(NotImplementedError):
             bool(it)
 
+    async def test___await__(self):
+        q = self.get_query()
+        it = await q.iterator()
+
