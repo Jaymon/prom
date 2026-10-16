@@ -1056,7 +1056,7 @@ class Orm(object):
 
         :param k: str, the model(s) name of an orm class that contains a
             foreign key field for self and has values of .pk
-        :returns: coroutine[Orm]|coroutine[Iterator]
+        :returns: coroutine[Orm]|Iterator
         """
         if orm_class := self.orm_classes.find_class(k, None):
             ref_items = orm_class.schema.ref_fields.items()
@@ -1065,11 +1065,10 @@ class Orm(object):
                 if ref_class and isinstance(self, ref_class):
                     query = orm_class.query.eq_field(
                         ref_field_name,
-                        self.pk
+                        self.pk,
                     )
                     if k == orm_class.models_name:
-                        # this is a coroutine
-                        return query.get()
+                        return query.iterator()
 
                     else:
                         # this is a coroutine
@@ -1085,7 +1084,7 @@ class Orm(object):
 
         :param k: str, the model(s) name of an orm class that might have a
             relationship with self
-        :returns: coroutine[Orm]|coroutine[Iterator]
+        :returns: coroutine[Orm]|Iterator
         """
         model_name_1 = self.model_name
         for dep_class in self.orm_classes.get_rel_classes(model_name_1, k):
@@ -1098,13 +1097,12 @@ class Orm(object):
             query = orm_class_2.query.in_pk(
                 dep_class.query.select(field_name_2).eq_field(
                     field_name_1,
-                    self.pk
+                    self.pk,
                 )
             )
 
             if k == orm_class_2.models_name:
-                # this is a coroutine
-                return query.get()
+                return query.iterator()
 
             else:
                 # this is a coroutine

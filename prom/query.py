@@ -120,12 +120,6 @@ class Iterator(ListIterator, AsyncIterable):
         if False: yield # turn method into generator
         return self # return value of awaited coroutine
 
-#         async def _return_self():
-#             return self
-# 
-#         return _return_self().__await__()
-#         return self
-
     async def __aiter__(self) -> AsyncIterable[OrmType|tuple|Any]:
         """
         https://docs.python.org/3/reference/datamodel.html#object.__aiter__

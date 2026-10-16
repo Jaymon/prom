@@ -587,6 +587,18 @@ class OrmTest(EnvironTestCase):
             self.assertEqual(o1.pk, o2.o1_id)
         self.assertEqual(2, count)
 
+        count = 0
+        async for o2r in o1.o2s:
+            count += 1
+            self.assertEqual(o1.pk, o2.o1_id)
+        self.assertEqual(2, count)
+
+        count = 0
+        for o2r in await o1.o2s.tolist():
+            count += 1
+            self.assertEqual(o1.pk, o2.o1_id)
+        self.assertEqual(2, count)
+
     async def test___getattr___model_name(self):
         """Makes sure that getting an attribute by model_name works as expected
         """
