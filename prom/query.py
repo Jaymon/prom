@@ -3,7 +3,7 @@ Classes and stuff that handle querying the interface for a passed in Orm class
 """
 import copy
 from collections import defaultdict
-from collections.abc import AsyncIterable
+from collections.abc import AsyncIterable, Callable
 import re
 from typing import Self, ForwardRef, Any
 
@@ -14,13 +14,14 @@ from .utils import make_list, get_objects, make_dict
 
 
 type OrmType = ForwardRef(".model.Orm")
+type QueryType = ForwardRef("Query")
 
 
 class Iterator(ListIterator, AsyncIterable):
     """The main iterator for all query methods that return iterators
 
-    This is returned from the Query.get() method, this is also
-    the Iterator class that is set in Orm.iterator_class
+    This is returned from the `Query.get()` method, this is also
+    the Iterator class that is set in `Orm.iterator_class`
 
     fields --
         filter: callback, an iterator filter, all yielded rows will be passed
@@ -31,20 +32,23 @@ class Iterator(ListIterator, AsyncIterable):
         async for pk in SomeOrm.select_pk().query.get():
             print pk
     """
-    def __init__(self, cursor, query):
+    def __init__(self, query: QueryType):
         """create an iterator for a query
 
         :param cursor: object, the cursor object retrieved from the interface
         :param query: Query, the query instance that produced this iterator
         """
-        if query._filter:
-            self.filter = query._filter
-
         self.query = query
-
-        self._cursor = cursor
+        self._cursor = None
         self._cursor_exhausted = False
-        self.field_names = self.query.fields_select.names()
+
+    async def load(self, **kwargs):
+        self._cursor = await self.query.cursor(**kwargs)
+        self._cursor_exhausted = False
+        self._field_names = self.query.fields_select.names()
+
+        if self.query._filter:
+            self.filter = self.query._filter
 
     async def has_more(self) -> bool:
         """Return true if there are more results for this query
@@ -52,6 +56,10 @@ class Iterator(ListIterator, AsyncIterable):
         :returns: boolean, True if this query could've returned more results
         """
         ret = False
+
+        if self._cursor is None:
+            await self._load()
+
         if self.query.bounds.has_more():
             cursor = self._cursor
             # https://www.psycopg.org/docs/cursor.html#cursor.rowcount says
@@ -71,8 +79,10 @@ class Iterator(ListIterator, AsyncIterable):
 
     async def close(self):
         """Close the cursor that's tied to this iterator"""
-        await self._cursor.close()
-        self._cursor_exhausted = True
+        if self._cursor is not None:
+            await self._cursor.close()
+            self._cursor_exhausted = True
+            self._cursor = None
 
     async def tolist(self) -> list[OrmType|tuple|Any]:
         """Returns this iterator as a list
@@ -106,6 +116,9 @@ class Iterator(ListIterator, AsyncIterable):
         if self._cursor_exhausted:
             raise ValueError("Cursor has been exhausted, rerun the query")
 
+        if self._cursor is None:
+            await self.load()
+
         cursor_i = 0
         cursor_limit = -1
         if self.query.bounds.has_more():
@@ -125,7 +138,7 @@ class Iterator(ListIterator, AsyncIterable):
         finally:
             await self.close()
 
-    async def __getitem__(self, i):
+    async def __getitem__(self, i) -> OrmType|Self|dict:
         """Get a specific row or a slice of the rows represented by this
         iterator
 
@@ -149,7 +162,7 @@ class Iterator(ListIterator, AsyncIterable):
             if i.stop:
                 b.limit = b.find_limit(i.stop)
 
-            return type(self)(await q.cursor(), q)
+            return type(self)(q)
 
         else:
             if i < 0:
@@ -163,7 +176,7 @@ class Iterator(ListIterator, AsyncIterable):
 
             return o
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         format_str = "[ ... {} ... ]"
         format_args = [self.__class__.__name__]
 
@@ -174,7 +187,7 @@ class Iterator(ListIterator, AsyncIterable):
 
         return format_str.format(*format_args)
 
-    def filter(self, o: OrmType) -> bool:
+    def filter(self, o: OrmType|tuple|Any) -> bool:
         """run o through the filter, if True then orm o should be included
 
         .. note:: The filter callback needs to account for non Orm instance
@@ -202,15 +215,15 @@ class Iterator(ListIterator, AsyncIterable):
         """
         r = None
         orm_class = self.query.orm_class
-        if self.field_names:
+        if self._field_names:
             field_vals = []
-            for field_name in self.field_names:
+            for field_name in self._field_names:
                 fv = d[field_name]
                 if orm_class:
                     field = orm_class.schema.fields[field_name]
                     fv = field.from_interface(None, fv)
                 field_vals.append(fv)
-            r = field_vals if len(self.field_names) > 1 else field_vals[0]
+            r = field_vals if len(self._field_names) > 1 else field_vals[0]
 
         else:
             if orm_class:
@@ -787,26 +800,11 @@ class Query(AsyncIterable):
 
         return callback
 
-    def create_field(self, field_name, field_val=None, **kwargs):
+    def create_field(self, field_name, field_val=None, **kwargs) -> QueryField:
         """Creates a QueryField instance"""
-        f = self.field_class(self, field_name, field_val, **kwargs)
-        return f
+        return self.field_class(self, field_name, field_val, **kwargs)
 
-    def create_iterator(self, cursor):
-        """Creates a query.Iterator instance wrapping cursor
-
-        :param cursor: object, this is retrieved from the Interface
-        :returns: Iterator
-        """
-        if self.orm_class:
-            iterator = self.orm_class.iterator_class(cursor, query=self)
-
-        else:
-            iterator = self.iterator_class(cursor, query=self)
-
-        return iterator
-
-    def append_compound(self, operator, queries, **kwargs):
+    def append_compound(self, operator, queries, **kwargs) -> Self:
         """Internal method used by .intersect(), .union(), and .difference()"""
         for i, query in enumerate(queries):
             if self.fields_select:
@@ -821,7 +819,7 @@ class Query(AsyncIterable):
         self.compounds.append((operator, queries))
         return self
 
-    def append_operation(self, operator, field_name, field_val=None, **kwargs):
+    def append_operation(self, operator, field_name, field_val=None, **kwargs) -> Self:
         """Internal method that appends an operation to the where clause"""
         kwargs["operator"] = operator
         kwargs["clause"] = "where"
@@ -829,7 +827,7 @@ class Query(AsyncIterable):
         self.fields_where.append(f)
         return self
 
-    def append_sort(self, direction, field_name, field_val=None, **kwargs):
+    def append_sort(self, direction, field_name, field_val=None, **kwargs) -> Self:
         """Internal method that appends a sort to the sort clause
 
         sort this query by field_name in direction
@@ -856,7 +854,7 @@ class Query(AsyncIterable):
         self.fields_sort.append(f)
         return self
 
-    def distinct(self, *field_names, **kwargs):
+    def distinct(self, *field_names, **kwargs) -> Self:
         """Mark the passed in query select fields as distinct"""
         self.fields_select.options["distinct"] = True
         return self.select(*field_names, **kwargs)
@@ -904,7 +902,7 @@ class Query(AsyncIterable):
             self.select_field(field_name, **kwargs)
         return self
 
-    def set_field(self, field_name, field_val, **kwargs):
+    def set_field(self, field_name, field_val, **kwargs) -> Self:
         """Set a field into .fields_set attribute
 
         In insert/update queries, these are the fields that will be
@@ -915,7 +913,7 @@ class Query(AsyncIterable):
         self.fields_set.append(field)
         return self
 
-    def set(self, fields=None, **fields_kwargs):
+    def set(self, fields=None, **fields_kwargs) -> Self:
         """completely replaces the current .fields with fields and fields_kwargs
         combined, this is the many version of .set_field
         """
@@ -924,7 +922,7 @@ class Query(AsyncIterable):
             self.set_field(field_name, field_val)
         return self
 
-    def incr_field(self, field_name, increment=1, field_val=None, **kwargs):
+    def incr_field(self, field_name, increment=1, field_val=None, **kwargs) -> Self:
         """Set a field to be incremented into .fields_set attribute
 
         In update queries, these are the fields that will be
@@ -938,7 +936,7 @@ class Query(AsyncIterable):
             **kwargs
         )
 
-    def intersect(self, *queries, **kwargs):
+    def intersect(self, *queries, **kwargs) -> Self:
         """Intersect a set of queries. Returns rows that are common in all the 
         queries.
 
@@ -957,14 +955,14 @@ class Query(AsyncIterable):
         """
         return self.append_compound("intersect", queries, **kwargs)
 
-    def union(self, *queries, **kwargs):
+    def union(self, *queries, **kwargs) -> Self:
         """Return all the rows from all the queries
 
         See .intersect() since this works very similar
         """
         return self.append_compound("union", queries, **kwargs)
 
-    def difference(self, *queries, **kwargs):
+    def difference(self, *queries, **kwargs) -> Self:
         """Return everything in the first query that isn't in any of the other
         queries.
 
@@ -978,7 +976,7 @@ class Query(AsyncIterable):
         """
         return self.append_compound("except", queries, **kwargs)
 
-    def eq_field(self, field_name, field_val=None, **field_kwargs):
+    def eq_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> = <FIELD_VALUE>"""
         return self.append_operation(
             "eq",
@@ -987,7 +985,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def ne_field(self, field_name, field_val=None, **field_kwargs):
+    def ne_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> != <FIELD_VALUE>"""
         return self.append_operation(
             "ne",
@@ -996,13 +994,13 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def between_field(self, field_name, low, high):
+    def between_field(self, field_name, low, high) -> Self:
         """<FIELD_NAME> >= low AND <FIELD_NAME> <= high"""
         self.gte_field(field_name, low)
         self.lte_field(field_name, high)
         return self
 
-    def lte_field(self, field_name, field_val=None, **field_kwargs):
+    def lte_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> <= <FIELD_VALUE>"""
         return self.append_operation(
             "lte",
@@ -1011,7 +1009,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def lt_field(self, field_name, field_val=None, **field_kwargs):
+    def lt_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> < <FIELD_VALUE>"""
         return self.append_operation(
             "lt",
@@ -1020,7 +1018,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def gte_field(self, field_name, field_val=None, **field_kwargs):
+    def gte_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> >= <FIELD_VALUE>"""
         return self.append_operation(
             "gte",
@@ -1029,7 +1027,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def gt_field(self, field_name, field_val=None, **field_kwargs):
+    def gt_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> > <FIELD_VALUE>"""
         return self.append_operation(
             "gt",
@@ -1038,7 +1036,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def in_field(self, field_name, field_val=None, **field_kwargs):
+    def in_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> IN (<FIELD_VALUE>)
 
         :param field_val: list, a list of field_val values
@@ -1051,7 +1049,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def nin_field(self, field_name, field_val=None, **field_kwargs):
+    def nin_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> NOT IN (<FIELD_VALUE>)
 
         :param field_val: list, a list of field_val values
@@ -1064,7 +1062,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def startswith_field(self, field_name, field_val, **field_kwargs):
+    def startswith_field(self, field_name, field_val, **field_kwargs) -> Self:
         """<FIELD_NAME> LIKE <FIELD_VALUE>%"""
         return self.like_field(
             field_name,
@@ -1072,7 +1070,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def endswith_field(self, field_name, field_val, **field_kwargs):
+    def endswith_field(self, field_name, field_val, **field_kwargs) -> Self:
         """<FIELD_NAME> LIKE %<FIELD_VALUE>"""
         return self.like_field(
             field_name,
@@ -1080,7 +1078,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def contains_field(self, field_name, field_val, **field_kwargs):
+    def contains_field(self, field_name, field_val, **field_kwargs) -> Self:
         """<FIELD_NAME> LIKE %<FIELD_VALUE>%"""
         return self.like_field(
             field_name,
@@ -1088,7 +1086,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def like_field(self, field_name, field_val, **field_kwargs):
+    def like_field(self, field_name, field_val, **field_kwargs) -> Self:
         """Perform a field_name LIKE field_val query
 
         :param field_name: string, the field we are filtering on
@@ -1105,7 +1103,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def nlike_field(self, field_name, field_val, **field_kwargs):
+    def nlike_field(self, field_name, field_val, **field_kwargs) -> Self:
         """Perform a field_name NOT LIKE field_val query
 
         :param field_name: string, the field we are filtering on
@@ -1122,7 +1120,7 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def raw_field(self, field_name, *field_vals, **field_kwargs):
+    def raw_field(self, field_name, *field_vals, **field_kwargs) -> Self:
         field_kwargs["raw"] = True
         return self.append_operation(
             "raw",
@@ -1131,27 +1129,27 @@ class Query(AsyncIterable):
             **field_kwargs
         )
 
-    def asc(self, *field_names):
+    def asc(self, *field_names) -> Self:
         """the many version of .asc_field"""
         for field_name in field_names:
             self.asc_field(field_name)
         return self
 
-    def asc_field(self, field_name, field_val=None):
+    def asc_field(self, field_name, field_val=None) -> Self:
         """<FIELD_NAME> ASC"""
         return self.append_sort(1, field_name, field_val)
 
-    def desc(self, *field_names):
+    def desc(self, *field_names) -> Self:
         """the many version of .desc_field"""
         for field_name in field_names:
             self.desc_field(field_name)
         return self
 
-    def desc_field(self, field_name, field_val=None):
+    def desc_field(self, field_name, field_val=None) -> Self:
         """<FIELD_NAME> DESC"""
         return self.append_sort(-1, field_name, field_val)
 
-    def filter(self, predicate):
+    def filter(self, predicate: Callable[[OrmType|tuple|Any], bool]) -> Self:
         """Set the predicate (callback) for an iterator returned from this
         instance
 
@@ -1162,26 +1160,26 @@ class Query(AsyncIterable):
         self._filter = predicate
         return self
 
-    def limit(self, limit):
+    def limit(self, limit) -> Self:
         """LIMIT <limit>"""
         self.bounds.limit = limit
         return self
 
-    def offset(self, offset):
+    def offset(self, offset) -> Self:
         """OFFSET <offset>"""
         self.bounds.offset = offset
         return self
 
-    def page(self, page):
+    def page(self, page) -> Self:
         """OFFSET <PAGE_CONVERTED_TO_OFFSET>"""
         self.bounds.page = page
         return self
 
-    def copy(self):
+    def copy(self) -> Self:
         """nice handy wrapper around the deepcopy"""
         return copy.deepcopy(self)
 
-    def __deepcopy__(self, memodict={}):
+    def __deepcopy__(self, memodict={}) -> Self:
         instance = type(self)(self.orm_class)
         ignore_keys = set(["_interface", "interface"])
         for key, val in self.__dict__.items():
@@ -1189,7 +1187,7 @@ class Query(AsyncIterable):
                 setattr(instance, key, copy.deepcopy(val, memodict))
         return instance
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Attempt to render the query, this should be used mainly for debugging
         and not in logs or things like that since this can be intense and
         multiline and also wrong
@@ -1200,7 +1198,7 @@ class Query(AsyncIterable):
         except AttributeError:
             return super().__str__()
 
-    def render(self, **kwargs):
+    def render(self, **kwargs) -> str:
         """Render the query
 
         :returns: string, the rendered query, this is not assured to be a valid
@@ -1209,7 +1207,7 @@ class Query(AsyncIterable):
         """
         return self.interface.render(self.schema, self, **kwargs)
 
-    async def __aiter__(self):
+    async def __aiter__(self) -> AsyncIterable[OrmType|Any]:
         """Allows fluid interface for iterating through the query
 
         :Example:
@@ -1218,7 +1216,7 @@ class Query(AsyncIterable):
         async for row in await self.get():
             yield row
 
-    async def tolist(self, **kwargs):
+    async def tolist(self, **kwargs) -> list[OrmType|Any]:
         """Wraps the Iterator.tolist method and does the same thing"""
         iterator = await self.get(**kwargs)
         return await iterator.tolist()
@@ -1238,19 +1236,33 @@ class Query(AsyncIterable):
         """
         return await self.interface.raw(query_str, *query_args, **kwargs)
 
-    async def cursor(self, **kwargs):
+    async def cursor(self, **kwargs) -> AsyncIterable:
         """Return a raw Interface cursor
 
         :param **kwargs: passed directly to the interface
         :returns: object, a cursor instance that can retrieve results from the
             interface's backend
         """
+        # merge any set cursor kwargs
+#         kwargs = {**getattr(self, "_cursor_kwargs", {}), **kwargs}
+
         return await self.interface.get(
             self.schema,
             self,
             cursor_result=True,
-            **kwargs
+            **kwargs,
         )
+
+    def iterator(self, **kwargs) -> Iterator:
+        self.bounds.paginate = kwargs.pop("paginate", True)
+
+        if self.orm_class:
+            iterator = self.orm_class.iterator_class(self)
+
+        else:
+            iterator = self.iterator_class(self)
+
+        return iterator
 
     async def get(self, **kwargs):
         """
@@ -1258,9 +1270,10 @@ class Query(AsyncIterable):
 
         :returns: Iterator
         """
-        self.bounds.paginate = kwargs.pop("paginate", True)
-        cursor = await self.cursor(**kwargs)
-        return self.create_iterator(cursor)
+#         self._cursor_kwargs = kwargs
+        iterator = self.iterator(**kwargs)
+        await iterator.load(**kwargs)
+        return iterator
 
     async def one(self, **kwargs):
         """get one row from the db"""
@@ -1366,7 +1379,7 @@ class Query(AsyncIterable):
             insert_fields,
             update_fields,
             conflict_field_names,
-            **kwargs
+            **kwargs,
         )
 
     async def delete(self, **kwargs) -> list[Mapping]|int|None:
@@ -1374,6 +1387,6 @@ class Query(AsyncIterable):
         return await self.interface.delete(
             self.schema,
             self,
-            **kwargs
+            **kwargs,
         )
 
