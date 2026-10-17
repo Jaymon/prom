@@ -498,102 +498,26 @@ class QueryTest(EnvironTestCase):
         for v in vals:
             self.assertTrue(v >= 2 and v <= 4)
 
-    async def test_query_ref_1(self):
-        raise self.skip_test()
-        inter = self.get_interface()
+    async def test___getattr___ref(self):
         modpath = self.create_module([
             "import prom",
             "",
             "class t1(prom.Orm):",
-            "    table_name = 'qr2_t1'",
             "    foo=prom.Field(int, True)",
-            "    bar=prom.Field(str, True)",
             ""
             "class t2(prom.Orm):",
-            "    table_name = 'qr2_t2'",
-            "    foo=prom.Field(int, True)",
             "    bar=prom.Field(str, True)",
             "    che=prom.Field(t1, True)",
-            ""
         ])
-
 
         t1 = modpath.module().t1
-        t1.interface = inter
-
         t2 = modpath.module().t2
-        t2.interface = inter
 
-        ti1 = await self.insert_fields(t1, foo=11, bar='11')
-        ti12 = await self.insert_fields(t1, foo=12, bar='12')
+        with self.assertRaises(AttributeError):
+            t1.query.t3
 
-        ti2 = await self.insert_fields(t2, foo=21, bar='21', che=ti1)
-        ti22 = await self.insert_fields(t2, foo=22, bar='22', che=ti12)
-
-        orm_classpath = "{}.{}".format(t2.__module__, t2.__name__)
-
-        q = t1.query.ref(orm_classpath).select_foo().eq_pk(ti12)
-        l = [r async for r in q]
-        self.assertEqual(22, l[0])
-        self.assertEqual(1, len(l))
-
-        q = t1.query.ref(orm_classpath).select_foo().eq_pk(ti1)
-        l = [r async for r in q]
-        self.assertEqual(21, l[0])
-        self.assertEqual(1, len(l))
-
-        q = t1.query.ref(orm_classpath).select_foo().eq_pk(ti1)
-        l = [r async for r in q]
-        self.assertEqual(21, l[0])
-        self.assertEqual(1, len(l))
-
-        q = t1.query.ref(orm_classpath).select_foo().eq_pk(ti1)
-        l = [r async for r in q]
-        self.assertEqual(21, l[0])
-        self.assertEqual(1, len(l))
-
-        q = t1.query.ref(orm_classpath).select_foo()
-        l = [r async for r in q]
-        self.assertEqual(2, len(l))
-
-    async def test_query_ref_2(self):
-        raise self.skip_test()
-        inter = self.get_interface()
-        modpath = self.create_module([
-            "import prom",
-            "",
-            "class T1(prom.Orm):",
-            "    table_name = 'qre_t1'",
-            ""
-            "class T2(prom.Orm):",
-            "    table_name = 'qre_t2'",
-            "    t1_id=prom.Field(T1, True)",
-            ""
-            "class T3(prom.Orm):",
-            "    table_name = 'qre_t3'",
-            ""
-        ])
-
-        T1 = modpath.module().T1
-        T1.interface = inter
-
-        T2 = modpath.module().T2
-        T2.interface = inter
-
-        T3 = modpath.module().T3
-        T3.interface = inter
-
-        t1a = await self.insert_fields(T1)
-        t1b = await self.insert_fields(T1)
-        t2 = await self.insert_fields(T2, t1_id=t1a)
-
-        classpath = "{}.{}".format(T2.__module__, T2.__name__)
-
-        r = await T1.query.ref(classpath).eq_pk(t1a).count()
-        self.assertEqual(1, r)
-
-        r = await T1.query.ref(classpath).eq_pk(t1b).count()
-        self.assertEqual(0, r)
+        q2 = t1.query.t2
+        self.assertEqual(t2, q2.orm_class)
 
     async def test_field_datetime(self):
         _q = self.get_query()

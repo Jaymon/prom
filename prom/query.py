@@ -11,7 +11,7 @@ from collections.abc import (
     Mapping,
 )
 import re
-from typing import Self, ForwardRef, Any
+from typing import Self, ForwardRef, Any, Protocol
 
 from datatypes import ListIterator
 
@@ -21,6 +21,13 @@ from .utils import make_list, get_objects, make_dict
 
 type OrmType = ForwardRef(".model.Orm")
 type QueryType = ForwardRef("Query")
+class FieldCallable(Protocol):
+    def __call__(
+        self,
+        field_name: str,
+        field_val: Any,
+        **field_kwargs,
+    ) -> QueryType: ...
 
 
 class Iterator(ListIterator, AsyncIterable):
@@ -765,22 +772,6 @@ class Query(AsyncIterable):
 
         return field_method, field_name
 
-    def __getattr__(self, method_name):
-        """Allows fluid interface of .<OPERATOR>_<FIELD_NAME>(<FIELD_VALUE>)
-
-        :returns: callback, this will return a callback that wraps a 
-            *_field method and passes in <FIELD_NAME> to the *_field method
-        """
-        field_method, field_name = self._find_method(method_name)
-
-        def callback(*args, **kwargs):
-            if field_method:
-                ret = field_method(field_name, *args, **kwargs)
-
-            return ret
-
-        return callback
-
     def _create_field(
         self,
         field_name: str,
@@ -1190,6 +1181,42 @@ class Query(AsyncIterable):
             if key not in ignore_keys:
                 setattr(instance, key, copy.deepcopy(val, memodict))
         return instance
+
+    def __getattr__(self, method_name: str) -> FieldCallable|Self:
+        """Allows fluid interface of .<OPERATOR>_<FIELD_NAME>(<FIELD_VALUE>)
+
+        Also allows getting a query instance from any other orm class which
+        is handy for fluid subqueries without having to import anything
+
+        :returns:
+            * callback, this will return a callback that wraps a 
+                `*_field` method and passes in `<FIELD_NAME>` to the `*_field`
+                method
+            * Self, this will be a query instance for the requested orm
+                class via `model_name`
+        """
+        try:
+            field_method, field_name = self._find_method(method_name)
+
+            def callback(*args, **kwargs):
+                if field_method:
+                    ret = field_method(field_name, *args, **kwargs)
+
+                return ret
+
+            return callback
+
+        except AttributeError:
+            if self.orm_class:
+                try:
+                    orm_classes = self.orm_class.orm_classes
+                    if orm_class := orm_classes.find_class(method_name):
+                        return orm_class.query
+
+                except KeyError:
+                    raise AttributeError(method_name)
+
+            raise
 
     def __await__(self) -> Generator[None, None, Iterator]:
         """Returns an iterator if this query is awaited"""
