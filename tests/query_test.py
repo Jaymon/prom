@@ -410,40 +410,40 @@ class QueryTest(EnvironTestCase):
         self.assertRegex(r, r"foo[^=]+=\s*1")
         self.assertRegex(r, r"bar[^=]+=\s*'two'")
 
-    def test_find_methods_1(self):
+    def test__find_method_1(self):
         q = self.get_query()
 
-        opm, fn = q.find_methods("eq_foo_bar")
-        opm2, fn2 = q.find_methods("foo_bar_eq")
+        opm, fn = q._find_method("eq_foo_bar")
+        opm2, fn2 = q._find_method("foo_bar_eq")
         self.assertEqual("eq_field", opm.__name__)
         self.assertEqual(opm2.__name__, opm.__name__)
         self.assertEqual("foo_bar", fn)
         self.assertEqual(fn2, fn)
 
         with self.assertRaises(AttributeError):
-            q.find_methods("baklsdkf_foo_bar")
+            q._find_method("baklsdkf_foo_bar")
 
         with self.assertRaises(AttributeError):
-            q.find_methods("baklsdkf_field")
+            q._find_method("baklsdkf_field")
 
         with self.assertRaises(AttributeError):
-            q.find_methods("_field")
+            q._find_method("_field")
 
         with self.assertRaises(AttributeError):
-            q.find_methods("baklsdkf")
+            q._find_method("baklsdkf")
 
-    def test_find_methods_2(self):
+    def test__find_method_2(self):
         q = self.get_query()
 
         method_name = "eq_{}".format(
             random.choice(list(q.schema.fields.keys()))
         )
-        r = q.find_methods(method_name)
+        r = q._find_method(method_name)
         self.assertEqual("eq_field", r[0].__name__)
         self.assertTrue(r[1] in set(q.schema.fields.keys()))
 
         with self.assertRaises(AttributeError):
-            q.find_methods("testing")
+            q._find_method("testing")
 
         q = self.get_query()
         q.orm_class = None
@@ -452,7 +452,7 @@ class QueryTest(EnvironTestCase):
         ]
 
         for t in tests:
-            r = q.find_methods(t[0])
+            r = q._find_method(t[0])
             self.assertEqual(t[1][0], r[0].__name__)
             self.assertEqual(t[1][1], r[1])
 
@@ -499,6 +499,7 @@ class QueryTest(EnvironTestCase):
             self.assertTrue(v >= 2 and v <= 4)
 
     async def test_query_ref_1(self):
+        raise self.skip_test()
         inter = self.get_interface()
         modpath = self.create_module([
             "import prom",
@@ -556,6 +557,7 @@ class QueryTest(EnvironTestCase):
         self.assertEqual(2, len(l))
 
     async def test_query_ref_2(self):
+        raise self.skip_test()
         inter = self.get_interface()
         modpath = self.create_module([
             "import prom",
@@ -752,12 +754,12 @@ class QueryTest(EnvironTestCase):
         self.assertEqual("gte", q.fields_where[0].operator)
         self.assertEqual("lte", q.fields_where[1].operator)
 
-    def test_append_sort(self):
+    def test__append_sort(self):
         tests = [
-            ("append_sort", [1, "foo"], [1, "foo"]),
-            ("append_sort", [-1, "foo"], [-1, "foo"]),
-            ("append_sort", [5, "foo"], [1, "foo"]),
-            ("append_sort", [-5, "foo"], [-1, "foo"]),
+            ("_append_sort", [1, "foo"], [1, "foo"]),
+            ("_append_sort", [-1, "foo"], [-1, "foo"]),
+            ("_append_sort", [5, "foo"], [1, "foo"]),
+            ("_append_sort", [-5, "foo"], [-1, "foo"]),
             ("asc_field", ["foo"], [1, "foo"]),
             ("desc_field", ["foo"], [-1, "foo"]),
         ]
@@ -771,7 +773,7 @@ class QueryTest(EnvironTestCase):
             self.assertEqual(t[2][1], q.fields_sort[i].name)
 
         with self.assertRaises(ValueError):
-            q.append_sort(0, "foo")
+            q._append_sort(0, "foo")
 
     def test_bounds_methods(self):
         q = self.get_query()

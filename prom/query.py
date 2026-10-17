@@ -3,7 +3,13 @@ Classes and stuff that handle querying the interface for a passed in Orm class
 """
 import copy
 from collections import defaultdict
-from collections.abc import AsyncIterable, Callable, Generator
+from collections.abc import (
+    AsyncIterable,
+    Callable,
+    Generator,
+    Iterable,
+    Mapping,
+)
 import re
 from typing import Self, ForwardRef, Any
 
@@ -687,10 +693,6 @@ class Query(AsyncIterable):
 
     @property
     def or_(self): return self.OR
-    @property
-    def _or(self): return self.OR
-    @property
-    def _or_(self): return self.OR
 
     @property
     def AND(self):
@@ -701,10 +703,6 @@ class Query(AsyncIterable):
 
     @property
     def and_(self): return self.AND
-    @property
-    def _and(self): return self.AND
-    @property
-    def _and_(self): return self.AND
 
     def __init__(self, orm_class=None, **kwargs):
         # needed to use the db querying methods like get(), if you just want to
@@ -721,35 +719,7 @@ class Query(AsyncIterable):
         self.bounds = self.bounds_class()
         self.compounds = []
 
-    def ref(self, orm_classpath):
-        """
-        takes a classpath to allow query-ing from another Orm class
-
-        the reason why it takes string paths is to avoid infinite recursion
-        import problems because an orm class from module A might have a ref
-        from module B and sometimes it is handy to have module B be able to get
-        the objects from module A that correspond to the object in module B,
-        but you can't import module A into module B because module B already
-        imports module A.
-
-        :param orm_classpath: string|type, a full python class path (eg,
-            foo.bar.Che) or an actual model.Orm python class
-        return -- Query
-        """
-        # split orm from module path
-        if isinstance(orm_classpath, basestring):
-            orm_module, orm_class = get_objects(orm_classpath)
-
-        else:
-            orm_class = orm_classpath
-
-        return orm_class.query
-
-    def ref_class(self, orm_classpath):
-        """alias to .ref, here to match Orm.ref_class syntax"""
-        return self.ref(orm_classpath)
-
-    def find_methods(self, method_name):
+    def _find_method(self, method_name: str) -> tuple[str, str]:
         """Given a method name like <OPERATOR>_<FIELD_NAME> or 
         <FIELD_NAME>_<OPERATOR>, split those into <OPERATOR> and <FIELD_NAME>
         if there is an existing <OPERATOR>_field method that exists
@@ -801,7 +771,7 @@ class Query(AsyncIterable):
         :returns: callback, this will return a callback that wraps a 
             *_field method and passes in <FIELD_NAME> to the *_field method
         """
-        field_method, field_name = self.find_methods(method_name)
+        field_method, field_name = self._find_method(method_name)
 
         def callback(*args, **kwargs):
             if field_method:
@@ -811,11 +781,16 @@ class Query(AsyncIterable):
 
         return callback
 
-    def create_field(self, field_name, field_val=None, **kwargs) -> QueryField:
+    def _create_field(
+        self,
+        field_name: str,
+        field_val: Any = None,
+        **kwargs,
+    ) -> QueryField:
         """Creates a QueryField instance"""
         return self.field_class(self, field_name, field_val, **kwargs)
 
-    def append_compound(self, operator, queries, **kwargs) -> Self:
+    def _append_compound(self, operator, queries, **kwargs) -> Self:
         """Internal method used by .intersect(), .union(), and .difference()"""
         for i, query in enumerate(queries):
             if self.fields_select:
@@ -830,15 +805,27 @@ class Query(AsyncIterable):
         self.compounds.append((operator, queries))
         return self
 
-    def append_operation(self, operator, field_name, field_val=None, **kwargs) -> Self:
+    def _append_operation(
+        self,
+        operator: str,
+        field_name: str,
+        field_val: Any = None,
+        **kwargs,
+    ) -> Self:
         """Internal method that appends an operation to the where clause"""
         kwargs["operator"] = operator
         kwargs["clause"] = "where"
-        f = self.create_field(field_name, field_val, **kwargs)
+        f = self._create_field(field_name, field_val, **kwargs)
         self.fields_where.append(f)
         return self
 
-    def append_sort(self, direction, field_name, field_val=None, **kwargs) -> Self:
+    def _append_sort(
+        self,
+        direction: int,
+        field_name: str,
+        field_val: Any = None,
+        **kwargs,
+    ) -> Self:
         """Internal method that appends a sort to the sort clause
 
         sort this query by field_name in direction
@@ -861,7 +848,7 @@ class Query(AsyncIterable):
         kwargs["direction"] = direction
         kwargs["is_list"] = True
         kwargs["clause"] = "sort"
-        f = self.create_field(field_name, field_val, **kwargs)
+        f = self._create_field(field_name, field_val, **kwargs)
         self.fields_sort.append(f)
         return self
 
@@ -878,7 +865,7 @@ class Query(AsyncIterable):
 
         else:
             kwargs["clause"] = "select"
-            field = self.create_field(field_name, **kwargs)
+            field = self._create_field(field_name, **kwargs)
             self.fields_select.append(field)
 
         return self
@@ -920,7 +907,7 @@ class Query(AsyncIterable):
         inserted/updated into the db
         """
         kwargs["clause"] = "set"
-        field = self.create_field(field_name, field_val, **kwargs)
+        field = self._create_field(field_name, field_val, **kwargs)
         self.fields_set.append(field)
         return self
 
@@ -933,7 +920,13 @@ class Query(AsyncIterable):
             self.set_field(field_name, field_val)
         return self
 
-    def incr_field(self, field_name, increment=1, field_val=None, **kwargs) -> Self:
+    def incr_field(
+        self,
+        field_name: str,
+        increment: int = 1,
+        field_val: int|None = None,
+        **kwargs,
+    ) -> Self:
         """Set a field to be incremented into .fields_set attribute
 
         In update queries, these are the fields that will be
@@ -964,14 +957,14 @@ class Query(AsyncIterable):
         :param *queries: two or more queries, they should all select the same
             field types, the first query sets the name of the return columns
         """
-        return self.append_compound("intersect", queries, **kwargs)
+        return self._append_compound("intersect", queries, **kwargs)
 
     def union(self, *queries, **kwargs) -> Self:
         """Return all the rows from all the queries
 
         See .intersect() since this works very similar
         """
-        return self.append_compound("union", queries, **kwargs)
+        return self._append_compound("union", queries, **kwargs)
 
     def difference(self, *queries, **kwargs) -> Self:
         """Return everything in the first query that isn't in any of the other
@@ -985,11 +978,11 @@ class Query(AsyncIterable):
 
         See .intersect() since this works very similar
         """
-        return self.append_compound("except", queries, **kwargs)
+        return self._append_compound("except", queries, **kwargs)
 
     def eq_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> = <FIELD_VALUE>"""
-        return self.append_operation(
+        return self._append_operation(
             "eq",
             field_name,
             field_val,
@@ -998,7 +991,7 @@ class Query(AsyncIterable):
 
     def ne_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> != <FIELD_VALUE>"""
-        return self.append_operation(
+        return self._append_operation(
             "ne",
             field_name,
             field_val,
@@ -1013,7 +1006,7 @@ class Query(AsyncIterable):
 
     def lte_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> <= <FIELD_VALUE>"""
-        return self.append_operation(
+        return self._append_operation(
             "lte",
             field_name,
             field_val,
@@ -1022,7 +1015,7 @@ class Query(AsyncIterable):
 
     def lt_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> < <FIELD_VALUE>"""
-        return self.append_operation(
+        return self._append_operation(
             "lt",
             field_name,
             field_val,
@@ -1031,7 +1024,7 @@ class Query(AsyncIterable):
 
     def gte_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> >= <FIELD_VALUE>"""
-        return self.append_operation(
+        return self._append_operation(
             "gte",
             field_name,
             field_val,
@@ -1040,7 +1033,7 @@ class Query(AsyncIterable):
 
     def gt_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> > <FIELD_VALUE>"""
-        return self.append_operation(
+        return self._append_operation(
             "gt",
             field_name,
             field_val,
@@ -1053,7 +1046,7 @@ class Query(AsyncIterable):
         :param field_val: list, a list of field_val values
         """
         field_kwargs["is_list"] = True
-        return self.append_operation(
+        return self._append_operation(
             "in",
             field_name,
             field_val,
@@ -1066,7 +1059,7 @@ class Query(AsyncIterable):
         :param field_val: list, a list of field_val values
         """
         field_kwargs["is_list"] = True
-        return self.append_operation(
+        return self._append_operation(
             "nin",
             field_name,
             field_val,
@@ -1107,7 +1100,7 @@ class Query(AsyncIterable):
         if not field_val:
             raise ValueError("Cannot LIKE nothing")
 
-        return self.append_operation(
+        return self._append_operation(
             "like",
             field_name,
             field_val,
@@ -1124,7 +1117,7 @@ class Query(AsyncIterable):
         if not field_val:
             raise ValueError("Cannot NOT LIKE nothing")
 
-        return self.append_operation(
+        return self._append_operation(
             "nlike",
             field_name,
             field_val,
@@ -1133,7 +1126,7 @@ class Query(AsyncIterable):
 
     def raw_field(self, field_name, *field_vals, **field_kwargs) -> Self:
         field_kwargs["raw"] = True
-        return self.append_operation(
+        return self._append_operation(
             "raw",
             field_name,
             field_vals,
@@ -1148,7 +1141,7 @@ class Query(AsyncIterable):
 
     def asc_field(self, field_name, field_val=None) -> Self:
         """<FIELD_NAME> ASC"""
-        return self.append_sort(1, field_name, field_val)
+        return self._append_sort(1, field_name, field_val)
 
     def desc(self, *field_names) -> Self:
         """the many version of .desc_field"""
@@ -1158,7 +1151,7 @@ class Query(AsyncIterable):
 
     def desc_field(self, field_name, field_val=None) -> Self:
         """<FIELD_NAME> DESC"""
-        return self.append_sort(-1, field_name, field_val)
+        return self._append_sort(-1, field_name, field_val)
 
     def filter(self, predicate: Callable[[OrmType|tuple|Any], bool]) -> Self:
         """Set the predicate (callback) for an iterator returned from this
@@ -1198,10 +1191,24 @@ class Query(AsyncIterable):
                 setattr(instance, key, copy.deepcopy(val, memodict))
         return instance
 
+    def __await__(self) -> Generator[None, None, Iterator]:
+        """Returns an iterator if this query is awaited"""
+        if False: yield
+        return self.iterator()
+
+    async def __aiter__(self) -> AsyncIterable[OrmType|Any]:
+        """Allows fluid interface for iterating through the query
+
+        :example:
+            [r async for r in q]
+        """
+        async for row in await self.get():
+            yield row
+
     def __str__(self) -> str:
-        """Attempt to render the query, this should be used mainly for debugging
-        and not in logs or things like that since this can be intense and
-        multiline and also wrong
+        """Attempt to render the query, this should be used mainly for
+        debugging and not in logs or things like that since this can be intense
+        and multiline and also wrong
         """
         try:
             return self.render()
@@ -1217,20 +1224,6 @@ class Query(AsyncIterable):
             looks like
         """
         return self.interface.render(self.schema, self, **kwargs)
-
-    def __await__(self) -> Generator[None, None, Iterator]:
-        """Returns an iterator if this query is awaited"""
-        if False: yield
-        return self.iterator()
-
-    async def __aiter__(self) -> AsyncIterable[OrmType|Any]:
-        """Allows fluid interface for iterating through the query
-
-        :example:
-            [r async for r in q]
-        """
-        async for row in await self.get():
-            yield row
 
     async def tolist(self, **kwargs) -> list[OrmType|Any]:
         """Wraps the Iterator.tolist method and does the same thing"""
@@ -1252,7 +1245,7 @@ class Query(AsyncIterable):
         """
         return await self.interface.raw(query_str, *query_args, **kwargs)
 
-    async def cursor(self, **kwargs) -> AsyncIterable:
+    async def cursor(self, **kwargs) -> AsyncIterable[Mapping]:
         """Return a raw Interface cursor
 
         :param **kwargs: passed directly to the interface
@@ -1364,7 +1357,11 @@ class Query(AsyncIterable):
             **kwargs,
         )
 
-    async def upsert(self, conflict_field_names=None, **kwargs) -> Mapping|None:
+    async def upsert(
+        self,
+        conflict_field_names: Iterable[str]|None = None,
+        **kwargs,
+    ) -> Mapping|None:
         """persist the .fields set with .set and .set_field
 
         The insert fields are all the fields set in .fields.
