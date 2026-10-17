@@ -1101,6 +1101,11 @@ class QueryTest(EnvironTestCase):
         with self.assertRaises(ValueError):
             await bar_class.query.eq_baz(foo_class.query.eq_pk(fo.pk)).one()
 
+    async def test___await__(self):
+        q = self.get_query()
+        it = await q
+        self.assertTrue(isinstance(it, Iterator))
+
 
 class IteratorTest(EnvironTestCase):
     async def get_iterator(self, count=5, limit=5, page=0):

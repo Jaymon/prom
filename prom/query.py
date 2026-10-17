@@ -3,7 +3,7 @@ Classes and stuff that handle querying the interface for a passed in Orm class
 """
 import copy
 from collections import defaultdict
-from collections.abc import AsyncIterable, Callable
+from collections.abc import AsyncIterable, Callable, Generator
 import re
 from typing import Self, ForwardRef, Any
 
@@ -114,7 +114,7 @@ class Iterator(ListIterator, AsyncIterable):
         """Make sure no one thinks we can iterate through this syncronously"""
         raise NotImplementedError()
 
-    def __await__(self) -> Self:
+    def __await__(self) -> Generator[None, None, Self]:
         """Turns this iterator into a coroutine so it can be awaited without
         it actually doing anything"""
         if False: yield # turn method into generator
@@ -1218,10 +1218,15 @@ class Query(AsyncIterable):
         """
         return self.interface.render(self.schema, self, **kwargs)
 
+    def __await__(self) -> Generator[None, None, Iterator]:
+        """Returns an iterator if this query is awaited"""
+        if False: yield
+        return self.iterator()
+
     async def __aiter__(self) -> AsyncIterable[OrmType|Any]:
         """Allows fluid interface for iterating through the query
 
-        :Example:
+        :example:
             [r async for r in q]
         """
         async for row in await self.get():
