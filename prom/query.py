@@ -444,6 +444,7 @@ class QueryField(object):
         self.raw = kwargs.pop("raw", False)
         self.clause = kwargs.pop("clause", "")
         self.function_name = kwargs.pop("function_name", "")
+        self.inverse = kwargs.pop("inverse", False)
         self.or_clause = False
         self.kwargs = kwargs
 
@@ -903,8 +904,8 @@ class Query(AsyncIterable):
         return self
 
     def set(self, fields=None, **fields_kwargs) -> Self:
-        """completely replaces the current .fields with fields and fields_kwargs
-        combined, this is the many version of .set_field
+        """completely replaces the current .fields with fields and
+        fields_kwargs combined, this is the many version of .set_field
         """
         fields = make_dict(fields, fields_kwargs)
         for field_name, field_val in fields.items():
@@ -982,12 +983,14 @@ class Query(AsyncIterable):
 
     def ne_field(self, field_name, field_val=None, **field_kwargs) -> Self:
         """<FIELD_NAME> != <FIELD_VALUE>"""
-        return self._append_operation(
-            "ne",
-            field_name,
-            field_val,
-            **field_kwargs
-        )
+        field_kwargs["inverse"] = True
+        return self.eq_field(field_name, field_val, **field_kwargs)
+#         return self._append_operation(
+#             "ne",
+#             field_name,
+#             field_val,
+#             **field_kwargs
+#         )
 
     def between_field(self, field_name, low, high) -> Self:
         """<FIELD_NAME> >= low AND <FIELD_NAME> <= high"""
@@ -1049,36 +1052,38 @@ class Query(AsyncIterable):
 
         :param field_val: list, a list of field_val values
         """
-        field_kwargs["is_list"] = True
-        return self._append_operation(
-            "nin",
-            field_name,
-            field_val,
-            **field_kwargs
-        )
+        field_kwargs["inverse"] = True
+        return self.in_field(field_name, field_val, **field_kwargs)
+#         field_kwargs["is_list"] = True
+#         return self._append_operation(
+#             "nin",
+#             field_name,
+#             field_val,
+#             **field_kwargs
+#         )
 
     def startswith_field(self, field_name, field_val, **field_kwargs) -> Self:
         """<FIELD_NAME> LIKE <FIELD_VALUE>%"""
         return self.like_field(
             field_name,
-            "{}%".format(field_val),
-            **field_kwargs
+            f"{field_val}%",
+            **field_kwargs,
         )
 
     def endswith_field(self, field_name, field_val, **field_kwargs) -> Self:
         """<FIELD_NAME> LIKE %<FIELD_VALUE>"""
         return self.like_field(
             field_name,
-            "%{}".format(field_val),
-            **field_kwargs
+            f"%{field_val}",
+            **field_kwargs,
         )
 
     def contains_field(self, field_name, field_val, **field_kwargs) -> Self:
         """<FIELD_NAME> LIKE %<FIELD_VALUE>%"""
         return self.like_field(
             field_name,
-            "%{}%".format(field_val),
-            **field_kwargs
+            f"%{field_val}%",
+            **field_kwargs,
         )
 
     def like_field(self, field_name, field_val, **field_kwargs) -> Self:
@@ -1095,25 +1100,25 @@ class Query(AsyncIterable):
             "like",
             field_name,
             field_val,
-            **field_kwargs
+            **field_kwargs,
         )
 
-    def nlike_field(self, field_name, field_val, **field_kwargs) -> Self:
-        """Perform a field_name NOT LIKE field_val query
-
-        :param field_name: string, the field we are filtering on
-        :param field_val: string, the like query: %val, %val%, val%
-        :returns: self, for fluid interface
-        """
-        if not field_val:
-            raise ValueError("Cannot NOT LIKE nothing")
-
-        return self._append_operation(
-            "nlike",
-            field_name,
-            field_val,
-            **field_kwargs
-        )
+#     def nlike_field(self, field_name, field_val, **field_kwargs) -> Self:
+#         """Perform a field_name NOT LIKE field_val query
+# 
+#         :param field_name: string, the field we are filtering on
+#         :param field_val: string, the like query: %val, %val%, val%
+#         :returns: self, for fluid interface
+#         """
+#         if not field_val:
+#             raise ValueError("Cannot NOT LIKE nothing")
+# 
+#         return self._append_operation(
+#             "nlike",
+#             field_name,
+#             field_val,
+#             **field_kwargs
+#         )
 
     def raw_field(self, field_name, *field_vals, **field_kwargs) -> Self:
         field_kwargs["raw"] = True

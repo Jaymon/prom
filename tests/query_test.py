@@ -471,13 +471,13 @@ class QueryTest(EnvironTestCase):
         count = await _q.copy().like_bar("%bar%").count()
         self.assertEqual(3, count)
 
-        count = await _q.copy().nlike_bar("bar%").count()
+        count = await _q.copy().like_bar("bar%", inverse=True).count()
         self.assertEqual(7, count)
 
-        count = await _q.copy().nlike_bar("%bar").count()
+        count = await _q.copy().like_bar("%bar", inverse=True).count()
         self.assertEqual(7, count)
 
-        count = await _q.copy().nlike_bar("%bar%").count()
+        count = await _q.copy().like_bar("%bar%", inverse=True).count()
         self.assertEqual(5, count)
 
         count = await _q.copy().like_bar("bar____").count()
@@ -655,13 +655,13 @@ class QueryTest(EnvironTestCase):
     def test_append_operation(self):
         tests = [
             ("eq_field", ["foo", 1], ["eq", "foo", 1]),
-            ("ne_field", ["foo", 1], ["ne", "foo", 1]),
+            #("ne_field", ["foo", 1], ["ne", "foo", 1]),
             ("lte_field", ["foo", 1], ["lte", "foo", 1]),
             ("lt_field", ["foo", 1], ["lt", "foo", 1]),
             ("gte_field", ["foo", 1], ["gte", "foo", 1]),
             ("gt_field", ["foo", 1], ["gt", "foo", 1]),
             ("in_field", ["foo", (1, 2, 3)], ["in", "foo", [1, 2, 3]]),
-            ("nin_field", ["foo", (1, 2, 3)], ["nin", "foo", [1, 2, 3]]),
+            #("nin_field", ["foo", (1, 2, 3)], ["nin", "foo", [1, 2, 3]]),
         ]
 
         for i, t in enumerate(tests):

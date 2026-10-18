@@ -679,12 +679,16 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
         field_val = field.value
 
         symbol_map = {
-            "in": {"symbol": "IN", "list": True},
+            "in": {"symbol": "IN", "list": True, "inverse": "nin"},
             "nin": {"symbol": "NOT IN", "list": True},
             # Previously we used "IS" and "IS NOT" but psycopg3 changed behavior
             # https://stackoverflow.com/a/76396765
             # https://www.psycopg.org/psycopg3/docs/basic/from_pg2.html#you-cannot-use-is-s
-            "eq": {"symbol": "=", "none_symbol": "IS NOT DISTINCT FROM"},
+            "eq": {
+                "symbol": "=",
+                "none_symbol": "IS NOT DISTINCT FROM",
+                "inverse": "ne",
+            },
             "ne": {"symbol": "!=", "none_symbol": "IS DISTINCT FROM"},
             "gt": {"symbol": ">"},
             "gte": {"symbol": ">="},
@@ -692,15 +696,18 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
             "lte": {"symbol": "<="},
             # https://www.tutorialspoint.com/postgresql/postgresql_like_clause.htm
             # https://www.tutorialspoint.com/sqlite/sqlite_like_clause.htm
-            "like": {"symbol": "LIKE"},
+            "like": {"symbol": "LIKE", "inverse": "nlike"},
             "nlike": {"symbol": "NOT LIKE"},
         }
         sd = symbol_map[field.operator]
+        if field.inverse:
+            sd = symbol_map[sd["inverse"]]
         symbol = sd["symbol"]
 
         field_kwargs = field.kwargs
         if field_kwargs:
-            # kwargs take precedence because None is a perfectly valid field_val
+            # kwargs take precedence because None is a perfectly valid
+            # field_val
             f = schema.fields[field_name]
             if issubclass(f.type, (datetime.datetime, datetime.date)):
                 format_strs = self.render_date_field_sql(
