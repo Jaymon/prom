@@ -21,6 +21,8 @@ from .utils import make_list, get_objects, make_dict
 
 type OrmType = ForwardRef(".model.Orm")
 type QueryType = ForwardRef("Query")
+type SchemaType = ForwardRef(".config.Schema")
+type InterfaceType = ForwardRef(".interface.base.InterfaceABC")
 class FieldCallable(Protocol):
     def __call__(
         self,
@@ -655,15 +657,15 @@ class Query(AsyncIterable):
     iterator_class = Iterator
 
     @property
-    def interface(self):
+    def interface(self) -> InterfaceType|None:
         return self.orm_class.interface if self.orm_class else None
 
     @property
-    def schema(self):
+    def schema(self) -> SchemaType|None:
         return self.orm_class.schema if self.orm_class else None
 
     @property
-    def schemas(self):
+    def schemas(self) -> list[SchemaType]:
         """Find and return all the schemas that are needed for this query to
         complete successfully
 
@@ -672,20 +674,30 @@ class Query(AsyncIterable):
         :returns: list, a list of Schema instances
         """
         schemas = []
+
         s = self.schema
         if s:
             schemas.append(s)
 
-        for f in self.fields_where:
-            if isinstance(f.value, Query):
-                s = f.value.schema
-                if s:
-                    schemas.append(s)
+        for q in self.subqueries:
+            if s := q.schema:
+                schemas.append(s)
 
         return schemas
 
     @property
-    def OR(self):
+    def subqueries(self) -> list[Self]:
+        """Return a list of all the subqueries in the WHERE clause"""
+        subqueries = []
+
+        for f in self.fields_where:
+            if isinstance(f.value, Query):
+                subqueries.append(f.value)
+
+        return subqueries
+
+    @property
+    def OR(self) -> Self:
         """Wraps left and right field statements with an OR clause, you can
         chain as many OR calls as you want to create an any length OR clause
 
@@ -700,17 +712,19 @@ class Query(AsyncIterable):
         return self
 
     @property
-    def or_(self): return self.OR
+    def or_(self) -> Self:
+        return self.OR
 
     @property
-    def AND(self):
+    def AND(self) -> Self:
         """This is just here for completeness with .OR since, by default, any
         statements will be joined by AND"""
         self.fields_where[-1].or_clause = False
         return self
 
     @property
-    def and_(self): return self.AND
+    def and_(self) -> Self:
+        return self.AND
 
     def __init__(self, orm_class=None, **kwargs):
         # needed to use the db querying methods like get(), if you just want to
@@ -985,12 +999,6 @@ class Query(AsyncIterable):
         """<FIELD_NAME> != <FIELD_VALUE>"""
         field_kwargs["inverse"] = True
         return self.eq_field(field_name, field_val, **field_kwargs)
-#         return self._append_operation(
-#             "ne",
-#             field_name,
-#             field_val,
-#             **field_kwargs
-#         )
 
     def between_field(self, field_name, low, high) -> Self:
         """<FIELD_NAME> >= low AND <FIELD_NAME> <= high"""
@@ -1054,13 +1062,6 @@ class Query(AsyncIterable):
         """
         field_kwargs["inverse"] = True
         return self.in_field(field_name, field_val, **field_kwargs)
-#         field_kwargs["is_list"] = True
-#         return self._append_operation(
-#             "nin",
-#             field_name,
-#             field_val,
-#             **field_kwargs
-#         )
 
     def startswith_field(self, field_name, field_val, **field_kwargs) -> Self:
         """<FIELD_NAME> LIKE <FIELD_VALUE>%"""
@@ -1089,8 +1090,16 @@ class Query(AsyncIterable):
     def like_field(self, field_name, field_val, **field_kwargs) -> Self:
         """Perform a field_name LIKE field_val query
 
+        You should favor `.startswith_*`, `.endswith_*`, or `.contains_*`
+        methods over this method, this is more of an internal method
+
+        If you need to get the inverse (`NOT LIKE`) then pass in the `inverse`
+        keyword
+
+
         :param field_name: string, the field we are filtering on
         :param field_val: string, the like query: %val, %val%, val%
+        :keyword inverse: bool, set to True to inverse the matches
         :returns: self, for fluid interface
         """
         if not field_val:
@@ -1102,23 +1111,6 @@ class Query(AsyncIterable):
             field_val,
             **field_kwargs,
         )
-
-#     def nlike_field(self, field_name, field_val, **field_kwargs) -> Self:
-#         """Perform a field_name NOT LIKE field_val query
-# 
-#         :param field_name: string, the field we are filtering on
-#         :param field_val: string, the like query: %val, %val%, val%
-#         :returns: self, for fluid interface
-#         """
-#         if not field_val:
-#             raise ValueError("Cannot NOT LIKE nothing")
-# 
-#         return self._append_operation(
-#             "nlike",
-#             field_name,
-#             field_val,
-#             **field_kwargs
-#         )
 
     def raw_field(self, field_name, *field_vals, **field_kwargs) -> Self:
         field_kwargs["raw"] = True
@@ -1323,7 +1315,7 @@ class Query(AsyncIterable):
 
         return ret
 
-    async def count(self, **kwargs):
+    async def count(self, **kwargs) -> int:
         """return the row count of the criteria
 
         :param **kwargs: passed through to the interface
