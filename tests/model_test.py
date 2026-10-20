@@ -1237,43 +1237,6 @@ class OrmTest(EnvironTestCase):
         o2 = await o.query.one()
         # we succeeded if no error was raised
 
-    def test_fk_1(self):
-        mpath = self.create_module([
-            "from prom import Field, Orm",
-            "",
-            "class Foo(Orm):",
-            "    pass",
-            "",
-            "class Bar(Orm):",
-            "    foo_id = Field(Foo, True)",
-            "",
-            "class Che(Orm):",
-            "    foo_id = Field(Foo, False)",
-            "    bar_id = Field(Bar, True)",
-            "",
-            "class Boo(Orm):",
-            "    pass",
-        ])
-
-        Foo = mpath.module().Foo
-        Bar = mpath.module().Bar
-        Che = mpath.module().Che
-        Boo = mpath.module().Boo
-
-        b = Bar(foo_id=5)
-        pout.b(5)
-        self.assertEqual(5, b.fk(Foo))
-
-        c = Che(foo_id=10, bar_id=20)
-        self.assertEqual(10, c.fk(Foo))
-        self.assertEqual(20, c.fk(Bar))
-
-        c = Che()
-        self.assertEqual(None, c.fk(Foo))
-        self.assertEqual(None, c.fk(Bar))
-        with self.assertRaises(ValueError):
-            c.fk(Boo)
-
     async def test_subquery_1(self):
         count = 10
         Foo = self.get_orm_class()

@@ -640,59 +640,6 @@ class Orm(object):
         """
         cls.orm_classes.add_class(cls)
 
-    def fk(self, orm_class):
-        """find the field value in self that is the primary key of the passed
-        in orm_class
-
-        :example:
-            class Foo(Orm):
-                pass
-
-            class Bar(Orm):
-                foo_id = Field(Foo)
-
-            b = Bar(foo_id=1)
-            print(b.fk(Foo)) # 1
-
-        :param orm_class: Orm, the fields in self will be checked until the
-            field that references Orm is found, then the value of that field
-            will be returned
-        :returns: the self field value that is a foreign key references to
-            orm_class
-        """
-        for field_name, field in self.schema.ref_fields.items():
-            pout.v(
-                field.schema.table_name,
-                id(field.schema),
-                id(field.ref_class.schema),
-                orm_class.schema.table_name,
-                id(orm_class.schema),
-                id(orm_class.schema),
-            )
-            if field.schema is orm_class.schema:
-                return getattr(self, field_name)
-
-        raise ValueError(
-            "Did not find a foreign key reference for {} in {}".format(
-                orm_class.__name__,
-                self.__class__.__name__,
-            )
-        )
-
-    def ref(self, orm_classpath):
-        """see Query.ref() for an explanation of what this method does
-
-        :param orm_classpath: string|type, a full python class path (eg,
-            foo.bar.Che) or an actual model.Orm python class
-        :returns: Orm
-        """
-        return self.query.ref(orm_classpath).orm_class
-
-    def ref_class(self, orm_classpath):
-        """Alias for .ref to be more consistent with other *_class
-        attributes"""
-        return self.ref(orm_classpath)
-
     def is_from_query(self) -> bool:
         """return True if this orm was populated from the interface/db"""
         return self._interface_hydrate
