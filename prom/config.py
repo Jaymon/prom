@@ -681,12 +681,12 @@ class Field(object):
         return self._interface_type
 
     @property
-    def ref(self): # DEPRECATED 2026-07-24
-        return self.ref_class
-
-    @property
     def ref_class(self):
-        """Returns the FK reference orm class"""
+        """Returns the FK reference orm class.
+
+        This is different than self's `.orm_class` since that's the class that
+        owns this field, where `.ref_class` is the orm class this field
+        references as a foreign key"""
         schema = self.schema
         return schema.orm_class if schema else None
 
@@ -728,7 +728,7 @@ class Field(object):
             .ref.models_name
         """
         names = set()
-        if ref_class := self.ref:
+        if ref_class := self.ref_class:
             names.add(ref_class.model_name)
             names.add(ref_class.models_name)
         return names

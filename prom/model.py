@@ -1008,7 +1008,7 @@ class Orm(object):
         if orm_class := self.orm_classes.find_class(k, None):
             ref_items = orm_class.schema.ref_fields.items()
             for ref_field_name, ref_field in ref_items:
-                ref_class = ref_field.ref
+                ref_class = ref_field.ref_class
                 if ref_class and isinstance(self, ref_class):
                     query = orm_class.query.eq_field(
                         ref_field_name,
@@ -1165,7 +1165,7 @@ class Orm(object):
 
         except AttributeError:
             for ref_field_name, ref_field in self.schema.ref_fields.items():
-                ref_class = ref_field.ref
+                ref_class = ref_field.ref_class
                 if k == ref_class.model_name:
                     k = ref_field_name
                     v = v.pk
