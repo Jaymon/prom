@@ -925,15 +925,6 @@ class Query(AsyncIterable):
             self.set_field(field_name, field_val)
         return self
 
-#     def set(self, fields=None, **fields_kwargs) -> Self:
-#         """completely replaces the current .fields with fields and
-#         fields_kwargs combined, this is the many version of .set_field
-#         """
-#         fields = make_dict(fields, fields_kwargs)
-#         for field_name, field_val in fields.items():
-#             self.set_field(field_name, field_val)
-#         return self
-
     def incr_field(
         self,
         field_name: str,

@@ -21,9 +21,10 @@ from datatypes.enum import (
 )
 
 from .compat import *
-from . import utils
 
 
+# this exists because `Field` has a type property so we can't use `type` to
+# do annotations in `Field.__init__`
 Type = type
 
 
@@ -69,7 +70,7 @@ class Connection(object):
         interface_class = self.interface_class
         return interface_class(self)
 
-    def __init__(self, fields=None, **fields_kwargs):
+    def __init__(self, **kwargs):
         """
         set all the values by passing them into this constructor, any
         unrecognized kwargs get put into .options
@@ -85,7 +86,6 @@ class Connection(object):
             print(c.port) # 5000
             print(c.options) # {"some_random_thing": "foo"}
         """
-        kwargs = utils.make_dict(fields, fields_kwargs)
         if "interface_name" not in kwargs:
             raise ValueError("no interface_name passed into Connection")
 
@@ -94,6 +94,7 @@ class Connection(object):
         for key, val in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, val)
+
             else:
                 self.options[key] = val
 
