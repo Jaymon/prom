@@ -193,17 +193,17 @@ class InterfaceTest(_BaseTestInterface):
             interface=self.get_interface()
         )
 
-        fstr, fargs = orm_class.query.in_ts(day=10).render(placeholder=True)
+        fstr, fargs = orm_class.query.in_ts(day=[10]).render(placeholder=True)
         self.assertTrue('EXTRACT(DAY FROM "ts") IN (%s)' in fstr)
 
-        q = orm_class.query.in_ts(day=[11, 13], hour=12)
+        q = orm_class.query.in_ts(day=[11, 13], hour=[12])
         fstr, fargs = q.render(placeholder=True)
         self.assertTrue('EXTRACT(DAY FROM "ts") IN (%s, %s)' in fstr, fstr)
         self.assertTrue('AND EXTRACT(HOUR FROM "ts") IN (%s)' in fstr, fstr)
         self.assertEqual([11, 13, 12], fargs)
 
         with self.assertRaises(KeyError):
-            q = orm_class.query.in_ts(bogus=5)
+            q = orm_class.query.in_ts(bogus=[5])
             fstr, fargs = q.render(placeholder=True)
 
     async def test_no_db_error(self):

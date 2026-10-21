@@ -16,7 +16,6 @@ from typing import Self, ForwardRef, Any, Protocol
 from datatypes import ListIterator
 
 from .compat import *
-from .utils import make_list
 
 
 type OrmType = ForwardRef(".model.Orm")
@@ -476,9 +475,12 @@ class QueryField(object):
 
         if self.is_list and not self.is_subquery():
             if field_val:
-                field_val = make_list(field_val)
+                field_val = list(field_val)
                 for i in range(len(field_val)):
                     field_val[i] = self.to_query_value(field_val[i])
+
+            else:
+                field_val = []
 
         else:
             field_val = self.to_query_value(field_val)
@@ -902,7 +904,7 @@ class Query(AsyncIterable):
     def select(self, *field_names: str, **kwargs) -> Self:
         """set multiple fields to be selected, this is the many version of 
         .select_field"""
-        for field_name in make_list(field_names):
+        for field_name in field_names:
             self.select_field(field_name, **kwargs)
         return self
 

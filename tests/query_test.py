@@ -368,11 +368,11 @@ class QueryTest(EnvironTestCase):
         self.assertEqual(fields_select[0:-1], list(q.fields_select.names()))
 
         q = self.get_query()
-        q.select(fields_select)
+        q.select(*fields_select)
         self.assertEqual(fields_select, list(q.fields_select.names()))
 
         q = self.get_query()
-        q.select(fields_select[0:-1], fields_select[-1])
+        q.select(*fields_select[0:-1], fields_select[-1])
         self.assertEqual(fields_select, list(q.fields_select.names()))
 
         # make sure chaining works
@@ -530,7 +530,7 @@ class QueryTest(EnvironTestCase):
         dt = o._created
         day = int(dt.strftime('%d'))
 
-        q = _q.copy().in__created(day=day)
+        q = _q.copy().in__created(day=[day])
         r = [r async for r in q]
         self.assertEqual(1, len(r))
 

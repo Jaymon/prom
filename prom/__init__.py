@@ -25,8 +25,6 @@ from .exception import (
     CloseError,
 )
 
-from . import utils
-
 
 __version__ = "6.1.0"
 

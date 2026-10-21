@@ -17,7 +17,6 @@ from ..exception import (
 )
 
 from ..compat import *
-from ..utils import make_list
 from .base import Interface
 
 
@@ -720,12 +719,6 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
                         format_str += " AND "
 
                     if is_list:
-                        # you can pass in things like day=..., month=... to
-                        # date fields, this converts those values to lists to
-                        # make sure we can handle something like in_foo(day=1)
-                        # and in_foo(day=[1, 2, 3]) the same way
-                        farg = make_list(farg)
-
                         format_str += "{} {} ({})".format(
                             fname,
                             symbol,
@@ -746,7 +739,6 @@ class SQLInterface[ConnectionT](SQLInterfaceABC[ConnectionT]):
 
         else:
             if is_list and not isinstance(field_val, Query):
-                field_val = make_list(field_val) if field_val else []
                 field_name = self.render_field_name_sql(field_name)
                 format_val_str = self.PLACEHOLDER
 
