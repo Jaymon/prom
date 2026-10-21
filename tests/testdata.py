@@ -14,7 +14,6 @@ from prom.query import Query
 from prom.model import Orm
 from prom.config import Schema, DsnConnection, Field, Index, AutoIncrement
 from prom.interface import find_environ
-from prom.utils import make_dict
 
 
 class InterfaceData(TestData):
@@ -479,7 +478,8 @@ class InterfaceData(TestData):
         :returns: Any, the primary key for the row containing the inserted
             fields
         """
-        fields = make_dict(fields, fields_kwargs)
+        fields = fields or {}
+        fields.update(fields_kwargs)
         return await self.insert(o, 1, **fields)
 
     async def insert_orm(self, orm_class, fields=None, **fields_kwargs):
