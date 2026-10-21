@@ -16,7 +16,7 @@ from typing import Self, ForwardRef, Any, Protocol
 from datatypes import ListIterator
 
 from .compat import *
-from .utils import make_list, get_objects, make_dict
+from .utils import make_list, make_dict
 
 
 type OrmType = ForwardRef(".model.Orm")

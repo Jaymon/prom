@@ -13,7 +13,6 @@ from psycopg.adapt import Dumper
 # first party
 from .sql import SQLInterface
 from ..compat import *
-from ..utils import get_objects
 from ..exception import (
     InterfaceError,
     UniqueError,

@@ -13,6 +13,7 @@ import dsnparse
 from datatypes import (
     Datetime,
     cachedproperty,
+    ReflectName,
 )
 from datatypes.enum import (
     find_value,
@@ -96,10 +97,12 @@ class Connection(object):
             else:
                 self.options[key] = val
 
-        interface_module, interface_class = utils.get_objects(
-            self.interface_name
-        )
-        self.interface_class = interface_class
+        self.interface_class = ReflectName(self.interface_name).get_class()
+
+#         interface_module, interface_class = utils.get_objects(
+#             self.interface_name
+#         )
+#         self.interface_class = interface_class
 
     def get(self, key, default=None):
         """Works similar dict.get"""
@@ -642,7 +645,8 @@ class Field(object):
             orm_class = self.orm_class
 
         else:
-            module, orm_class = utils.get_objects(field_type)
+            orm_class = ReflectName(field_type).get_class()
+#             module, orm_class = utils.get_objects(field_type)
 
         schema = orm_class.schema
         if not schema:
