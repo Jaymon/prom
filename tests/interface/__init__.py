@@ -456,26 +456,26 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         """make sure get_one() works as expected when an offset is set"""
         i, s = await self.create_table()
 
-        q = Query().set({
-            'foo': 1,
-            'bar': 'v1',
-        })
+        q = Query().set(
+            foo=1,
+            bar="v1",
+        )
         pk = (await i.insert(s, q.fields_set.fields))["_id"]
 
-        q = Query().set({
-            'foo': 2,
-            'bar': 'v2',
-        })
+        q = Query().set(
+            foo=2,
+            bar="v2",
+        )
         pk2 = (await i.insert(s, q.fields_set.fields))["_id"]
 
         q = Query().desc__id().offset(1)
         d = await i.one(s, q)
-        self.assertEqual(d['_id'], pk)
+        self.assertEqual(d["_id"], pk)
 
         # just make sure to get expected result if no offset
         q = Query().desc__id()
         d = await i.one(s, q)
-        self.assertEqual(d['_id'], pk2)
+        self.assertEqual(d["_id"], pk2)
 
         q = Query().desc__id().offset(2)
         d = await i.one(s, q)
@@ -483,11 +483,11 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
 
         q = Query().desc__id().offset(1).limit(5)
         d = await i.one(s, q)
-        self.assertEqual(d['_id'], pk)
+        self.assertEqual(d["_id"], pk)
 
         q = Query().desc__id().page(2)
         d = await i.one(s, q)
-        self.assertEqual(d['_id'], pk)
+        self.assertEqual(d["_id"], pk)
 
         q = Query().desc__id().page(2).limit(5)
         d = await i.one(s, q)
@@ -603,24 +603,24 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
     async def test_update_single(self):
         i, s = await self.create_table()
         d = {
-            'foo': 1,
-            'bar': 'value 1',
+            "foo": 1,
+            "bar": "value 1",
         }
 
         pk = (await i.insert(s, d))["_id"]
         self.assertGreater(pk, 0)
 
         d = {
-            'foo': 2,
-            'bar': 'value 2',
+            "foo": 2,
+            "bar": "value 2",
         }
-        q = Query().set(d).eq__id(pk)
+        q = Query().set(**d).eq__id(pk)
         rd = await i.update(s, d, q)
 
         # let's pull it out and make sure it persisted
         gd = await i.one(s, Query().eq__id(pk))
-        self.assertEqual(d['foo'], gd['foo'])
-        self.assertEqual(d['bar'], gd['bar'])
+        self.assertEqual(d["foo"], gd["foo"])
+        self.assertEqual(d["bar"], gd["bar"])
         self.assertEqual(pk, gd["_id"])
 
     async def test_update_multiple(self):
@@ -628,10 +628,10 @@ class _BaseTestInterface(IsolatedAsyncioTestCase):
         pks = await self.insert(i, s, 10)
 
         d = {
-            'foo': 2,
-            'bar': 'value 2',
+            "foo": 2,
+            "bar": "value 2",
         }
-        q = Query().set(d).in__id(pks)
+        q = Query().set(**d).in__id(pks)
         rds = await i.update(s, d, q)
         self.assertEqual(len(pks), len(rds))
 

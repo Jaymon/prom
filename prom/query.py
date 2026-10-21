@@ -16,7 +16,7 @@ from typing import Self, ForwardRef, Any, Protocol
 from datatypes import ListIterator
 
 from .compat import *
-from .utils import make_list, make_dict
+from .utils import make_list
 
 
 type OrmType = ForwardRef(".model.Orm")
@@ -917,14 +917,22 @@ class Query(AsyncIterable):
         self.fields_set.append(field)
         return self
 
-    def set(self, fields=None, **fields_kwargs) -> Self:
+    def set(self, **fields_kwargs) -> Self:
         """completely replaces the current .fields with fields and
         fields_kwargs combined, this is the many version of .set_field
         """
-        fields = make_dict(fields, fields_kwargs)
-        for field_name, field_val in fields.items():
+        for field_name, field_val in fields_kwargs.items():
             self.set_field(field_name, field_val)
         return self
+
+#     def set(self, fields=None, **fields_kwargs) -> Self:
+#         """completely replaces the current .fields with fields and
+#         fields_kwargs combined, this is the many version of .set_field
+#         """
+#         fields = make_dict(fields, fields_kwargs)
+#         for field_name, field_val in fields.items():
+#             self.set_field(field_name, field_val)
+#         return self
 
     def incr_field(
         self,

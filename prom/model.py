@@ -623,7 +623,6 @@ class Orm(object):
         .. note:: Honestly, I've tried it multiple times and it's almost never
             worth overriding this method. If you ever get tempted just say no!
 
-        :param fields: dict, the fields in a dict
         :param **fields_kwargs: if you would like to pass the fields as key=val
         """
         self._interface_pk = None
@@ -729,7 +728,7 @@ class Orm(object):
     async def insert(self, **kwargs) -> None:
         """persist the field values of this orm"""
         schema = self.schema
-        q = self.query.set(self.to_interface())
+        q = self.query.set(**self.to_interface())
 
         fields = await q.insert(**kwargs)
         self.from_interface(fields or {})
@@ -737,7 +736,7 @@ class Orm(object):
     async def update(self, **kwargs) -> None:
         """re-persist the updated field values of this orm that has a primary
         key"""
-        q = self.query.set(self.to_interface())
+        q = self.query.set(**self.to_interface())
 
         if pk := self._interface_pk:
             q.eq_field(self.schema.pk.name, pk)
@@ -773,7 +772,7 @@ class Orm(object):
 
         else:
             fields = self.to_interface()
-            q = self.query.set(fields)
+            q = self.query.set(**fields)
             schema = self.schema
 
             conflict_fields = self.conflict_fields(fields)

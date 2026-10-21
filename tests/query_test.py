@@ -281,7 +281,7 @@ class QueryTest(EnvironTestCase):
         )
         fields = dict(foo=1, bar="value 1")
 
-        pk = (await orm_class.query.set(fields).insert())["_id"]
+        pk = (await orm_class.query.set(**fields).insert())["_id"]
         self.assertLess(0, pk)
 
         o = await orm_class.query.eq_pk(pk).one()
@@ -291,7 +291,7 @@ class QueryTest(EnvironTestCase):
 
         fields["foo"] = 2
         fields["bar"] = "value 2"
-        rows = await orm_class.query.set(fields).eq_pk(pk).update()
+        rows = await orm_class.query.set(**fields).eq_pk(pk).update()
         self.assertEqual(1, len(rows))
 
         o2 = await orm_class.query.eq_pk(pk).one()
@@ -313,7 +313,7 @@ class QueryTest(EnvironTestCase):
             "foo": 1,
             "bar": None,
         }
-        pk = await orm_class.query.set(fields).insert()
+        pk = await orm_class.query.set(**fields).insert()
         ret = await (orm_class.query
             .set_foo(2)
             .set_bar("bar 2")
@@ -359,10 +359,6 @@ class QueryTest(EnvironTestCase):
         field_names = list(q.schema.fields.keys())
         fields = dict(zip(field_names, [None] * len(field_names)))
         q.set(**fields)
-        self.assertEqual(fields, {f.name: f.value for f in q.fields_set})
-
-        q = self.get_query()
-        q.set(fields)
         self.assertEqual(fields, {f.name: f.value for f in q.fields_set})
 
     def test_select_1(self):

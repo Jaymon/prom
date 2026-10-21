@@ -99,11 +99,6 @@ class Connection(object):
 
         self.interface_class = ReflectName(self.interface_name).get_class()
 
-#         interface_module, interface_class = utils.get_objects(
-#             self.interface_name
-#         )
-#         self.interface_class = interface_class
-
     def get(self, key, default=None):
         """Works similar dict.get"""
         return getattr(self, key, default)
@@ -646,7 +641,6 @@ class Field(object):
 
         else:
             orm_class = ReflectName(field_type).get_class()
-#             module, orm_class = utils.get_objects(field_type)
 
         schema = orm_class.schema
         if not schema:
