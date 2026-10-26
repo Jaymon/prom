@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager, AbstractAsyncContextManager
 import inspect
 from typing import Any, ForwardRef
+import re
 
 from datatypes import (
     EnglishWord,
@@ -80,7 +81,11 @@ class Orms(ClassKeyFinder):
         super().add_class(orm_class)
         self._clear_lookups()
 
-    def find_class(self, name_or_class, *default):
+    def find_class(self, name_or_class: str|type, *default):
+        """
+        :param name_or_class: this can either be the model name, the class
+            path, or the actual class
+        """
         if isinstance(name_or_class, str):
             model_name = name_or_class
 
@@ -92,11 +97,27 @@ class Orms(ClassKeyFinder):
 
         except KeyError:
             if self.inserted_modules:
-                if default:
-                    return default[0]
+                # Try and find a matching suffix since this might be a
+                # class path instead of a model name
+                parts = re.split(r"[.:]", model_name.lstrip(".")) 
+                suffix = ".".join(parts)
+
+                klasses = []
+                for klass in self.keys():
+                    class_name = f"{klass.__module__}.{klass.__qualname__}"
+                    if class_name.endswith(suffix):
+                        klasses.append(klass)
+
+                if len(klasses) == 1:
+                    self.root.class_keys[model_name] = klasses[0]
+                    return klasses[0]
 
                 else:
-                    raise
+                    if default:
+                        return default[0]
+
+                    else:
+                        raise
 
             else:
                 self.insert_modules()

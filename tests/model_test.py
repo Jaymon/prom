@@ -1524,3 +1524,47 @@ class OrmsTest(EnvironTestCase):
         self.assertTrue(issubclass(rel_classes[0], Orm))
         self.assertEqual("foo_bar", rel_classes[0].model_name)
 
+    def test_find_class(self):
+        #orm_class = self.get_orm_class()
+        #pout.v(orm_class.__module__, orm_class.__qualname__, orm_class.model_name)
+
+        mname = self.get_module_name()
+        mpath = self.create_modules(
+            {
+                mname: {
+                    "bar": [
+                        "from prom import Orm",
+                        "class Che(Orm): pass",
+                    ],
+                    "baz": [
+                        "from prom import Orm",
+                        "class Boo(Orm): pass",
+                    ],
+                },
+            },
+            load=True,
+        )
+
+        #m = mpath.get_module(mname)
+
+        c = Orm.orm_classes.find_class(f"{mname}.bar:Che")
+        self.assertEqual("Che", c.__name__)
+
+        c = Orm.orm_classes.find_class(f"{mname}.bar.Che")
+        self.assertEqual("Che", c.__name__)
+
+        c = Orm.orm_classes.find_class(f".bar.Che")
+        self.assertEqual("Che", c.__name__)
+
+        c = Orm.orm_classes.find_class(f".bar.Che")
+        self.assertEqual("Che", c.__name__)
+
+        c = Orm.orm_classes.find_class(f"bar.Che")
+        self.assertEqual("Che", c.__name__)
+
+        c = Orm.orm_classes.find_class(f"Che")
+        self.assertEqual("Che", c.__name__)
+
+        with self.assertRaises(KeyError):
+            Orm.orm_classes.find_class(f"{mname}.Che")
+
