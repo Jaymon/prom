@@ -11,17 +11,22 @@ from collections.abc import (
     Mapping,
 )
 import re
-from typing import Self, ForwardRef, Any, Protocol
+from typing import Self, ForwardRef, Any, Protocol, TYPE_CHECKING
 
 from datatypes import ListIterator
 
 from .compat import *
 
 
-type OrmType = ForwardRef(".model.Orm")
+if TYPE_CHECKING:
+    from .model import Orm
+    from .config import Schema
+    from .interface.base import InterfaceABC
+
+type OrmType = ForwardRef("Orm")
 type QueryType = ForwardRef("Query")
-type SchemaType = ForwardRef(".config.Schema")
-type InterfaceType = ForwardRef(".interface.base.InterfaceABC")
+type SchemaType = ForwardRef("Schema")
+type InterfaceType = ForwardRef("InterfaceABC")
 class FieldCallable(Protocol):
     def __call__(
         self,
